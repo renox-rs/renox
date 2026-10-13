@@ -2333,7 +2333,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "renox"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2353,7 +2353,7 @@ dependencies = [
 
 [[package]]
 name = "renox-2fa"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "hmac 0.13.0",
  "qrcode",
@@ -2367,7 +2367,7 @@ dependencies = [
 
 [[package]]
 name = "renox-admin"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "renox",
  "serde",
@@ -2375,7 +2375,7 @@ dependencies = [
 
 [[package]]
 name = "renox-billing"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "renox",
  "serde",
@@ -2385,7 +2385,7 @@ dependencies = [
 
 [[package]]
 name = "renox-blocks"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "renox",
  "serde",
@@ -2393,7 +2393,7 @@ dependencies = [
 
 [[package]]
 name = "renox-cli"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "base64 0.23.1",
@@ -2410,7 +2410,7 @@ dependencies = [
 
 [[package]]
 name = "renox-core"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "anyhow",
  "argon2",
@@ -2463,7 +2463,7 @@ dependencies = [
 
 [[package]]
 name = "renox-editors"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "ammonia",
  "renox",
@@ -2472,7 +2472,7 @@ dependencies = [
 
 [[package]]
 name = "renox-learn"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "renox",
  "renox-site",
@@ -2483,7 +2483,7 @@ dependencies = [
 
 [[package]]
 name = "renox-macros"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -2495,7 +2495,7 @@ dependencies = [
 
 [[package]]
 name = "renox-oauth"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "base64 0.23.1",
  "form_urlencoded",
@@ -2507,7 +2507,7 @@ dependencies = [
 
 [[package]]
 name = "renox-site"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "pulldown-cmark",
  "renox",
@@ -2516,7 +2516,7 @@ dependencies = [
 
 [[package]]
 name = "renox-www"
-version = "1.1.0"
+version = "1.1.1"
 dependencies = [
  "pulldown-cmark",
  "renox",
