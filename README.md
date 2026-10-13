@@ -127,7 +127,7 @@ pages. Run `cargo test`, `rnx db:check` and `rnx view:check` after changes.
    instead of fetching or guessing:
 
    ```bash
-   git clone --depth 1 --branch v1.1.0 https://github.com/renox-rs/renox ~/src/renox
+   git clone --depth 1 --branch v1.1.1 https://github.com/renox-rs/renox ~/src/renox
    claude --add-dir ~/src/renox     # or, inside a session: /add-dir ~/src/renox
    ```
 
@@ -645,7 +645,7 @@ change on `main`. The landing page and blog are [renox.rs](https://renox.rs) ([`
 
 ## Status
 
-Renox **1.1.0** is on crates.io: `renox`, `renox-core`, `renox-macros`, `renox-cli`, and the
+Renox **1.1.1** is on crates.io: `renox`, `renox-core`, `renox-macros`, `renox-cli`, and the
 plugins `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and
 `renox-billing`. From here Renox follows semver ([docs/stability.md](docs/stability.md)). The [Laravel parity review](docs/audit/2026-10-laravel-parity.md)
 compares it with Laravel and Filament feature by feature, as of October 2026. Since the first
