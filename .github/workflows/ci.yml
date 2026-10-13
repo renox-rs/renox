@@ -193,7 +193,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       # Headless Chrome (preinstalled on the runner) driven over the DevTools
@@ -204,7 +204,7 @@ jobs:
         env:
           BROWSER_SHARD: ${{ matrix.shard }}
           BROWSER_SCREENS: ${{ github.workspace }}/browser-screens
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: browser-screens-${{ matrix.shard }}
@@ -357,7 +357,7 @@ jobs:
           TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/renox_test
       - run: cargo llvm-cov report --summary-only | tee coverage.txt
       - run: cargo llvm-cov report --html --output-dir coverage-html
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: coverage-html
           path: coverage-html/html

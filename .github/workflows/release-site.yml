@@ -42,7 +42,7 @@ jobs:
           strip dist/renox-site
           echo "${GITHUB_SHA}" > dist/REVISION
           (cd dist && sha256sum renox-site > renox-site.sha256)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: renox-site-${{ github.sha }}
           path: dist/
