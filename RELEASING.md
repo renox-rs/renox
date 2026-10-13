@@ -1,19 +1,24 @@
 # Releasing Renox
 
-How a release goes to crates.io. Only a maintainer with publish rights on the ten crates
-(`renox`, `renox-core`, `renox-macros`, `renox-cli` and the plugins `renox-2fa`,
-`renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and `renox-billing`) can do it. All ten share the workspace's
-version and are released together.
+How a release goes to crates.io. The ten crates (`renox`, `renox-core`, `renox-macros`,
+`renox-cli` and the plugins `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`,
+`renox-admin` and `renox-billing`) share the workspace's version and are released together.
+Pushing a `v*` tag publishes them: `.github/workflows/release.yml` does it from this
+repository, so pushing a tag is the irreversible step (ask before it, as before a `cargo publish`).
 
-## The machine that publishes
+## Who can publish
 
-- A crates.io account with a **verified email address** (crates.io refuses to publish without
-  one), and publish rights on the ten names. The release candidates (`1.0.0-rc.1` to `rc.4`)
-  created them; a new crate (a new plugin) gets its name at its first `cargo publish`, which
-  gives the publisher those rights.
-- `cargo login` on the machine that publishes. The token stays in `~/.cargo/credentials.toml`:
-  never put it in the repository, an issue, a chat or an environment variable that a script
-  prints.
+- The crates are owned on crates.io by `renox-rs`. `cargo owner --list renox` shows the
+  owners; an owner adds another with `cargo owner --add <login> <crate>`, which the invitee
+  accepts at https://crates.io/me/pending-invites.
+- **Trusted Publishing.** The workflow holds no crates.io token: crates.io trusts this
+  repository and gives the job a token valid for 30 minutes. Each crate is set up once by an
+  owner, at crates.io → the crate → Settings → Trusted Publishing → Add (GitHub): owner
+  `renox-rs`, repository `renox`, workflow `release.yml`, environment `release`. All ten need it;
+  a crate without it fails the publish with a 403. A new crate (a new plugin) can't be set up
+  before it exists: publish its first version by hand (below), then add it.
+- The `release` environment (repository Settings → Environments) is created by the first run.
+  Add required reviewers there to make a tag wait for approval before it publishes.
 - A release candidate is worth it before a big release: publish `x.y.0-rc.1`, check that
   docs.rs builds the API reference and that `cargo install renox-cli --version x.y.0-rc.1 &&
   rnx new demo` works from crates.io, then publish `x.y.0`. Cargo never picks a pre-release
@@ -38,40 +43,43 @@ version and are released together.
 3. **The changelog.** In `CHANGELOG.md`, rename "Unreleased" to `## 1.2.0 · 2026-11-01` (the
    version and the date) and start a new empty "Unreleased" above it.
 4. **Check everything** (as in [CONTRIBUTING.md](CONTRIBUTING.md)), then a dry run of the
-   crates that don't need another Renox crate on crates.io first:
-   ```bash
-   cargo publish --dry-run -p renox-macros
-   cargo publish --dry-run -p renox-core
-   cargo publish --dry-run -p renox-cli
-   ```
-   (`renox-cli` doesn't depend on the other Renox crates.) `renox` can't be dry-run before
-   this version of `renox-core` and `renox-macros` is on crates.io, and `renox-2fa`,
-   `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and `renox-billing` not before `renox` is: they depend on them.
+   whole release: `cargo publish --workspace --dry-run` builds each crate against the others
+   of this version without uploading anything (the workflow runs it too, before publishing).
 5. **Commit and merge** the version and changelog as a pull request, as for any change.
-6. **Publish in this order** from an up-to-date `main` (each waits until the previous one is in
-   the index):
+6. **Tag the merged commit and push the tag** (from an up-to-date `main`):
    ```bash
-   cargo publish -p renox-macros
-   cargo publish -p renox-core
-   cargo publish -p renox
-   cargo publish -p renox-cli
-   cargo publish -p renox-2fa    # plugins depend on renox, so they go after it
-   cargo publish -p renox-editors
-   cargo publish -p renox-blocks
-   cargo publish -p renox-oauth
-   cargo publish -p renox-admin
-   cargo publish -p renox-billing
+   git tag v1.2.0 && git push origin v1.2.0
    ```
-   `renox-core` and `renox-macros` use `renox` only as a path dev-dependency, which
-   `cargo publish` leaves out, so the order has no cycle.
-7. **Tag the commit:** `git tag v1.2.0 && git push origin v1.2.0`. Apps made by
-   `rnx new` from crates.io link their `AGENTS.md` to the docs at that tag.
+   The **Release** workflow then checks that the tag is `v` + the workspace version and is on
+   `main`, dry-runs, and runs `cargo publish --workspace`: cargo publishes the ten crates in
+   dependency order (renox-macros, renox-core, renox, renox-cli, then the plugins) and waits
+   for each to be in the index. `renox-core` and `renox-macros` use `renox` only as a path
+   dev-dependency, which `cargo publish` leaves out, so the order has no cycle. Watch it with
+   `gh run watch <id> -R renox-rs/renox --exit-status`. Apps made by `rnx new` from crates.io
+   link their `AGENTS.md` to the docs at the tag.
+7. **The GitHub release** is created by the same workflow, with the version's CHANGELOG
+   section as its notes (a version with a `-`, such as `1.2.0-rc.1`, is marked as a
+   pre-release). A release that already exists for the tag is left as it is.
 8. **Check the release:**
    - docs.rs shows `renox` and `renox-core` (built with `postgres`, `uuid` and `xlsx`), and
      `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and `renox-billing`;
    - `cargo install renox-cli` then `rnx new demo`: `demo/Cargo.toml` has
      `renox = { version = "1.2" }` and `cargo test` passes in it.
-9. **A GitHub release** for the tag, with the version's changelog section as its notes.
+
+## Publishing by hand
+
+When the workflow can't (a new crate's first version, crates.io's OIDC down, a publish that
+stopped halfway), an owner publishes from a machine:
+
+- A crates.io account with a **verified email address** (crates.io refuses to publish without
+  one), and a token from https://crates.io/settings/tokens with the `publish-new` and
+  `publish-update` scopes and a short expiry, given to `cargo login`. The token stays in
+  `~/.cargo/credentials.toml`: never put it in the repository, an issue, a chat or an
+  environment variable that a script prints. Revoke it when done.
+- From the tagged commit: `cargo publish --workspace`, or after a publish that stopped halfway,
+  `cargo publish -p <crate>` for each crate not yet on crates.io, in the order above (a version
+  already on crates.io can't be published again). Then `gh release create v1.2.0 --verify-tag
+  --notes-file …` if the release is missing.
 
 ## Since the first release (1.0.0, 2026-10-08)
 
@@ -84,6 +92,6 @@ version and are released together.
 
 ## A broken release
 
-Yank it (`cargo yank --version 1.2.0 renox-core`, and the other four of that version), fix
+Yank it (`cargo yank --version 1.2.0 renox-core`, and the other nine of that version), fix
 it, and publish the next patch version. A yanked version stays for apps that already lock it,
 but new apps don't get it. Never reuse a version number.

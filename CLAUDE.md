@@ -53,7 +53,8 @@ or "§6.4" (used in older issues and comments) are kept in those files.
   [traps §6.1 and §6.6](docs/contributing/traps.md).
 - **Secrets**: never store a token or key in the repo, an issue, a note or a script's output. Never send
   the maintainer's email address to a third-party service (use a neutral User-Agent such as
-  `renox-deps-check`). **Ask before every `cargo publish`** (publishing is irreversible).
+  `renox-deps-check`). **Ask before every `cargo publish` and before pushing a `v*` tag** (the tag publishes the
+  crates through release.yml; publishing is irreversible).
 - Commit messages and PR bodies are long and structured (summary, what's included, design notes,
   deviations, testing) and end with the attribution lines the harness gives you.
 
