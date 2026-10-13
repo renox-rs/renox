@@ -1,0 +1,26 @@
+{#- The active store's purchase orders (#240). -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.purchasing.title')">
+  <app-stock-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('stock.purchasing.title')" :subtitle="t('stock.purchasing.lead')">
+      <rx-link-button route="stock.suppliers" :label="t('stock.suppliers.title')"/>
+      <rx-link-button route="stock.purchasing.create" :label="t('stock.purchasing.new')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    {# [explain:stock.purchasing.template] #}
+    <app-stock-tabs target="stock.purchasing" param="status" :views="tabs" :current="tab" prefix="stock.purchasing.tab." :label="t('stock.purchasing.tabs')"/>
+    {# [/explain:stock.purchasing.template] #}
+    <template rx-if="orders.items">
+    {# [explain:stock.purchasing.template] #}
+    <rx-table :rows="orders.items" as="row" card :caption="t('stock.purchasing.title')">
+      <rx-column :label="t('stock.purchasing.number')"><a class="rx-link" href="{{ route('stock.purchasing.show', row.order.id) }}">PO-{{ row.order.id }}</a><template rx-if="row.order.suggested"> <rx-badge kind="info">{{ t('stock.purchasing.suggested') }}</rx-badge></template></rx-column>
+      <rx-column :label="t('stock.purchasing.supplier')">{{ row.supplier }}</rx-column>
+      <rx-column :label="t('stock.fields.status')"><app-stock-order-status :status="row.order.status"/></rx-column>
+      <rx-column :label="t('stock.purchasing.expected')">{{ row.order.expected_on | date("%d %b %Y") if row.order.expected_on else "—" }}</rx-column>
+      <rx-column :label="t('stock.purchasing.total')" align="num">{{ row.order.total | money }}</rx-column>
+    </rx-table>
+    {# [/explain:stock.purchasing.template] #}
+    <rx-pagination :page="orders"/>
+    </template>
+    <rx-card rx-else><rx-empty :title="t('stock.purchasing.empty')" icon="clipboard-list"/></rx-card>
+  </rx-stack>
+</rx-page>

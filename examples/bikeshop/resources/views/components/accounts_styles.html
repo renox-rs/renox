@@ -1,0 +1,21 @@
+<rx-props>
+{#- The account pages' layout, as CSS grids on the kit's spacing tokens (no
+    sizes of our own). Inline so the area keeps its styles with its views. -#}
+<rx-style>
+/* "My account": every card one cell, two columns from 60rem, one on phones. */
+.bs-account { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rx-space-4); align-items: start; }
+@media (min-width: 60rem) { .bs-account { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.bs-account > * { min-width: 0; }
+.bs-account__section:empty { display: none; }
+.bs-account__wide { grid-column: 1 / -1; }
+/* The notification preferences: a row per kind, its label then its choices. */
+.bs-prefs { display: grid; gap: var(--rx-space-3); }
+.bs-prefs__row { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rx-space-2); align-items: center; padding-block: var(--rx-space-2); border-bottom: 0.5px solid var(--rx-separator); }
+.bs-prefs__row:last-child { border-bottom: 0; }
+@media (min-width: 40rem) { .bs-prefs__row { grid-template-columns: minmax(8rem, 1fr) auto; } }
+.bs-prefs__kind { display: grid; gap: var(--rx-space-1); }
+.bs-prefs__kind strong { font: var(--rx-type-label); }
+.bs-prefs__kind span { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+/* The claim page: the record's numbers side by side. */
+.bs-claim { display: grid; gap: var(--rx-space-4); max-width: 40rem; }
+</rx-style>

@@ -1,0 +1,19 @@
+{#- A walk-in rental (#235): a verified customer, a bike standing here, a period from now. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.walkin.title') }}">
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.walkin.title') }}" subtitle="{{ t('rentals.walkin.lead') }}" :back="route('rentals.counter')" back-label="{{ t('rentals.counter.title') }}"/>
+    <div rx-if="not bikes" class="rx-card"><rx-empty title="{{ t('rentals.walkin.no_bikes') }}" message="{{ t('rentals.walkin.no_bikes_text') }}" icon="bike"/></div>
+    {# [explain:rentals.walkin.template] #}
+    <form rx-else method="post" action="{{ route('rentals.walkin.store') }}" novalidate>
+      {{ csrf_field() }}
+      <rx-card>
+        <rx-form-errors/>
+        <rx-select name="customer" label="{{ t('rentals.fields.customer') }}" :options="[]" placeholder="{{ t('rentals.walkin.customer_hint') }}" options-url="{{ route('rentals.customers') }}" searchable required hint="{{ t('rentals.walkin.verified_only') }}"/>
+        <rx-select name="bike" label="{{ t('rentals.fields.bike') }}" :options="bikes" required/>
+        <rx-datetime-range name-start="starts_at" name-end="ends_at" label="{{ t('rentals.fields.period') }}" :value-start="starts_at" :value-end="ends_at" :min="today" :step="30" :opens="7" :closes="21" required/>
+        <rx-button icon="check">{{ t('rentals.walkin.submit') }}</rx-button>
+      </rx-card>
+    </form>
+    {# [/explain:rentals.walkin.template] #}
+  </rx-stack>
+</rx-page>

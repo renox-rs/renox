@@ -1,0 +1,29 @@
+{#- The books between stores (#245): open balances per store pair, and every entry this person
+    may see (renox::grid with a sum under the amounts, exports). -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.books.title')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.books.title')" :subtitle="t('multistore.books.lead')">
+      <rx-link-button route="multistore.fees" :label="t('multistore.fees.title')"/>
+      <rx-link-button route="multistore.settlements" :label="t('multistore.settlements.title')" variant="primary"/>
+    </rx-page-header>
+    {# [explain:multistore.books.template] #}
+    <rx-stats columns="2">
+      <rx-stat :label="t('multistore.books.position', store=store_name)" :value="mine | money" :hint="t('multistore.books.position_hint')"/>
+      <rx-stat :label="t('multistore.books.pairs')" :value="balances | length"/>
+    </rx-stats>
+    <rx-card :title="t('multistore.books.balances')" :subtitle="t('multistore.books.balances_lead')">
+      <rx-list rx-if="balances" id="balances" :label="t('multistore.books.balances')">
+        <li rx-for="b in balances"><div class="rx-list__main"><strong>{{ t('multistore.books.owes', debtor=b.debtor, creditor=b.creditor) }}</strong></div><span class="rx-num">{{ b.amount | money }}</span></li>
+      </rx-list>
+      <rx-empty rx-else :title="t('multistore.books.square')" icon="circle-check"/>
+    </rx-card>
+    <rx-grid :page="entries">
+      <template rx-if="column.key == 'source'">
+        <a rx-if="row.source_url" class="rx-link" href="{{ row.source_url }}">{{ row.source_label }}</a>
+        <template rx-else>{{ row.source_label }}</template>
+      </template>
+    </rx-grid>
+    {# [/explain:multistore.books.template] #}
+  </rx-stack>
+</rx-page>

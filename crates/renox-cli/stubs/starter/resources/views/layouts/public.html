@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <rx-outlet name="seo">{{ seo() }}</rx-outlet>
+  <rx-head/>
+  <rx-ui/>
+  <link rel="stylesheet" href="{{ asset('app.css') }}">
+  {#- The page patterns (components/, styled by public/patterns.css): yours to change. -#}
+  <link rel="stylesheet" href="{{ asset('patterns.css') }}">
+  <rx-outlet stack="head"/>
+</head>
+{#- The public layout (the home page): the kit's navbar on top, the page, a
+    footer, stacked by a CSS grid (`.app-public` in public/patterns.css). On
+    phones the links move to the kit's tab bar at the bottom of the screen
+    (`tabs`). The signed-in pages use layouts/app.html. -#}
+<body class="rx-page app-public">
+  <rx-let name="tabs" :value="[
+    {'href': route('home'), 'label': t('nav.home'), 'icon': 'house', 'active': route_is('home')},
+    {'href': route('dashboard'), 'label': t('nav.dashboard'), 'icon': 'layout-dashboard', 'active': route_is('dashboard')},
+    {'href': route('notifications.index'), 'label': t('nav.notifications'), 'icon': 'bell', 'badge': unread_notifications or none},
+    {'href': route('account.show'), 'label': t('nav.account'), 'icon': 'circle-user'},
+  ] if auth.check else [
+    {'href': route('home'), 'label': t('nav.home'), 'icon': 'house', 'active': route_is('home')},
+    {'href': route('login'), 'label': t('nav.log_in'), 'icon': 'log-in'},
+    {'href': route('register'), 'label': t('nav.register'), 'icon': 'circle-user'},
+  ]"/>
+  <rx-navbar brand="{{ app.name }}" href="{{ route('home') }}" mark width="wide" :tabs="tabs" tabs-label="{{ t('nav.sections') }}">
+    <rx-nav-links>
+      <rx-nav-link route="home" label="{{ t('nav.home') }}" :active="route_is('home')"/>
+      <rx-nav-link rx-if="auth.check" route="dashboard" label="{{ t('nav.dashboard') }}"/>
+    </rx-nav-links>
+    <span class="rx-spacer"></span>
+    <template rx-if="auth.check">
+      <rx-notification-bell :count="unread_notifications"/>
+      <span class="rx-hide-narrow">
+      <rx-menu label="{{ auth.user.name }}" id="account-menu" variant="plain">
+        <rx-menu-link route="dashboard" label="{{ t('nav.dashboard') }}"/>
+        <rx-menu-link route="account.show" label="{{ t('nav.account') }}"/>
+        <rx-menu-separator/>
+        <rx-menu-action route="logout" label="{{ t('nav.log_out') }}"/>
+      </rx-menu>
+      </span>
+    </template>
+    <span rx-else class="rx-hide-narrow">
+    <rx-link-button route="login" label="{{ t('nav.log_in') }}" variant="plain" size="small"/>
+    <rx-link-button route="register" label="{{ t('nav.register') }}" variant="primary" size="small"/>
+    </span>
+  </rx-navbar>
+  <main class="rx-container rx-container--wide" id="main">
+    <rx-alert rx-if="flash.status" kind="success">{{ flash.status }}</rx-alert>
+    <rx-outlet name="content"/>
+  </main>
+  <footer class="rx-container rx-container--wide app-footer">
+    <p class="app-footer__brand"><span class="rx-brand-mark" aria-hidden="true">{{ (app.name | string)[:1] | upper }}</span>{{ app.name }}</p>
+    <p>{{ t('footer.made_with') }}</p>
+  </footer>
+  <rx-toasts/>
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

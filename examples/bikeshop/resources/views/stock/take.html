@@ -1,0 +1,33 @@
+{#- The stock take (#240): one category at the active store, the store's own goods and the
+    goods it holds for other stores apart (#245). Nested form names (lines[3][counted]) read
+    as a list by Valid<T>; a blank count leaves the line as it is. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.take.title')">
+  <app-stock-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('stock.take.title')" :subtitle="t('stock.take.lead')" :back="route('stock.index')" :back-label="t('stock.index.title')"/>
+    <rx-form method="GET" :action="route('stock.take')" class="bs-filters" id="take-category">
+      <rx-select name="category" :label="t('stock.fields.category')" :options="categories" :selected="category" required/>
+      <rx-button :label="t('stock.take.open')" variant="secondary"/>
+    </rx-form>
+    <rx-card rx-if="not own and not held"><rx-empty :title="t('stock.take.nothing')" icon="boxes"/></rx-card>
+    <rx-form rx-else :action="route('stock.take.store')" id="take-form" novalidate data-bs-reveal>
+      <input type="hidden" name="category" value="{{ category }}">
+      <rx-form-errors/>
+      <rx-card :title="t('stock.take.own', count=own | length)">
+        <app-stock-take-rows rx-if="own" :items="own" :start="0"/>
+        <rx-empty rx-else :title="t('stock.take.no_own')"/>
+      </rx-card>
+      <rx-card :title="t('stock.take.held', count=held | length)" :subtitle="t('stock.take.held_lead')">
+        <app-stock-take-rows rx-if="held" :items="held" :start="own | length"/>
+        <rx-empty rx-else :title="t('stock.take.no_held')"/>
+      </rx-card>
+      <rx-card :title="t('stock.take.why')">
+        <rx-form-grid columns="2">
+          <rx-select name="reason" :label="t('stock.fields.reason')" :options="reasons" :selected="'count'" required/>
+          <rx-input name="note" :label="t('stock.take.note')"/>
+        </rx-form-grid>
+        <rx-button :label="t('stock.take.save')" icon="check"/>
+      </rx-card>
+    </rx-form>
+  </rx-stack>
+</rx-page>

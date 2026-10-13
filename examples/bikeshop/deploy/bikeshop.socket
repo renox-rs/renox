@@ -1,0 +1,18 @@
+# /etc/systemd/system/bikeshop.socket
+# systemd holds the listening socket and hands it to bikeshop.service, so a
+# restart (a deploy) makes new connections wait a moment instead of being
+# refused. Stop the service (it holds the port), enable this socket, start it:
+#   sudo systemctl stop bikeshop && sudo systemctl enable --now bikeshop.socket
+#   sudo systemctl start bikeshop
+[Unit]
+Description=Bikeshop (listening socket)
+
+[Socket]
+# The address the app would listen on (APP_HOST:APP_PORT); the app uses this
+# socket instead of opening its own.
+ListenStream=127.0.0.1:3000
+# Connections that may wait while the app restarts.
+Backlog=4096
+
+[Install]
+WantedBy=sockets.target

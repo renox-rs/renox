@@ -1,0 +1,26 @@
+<rx-page layout="layouts/app.html">
+<div class="wrap">
+  <header class="hero">
+    <p class="eyebrow">A course in {{ stages | length }} stages</p>
+    <h1>Build a web app in Rust with Renox, one stage at a time.</h1>
+    <p class="sub">You build one app, a product catalog with stock, from <code>rnx new</code> to a live component with tests. Each stage adds one idea, shows it running, and ends with a challenge you solve in the browser.</p>
+  </header>
+
+  <section aria-labelledby="stages-title">
+    <h2 id="stages-title" class="section-title">The stages</h2>
+    <ol class="stages" role="list">
+      <li rx-for="s in stages" class="stage" id="{{ s.slug }}">
+        <span class="stage__number" aria-hidden="true">{{ s.number }}</span>
+        <div class="stage__body">
+          <h3><span class="visually-hidden">Stage {{ s.number }}: </span>{{ s.title }}</h3>
+          <p>{{ s.summary }}</p>
+          <ul class="topics" role="list" aria-label="What it covers">
+            <li rx-for="t in s.topics"><code>{{ t }}</code></li>
+          </ul>
+          <p class="stage__more">Coming soon. Until then, the guide: <a href="{{ links.docs }}/docs/{{ s.guide }}">{{ s.guide }}</a>.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+</div>
+</rx-page>

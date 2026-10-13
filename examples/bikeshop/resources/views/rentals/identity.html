@@ -1,0 +1,22 @@
+{#- The ID check (#235): a private photo, the number sealed with APP_KEY, a store that checks it. -#}
+<rx-page layout="layouts/app.html" title="{{ t('rentals.identity.title') }}">
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.identity.title') }}" subtitle="{{ t('rentals.identity.lead') }}" :back="route('rentals.mine')" back-label="{{ t('rentals.mine.title') }}"/>
+    <rx-alert rx-if="verified" kind="success" title="{{ t('rentals.identity.done') }}" message="{{ t('rentals.identity.verified', date=(verified_at | date('%d %b %Y'))) }}"/>
+    <rx-alert rx-elif="document and document.status == 'pending'" kind="info" title="{{ t('rentals.identity.sent') }}" message="{{ t('rentals.identity.waiting') }}"/>
+    <rx-alert rx-elif="document and document.status == 'refused' and document.note" kind="warning" title="{{ t('rentals.identity.refused') }}" :message="document.note"/>
+    <rx-card rx-if="masked"><rx-infolist><rx-entry label="{{ t('rentals.identity.number') }}" :value="masked"/></rx-infolist></rx-card>
+    {# [explain:rentals.identity.template] #}
+    <form rx-if="not verified" method="post" action="{{ route('rentals.identity.store') }}" enctype="multipart/form-data" novalidate>
+      {{ csrf_field() }}
+      <rx-card title="{{ t('rentals.identity.send') }}">
+        <rx-form-errors/>
+        <rx-input name="id_number" label="{{ t('rentals.identity.number') }}" required autocomplete="off" hint="{{ t('rentals.identity.number_hint') }}"/>
+        <rx-file name="photo" label="{{ t('rentals.identity.photo') }}" accept="image/*" required preview hint="{{ t('rentals.identity.photo_hint') }}"/>
+        <rx-select name="store" label="{{ t('rentals.identity.store') }}" :options="stores" required hint="{{ t('rentals.identity.store_hint') }}"/>
+        <rx-button icon="check">{{ t('rentals.identity.submit') }}</rx-button>
+      </rx-card>
+    </form>
+    {# [/explain:rentals.identity.template] #}
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,44 @@
+{#- The catalogue's part of the home page (`<app-catalog-home :storefront="storefront"/>`
+    in home/index.html): the popular bikes and the categories as photo tiles.
+    `storefront` is shared with the home view by the catalog area
+    (src/app/catalog/mod.rs: `App::share`, computed only on `/`). A tile's
+    photo is the category's first product photo
+    (public/images/products/{slug}-1.webp). -#}
+<rx-props storefront>
+<template rx-if="storefront">
+<rx-push stack="head"><link rel="stylesheet" href="{{ asset('catalog/catalog.css') }}"></rx-push>
+<section class="bs-section" aria-labelledby="featured-title">
+  <div class="bs-section__head">
+    <h2 class="bs-section__title" id="featured-title">{{ t('home.popular.title') }} <em>{{ t('home.popular.accent') }}</em></h2>
+    <a class="bs-section__more" href="{{ route('catalog.category', 'bikes') }}">{{ t('catalog.home.all_bikes') }} →</a>
+  </div>
+  <div data-bs-reveal>
+  <rx-card-grid>
+    <rx-media-card rx-for="c in storefront.featured" :href="route('catalog.show', c.slug)" :title="c.name" :image="c.photo" :image-alt="c.photo_alt"
+                   :subtitle="t('catalog.price_from', price=(c.price_from | money)) if c.price_from is not none else none"
+                   :note="[c.brand.name if c.brand else none, c.category.name if c.category else none] | select | join(' · ')"/>
+  </rx-card-grid>
+  </div>
+</section>
+<section class="bs-section" aria-labelledby="categories-title">
+  <div class="bs-section__head">
+    <h2 class="bs-section__title" id="categories-title">{{ t('home.ride.title') }} <em>{{ t('home.ride.accent') }}</em></h2>
+    <a class="bs-section__more" href="{{ route('catalog.index') }}">{{ t('home.ride.all') }} →</a>
+  </div>
+  <div class="bs-tiles" data-bs-reveal>
+    <template rx-for="root in storefront.categories">
+    <template rx-if="root.kind == 'bike'">
+    <a rx-for="child in root.children" class="bs-tile" href="{{ child[1] }}">
+      <img src="/images/products/{{ child[1] | replace('/shop/', '') }}-1.webp" alt="" width="880" height="660" loading="lazy">
+      <span class="bs-tile__name">{{ child[0] }}</span>
+    </a>
+    </template>
+    <a rx-else class="bs-tile" href="{{ root.href }}">
+      <img rx-if="root.children" src="/images/products/{{ root.children[0][1] | replace('/shop/', '') }}-1.webp" alt="" width="880" height="660" loading="lazy">
+      <span class="bs-tile__name">{{ root.name }}</span>
+      <span class="bs-tile__more"><template rx-for="child in root.children">{{ child[0] }}<template rx-if="not loop.last">, </template></template></span>
+    </a>
+    </template>
+  </div>
+</section>
+</template>

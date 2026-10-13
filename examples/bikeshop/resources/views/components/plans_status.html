@@ -1,0 +1,6 @@
+{#- A plan's state as a badge (`active`, `paused`, `held`, `ending`,
+    `pending`, `cancelled`): the tone and the word agree.
+    `<app-plans-status :key="line.status"/>` -#}
+<rx-props key>
+<rx-let name="tones" :value="{'active': 'success', 'paused': none, 'held': 'error', 'ending': 'warning', 'pending': 'info', 'cancelled': none}"/>
+<rx-badge text="{{ t('plans.status.' ~ key) }}" :kind="tones[key]"/>

@@ -1,0 +1,20 @@
+# /etc/systemd/system/bikeshop.service
+[Unit]
+Description=Bikeshop
+After=network.target
+# With deploy/bikeshop.socket enabled, systemd passes the listening socket and
+# restarts don't refuse connections (see deploy/README.md).
+
+[Service]
+User=bikeshop
+WorkingDirectory=/opt/bikeshop
+EnvironmentFile=/opt/bikeshop/.env
+ExecStartPre=/opt/bikeshop/bikeshop migrate
+ExecStart=/opt/bikeshop/bikeshop
+Restart=on-failure
+# Renox finishes running jobs on SIGTERM (up to 30 s).
+KillSignal=SIGTERM
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

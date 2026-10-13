@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A disc brake">
+<rect width="800" height="600" fill="#eef3e6"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="400" cy="300" r="170" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="400" cy="300" r="60" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="515" cy="300" r="16" fill="#1c1917"/><circle cx="481" cy="381" r="16" fill="#1c1917"/><circle cx="400" cy="415" r="16" fill="#1c1917"/><circle cx="319" cy="381" r="16" fill="#1c1917"/><circle cx="285" cy="300" r="16" fill="#1c1917"/><circle cx="319" cy="219" r="16" fill="#1c1917"/><circle cx="400" cy="185" r="16" fill="#1c1917"/><circle cx="481" cy="218" r="16" fill="#1c1917"/>
+  <path d="M520 160 h90 a30 30 0 0 1 30 30 v80 a30 30 0 0 1 -30 30 h-90 z" fill="#0b6e66" stroke="#1c1917" stroke-width="12"/>
+
+</g>
+</svg>

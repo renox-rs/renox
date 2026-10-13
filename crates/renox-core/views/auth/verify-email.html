@@ -1,0 +1,16 @@
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, button, alert %}
+{% block title %}{{ text.verify_title }} · {{ app.name }}{% endblock %}
+{% block content %}
+{% call card(title=text.verify_title, subtitle=text.verify_intro) %}
+  {% if flash.status %}{{ alert(flash.status, kind="success") }}{% endif %}
+  <form method="post" action="{{ route('verification.send') }}">
+    {{ csrf_field() }}
+    {{ button(text.resend_button, block=true) }}
+  </form>
+{% endcall %}
+<form method="post" action="{{ route('logout') }}" class="rx-auth__alt">
+  {{ csrf_field() }}
+  {{ button(text.logout, variant="plain", size="small") }}
+</form>
+{% endblock %}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {#- Title, description, canonical, Open Graph and Twitter cards: a page sets
+      them with <rx-page title="…" description="…"> or a "seo" slot. -#}
+  <rx-block name="seo">{{ seo(title="Learn Renox: build a web app in Rust, stage by stage", description="A course that builds one Renox app stage by stage: migrations, models, pages, components, forms, live components and tests.") }}</rx-block>
+  <meta name="robots" content="index, follow, max-snippet:-1">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/favicon.ico" sizes="32x32">
+  <link rel="alternate" type="text/plain" title="The course for language models" href="/llms.txt">
+  <link rel="stylesheet" href="{{ asset('learn.css') }}">
+  <template rx-if="json_ld is defined and json_ld"><script type="application/ld+json">{{ json_ld | safe }}</script></template>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="nav"><div class="wrap nav__in">
+  <a class="logo" href="/" aria-label="Learn Renox, home"><i aria-hidden="true">R</i>learn renox</a>
+  <nav class="nav__links" aria-label="Main">
+    <a href="/" ?aria-current="'page' if route_is('home')">Course</a>
+    <a href="{{ links.docs }}">Docs</a>
+    <a href="{{ links.github }}" rel="noopener">GitHub</a>
+  </nav>
+</div></header>
+<main id="main">
+<rx-block name="content"/>
+</main>
+<footer class="foot"><div class="wrap foot__in">
+  <p>Learn Renox, the course of <a href="{{ links.www }}">Renox</a>, a batteries-included web framework for Rust. This site is built with Renox.</p>
+  <nav aria-label="More"><a href="{{ links.docs }}/docs/tutorial">Tutorial</a><a href="{{ links.docs }}/docs/cheatsheet">Cheat sheet</a><a href="/llms.txt">llms.txt</a><a href="/sitemap.xml">Sitemap</a></nav>
+</div></footer>
+</body>
+</html>

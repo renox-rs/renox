@@ -1,0 +1,7 @@
+{#- {% from "renox/mail/button.html" import button %}{{ button(url, "Label") }} -#}
+{% macro button(url, label) -%}
+<p style="margin:24px 0;text-align:center;">
+  <a href="{{ url }}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">{{ label }}</a>
+</p>
+<p style="font-size:13px;color:#78716c;word-break:break-all;">{{ url }}</p>
+{%- endmacro %}

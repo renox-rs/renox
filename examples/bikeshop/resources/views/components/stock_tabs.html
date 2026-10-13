@@ -1,0 +1,10 @@
+{#- The kit's link tabs for a list's views, one link per key (`?view=own`):
+    `<app-stock-tabs target="stock.index" :views="views" :current="tab"
+    prefix="stock.index.view." label="…" :counts="counts"/>`.
+    `target`: the route's name. `views`: the keys; each label is
+    t(prefix ~ key), with `(counts[key])` after it when `counts` is given.
+    `param`: the query name (view by default). `current`: the open key. -#}
+<rx-props target views current prefix label param="view" :counts="none">
+<rx-link-tabs :label="label">
+  <rx-link-tab rx-for="key in views" :href="route(target) ~ '?' ~ param ~ '=' ~ key" :current="key == current">{{ t(prefix ~ key) }}<template rx-if="counts"> ({{ counts[key] }})</template></rx-link-tab>
+</rx-link-tabs>

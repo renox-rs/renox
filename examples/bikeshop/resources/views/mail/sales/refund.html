@@ -1,0 +1,7 @@
+{#- Sent when returned goods are refunded. -#}
+<rx-mail subject="{{ t('sales.mail.refund.subject', number=order.number) }}">
+  <p>{{ t('sales.mail.hello', name=name) }}</p>
+  <rx-mail-panel>{{ t('sales.mail.refund.text', amount=(refund | money), number=order.number) }}</rx-mail-panel>
+  <p>{{ t('sales.mail.refund.when') }}</p>
+  <rx-mail-button :url="url" :label="t('sales.mail.view_order')"/>
+</rx-mail>

@@ -1,0 +1,4 @@
+<rx-props icon :tone="none" :large="false" :size="20">
+{#- <app-icon-circle icon="users"/>: a tinted circle with an icon (`tone`: "clay" or "sand";
+    `large`). -#}
+<span class="app-icon{{ ' app-icon--' ~ tone if tone }}{{ ' app-icon--large' if large }}"><rx-icon :name="icon" :size="size"/></span>

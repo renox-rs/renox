@@ -1,0 +1,22 @@
+[package]
+name = "renox-editors"
+description = "Rich text, Markdown and code editor fields, and a code entry, for Renox apps."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "editor", "markdown", "htmx"]
+categories = ["web-programming::http-server", "text-editors"]
+
+[dependencies]
+renox.workspace = true
+# Cleans the HTML a rich text editor sends (an allowlist of tags,
+# attributes and URL schemes), so a user's markup can't run scripts.
+# The 4.0 line: 4.1 and later bring cssparser (MPL-2.0, which deny.toml
+# doesn't allow) for filtering `style` attributes, which this crate drops
+# anyway. 4.0.3 has the fixes for every RustSec advisory so far.
+ammonia = "~4.0.3"
+serde = { version = "1.0.229", features = ["derive"] }

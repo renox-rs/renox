@@ -1,0 +1,14 @@
+{#- What both layouts put in <head>: the kit, the shop's brand and layout grid. -#}
+<rx-props>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<rx-head/>
+{#- The UI kit (renox/ui.html, docs/ui.md): its styles and behavior. -#}
+<rx-ui/>
+<link rel="stylesheet" href="{{ asset('blocks/blocks.css') }}">
+<link rel="stylesheet" href="{{ asset('app.css') }}">
+{#- The storefront's look (#328): brand tokens and the public pages' parts. -#}
+<link rel="stylesheet" href="{{ asset('theme.css') }}">
+{#- "About this page", docked or in a sheet, and its code samples' colours. -#}
+<link rel="stylesheet" href="{{ asset('explain.css') }}">

@@ -1,0 +1,20 @@
+{#- One checklist row (src/app/about/htmx.rs): `<app-about-htmx-row :item="item"/>`,
+    used by the list and rendered alone by the handlers (about/htmx/_row.html),
+    so one place draws a row. `x-show` reads the Alpine tabs' state
+    (`checklist` in about/htmx.html). -#}
+<rx-props item>
+{# [explain:about.htmx.row] #}
+<li id="item-{{ item.id }}" x-show="{{ 'showsDone' if item.done else 'showsOpen' }}">
+  {#- Toggle in place: the answer is this row, re-rendered. -#}
+  <rx-checkbox name="done" :label="t('htmx.done_label', title=item.title)" :checked="item.done" hide-label id="done-{{ item.id }}"
+               hx-patch="{{ route('about.htmx.toggle', item.id) }}" hx-target="closest li" hx-swap="outerHTML"/>
+  {#- Inline edit: a double-click swaps the row for a small form. -#}
+  <span class="{{ class_names('rx-list__main', {'bs-checklist__done': item.done}) }}" title="{{ t('htmx.dblclick') }}"
+        hx-get="{{ route('about.htmx.edit', item.id) }}" hx-trigger="dblclick" hx-target="closest li" hx-swap="outerHTML">{{ item.title }}</span>
+  {#- The kit's menu; its items carry htmx attributes. Delete asks first, then swaps the row for nothing. -#}
+  <rx-menu :label="t('htmx.more')" id="item-menu-{{ item.id }}" variant="plain">
+    <rx-menu-button :label="t('htmx.edit')" icon="edit" hx-get="{{ route('about.htmx.edit', item.id) }}" hx-target="closest li" hx-swap="outerHTML"/>
+    <rx-menu-button :label="t('htmx.delete')" danger icon="trash" hx-delete="{{ route('about.htmx.destroy', item.id) }}" hx-target="closest li" hx-swap="outerHTML" hx-confirm="{{ t('htmx.confirm', title=item.title) }}"/>
+  </rx-menu>
+</li>
+{# [/explain:about.htmx.row] #}

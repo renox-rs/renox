@@ -1,0 +1,12 @@
+# /etc/systemd/system/renox-site.socket
+# systemd holds the port and hands it to renox-site.service, so a restart
+# (a new version of the docs) makes visitors wait a moment instead of failing.
+[Unit]
+Description=Renox documentation site (listening socket)
+
+[Socket]
+ListenStream=127.0.0.1:3080
+Backlog=4096
+
+[Install]
+WantedBy=sockets.target

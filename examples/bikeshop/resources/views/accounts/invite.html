@@ -1,0 +1,20 @@
+{#- `accounts.invite` (staff, `customers.manage`): invite a walk-in customer
+    to claim their record. The address is saved on the record and gets a
+    signed link that works for seven days (src/app/accounts/claim.rs). -#}
+<rx-page layout="layouts/staff.html" title="{{ t('accounts.invite.title') }}">
+<rx-stack data-bs-reveal>
+  <rx-page-header title="{{ t('accounts.invite.title') }}" subtitle="{{ t('accounts.invite.lead') }}"/>
+  {# [explain:accounts.invite.template] #}
+  <rx-form :action="route('accounts.invite.send', customer.id)" live>
+    <rx-card title="{{ customer.name }}">
+      <rx-infolist columns="2">
+        <rx-entry label="{{ t('accounts.contact.phone') }}" :value="customer.phone"/>
+        <rx-entry label="{{ t('accounts.invite.since') }}" :value="customer.created_at" format="date"/>
+      </rx-infolist>
+      <rx-input name="email" label="{{ t('accounts.invite.email') }}" type="email" :value="customer.email" required hint="{{ t('accounts.invite.email_hint') }}"/>
+      <div class="rx-card__footer"><rx-button label="{{ t('accounts.invite.send') }}"/></div>
+    </rx-card>
+  </rx-form>
+  {# [/explain:accounts.invite.template] #}
+</rx-stack>
+</rx-page>

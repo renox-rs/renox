@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import input, select, date_picker, tags_input, repeater, action_sheet, confirm, tabs, tab_panel, wizard, wizard_step %}
+{% block content %}
+{% call action_sheet("ev-sheet", "Plan", "/sheet", "Plan") %}
+  {{ input("from", "From", required=true) }}
+  {{ input("to", "To", required=true) }}
+{% endcall %}
+
+{{ confirm("ev-confirm", "Delete", "/confirm-done", "Delete?", "Sure?", method="POST") }}
+
+{{ tabs("evt", [["a", "A"], ["b", "B"]]) }}
+{% call tab_panel("evt", "a", selected=true) %}<p>Panel A</p>{% endcall %}
+{% call tab_panel("evt", "b") %}<p>Panel B</p>{% endcall %}
+
+{% call action_sheet("wizard-sheet", "Book a trip", "/sheet", "Book a trip") %}
+  {% call wizard("ws", [["start", "Start"], ["end", "End"]], submit_label="Book") %}
+    {% call wizard_step("ws", "start") %}{{ input("from", "From", id="ws-from") }}{% endcall %}
+    {% call wizard_step("ws", "end") %}{{ input("to", "To", id="ws-to") }}{% endcall %}
+  {% endcall %}
+{% endcall %}
+
+<form id="ev-fields" onsubmit="return false">
+  {{ select("size", "Size", [["s", "Small"], ["m", "Medium"], ["l", "Large"]], placeholder="Pick a size") }}
+  {{ select("flavour", "Flavour", [["vanilla", "Vanilla"], ["mint", "Mint"]], searchable=true, placeholder="Pick a flavour") }}
+  {{ tags_input("labels", "Labels", value=["new"]) }}
+  {{ date_picker("on", "Delivery date", value="2026-10-02", min="2026-10-01", max="2026-12-31") }}
+  {% call(row, prefix) repeater("lines", "Lines", rows=[], item_label="Line", min=0, max=3) %}
+    {{ input(prefix ~ "[name]", "Name", value=row.name) }}
+  {% endcall %}
+</form>
+{% endblock %}

@@ -1,0 +1,29 @@
+<rx-page layout="layouts/app.html" :title="t('about.pages.title')" :description="t('about.pages.lead')">
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="t('about.pages.title')" :subtitle="t('about.pages.lead')"/>
+  {# [explain:about.pages.template] #}
+  {#- A plain GET form: a filtered list has its own URL to share. -#}
+  <rx-form method="GET" route="about.pages" :aria-label="t('about.pages.filters')">
+    <rx-toolbar>
+      <rx-select name="feature" :label="t('about.pages.feature')" :options="features" :selected="feature" :placeholder="t('about.pages.any_feature')" searchable/>
+      <rx-select name="audience" :label="t('about.pages.audience')" :options="audiences" :selected="audience" :placeholder="t('about.pages.anyone')"/>
+      <rx-button :label="t('about.pages.filter')" variant="secondary"/>
+      <rx-link-button rx-if="feature or audience" route="about.pages" :label="t('about.pages.clear')" variant="plain"/>
+    </rx-toolbar>
+  </rx-form>
+  {# [/explain:about.pages.template] #}
+  <p class="rx-subtitle" aria-live="polite">{{ t('about.pages.count', shown=pages | length, total=total) }}</p>
+  <rx-list rx-if="pages" id="about-pages" :label="t('about.pages.title')">
+    <li rx-for="page in pages">
+      <div class="rx-list__main bs-page-row">
+        <strong><a rx-if="page.url" class="rx-link" href="{{ page.url }}">{{ page.title }}</a><template rx-else>{{ page.title }}</template></strong>
+        <span class="rx-subtitle"><code>{{ page.route }}</code> · {{ page.flow.label }}</span>
+        <span>{{ page.purpose | markdown }}</span>
+        <span class="bs-badges" aria-label="{{ t('about.panel.roles') }}"><rx-badge rx-for="role in page.audience" :text="role.label"/></span>
+        <span class="bs-badges" aria-label="{{ t('about.panel.features') }}"><a rx-for="f in page.features" class="rx-link" href="{{ route('about.pages') }}?feature={{ f.api | urlencode }}"><rx-badge :text="f.api" kind="info"/></a></span>
+      </div>
+    </li>
+  </rx-list>
+  <div rx-else class="rx-card"><rx-empty :title="t('about.pages.none_title')" :message="t('about.pages.none_text')" route="about.pages" :action-label="t('about.pages.clear')"/></div>
+</div>
+</rx-page>

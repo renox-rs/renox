@@ -1,0 +1,9 @@
+{#- A monthly statement between two stores (src/app/multistore/settlements.rs `SendStatement`),
+    the entries attached as a CSV file. -#}
+<rx-mail>
+  <p><strong>{{ t('multistore.mail.statement.title', month=month) }}</strong></p>
+  <p>{{ t('multistore.mail.statement.body', debtor=debtor, creditor=creditor, amount=(amount | money)) }}</p>
+  <rx-mail-table :rows="[[t('multistore.mail.statement.pays'), debtor], [t('multistore.mail.statement.paid'), creditor], [t('multistore.settlements.amount'), amount | money], [t('multistore.statement.entries'), entries]]"/>
+  <p>{{ t('multistore.mail.statement.confirm') }}</p>
+  <rx-mail-button :url="url" :label="t('multistore.mail.statement.open')"/>
+</rx-mail>

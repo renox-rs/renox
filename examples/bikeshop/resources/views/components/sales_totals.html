@@ -1,0 +1,9 @@
+{#- An order's totals (the order page, the invoice, the staff page): `o` is
+    an OrderView. `<app-sales-totals :o="o"/>` -#}
+<rx-props o>
+<dl class="bs-totals">
+  <div><dt>{{ t('sales.orders.subtotal') }}</dt><dd class="rx-num">{{ o.subtotal | money }}</dd></div>
+  <div rx-if="o.discount > 0"><dt>{{ t('sales.orders.discount') }}</dt><dd class="rx-num">− {{ o.discount | money }}</dd></div>
+  <div rx-if="o.delivery"><dt>{{ t('sales.checkout.delivery_fee') }}</dt><dd class="rx-num">{{ o.delivery_fee | money }}</dd></div>
+  <div class="bs-totals__total"><dt>{{ t('sales.orders.total') }}</dt><dd class="rx-num">{{ o.total | money }}</dd></div>
+</dl>

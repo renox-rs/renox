@@ -1,0 +1,10 @@
+{#- Every error page (404, 403, 500…), in the app's layout: its sidebar and bar have
+    a guest's version too. Add errors/404.html and friends for one status; `status`,
+    `reason` and `detail` are set (with APP_DEBUG also `request_line` and `template`). -#}
+<rx-page layout="layouts/app.html">
+  <rx-slot name="seo"><title>{{ status }} {{ reason }} · {{ app.name }}</title></rx-slot>
+  <rx-let name="fallback" :value="t('errors.not_found') if status == 404 else t('errors.other')"/>
+  <div class="app-panel">
+    <app-empty-state :icon="'circle-alert' if status >= 500 else 'map'" :title="reason" :text="detail or fallback" :action-href="route('home')" :action-label="t('errors.home')" action-icon="house"/>
+  </div>
+</rx-page>

@@ -1,0 +1,46 @@
+<rx-page layout="layouts/app.html" :title="t('guestbook.title')">
+<rx-page-header :title="t('guestbook.title')"/>
+
+{#- htmx sends the form and swaps in the new list; errors show next to the
+    fields (422). The kit's button shows a spinner while it's sent; Alpine
+    clears the form after a success, with its logic in `Alpine.data` below so
+    the page also works under CSP=strict (whose Alpine build refuses
+    statements in attributes). -#}
+<rx-form route="guestbook.store" enctype="multipart/form-data"
+      hx-post="{{ route('guestbook.store') }}" hx-target="#entries" hx-swap="outerHTML"
+      x-data="guestbookForm" @htmx:after-request="clearOnSuccess" novalidate>
+  <rx-card>
+    <rx-input name="name" :label="t('guestbook.name')" :value="auth.user.name if auth.check else none" required autocomplete="name"/>
+    <rx-textarea name="message" :label="t('guestbook.message')" :rows="3" required/>
+    <rx-file name="photo" :label="t('guestbook.photo')" accept="image/*" preview/>
+    <div class="rx-card__footer"><rx-button :label="t('guestbook.send')"/></div>
+  </rx-card>
+</rx-form>
+
+<rx-push stack="scripts" once="guestbook-form">
+<script nonce="{{ csp_nonce() }}">
+  document.addEventListener("alpine:init", function () {
+    Alpine.data("guestbookForm", function () {
+      return {
+        clearOnSuccess: function (event) {
+          if (event.detail.successful) this.$el.reset();
+        }
+      };
+    });
+  });
+</script>
+</rx-push>
+
+<rx-block name="entries">
+<section id="entries" class="rx-stack" hx-boost="true" hx-target="#entries" hx-select="#entries" hx-swap="outerHTML">
+  <rx-list rx-if="entries.items" :label="t('guestbook.title')">
+    <li rx-for="entry in entries.items">
+      <rx-thumbnail rx-if="entry.photo" :src="storage_url(entry.photo)"/>
+      <span class="rx-list__main"><strong>{{ entry.name }}</strong>: {{ entry.message }}</span>
+    </li>
+  </rx-list>
+  <rx-empty rx-else :title="t('guestbook.empty')"/>
+  <rx-pagination :page="entries"/>
+</section>
+</rx-block>
+</rx-page>

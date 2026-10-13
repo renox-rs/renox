@@ -1,0 +1,53 @@
+{#- Book a service (#236). The form posts to `workshop.book.store`; while it
+    changes, htmx asks this page again (hx-get with the form's values) and
+    swaps the day picker (full days depend on the store and the minutes) and
+    the estimate. -#}
+<rx-page layout="layouts/app.html" title="{{ t('workshop.book.title') }}" description="{{ t('workshop.book.lead') }}">
+  <app-workshop-assets/>
+  <rx-stack>
+    <rx-page-header title="{{ t('workshop.book.title') }}" subtitle="{{ t('workshop.book.lead') }}" :back="route('workshop.bikes')" back-label="{{ t('workshop.bikes.title') }}"/>
+    {#- What the workshop does, each on a photo (decoration: the words say it). -#}
+    <ul class="bs-photo-cards" role="list" aria-label="{{ t('workshop.book.what.label') }}">
+      <li rx-for="key, photo, sign in [['repair', 'workshop-1', 'wrench'], ['care', 'wash', 'droplets'], ['tune', 'fitting', 'gauge']]" class="bs-photo-card">
+        <div class="bs-photo-card__photo"><img src="/images/site/{{ photo }}.webp" alt="" width="1200" height="900" loading="lazy"></div>
+        <div class="bs-photo-card__body">
+          <span class="bs-icon-circle"><rx-icon :name="sign"/></span>
+          <span><b>{{ t('workshop.book.what.' ~ key ~ '.title') }}</b><span>{{ t('workshop.book.what.' ~ key ~ '.text') }}</span></span>
+        </div>
+      </li>
+    </ul>
+    <div rx-if="not bikes" class="rx-card"><rx-empty title="{{ t('workshop.book.no_bike') }}" message="{{ t('workshop.book.no_bike_text') }}" route="workshop.bikes" action-label="{{ t('workshop.bikes.add') }}" icon="bike"/></div>
+    {# [explain:workshop.book.template] #}
+    <form rx-else method="post" action="{{ route('workshop.book.store') }}" id="book-form" novalidate
+          hx-get="{{ route('workshop.book') }}" hx-trigger="change" hx-select="#booking-live" hx-target="#booking-live" hx-swap="outerHTML">
+      {{ csrf_field() }}
+      <div class="bs-booking">
+        <rx-card>
+          <rx-form-errors/>
+          <rx-select name="bike" label="{{ t('workshop.fields.bike') }}" :options="bikes" :selected="bike" required/>
+          <rx-select name="store" label="{{ t('workshop.fields.store') }}" :options="stores" :selected="store_id" required/>
+          <rx-radio name="package" label="{{ t('workshop.book.package') }}" :options="package_options" :selected="package or 'none'"/>
+          <rx-checkbox-list name="tasks" label="{{ t('workshop.book.tasks') }}" :options="task_options" :selected="ticked" columns="2" hint="{{ t('workshop.book.tasks_hint') }}"/>
+          <rx-textarea name="note" label="{{ t('workshop.book.note') }}" rows="3" hint="{{ t('workshop.book.note_hint') }}"/>
+        </rx-card>
+        <div id="booking-live" class="bs-booking__summary rx-stack" aria-live="polite" data-bs-reveal>
+          <rx-card title="{{ t('workshop.book.when') }}">
+            <rx-date-picker name="day" label="{{ t('workshop.fields.day') }}" :disabled-dates="full" :closed-weekdays="closed" :value="day" :min="min_day" :max="max_day" required hint="{{ t('workshop.book.day_hint', minutes=capacity or 0) }}"/>
+          </rx-card>
+    {# [/explain:workshop.book.template] #}
+          <rx-card title="{{ t('workshop.book.estimate') }}">
+            <template rx-if="chosen">
+            <dl class="bs-lines">
+              <template rx-for="task in chosen"><dt>{{ task.name }} <small>{{ task.minutes }} min</small></dt><dd>{{ task.price | money }}</dd></template>
+              <dt><strong>{{ t('workshop.book.total', minutes=estimate.minutes) }}</strong></dt><dd><strong>{{ estimate.price | money }}</strong></dd>
+            </dl>
+            <p class="rx-hint">{{ t('workshop.book.estimate_hint') }}</p>
+            </template>
+            <p rx-else class="rx-subtitle">{{ t('workshop.book.pick') }}</p>
+            <rx-button icon="calendar-check" block>{{ t('workshop.book.submit') }}</rx-button>
+          </rx-card>
+        </div>
+      </div>
+    </form>
+  </rx-stack>
+</rx-page>

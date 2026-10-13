@@ -1,0 +1,45 @@
+{#- A supplier (#240): contact, their price list (renox::import's sheet loads it from a CSV),
+    and the active store's orders with them. -#}
+<rx-page layout="layouts/staff.html" :title="supplier.name">
+  <app-stock-assets/>
+  <rx-stack>
+    {# [explain:stock.suppliers.show.template] #}
+    <rx-page-header :title="supplier.name" :subtitle="t('stock.suppliers.lead_time', days=supplier.lead_days)" :back="route('stock.suppliers')" :back-label="t('stock.suppliers.title')">
+      <rx-link-button :href="route('stock.suppliers.edit', supplier.id)" :label="t('stock.suppliers.edit')" icon="edit"/>
+      <rx-import-action id="price-list" :label="t('stock.import.button')" :action="route('stock.suppliers.import', supplier.id)" :title="t('stock.import.title', supplier=supplier.name)" :description="t('stock.import.lead', rows=200)" :columns="columns" :template-url="route('stock.suppliers.template')"/>
+      <rx-link-button :href="route('stock.purchasing.create', supplier=supplier.id)" :label="t('stock.purchasing.new')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    {# [/explain:stock.suppliers.show.template] #}
+    <div class="bs-split" data-bs-reveal>
+      <div>
+        <rx-card :title="t('stock.suppliers.price_list')" :subtitle="t('stock.suppliers.price_list_lead')">
+          <template rx-if="items.items">
+          <rx-table :rows="items.items" as="i" :caption="t('stock.suppliers.price_list')">
+            <rx-column :label="t('stock.fields.product')">{{ i.name }}</rx-column>
+            <rx-column :label="t('stock.fields.sku')">{{ i.sku }}</rx-column>
+            <rx-column :label="t('stock.suppliers.their_cost')" align="num">{{ i.item.cost | money }}</rx-column>
+            <rx-column :label="t('stock.suppliers.our_price')" align="num">{{ i.price | money }}</rx-column>
+          </rx-table>
+          <rx-pagination :page="items"/>
+          </template>
+          <rx-empty rx-else :title="t('stock.suppliers.no_items')" icon="package"/>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('stock.suppliers.contact')">
+          <rx-infolist>
+            <rx-entry :label="t('stock.suppliers.email')" :value="supplier.email" copyable/>
+            <rx-entry :label="t('stock.suppliers.phone')" :value="supplier.phone"/>
+            <rx-entry :label="t('stock.suppliers.lead_days')" :value="supplier.lead_days" format="number"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card :title="t('stock.suppliers.orders')">
+          <rx-list rx-if="orders" id="supplier-orders" :label="t('stock.suppliers.orders')">
+            <li rx-for="o in orders"><div class="rx-list__main"><a class="rx-link" href="{{ route('stock.purchasing.show', o.id) }}">PO-{{ o.id }}</a><p class="rx-subtitle">{{ o.total | money }}</p></div><app-stock-order-status :status="o.status"/></li>
+          </rx-list>
+          <rx-empty rx-else :title="t('stock.suppliers.no_orders')" icon="clipboard-list"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

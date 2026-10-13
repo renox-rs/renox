@@ -1,0 +1,56 @@
+{#- `staff.team.show`: one person (src/app/staff/team.rs): their roles in
+    every store, with dates (the ones in this store can be taken away here),
+    a form to give a role in this store from / until a date (#244), and
+    deactivation. `store`, `member`, `assignments`, `roles` (what the viewer
+    may give here), `is_me`. -#}
+<rx-page layout="layouts/staff.html" :title="member.name">
+  <app-staff-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="member.name" :subtitle="member.email" :back="route('staff.team.index')" :back-label="t('staff.team.title', store=store.name)"
+                    :badge="t('staff.team.active') if member.staff.active else t('staff.team.inactive')" :badge-kind="'success' if member.staff.active else 'warning'"/>
+    <div class="bs-split">
+      <div class="rx-stack">
+        <rx-card :title="t('staff.team.roles')" :subtitle="t('staff.team.roles_lead')">
+          <rx-list id="assignments" :label="t('staff.team.roles')">
+            <li rx-for="a in assignments">
+              <span class="rx-list__main">
+                <strong>{{ tx(a.role) }}</strong>
+                <span class="rx-subtitle"><template rx-if="a.global">{{ t('staff.team.everywhere') }}</template><template rx-else>{{ a.store }}</template><template rx-if="a.starts_at"> · {{ t('staff.team.from', date=a.starts_at | date) }}</template><template rx-if="a.ends_at"> · {{ t('staff.team.until', date=a.ends_at | date) }}</template></span>
+              </span>
+              <rx-badge rx-if="not a.active" kind="warning">{{ t('staff.team.not_in_force') }}</rx-badge>
+              <rx-confirm rx-if="a.here and not is_me and (roles | selectattr(0, 'equalto', a.role) | list)" :id="'remove-' ~ a.role" :label="t('staff.team.remove')" :action="route('staff.team.roles.destroy', member.staff.id, a.role)" :title="t('staff.team.remove_title', role=tx(a.role))" :message="t('staff.team.remove_text', store=store.name)"/>
+            </li>
+            <li rx-if="not assignments"><span class="rx-subtitle">{{ t('staff.team.no_role') }}</span></li>
+          </rx-list>
+        </rx-card>
+        {# [explain:staff.team.show.template] #}
+        <rx-form rx-if="roles and not is_me" :action="route('staff.team.roles.store', member.staff.id)" id="give-role" live>
+          <rx-card :title="t('staff.team.give', store=store.name)" :subtitle="t('staff.team.give_lead')">
+            <rx-form-grid columns="2">
+              <rx-select name="role" :label="t('staff.team.role')" :options="role_options" required span="full" :placeholder="t('staff.team.choose_role')"/>
+              <rx-date-picker name="starts_on" :label="t('staff.team.starts_on')" :hint="t('staff.team.starts_hint')"/>
+              <rx-date-picker name="ends_on" :label="t('staff.team.ends_on')" :hint="t('staff.team.ends_hint')"/>
+            </rx-form-grid>
+            <div class="rx-card__footer"><rx-button :label="t('staff.team.give_button')"/></div>
+          </rx-card>
+        </rx-form>
+        {# [/explain:staff.team.show.template] #}
+      </div>
+      <div class="rx-stack">
+        <rx-card :title="t('staff.team.details')">
+          <rx-infolist>
+            <rx-entry :label="t('staff.team.home')" :value="member.home_store"/>
+            <rx-entry :label="t('staff.team.hired')" :value="member.staff.hired_on" format="date"/>
+            <rx-entry :label="t('staff.stores.phone')" :value="member.staff.phone"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card rx-if="not is_me" :title="t('staff.team.access')" :subtitle="t('staff.team.deactivate_lead') if member.staff.active else t('staff.team.reactivate_lead')">
+          <div class="rx-card__footer">
+            <rx-confirm rx-if="member.staff.active" id="deactivate" :label="t('staff.team.deactivate')" :action="route('staff.team.deactivate', member.staff.id)" :title="t('staff.team.deactivate_title', name=member.name)" :message="t('staff.team.deactivate_text')" method="POST" :confirm-label="t('staff.team.deactivate')"/>
+            <rx-form rx-else :action="route('staff.team.reactivate', member.staff.id)"><rx-button :label="t('staff.team.reactivate')" variant="secondary"/></rx-form>
+          </div>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

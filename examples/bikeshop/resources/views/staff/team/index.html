@@ -1,0 +1,20 @@
+{#- `staff.team.index`: who works in the active store (home store here, or a
+    role given here) (src/app/staff/team.rs). `store`, `members` (staff,
+    name, email, home_store, roles). -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.team.title', store=store.name)">
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.team.title', store=store.name)" :subtitle="t('staff.team.lead')">
+      <rx-link-button route="staff.invitations.create" :label="t('staff.invitations.title')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    {# [explain:staff.team.index.template] #}
+    <rx-table rx-if="members" :rows="members" as="m" :key="m.staff.id" :caption="t('staff.team.title', store=store.name)">
+      <rx-column :label="t('staff.team.name')"><a class="rx-link" id="member-{{ m.staff.id }}" href="{{ route('staff.team.show', m.staff.id) }}">{{ m.name }}</a><br><span class="rx-subtitle">{{ m.email }}</span></rx-column>
+      <rx-column :label="t('staff.team.roles')"><template rx-for="role in m.roles"><rx-badge>{{ tx(role) }}</rx-badge> </template><span rx-if="not m.roles" class="rx-subtitle">{{ t('staff.team.no_role') }}</span></rx-column>
+      <rx-column :label="t('staff.team.home')">{{ m.home_store }}</rx-column>
+      <rx-column :label="t('staff.team.status')"><rx-badge rx-if="m.staff.active" kind="success">{{ t('staff.team.active') }}</rx-badge><rx-badge rx-else kind="warning">{{ t('staff.team.inactive') }}</rx-badge></rx-column>
+      <rx-column label=""><rx-link-button :href="route('staff.team.show', m.staff.id)" :label="t('staff.team.open')" size="small"/></rx-column>
+    </rx-table>
+    <rx-card rx-else><rx-empty :title="t('staff.team.empty')" route="staff.invitations.create" :action-label="t('staff.invitations.title')" icon="users"/></rx-card>
+    {# [/explain:staff.team.index.template] #}
+  </rx-stack>
+</rx-page>

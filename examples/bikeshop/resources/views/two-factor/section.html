@@ -1,0 +1,17 @@
+{#- renox-2fa's card on the account page (`section.data`: enabled, since,
+    recovery_codes_left), replaced by the bike shop for its translations
+    (`plugins.two_factor.*`, with a plural range for the codes left). -#}
+<rx-card rx-if="section.data.enabled" title="{{ t('plugins.two_factor.title') }}" subtitle="{{ t('plugins.two_factor.on_since', date=(section.data.since | date)) }}">
+  <p class="rx-subtitle">{{ t('plugins.two_factor.codes_left', count=section.data.recovery_codes_left) }}</p>
+  <div class="rx-card__footer">
+    <rx-form :action="route('two-factor.recovery-codes.regenerate')">
+      <rx-button label="{{ t('plugins.two_factor.new_codes') }}" variant="secondary"/>
+    </rx-form>
+    <rx-confirm id="two-factor-off" label="{{ t('plugins.two_factor.turn_off') }}" :action="route('two-factor.disable')" title="{{ t('plugins.two_factor.turn_off_question') }}" message="{{ t('plugins.two_factor.turn_off_text') }}" confirm-label="{{ t('plugins.two_factor.turn_off') }}"/>
+  </div>
+</rx-card>
+<rx-card rx-else title="{{ t('plugins.two_factor.title') }}" subtitle="{{ t('plugins.two_factor.off') }}">
+  <rx-form :action="route('two-factor.enable')">
+    <div class="rx-card__footer"><rx-button label="{{ t('plugins.two_factor.turn_on') }}" variant="secondary"/></div>
+  </rx-form>
+</rx-card>

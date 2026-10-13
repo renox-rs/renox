@@ -1,0 +1,8 @@
+{#- "Your data is ready" (src/app/accounts/privacy.rs, `ExportMyData`):
+    `name`, `link` (temporary, signed), `days`. In the customer's language. -#}
+<rx-mail>
+  <p>{{ t('accounts.privacy.mail.hello', name=name) }}</p>
+  <p>{{ t('accounts.privacy.mail.text') }}</p>
+  <rx-mail-button :url="link" :label="t('accounts.privacy.mail.button')"/>
+  <p>{{ t('accounts.privacy.mail.expires', days=days) }}</p>
+</rx-mail>

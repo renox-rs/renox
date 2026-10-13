@@ -1,0 +1,47 @@
+{% extends "layout.html" %}
+{% block content %}
+{#- #427: `@event` on components, under CSP=strict: the logic lives in Alpine.data. -#}
+<rx-event-stream/>
+<div x-data="eventsTags">
+  <p id="flags">saved=<span id="saved" x-text="saved"></span> tab=<span id="tab" x-text="tab"></span> outer=<span id="outer" x-text="outer"></span></p>
+
+  <rx-action-sheet id="tag-trip" label="Plan" action="/sheet" title="Plan a trip" @saved="markSaved">
+    <rx-input name="from" label="From" required />
+    <rx-input name="to" label="To" required />
+  </rx-action-sheet>
+
+  <rx-tabs id="tag-tabs" @changed="markTab">
+    <rx-tab key="a" label="A"><p>Panel A</p></rx-tab>
+    <rx-tab key="b" label="B"><p>Panel B</p></rx-tab>
+  </rx-tabs>
+
+  <rx-wizard id="tag-wizard" submit-label="Book" @changed="markOuter">
+    <rx-wizard-step key="start" title="Start">
+      <rx-tabs id="inner-tabs">
+        <rx-tab key="x" label="X"><p>Panel X</p></rx-tab>
+        <rx-tab key="y" label="Y"><p>Panel Y</p></rx-tab>
+      </rx-tabs>
+    </rx-wizard-step>
+    <rx-wizard-step key="end" title="End"><p>The end</p></rx-wizard-step>
+  </rx-wizard>
+</div>
+
+<div id="stamp" hx-get="/events-tags/stamp" hx-trigger="load, rx:action-sheet:saved from:body" hx-swap="innerHTML"></div>
+
+<rx-push stack="scripts">
+<script nonce="{{ csp_nonce() }}">
+  document.addEventListener("alpine:init", function () {
+    Alpine.data("eventsTags", function () {
+      return {
+        saved: false,
+        tab: "",
+        outer: 0,
+        markSaved: function () { this.saved = true; },
+        markTab: function (event) { this.tab = event.detail.name; },
+        markOuter: function () { this.outer = this.outer + 1; }
+      };
+    });
+  });
+</script>
+</rx-push>
+{% endblock %}

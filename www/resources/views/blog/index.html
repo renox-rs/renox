@@ -1,0 +1,29 @@
+{% extends "layouts/app.html" %}
+{% block seo %}{% if tag %}{{ seo(title="Posts about " ~ tag ~ " · The Renox blog", description="Every post on the Renox blog about " ~ tag ~ ".", image=app.url ~ "/img/og.png") }}{% else %}{{ seo(title="The Renox blog: releases, deep dives and benchmarks", description="News, releases and deep dives from Renox, the batteries-included web framework for Rust.", image=app.url ~ "/img/og.png") }}{% endif %}{% endblock %}
+{% block body_class %}blog{% endblock %}
+{% block content %}
+<div class="wrap page">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Renox</a> / {% if tag %}<a href="/blog">Blog</a> / <span aria-current="page">{{ tag }}</span>{% else %}<span aria-current="page">Blog</span>{% endif %}</nav>
+  <header class="page__head">
+    <p class="tag"><b aria-hidden="true">●</b> {% if tag %}Tag{% else %}The blog{% endif %}</p>
+    <h1>{% if tag %}Posts about {{ tag }}{% else %}The Renox blog{% endif %}</h1>
+    <p class="sub">Releases, deep dives and benchmarks, from the people who build Renox. <a href="/blog/feed.xml">Follow the Atom feed</a>.</p>
+  </header>
+  {%- if tags %}
+  <ul class="tags" role="list" aria-label="Tags">
+    <li><a href="/blog"{% if not tag %} aria-current="page"{% endif %}>All</a></li>
+    {%- for name, count in tags %}<li><a href="/blog/tags/{{ name }}"{% if tag == name %} aria-current="page"{% endif %}>{{ name }} <span>{{ count }}</span></a></li>{% endfor %}
+  </ul>
+  {%- endif %}
+  <ol class="postlist" role="list">
+    {%- for p in posts %}
+    <li><article>
+      <p class="meta"><time datetime="{{ p.date }}">{{ p.date }}</time> · {{ p.minutes }} min read{% if p.tags %} · {% for t in p.tags %}<a href="/blog/tags/{{ t }}">{{ t }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</p>
+      <h2><a href="/blog/{{ p.slug }}">{{ p.title }}</a></h2>
+      <p>{{ p.description }}</p>
+      <a class="more" href="/blog/{{ p.slug }}" aria-label="Read “{{ p.title }}”">Read the post →</a>
+    </article></li>
+    {%- endfor %}
+  </ol>
+</div>
+{% endblock %}

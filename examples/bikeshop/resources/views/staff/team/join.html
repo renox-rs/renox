@@ -1,0 +1,29 @@
+{#- `staff.invitations.accept` (signed): the page an invitation opens
+    (src/app/staff/team.rs), in the shop's sign-in layout. `store`, `role`
+    (its label), `email`, `has_account`, `used`, `signed_in_as_invited`,
+    `action` (this signed address, which the form posts back to). -#}
+<rx-page layout="renox/auth/layout.html">
+  <rx-slot name="title">{{ t('staff.join.title', store=store.name) }}</rx-slot>
+  {# [explain:staff.invitations.accept.template] #}
+  <rx-card :title="t('staff.join.title', store=store.name)" :subtitle="t('staff.join.lead', role=tx(role), store=store.name)">
+    <template rx-if="used">
+      <rx-alert :message="t('staff.join.used')" kind="info"/>
+      <rx-link-button route="login" :label="t('nav.login')" variant="primary"/>
+    </template>
+    <template rx-elif="has_account and not signed_in_as_invited">
+      <rx-alert :message="t('staff.join.log_in_first', email=email)" kind="info"/>
+      <rx-link-button route="login" :label="t('nav.login')" variant="primary"/>
+    </template>
+    <rx-form rx-else :action="action" class="rx-stack" live>
+      <template rx-if="not has_account">
+      <rx-input name="email_shown" :label="t('staff.invitations.email')" :value="email" readonly id="join-email"/>
+      <rx-input name="name" :label="t('staff.join.name')" required autocomplete="name"/>
+      <rx-input name="password" :label="t('staff.join.password')" type="password" revealable required autocomplete="new-password"/>
+      <rx-input name="password_confirmation" :label="t('staff.join.password_confirmation')" type="password" revealable required autocomplete="new-password"/>
+      </template>
+      <rx-button :label="t('staff.join.button')" block/>
+      <p class="rx-subtitle">{{ t('staff.join.two_factor') }}</p>
+    </rx-form>
+  </rx-card>
+  {# [/explain:staff.invitations.accept.template] #}
+</rx-page>

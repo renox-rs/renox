@@ -1,0 +1,78 @@
+{#- One order for the staff (src/app/sales/staff.rs `show`): its lines, its
+    payments, its ledger, and the actions its status and the user's
+    permissions in its store allow. -#}
+<rx-page layout="layouts/staff.html" :title="t('sales.orders.title', number=data.number)">
+  <app-sales-assets/>
+  <rx-let name="o" :value="data"/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('sales.orders.title', number=o.number)" :subtitle="t('sales.channel.' ~ o.channel) ~ ' · ' ~ t('sales.checkout.' ~ o.fulfilment)" :back="route('sales.orders.index')" back-label="{{ t('sales.staff.title') }}" :badge="t('sales.status.' ~ o.status)">
+      <rx-link-button :href="route('orders.invoice', o.id)" label="{{ t('sales.orders.invoice') }}"/>
+        <form rx-if="data.can_sell and o.status == 'paid'" method="post" action="{{ route('sales.orders.ready', o.id) }}">{{ csrf_field() }}<rx-button key="r">{{ t('sales.staff.mark_shipped' if o.delivery else 'sales.staff.mark_ready') }}</rx-button></form>
+      {# [explain:sales.orders.show.template] #}
+        <rx-action-sheet rx-if="data.can_sell and o.status in ['paid', 'ready']" id="complete-order" label="{{ t('sales.staff.hand_over') }}" :action="route('sales.orders.complete', o.id)" title="{{ t('sales.staff.hand_over_title', number=o.number) }}" description="{{ t('sales.staff.hand_over_text') }}" variant="primary" key="h">
+          <template rx-for="bike in data.bikes">
+            <input type="hidden" name="frames[{{ loop.index0 }}][bike_id]" value="{{ bike.id }}">
+            <rx-input name="frames[{{ loop.index0 }}][number]" label="{{ t('sales.staff.frame_of', name=bike.name) }}" :value="bike.frame_number" id="frame-{{ bike.id }}"/>
+          </template>
+          <p rx-if="not data.bikes" class="rx-subtitle">{{ t('sales.staff.no_bikes') }}</p>
+        </rx-action-sheet>
+      <rx-confirm rx-if="data.can_sell and o.status == 'pending'" id="cancel-order" label="{{ t('sales.staff.cancel') }}" :action="route('sales.orders.cancel', o.id)" title="{{ t('sales.staff.cancel_title', number=o.number) }}" message="{{ t('sales.staff.cancel_text') }}" method="POST"/>
+      {# [/explain:sales.orders.show.template] #}
+        <rx-action-sheet rx-if="data.can_refund and data.returnable" id="return-order" label="{{ t('sales.staff.return') }}" :action="route('sales.orders.return', o.id)" title="{{ t('sales.staff.return_title', number=o.number) }}" description="{{ t('sales.staff.return_text', days=14) }}" danger width="lg">
+          <template rx-for="line in o.lines">
+            <input type="hidden" name="lines[{{ loop.index0 }}][item_id]" value="{{ line.id }}">
+            <rx-quantity :name="'lines[' ~ loop.index0 ~ '][quantity]'" :value="0" :min="0" :max="line.quantity" :label="line.name ~ (' · ' ~ line.variant if line.variant else '')" :id="'return-' ~ line.id"/>
+          </template>
+          <rx-textarea name="reason" label="{{ t('sales.staff.reason') }}" rows="2" required/>
+        </rx-action-sheet>
+    </rx-page-header>
+
+    <div class="bs-order">
+      <div class="bs-order__main">
+        <rx-card title="{{ t('sales.orders.lines') }}">
+          <rx-table :rows="o.lines" as="line" caption="{{ t('sales.orders.lines') }}">
+            <rx-column label="{{ t('sales.orders.product') }}">{{ line.name }}<br><span class="rx-subtitle">{{ line.sku }}<template rx-if="line.variant"> · {{ line.variant }}</template></span></rx-column>
+            <rx-column label="{{ t('sales.staff.owner') }}"><rx-badge rx-if="line.owner_store_id != o.operating_store_id" text="{{ t('sales.staff.consigned') }}" kind="info"/><template rx-else>—</template></rx-column>
+            <rx-column label="{{ t('sales.orders.quantity') }}" align="num">{{ line.quantity }}</rx-column>
+            <rx-column label="{{ t('sales.orders.price') }}" align="num">{{ line.unit_price | money }}</rx-column>
+            <rx-column label="{{ t('sales.orders.line_total') }}" align="num">{{ line.total | money }}</rx-column>
+          </rx-table>
+          <app-sales-totals :o="o"/>
+        </rx-card>
+        <rx-card title="{{ t('sales.staff.ledger') }}" subtitle="{{ t('sales.staff.ledger_lead') }}">
+          <rx-table :rows="data.movements" as="m" caption="{{ t('sales.staff.ledger') }}">
+            <rx-column label="{{ t('sales.staff.when') }}">{{ m.created_at | date("%Y-%m-%d %H:%M") }}</rx-column>
+            <rx-column label="{{ t('sales.staff.reason_col') }}">{{ t('sales.movement.' ~ m.reason) }}</rx-column>
+            <rx-column label="{{ t('sales.orders.quantity') }}" align="num">{{ m.quantity }}</rx-column>
+            <rx-column label="{{ t('sales.staff.note') }}">{{ m.note or "" }}</rx-column>
+          </rx-table>
+        </rx-card>
+      </div>
+      <aside class="bs-order__side">
+        <rx-card title="{{ t('sales.orders.details') }}">
+          <rx-infolist>
+            <rx-entry label="{{ t('sales.orders.customer') }}" :value="o.customer.name if o.customer else t('sales.staff.walk_in')"/>
+            <rx-entry rx-if="o.customer and o.customer.email" label="{{ t('sales.checkout.email') }}" :value="o.customer.email" copyable/>
+            <rx-entry rx-if="o.customer and o.customer.phone" label="{{ t('sales.checkout.phone') }}" :value="o.customer.phone" copyable/>
+            <rx-entry rx-if="o.address" label="{{ t('sales.orders.address') }}" :value="o.address"/>
+            <rx-entry label="{{ t('sales.orders.placed_at') }}" :value="o.placed_at" format="datetime"/>
+            <rx-entry label="{{ t('sales.orders.paid_at') }}" :value="o.paid_at" format="datetime"/>
+            <rx-entry label="{{ t('sales.orders.completed_at') }}" :value="o.completed_at" format="datetime"/>
+            <rx-entry rx-if="data.return_until" label="{{ t('sales.staff.return_until') }}" :value="data.return_until" format="date"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card title="{{ t('sales.orders.payments') }}">
+          <ul class="bs-plain-list" role="list">
+            <li rx-for="p in data.payments"><span>{{ t('sales.payment_status.' ~ p.status) }} · {{ t('sales.method.' ~ p.method) }}</span><span class="rx-num">{{ p.amount | money }}</span></li>
+            <li rx-if="not data.payments"><span class="rx-subtitle">{{ t('sales.staff.no_payments') }}</span></li>
+          </ul>
+        </rx-card>
+        <rx-card rx-if="data.bikes" title="{{ t('sales.staff.bikes') }}">
+          <ul class="bs-plain-list" role="list">
+            <li rx-for="bike in data.bikes"><span>{{ bike.name }}</span><span class="rx-subtitle">{{ bike.frame_number or t('sales.staff.no_frame') }}</span></li>
+          </ul>
+        </rx-card>
+      </aside>
+    </div>
+  </rx-stack>
+</rx-page>

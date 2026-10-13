@@ -1,0 +1,39 @@
+{#- The customer's rentals (#235): current ones first, then the past with their fees. -#}
+<rx-page layout="layouts/app.html" title="{{ t('rentals.mine.title') }}">
+  <app-rentals-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.mine.title') }}" subtitle="{{ t('rentals.mine.lead') }}"/>
+    <rx-alert rx-if="verified" kind="success" message="{{ t('rentals.mine.verified') }}"/>
+    <rx-alert rx-elif="identity and identity.status == 'pending'" kind="info" message="{{ t('rentals.mine.pending') }}"/>
+    <template rx-else>
+      <rx-alert kind="warning" message="{{ t('rentals.mine.unverified') }}"/>
+      <p><rx-link-button route="rentals.identity" label="{{ t('rentals.identity.title') }}" variant="primary"/></p>
+    </template>
+    {# [explain:rentals.mine.template] #}
+    <section class="rx-stack" aria-labelledby="current-title">
+      <h2 class="rx-card__title" id="current-title">{{ t('rentals.mine.current') }}</h2>
+      <rx-list rx-if="current" id="current-rentals" label="{{ t('rentals.mine.current') }}">
+        <app-rentals-item rx-for="row in current" :row="row" :href="route('rentals.show', row.reservation_code)" :show-customer="false"/>
+      </rx-list>
+      <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.mine.none') }}" message="{{ t('rentals.mine.none_text') }}" route="rentals.create" action-label="{{ t('rentals.search.title') }}" icon="bike"/></div>
+    </section>
+    {# [/explain:rentals.mine.template] #}
+    <section rx-if="past" class="rx-stack" aria-labelledby="past-title">
+      <h2 class="rx-card__title" id="past-title">{{ t('rentals.mine.past') }}</h2>
+      <rx-list id="past-rentals" label="{{ t('rentals.mine.past') }}">
+        <li rx-for="row in past">
+          <div class="bs-rental">
+            <a class="rx-link bs-rental__title" href="{{ route('rentals.show', row.reservation_code) }}">{{ row.model or t('rentals.fields.bike') }}</a>
+            <p class="bs-rental__meta">
+              {{ row.starts_at | date('%d %b %Y') }} · {{ t('rentals.fields.price') }} {{ row.price | money }}
+              <template rx-if="row.late_fee"> · {{ t('rentals.fields.late_fee') }} {{ row.late_fee | money }}</template>
+              <template rx-if="row.damage_fee"> · {{ t('rentals.fields.damage_fee') }} {{ row.damage_fee | money }}</template>
+              <template rx-if="row.deposit_refunded"> · {{ t('rentals.fields.refund') }} {{ row.deposit_refunded | money }}</template>
+            </p>
+            <div class="bs-rental__side"><app-rentals-status :rental="row"/></div>
+          </div>
+        </li>
+      </rx-list>
+    </section>
+  </rx-stack>
+</rx-page>

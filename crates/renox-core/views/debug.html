@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{% if record %}{{ record.method }} {{ record.path }} · {% endif %}Debug · {{ app_name }}</title>
+  {{ renox_ui() }}
+  <style>
+    .rx-debug pre { margin: 0; font-family: var(--rx-mono); font-size: 0.8125rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .rx-debug .rx-table td { vertical-align: top; }
+    .rx-debug code { font-family: var(--rx-mono); font-size: 0.8125rem; }
+    .rx-debug ol { margin: 0; padding-left: 1.5em; display: grid; gap: 10px; }
+  </style>
+</head>
+<body class="rx-page">
+<main class="rx-container rx-container--wide rx-debug">
+  <div class="rx-stack">
+  {% from "renox/ui.html" import table, badge, alert, empty, link_button %}
+  {% macro status_badge(status) -%}
+    {{ badge(status, kind=("error" if status >= 500 else "warning" if status >= 400 else "info" if status >= 300 else "success")) }}
+  {%- endmacro %}
+  {% if record %}
+    <div>
+      <a class="rx-link" href="/_renox/debug">‹ Requests</a>
+      <h1 class="rx-title">{{ record.method }} <code>{{ record.path }}</code></h1>
+      <p class="rx-subtitle">{{ status_badge(record.status) }} · {{ record.millis }} ms · {{ record.queries | length }} queries{% if record.view %} · <code>{{ record.view }}</code>{% endif %} · request id <code>{{ record.id }}</code> · {{ record.at }}</p>
+    </div>
+    {% if record.repeated %}
+      {% for sql, n in record.repeated %}
+        {{ alert("Ran " ~ n ~ " times: " ~ sql, kind="warning", title="Possible N+1 query") }}
+      {% endfor %}
+    {% endif %}
+    <section class="rx-card" aria-label="SQL">
+      <h2 class="rx-card__title">SQL</h2>
+      {% if record.queries %}
+      <ol>{% for sql in record.queries %}<li><pre>{{ sql }}</pre></li>{% endfor %}</ol>
+      {% else %}<p class="rx-subtitle">No queries.</p>{% endif %}
+    </section>
+  {% else %}
+    <div>
+      <h1 class="rx-title">Requests</h1>
+      <p class="rx-subtitle">The last 50, newest first. Only while developing (APP_DEBUG, APP_ENV=local). Mail: <a class="rx-link" href="/_renox/mail">/_renox/mail</a>.</p>
+    </div>
+    {% if requests %}
+      {% call table(["When", "Request", ["Status", "num"], ["Time", "num"], ["SQL", "num"], ["View", "hide-narrow"]], caption="Requests") %}
+        {% for r in requests %}
+        <tr>
+          <td>{{ r.at }}</td>
+          <td><a class="rx-link" href="/_renox/debug/{{ r.n }}"><strong>{{ r.method }}</strong> {{ r.path }}</a></td>
+          <td class="rx-num">{{ status_badge(r.status) }}</td>
+          <td class="rx-num">{{ r.millis }} ms</td>
+          <td class="rx-num">{% if r.repeated %}{{ badge(r.queries | length, kind="warning") }}{% else %}{{ r.queries | length }}{% endif %}</td>
+          <td class="rx-hide-narrow"><code>{{ r.view or "" }}</code></td>
+        </tr>
+        {% endfor %}
+      {% endcall %}
+    {% else %}
+      {{ empty("No requests yet", "Open a page of the app; it shows up here with its SQL.") }}
+    {% endif %}
+  {% endif %}
+  </div>
+</main>
+</body>
+</html>

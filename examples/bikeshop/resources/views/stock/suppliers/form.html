@@ -1,0 +1,22 @@
+{#- Add or edit a supplier (#240): contact and lead time; Valid<SupplierForm>. -#}
+<rx-page layout="layouts/staff.html" :title="supplier.name if supplier.id > 0 else t('stock.suppliers.new')">
+  <rx-push stack="head" once="stock-css"><link rel="stylesheet" href="{{ asset('areas/stock.css') }}"></rx-push>
+  <rx-push stack="scripts" once="stock-js"><script src="{{ asset('areas/stock.js') }}" nonce="{{ csp_nonce() }}"></script></rx-push>
+  <rx-stack>
+    <rx-page-header :title="supplier.name if supplier.id > 0 else t('stock.suppliers.new')" :back="route('stock.suppliers.show', supplier.id) if supplier.id > 0 else route('stock.suppliers')" back-label="{{ t('stock.suppliers.title') }}"/>
+    {# [explain:stock.suppliers.form.template] #}
+    <rx-form :action="route('stock.suppliers.update', supplier.id) if supplier.id > 0 else route('stock.suppliers.store')" id="supplier-form" novalidate>
+      <rx-card>
+        <rx-form-errors/>
+        <rx-form-grid columns="2">
+          <rx-input name="name" label="{{ t('stock.suppliers.name') }}" :value="supplier.name" required span="full"/>
+          <rx-input name="email" label="{{ t('stock.suppliers.email') }}" type="email" :value="supplier.email" hint="{{ t('stock.suppliers.email_hint') }}"/>
+          <rx-input name="phone" label="{{ t('stock.suppliers.phone') }}" type="tel" :value="supplier.phone"/>
+          <rx-input name="lead_days" label="{{ t('stock.suppliers.lead_days') }}" type="number" :value="supplier.lead_days" required hint="{{ t('stock.suppliers.lead_hint') }}" min="0" max="180"/>
+        </rx-form-grid>
+        <rx-button label="{{ t('stock.suppliers.save') }}" icon="check"/>
+      </rx-card>
+    </rx-form>
+    {# [/explain:stock.suppliers.form.template] #}
+  </rx-stack>
+</rx-page>

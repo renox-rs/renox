@@ -1,0 +1,21 @@
+[package]
+name = "renox-blocks"
+description = "Interactive UI blocks for Renox apps: a stepper, a two-handle range, a keypad, swatches, a date and time range, a gallery, a timeline, a plan comparison, a month calendar, an availability grid and a kanban board."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "components", "ui", "htmx"]
+categories = ["web-programming::http-server", "gui"]
+
+[package.metadata.docs.rs]
+all-features = true
+
+[dependencies]
+renox.workspace = true
+
+[dev-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }

@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Browser fixture</title>
+  {{ renox_head() }}
+  {{ renox_ui() }}
+  {{ stack('head') }}
+</head>
+<body class="rx-page">
+  <main class="rx-container" id="main">
+    {% block content %}{% endblock %}
+  </main>
+  {{ toasts() }}
+  {{ stack('scripts') }}
+</body>
+</html>

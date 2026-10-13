@@ -1,0 +1,10 @@
+{#- A status stepper: `items` is a list of {key, done, current}; each step's
+    label is t(prefix ~ key). An ordered list, the current step marked with
+    aria-current. Its bars slide in one after the other (public/areas/stock.js,
+    Motion), not under prefers-reduced-motion.
+
+    <app-stock-steps :items="steps" prefix="stock.purchasing.status." :label="t('stock.purchasing.steps')"/> -#}
+<rx-props items prefix label>
+<ol class="bs-flow" aria-label="{{ label }}">
+  <li rx-for="step in items" ?data-done="step.done" ?aria-current="'step' if step.current">{{ t(prefix ~ step.key) }}</li>
+</ol>

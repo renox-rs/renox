@@ -1,0 +1,42 @@
+{#- A store's own page, on its own host (`stores.site`, src/app/home/stores.rs):
+    the store's hero, what it has today, where it is and when it's open.
+    `site`: store, address, bikes_free, bikes_here, products_in_stock; the
+    shop's pages as absolute addresses (shop_url, rent_url, service_url,
+    catalog_url). Only the kit and the shop's hero macro. -#}
+<rx-page layout="layouts/store.html" title="{{ t('home.stores.store', name=site.store.name) }}" description="{{ t('stores.site.lead', name=site.store.name) }}">
+<rx-let name="store" :value="site.store"/>
+<rx-stack data-bs-reveal>
+  <app-hero :title="t('home.stores.store', name=store.name)" :lead="t('stores.site.lead', name=store.name)"
+            :eyebrow="site.address" :photo="'/images/site/store-' ~ store.slug ~ '.webp'" compact>
+    <p class="bs-hero__actions">
+      <rx-link-button :href="rent_url" label="{{ t('stores.site.rent') }}" variant="primary"/>
+      <rx-link-button :href="service_url" label="{{ t('stores.site.service') }}"/>
+    </p>
+  </app-hero>
+
+  {# [explain:stores.template] #}
+  <rx-stats columns="3">
+    <rx-stat label="{{ t('stores.site.bikes_free') }}" :value="site.bikes_free | number" hint="{{ t('stores.site.bikes_here', count=site.bikes_here) }}"/>
+    <rx-stat label="{{ t('stores.site.products') }}" :value="site.products_in_stock | number" :url="catalog_url" hint="{{ t('stores.site.products_hint') }}"/>
+    <rx-stat label="{{ t('stores.site.workshop') }}" :value="t('stores.site.hours_value', hours=((store.workshop_minutes_per_day / 60) | round(1) | number))" :url="service_url" hint="{{ t('stores.site.workshop_hint') }}"/>
+  </rx-stats>
+  {# [/explain:stores.template] #}
+
+  <rx-columns count="2">
+    <rx-card title="{{ t('stores.site.visit') }}">
+      <rx-infolist>
+        <rx-entry label="{{ t('stores.site.address') }}" :value="site.address"/>
+        <rx-entry label="{{ t('stores.site.phone') }}" :value="store.phone" :url="'tel:' ~ store.phone"/>
+        <rx-entry label="{{ t('stores.site.email') }}" :value="store.email" :url="'mailto:' ~ store.email" copyable/>
+      </rx-infolist>
+    </rx-card>
+    <rx-card title="{{ t('stores.site.hours') }}">
+      <rx-table :rows="store.opening_hours" as="day" caption="{{ t('stores.site.hours') }}">
+        <rx-column label="{{ t('stores.site.day') }}">{{ t('staff.stores.days.' ~ day.day) }}</rx-column>
+        <rx-column label="{{ t('stores.site.open') }}" align="num">{{ day.opens }}–{{ day.closes }}</rx-column>
+        <rx-slot name="empty"><p class="rx-subtitle">{{ t('stores.site.closed') }}</p></rx-slot>
+      </rx-table>
+    </rx-card>
+  </rx-columns>
+</rx-stack>
+</rx-page>

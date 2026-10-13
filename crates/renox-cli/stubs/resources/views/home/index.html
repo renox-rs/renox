@@ -1,0 +1,14 @@
+<rx-page layout="layouts/app.html">
+  <rx-stack>
+    <h1 class="rx-title">{{ app.name }}</h1>
+    <rx-card>
+      <p>{{ t('home.running') }}</p>
+      <div x-data="{ count: 0 }">
+        {#- A plain button: Alpine's @click is not a prop of <rx-button>. -#}
+        <button class="rx-button rx-button--secondary" type="button" @click="count++"><span class="rx-button__label">Alpine.js clicks</span></button>
+        <span class="rx-subtitle" x-text="count">0</span>
+      </div>
+      <p class="rx-subtitle">{{ t('home.edit') }}</p>
+    </rx-card>
+  </rx-stack>
+</rx-page>

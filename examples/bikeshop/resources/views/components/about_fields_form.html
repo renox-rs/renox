@@ -1,0 +1,70 @@
+{#- The form of /about/fields: one field per kind of input (src/app/about/fields.rs
+    REFERENCE). Used by about/fields.html (a new sample) and
+    about/fields_edit.html (`sample` set):
+    `<app-about-fields-form :sample="sample" :brands="brands" :price="price" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>`.
+    The kit's fields show the old input
+    after a failed save, else the value given here; the value formats are the
+    ones the inputs expect: 2026-10-01, 08:00:00, 2026-10-01T10:30:00. A file
+    is never refilled: the stored one is shown above its field. -#}
+<rx-props :sample="none" :brands="[]" :price="none" money-symbol="" money-step="" :photo-url="none">
+{#- `live`: each field is checked by the server as it is left
+    (renox.js sends the form with `X-Renox-Validate`; `Valid<T>` answers with
+    the errors only, nothing is saved). -#}
+<rx-form class="rx-stack" enctype="multipart/form-data" id="sample-form" live
+         action="{{ route('about.fields.update', sample.id) if sample else route('about.fields.store') }}">
+  <template rx-if="sample">{{ method_field('PUT') }}</template>
+  <rx-form-errors/>
+  <rx-fieldset :legend="t('fields.form.basics')" columns="2">
+    {#- Read-only with a copy button; the form struct ignores the extra field. -#}
+    <rx-input rx-if="sample" name="key" :label="t('fields.form.key')" :value="sample.id" readonly copyable span="full" :hint="t('fields.form.key_hint')"/>
+    <rx-input name="name" :label="t('fields.form.name')" :value="sample.name if sample and sample.name is not none else ''" required placeholder="Commuter 3"/>
+    {#- Free text with suggestions: the catalogue's brands in a <datalist>. -#}
+    <rx-input name="brand" :label="t('fields.form.brand')" :value="sample.brand if sample and sample.brand is not none else ''" :datalist="brands" :hint="t('fields.form.brand_hint')"/>
+    {#- renox-editors: Markdown with a toolbar and a preview, sent as typed. -#}
+    <rx-markdown-editor name="description" :label="t('fields.form.description')" :value="sample.description if sample and sample.description is not none else ''" rows="4" span="full" :hint="t('fields.form.description_hint')"/>
+    <rx-input name="stock" :label="t('fields.form.stock')" type="number" :value="sample.stock if sample and sample.stock is not none else ''" required min="0"/>
+    <rx-input name="weight_kg" :label="t('fields.form.weight')" type="number" :value="sample.weight_kg if sample and sample.weight_kg is not none else ''" required suffix="kg" step="0.01" min="0"/>
+    <rx-input name="price" :label="t('fields.form.price')" type="number" :value="price or ''" required :prefix="money_symbol" :step="money_step" min="0"/>
+    <rx-checkbox name="available" :label="t('fields.form.available')" :checked="sample.available if sample else false" switch/>
+  </rx-fieldset>
+
+  <rx-fieldset :legend="t('fields.form.options')" columns="2">
+    {#- Radios send one value of the enum; checkboxes named "colors" send one
+        value each, which `Valid` collects into a Vec. -#}
+    <rx-radio name="size" :label="t('fields.form.size')" :options="[['small', t('fields.size.small')], ['medium', t('fields.size.medium')], ['large', t('fields.size.large')]]"
+              :selected="sample.size if sample else 'medium'" required/>
+    <rx-checkbox-list name="colors" :label="t('fields.form.colours')" :options="[['teal', t('fields.colour.teal')], ['tan', t('fields.colour.tan')], ['slategray', t('fields.colour.slategray')], ['black', t('fields.colour.black')]]"
+                      :selected="sample.colors if sample else []"/>
+  </rx-fieldset>
+
+  {# [explain:fields.template] #}
+  <rx-fieldset :legend="t('fields.form.details')">
+    <rx-tags-input name="tags" :label="t('fields.form.tags')" :value="sample.tags if sample else []" :suggestions="['commuter', 'e-bike', 'gravel', 'kids']" :hint="t('fields.form.tags_hint')"/>
+    <rx-key-value name="specs" :label="t('fields.form.specs')" :value="sample.specs if sample else none" :key-label="t('fields.form.spec_name')" :value-label="t('fields.form.spec_value')" :add-label="t('fields.form.spec_add')"/>
+    {#- renox-editors: rich text (HTML, cleaned on the server) and code. -#}
+    <rx-rich-editor name="details" :label="t('fields.form.rich')" :value="sample.details if sample else none" rows="5" :hint="t('fields.form.rich_hint')"/>
+    <rx-code-editor name="settings" :label="t('fields.form.settings')" :value="sample.settings if sample and sample.settings is not none else ''" language="json" rows="5" placeholder='{"wheel": "700c", "gears": 9}' :hint="t('fields.form.settings_hint')"/>
+  </rx-fieldset>
+  {# [/explain:fields.template] #}
+
+  <rx-fieldset :legend="t('fields.form.dates')" columns="3">
+    <rx-input name="pickup_at" :label="t('fields.form.pickup')" type="time" :value="sample.pickup_at if sample and sample.pickup_at is not none else ''"/>
+    <rx-input name="launch_at" :label="t('fields.form.launch')" type="datetime-local" :value="sample.launch_at if sample and sample.launch_at is not none else ''"/>
+    {#- The kit's calendar (Cally) instead of the browser's: sent as YYYY-MM-DD all the same. -#}
+    <rx-date-picker name="released_on" :label="t('fields.form.released')" :value="sample.released_on if sample and sample.released_on is not none else ''"/>
+  </rx-fieldset>
+
+  {# [explain:fields.files] #}
+  <rx-fieldset :legend="t('fields.form.files')" columns="2">
+    {#- The photo is public (`store_public`: an address anyone can open); the
+        manual private (`store`: only the app sends it, to its owner). -#}
+    <rx-file name="photo" :label="t('fields.form.photo')" accept="image/*" preview :current="photo_url" :hint="t('fields.form.photo_hint')"/>
+    <rx-file name="manual" :label="t('fields.form.manual')" accept="application/pdf" :current="route('about.fields.manual', sample.id) if sample and sample.manual else none" :current-name="sample.manual_name if sample else none" :hint="t('fields.form.manual_hint')"/>
+  </rx-fieldset>
+  {# [/explain:fields.files] #}
+
+  <rx-row end>
+    <rx-link-button rx-if="sample" :href="route('about.fields.show', sample.id)" variant="plain">{{ t('fields.cancel') }}</rx-link-button>
+    <rx-button>{{ t('fields.save') if sample else t('fields.create') }}</rx-button>
+  </rx-row>
+</rx-form>

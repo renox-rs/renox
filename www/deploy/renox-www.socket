@@ -1,0 +1,13 @@
+# /etc/systemd/system/renox-www.socket
+# systemd holds the port and hands it to renox-www.service, so a restart (a
+# new post, a new release of the site) makes visitors wait a moment instead
+# of failing.
+[Unit]
+Description=renox.rs (listening socket)
+
+[Socket]
+ListenStream=127.0.0.1:3090
+Backlog=4096
+
+[Install]
+WantedBy=sockets.target

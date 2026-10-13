@@ -1,0 +1,35 @@
+{#- A resource's create and edit page (renox-admin/form.html). Sent with
+    htmx: errors show under their fields (422), a success goes back to the
+    list with a toast. Without JavaScript it is a plain form. An edit page
+    has a tab for each relation manager the resource has. -#}
+{% extends "renox-admin/layout.html" %}
+{% from "renox/ui.html" import page_header, card, form_grid, form_errors, button, link_button, link_tabs, confirm %}
+{% from "renox-admin/fields.html" import field %}
+
+{% block title %}{{ title }} · {{ admin.title }}{% endblock %}
+
+{% block content %}
+{% call page_header(title, back=resource.index_url, back_label=resource.plural_label) %}
+  {%- if delete %}
+  {{ confirm("rx-admin-delete", admin.text.delete, delete.url, admin.text.delete_question | replace(":label", delete.label | lower), (admin.text.delete_hint_soft if delete.soft else admin.text.delete_hint_hard), icon="trash") }}
+  {%- endif %}
+{% endcall %}
+{%- if relations %}
+{{ link_tabs(relations, current=current_tab, label=title) }}
+{%- endif %}
+<form method="post" action="{{ action }}" hx-post="{{ action }}" hx-swap="none" data-live-validate novalidate>
+  {{ csrf_field() }}{% if method != "POST" %}{{ method_field(method) }}{% endif %}
+  {{ form_errors() }}
+  {% call card() %}
+    {% call form_grid(2) %}
+      {%- for f in fields %}
+      {{ field(f, currency=admin.currency) }}
+      {%- endfor %}
+    {% endcall %}
+    <div class="rx-row">
+      {{ button(submit_label, key="mod+s") }}
+      {{ link_button(resource.index_url, admin.text.cancel, variant="plain") }}
+    </div>
+  {% endcall %}
+</form>
+{% endblock %}

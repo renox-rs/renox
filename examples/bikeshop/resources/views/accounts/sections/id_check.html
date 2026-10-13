@@ -1,0 +1,16 @@
+{#- Account section (order 20): whether staff have checked the customer's ID
+    document, which renting a bike needs. Only the last three characters of
+    the number are shown (`Customer::masked_id_number`; the number itself is
+    an `Encrypted<String>` and never reaches a template). The document is
+    handed in at a store's counter (rentals, #235). -#}
+<rx-card rx-if="section.data.customer" title="{{ t('accounts.id.title') }}" subtitle="{{ t('accounts.id.lead') }}">
+  <rx-infolist columns="2">
+    <template rx-if="section.data.verified_at">
+      <rx-entry label="{{ t('accounts.id.status') }}" :value="t('accounts.id.verified')" :badge="'success'"/>
+      <rx-entry label="{{ t('accounts.id.checked_on') }}" :value="section.data.verified_at" format="date"/>
+    </template>
+    <rx-entry rx-elif="section.data.on_file" label="{{ t('accounts.id.status') }}" :value="t('accounts.id.waiting')" :badge="'warning'"/>
+    <rx-entry rx-else label="{{ t('accounts.id.status') }}" :value="t('accounts.id.missing')" :badge="true"/>
+    <rx-entry label="{{ t('accounts.id.number') }}" :value="section.data.masked"/>
+  </rx-infolist>
+</rx-card>

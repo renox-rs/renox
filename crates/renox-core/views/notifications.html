@@ -1,0 +1,78 @@
+{#- The in-app notifications (`Auth::new().notifications()`): a page in
+    the app's layout (layouts/app.html, else Renox's sign-in layout), whose
+    `panel` block is also what the UI kit's `notification_bell` shows.
+    Replace it with resources/views/renox/notifications.html. -#}
+{% extends layout %}
+{% block title %}{{ t('ui.notifications.title') }} · {{ app.name }}{% endblock %}
+{% block seo %}{{ seo(title=t('ui.notifications.title')) }}{% endblock %}
+{% block content %}
+<h1 class="rx-title">{{ t('ui.notifications.title') }}{% if unread %} <span class="rx-badge rx-badge--info">{{ t('ui.notifications.unread', count=unread) }}</span>{% endif %}</h1>
+<div class="rx-card rx-notifications-page">
+{% block panel %}
+{%- macro icon(status) -%}
+{%- if status == "success" -%}<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M6 10.5l2.5 2.5L14 7.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- elif status == "warning" -%}<svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 2l8.5 15h-17z" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 8v4M10 14.5h.01" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+{%- elif status == "error" -%}<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M7 7l6 6M13 7l-6 6" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+{%- else -%}<svg viewBox="0 0 20 20" width="20" height="20"><circle cx="10" cy="10" r="9" fill="currentColor"/><path d="M10 9v5M10 6h.01" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+{%- endif -%}
+{%- endmacro -%}
+<div class="rx-notifications" data-rx-notifications data-unread="{{ unread }}">
+  <div class="rx-notifications__header">
+    <h2 class="rx-notifications__title">{{ t('ui.notifications.title') }}{% if unread %} <span class="rx-badge rx-badge--info">{{ t('ui.notifications.unread', count=unread) }}</span>{% endif %}</h2>
+    <div class="rx-notifications__bulk">
+      {%- if unread %}
+      <form method="post" action="{{ route('notifications.read_all') }}" data-rx-notification-form>{{ csrf_field() }}<button class="rx-button rx-button--plain rx-button--small" type="submit"><span class="rx-button__label">{{ t('ui.notifications.mark_all_read') }}</span></button></form>
+      {%- endif %}
+      {%- if notifications %}
+      <form method="post" action="{{ route('notifications.clear') }}" data-rx-notification-form>{{ csrf_field() }}{{ method_field('DELETE') }}<button class="rx-button rx-button--plain-danger rx-button--small" type="submit"><span class="rx-button__label">{{ t('ui.notifications.clear') }}</span></button></form>
+      {%- endif %}
+    </div>
+  </div>
+  {%- if notifications %}
+  <ul class="rx-notifications__list" role="list">
+    {%- for n in notifications %}
+    <li class="rx-notification rx-notification--{{ n.status }}{% if not n.read %} rx-notification--unread{% endif %}">
+      <span class="rx-notification__icon" aria-hidden="true">{{ icon(n.status) }}</span>
+      <div class="rx-notification__content">
+        {%- if n.url %}
+        <form method="post" action="{{ route('notifications.open', n.id) }}">{{ csrf_field() }}<button class="rx-notification__title rx-notification__open" type="submit">{{ n.title }}</button></form>
+        {%- else %}
+        <p class="rx-notification__title">{{ n.title }}</p>
+        {%- endif %}
+        {%- if n.body %}<p class="rx-notification__body">{{ n.body }}</p>{% endif %}
+        <p class="rx-notification__meta"><time datetime="{{ n.created_at }}" title="{{ n.created_at | date('%Y-%m-%d %H:%M') }}">{{ n.created_at | since }}</time>{% if not n.read %}<span class="rx-notification__dot" aria-hidden="true"></span><span class="rx-visually-hidden">, {{ t('ui.notifications.unread_marker') }}</span>{% endif %}</p>
+        {%- if n.actions %}
+        <div class="rx-notification__actions">{% for a in n.actions %}
+          {%- if a.method %}
+          {#- A request (ToastAction::post …): renox-ui.js sends it with htmx; without script the form does. #}
+          <form method="post" action="{{ a.url }}">{{ csrf_field() }}{% if a.method != "POST" %}{{ method_field(a.method) }}{% endif %}<button class="rx-link rx-link--button" type="submit" data-rx-request="{{ a.url }}" data-rx-method="{{ a.method }}">{{ a.label }}</button></form>
+          {%- else %}<a class="rx-link" href="{{ a.url }}"{% if a.new_tab %} target="_blank" rel="noopener"{% endif %}>{{ a.label }}</a>{% endif %}
+        {%- endfor %}</div>
+        {%- endif %}
+      </div>
+      <div class="rx-notification__tools">
+        {%- set toggle = t('ui.notifications.mark_unread') if n.read else t('ui.notifications.mark_read') %}
+        <form method="post" action="{{ route('notifications.unread' if n.read else 'notifications.read', n.id) }}" data-rx-notification-form><button class="rx-icon-button" type="submit" aria-label="{{ toggle }}: {{ n.title }}" title="{{ toggle }}">
+          {%- if n.read %}<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="4.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>
+          {%- else %}<svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>{% endif -%}
+        </button>{{ csrf_field() }}</form>
+        <form method="post" action="{{ route('notifications.destroy', n.id) }}" data-rx-notification-form>{{ csrf_field() }}{{ method_field('DELETE') }}<button class="rx-icon-button" type="submit" aria-label="{{ t('ui.notifications.delete') }}: {{ n.title }}" title="{{ t('ui.notifications.delete') }}"><svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4 6h12M8 6V4.5h4V6M6 6l.7 9.5a1 1 0 001 .9h4.6a1 1 0 001-.9L14 6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button></form>
+      </div>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- else %}
+  <div class="rx-notifications__empty">
+    <p class="rx-empty__title">{{ t('ui.notifications.empty') }}</p>
+    <p class="rx-empty__message">{{ t('ui.notifications.empty_hint') }}</p>
+  </div>
+  {%- endif %}
+  <div class="rx-notifications__footer">
+    {%- if before %}<a class="rx-link" href="{{ route('notifications.index') }}">{{ t('ui.notifications.newest') }}</a>{% endif %}
+    {%- if older %}<a class="rx-link" href="{{ route('notifications.index', before=older) }}">{{ t('ui.notifications.older') }}</a>{% endif %}
+    <a class="rx-link rx-notifications__all" href="{{ route('notifications.index') }}">{{ t('ui.notifications.see_all') }}</a>
+  </div>
+</div>
+{% endblock %}
+</div>
+{% endblock %}

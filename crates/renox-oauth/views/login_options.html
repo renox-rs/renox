@@ -1,0 +1,14 @@
+{#- renox-oauth: the providers' buttons, which Renox's login, register and
+    confirm-password pages include (`page` is "login", "register" or
+    "confirm"). `oauth_providers`: name, label, url. Replace it with
+    resources/views/renox/auth/login_options.html in your app, or include it
+    in a page of your own: {% with page="login" %}{% include "renox/auth/login_options.html" %}{% endwith %} -#}
+{%- set providers = oauth_providers | default([]) %}
+{%- if providers %}
+<div class="rx-stack rx-oauth">
+  <p class="rx-auth__alt">{{ "Or confirm it's you with" if page == "confirm" else "Or continue with" }}</p>
+  {%- for provider in providers %}
+  <a class="rx-button rx-button--secondary rx-button--block" href="{{ provider.url }}" hx-boost="false" data-oauth-provider="{{ provider.name }}"><span class="rx-button__label">{{ provider.label }}</span></a>
+  {%- endfor %}
+</div>
+{%- endif %}

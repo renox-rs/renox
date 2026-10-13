@@ -1,0 +1,83 @@
+{
+  "welcome": "¡Bienvenido, :Name!",
+  "messages": "{0} Aún no hay mensajes|[1,5] :count mensajes|[6,*] Muchos mensajes (:count)",
+  "ui": {
+    "optional": "opcional",
+    "cancel": "Cancelar",
+    "show_password": "Mostrar contraseña",
+    "copy": "Copiar",
+    "choose_file": "Elige un archivo o suéltalo aquí",
+    "current_file": "Archivo actual",
+    "choose_date": "Elige una fecha",
+    "date_unavailable": "Ese día no se puede elegir: elige otro.",
+    "yes": "Sí",
+    "no": "No",
+    "show_more": "Mostrar :count más",
+    "since": {
+      "now": "justo ahora",
+      "past": "hace :time",
+      "future": "en :time",
+      "minutes": "un minuto|:count minutos",
+      "hours": "una hora|:count horas",
+      "days": "un día|:count días",
+      "months": "un mes|:count meses",
+      "years": "un año|:count años"
+    },
+    "chart": {
+      "show_data": "Ver los datos",
+      "other": "Otros"
+    },
+    "stat": {
+      "vs_previous": "frente al periodo anterior"
+    },
+    "period": {
+      "7d": "7 días",
+      "30d": "30 días",
+      "90d": "90 días",
+      "12m": "12 meses"
+    },
+    "notifications": {
+      "title": "Notificaciones",
+      "bell": "Notificaciones",
+      "unread": ":count sin leer",
+      "mark_all_read": "Marcar todo como leído",
+      "clear": "Borrar todo"
+    }
+  },
+  "renox": {
+    "auth": {
+      "login_title": "Iniciar sesión",
+      "login_button": "Entrar",
+      "email": "Correo electrónico",
+      "password": "Contraseña",
+      "mail_reset_subject": "Restablece tu contraseña",
+      "mail_reset_intro": "Pediste restablecer tu contraseña."
+    },
+    "validation": {
+      "required": "El campo :attribute es obligatorio.",
+      "numeric": "El campo :attribute debe ser un número.",
+      "unique": "El campo :attribute ya está en uso.",
+      "max": {
+        "numeric": "El campo :attribute no debe ser mayor que :max."
+      },
+      "min": {
+        "string": "El campo :attribute debe tener al menos :min caracteres."
+      },
+      "password": {
+        "numbers": "El campo :attribute debe contener al menos un número.",
+        "symbols": "El campo :attribute debe contener al menos un símbolo."
+      },
+      "current_password": "El campo :attribute es incorrecto.",
+      "auth": {
+        "failed": "Estas credenciales no coinciden con nuestros registros."
+      },
+      "attributes": {
+        "name": "nombre",
+        "price": "precio",
+        "email": "correo electrónico",
+        "password": "contraseña",
+        "current_password": "contraseña actual"
+      }
+    }
+  }
+}

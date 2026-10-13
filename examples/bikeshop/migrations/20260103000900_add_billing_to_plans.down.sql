@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS plan_invoices;
+DROP TABLE IF EXISTS plan_visits;
+DROP INDEX IF EXISTS plan_subscriptions_user_id_index;
+ALTER TABLE plan_subscriptions DROP COLUMN ends_on;
+ALTER TABLE plan_subscriptions DROP COLUMN held_at;
+ALTER TABLE plan_subscriptions DROP COLUMN paused_at;
+ALTER TABLE plan_subscriptions DROP COLUMN swap_on;
+ALTER TABLE plan_subscriptions DROP COLUMN next_plan_id;
+ALTER TABLE plan_subscriptions DROP COLUMN visit_seq;
+ALTER TABLE plan_subscriptions DROP COLUMN gateway;
+ALTER TABLE plan_subscriptions DROP COLUMN user_id;
+ALTER TABLE service_plans DROP COLUMN parts_discount_bp;

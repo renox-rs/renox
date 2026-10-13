@@ -1,0 +1,668 @@
+{#- renox-blocks: interactive components the UI kit doesn't carry. Add the
+    module (`.module(Blocks::new())`), then import what a page uses:
+
+    {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
+
+    Input:          quantity, range_slider, keypad, swatches, datetime_range
+    Showing data:   gallery, history, compare_plans
+    Scheduling:     month_calendar, availability, kanban (+ kanban_card)
+
+    The form blocks send plain fields, so `Valid<T>` reads them as any
+    other. Every block prints the stylesheet and the script once per page;
+    the script loads a block's own code only when the page has that block.
+    Texts are English, and an app translates them with the `blocks.*` keys
+    in its lang files (the list is `renox_blocks::TEXTS`). Classes start
+    with `rx-` like the kit's and use only its tokens, so themes and dark
+    mode follow. Replace this file with
+    resources/views/renox-blocks/blocks.html in your app. The guide is
+    docs/blocks.md. -#}
+{% from "renox/ui.html" import sheet, button, date_picker %}
+
+{%- macro _assets() -%}{%- if once('renox-blocks') %}{{ renox_blocks() }}{% endif -%}{%- endmacro -%}
+
+{#- A form name as an id part: `items[0][qty]` → `items-0-qty`. -#}
+{%- macro _id(name) -%}{{ name | replace(".", "-") | replace("[", "-") | replace("]", "") }}{%- endmacro -%}
+
+{#- How a field's errors are keyed: `items[0][qty]` → `items.0.qty`. -#}
+{%- macro _key(name) -%}{{ name | replace("][", ".") | replace("[", ".") | replace("]", "") | trim(".") }}{%- endmacro -%}
+
+{%- macro _pad(n) -%}{{ ("0" ~ n)[-2:] }}{%- endmacro -%}
+
+{%- macro _tick(size=16, width=2.2) -%}
+<svg viewBox="0 0 20 20" width="{{ size }}" height="{{ size }}" aria-hidden="true"><path d="M5 10.5l3 3L15 6.5" stroke="currentColor" stroke-width="{{ width }}" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro -%}
+
+{%- macro _chevron(direction, size=20) -%}
+<svg viewBox="0 0 20 20" width="{{ size }}" height="{{ size }}" aria-hidden="true"><path d="{{ 'M12.5 4.5L7 10l5.5 5.5' if direction == 'left' else 'M7.5 4.5L13 10l-5.5 5.5' }}" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+{%- endmacro -%}
+
+{#- ======================================================================
+    quantity: a number with − and + buttons (a stepper), e.g. how many in
+    the cart. One plain field, `name`, so the form's struct reads an
+    integer.
+
+    {{ quantity("qty", 1, min=1, max=10, label="Quantity") }}
+
+    The field is a native number input: the arrow keys step it, and typing
+    works. The buttons step it too (Tab skips them, since the arrow keys
+    in the field do the same) and grey out at the limits; each step sends
+    `input` and `change`, so htmx triggers and live validation see it.
+    Without JavaScript it is a plain number field.
+    ====================================================================== -#}
+{% macro quantity(name, value=1, min=0, max=none, step=1, label=none, hide_label=false, attrs={}, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set current = old(name, value) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.quantity.label') %}
+<div class="rx-field rx-quantity-field">
+  <label class="rx-label{% if hide_label %} rx-visually-hidden{% endif %}" for="{{ id }}">{{ label }}</label>
+  <div class="rx-quantity" data-rx-quantity>
+    <button class="rx-quantity__button" type="button" tabindex="-1" data-rx-quantity-step="-1" aria-label="{{ renox_blocks_t('blocks.quantity.decrease', label=label) }}" aria-controls="{{ id }}"{% if current is not none and current | int <= min %} disabled{% endif %}>
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4.5 10h11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+    <input class="rx-quantity__input" id="{{ id }}" name="{{ name }}" type="number" inputmode="numeric" value="{{ current }}" min="{{ min }}"{% if max is not none %} max="{{ max }}"{% endif %} step="{{ step }}"
+      {%- if message %} aria-invalid="true"{% endif %}
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-error"
+      {%- for key, v in attrs | items %} {{ key }}="{{ v }}"{% endfor %}>
+    <button class="rx-quantity__button" type="button" tabindex="-1" data-rx-quantity-step="1" aria-label="{{ renox_blocks_t('blocks.quantity.increase', label=label) }}" aria-controls="{{ id }}"{% if max is not none and current is not none and current | int >= max %} disabled{% endif %}>
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4.5 10h11M10 4.5v11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </div>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    range_slider: a range with two handles, e.g. a price filter, sent as
+    two plain fields (`name_min` and `name_max`).
+
+    {{ range_slider("price_min", "price_max", 0, 1000000, step=25000,
+                    value_min=100000, value_max=500000, label="Price", format="money") }}
+
+    Two native range inputs on one track, so each handle is a real slider:
+    Tab reaches it, the arrow keys, Page Up/Down, Home and End move it, and
+    a screen reader says its value in words (aria-valuetext). The handles
+    never cross. Without JavaScript they are two sliders that still send
+    both fields. Check `min <= max` on the server too (`lte`).
+    ====================================================================== -#}
+{%- macro _show(value, format, prefix, suffix) -%}
+{%- if format == "money" %}{{ value | money }}{% elif format == "number" %}{{ value | number }}{% else %}{{ prefix or "" }}{{ value }}{{ suffix or "" }}{% endif -%}
+{%- endmacro -%}
+
+{% macro range_slider(name_min, name_max, min, max, step=1, value_min=none, value_max=none, label=none, format=none, prefix=none, suffix=none, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name_min) ~ "-range") %}
+{%- set low = old(name_min, value_min if value_min is not none else min) | int %}
+{%- set high = old(name_max, value_max if value_max is not none else max) | int %}
+{%- if low < min %}{% set low = min %}{% endif %}
+{%- if high > max %}{% set high = max %}{% endif %}
+{%- if low > high %}{% set low = high %}{% endif %}
+{%- set span = (max - min) if max > min else 1 %}
+{%- set label = label or renox_blocks_t('blocks.range.label') %}
+{%- set low_error = error(name_min, bag=bag) %}
+{%- set high_error = error(name_max, bag=bag) %}
+<fieldset class="rx-field rx-range" id="{{ id }}" data-rx-range
+  data-rx-range-format="{{ format or '' }}" data-rx-range-locale="{{ app.locale }}"
+  data-rx-range-unit="{% if format == 'money' %}{{ 0 | money }}{% endif %}" data-rx-range-prefix="{{ prefix or '' }}" data-rx-range-suffix="{{ suffix or '' }}"
+  {%- if hint %} aria-describedby="{{ id }}-hint"{% endif %}>
+  <legend class="rx-label rx-range__legend">{{ label }}</legend>
+  <p class="rx-range__output" aria-hidden="true"><span data-rx-range-shown="min">{{ _show(low, format, prefix, suffix) }}</span> – <span data-rx-range-shown="max">{{ _show(high, format, prefix, suffix) }}</span></p>
+  <div class="rx-range__track" data-rx-range-track style="--rx-range-from: {{ ((low - min) / span) | round(4) }}; --rx-range-to: {{ ((high - min) / span) | round(4) }}">
+    <input class="rx-range__input" type="range" id="{{ id }}-min" name="{{ name_min }}" min="{{ min }}" max="{{ max }}" step="{{ step }}" value="{{ low }}" data-rx-range-input="min"
+      aria-label="{{ renox_blocks_t('blocks.range.minimum', label=label) }}" aria-valuetext="{{ _show(low, format, prefix, suffix) }}"
+      aria-describedby="{{ id }}-min-error"{% if low_error %} aria-invalid="true"{% endif %}>
+    <input class="rx-range__input" type="range" id="{{ id }}-max" name="{{ name_max }}" min="{{ min }}" max="{{ max }}" step="{{ step }}" value="{{ high }}" data-rx-range-input="max"
+      aria-label="{{ renox_blocks_t('blocks.range.maximum', label=label) }}" aria-valuetext="{{ _show(high, format, prefix, suffix) }}"
+      aria-describedby="{{ id }}-max-error"{% if high_error %} aria-invalid="true"{% endif %}>
+  </div>
+  <p class="rx-range__limits" aria-hidden="true"><span>{{ _show(min, format, prefix, suffix) }}</span><span>{{ _show(max, format, prefix, suffix) }}</span></p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-min-error" data-error-for="{{ _key(name_min) }}" aria-live="polite">{{ low_error }}</p>
+  <p class="rx-error" id="{{ id }}-max-error" data-error-for="{{ _key(name_max) }}" aria-live="polite">{{ high_error }}</p>
+</fieldset>
+{%- endmacro %}
+
+{#- ======================================================================
+    keypad: a point-of-sale number pad that types into a field of the
+    form, for a touch screen at the counter.
+
+    {{ input("paid", "Amount paid", attrs={"inputmode": "numeric"}) }}
+    {{ keypad("rx-paid") }}
+
+    The keys are buttons in a grid with one Tab stop: the arrow keys move
+    between them (Home/End to the first and last), Enter or Space presses
+    the focused one; while the focus is on the pad, digits, the decimal
+    point, Backspace and Delete (clear) work as on the keys. Each press
+    sends `input` on the target; its `maxlength` is respected. The Enter
+    key submits the target's form (`requestSubmit`).
+    ====================================================================== -#}
+{% macro keypad(target, label=none, decimal=false, zeros=true, enter_label=none) -%}
+{{- _assets() }}
+{%- set keys = ["7", "8", "9", "4", "5", "6", "1", "2", "3"] %}
+<div class="rx-keypad{% if decimal and zeros %} rx-keypad--full{% endif %}" role="group" aria-label="{{ label or renox_blocks_t('blocks.keypad.label') }}" aria-controls="{{ target }}" data-rx-keypad="{{ target }}" data-rx-keypad-locale="{{ app.locale }}">
+  {%- for key in keys %}
+  <button class="rx-keypad__key" type="button" data-rx-keypad-key="{{ key }}" tabindex="{{ 0 if loop.first else -1 }}">{{ key }}</button>
+  {%- endfor %}
+  {%- if zeros %}<button class="rx-keypad__key" type="button" data-rx-keypad-key="00" tabindex="-1">00</button>{% endif %}
+  <button class="rx-keypad__key" type="button" data-rx-keypad-key="0" tabindex="-1">0</button>
+  {%- if decimal %}<button class="rx-keypad__key" type="button" data-rx-keypad-key="decimal" tabindex="-1" aria-label="{{ renox_blocks_t('blocks.keypad.decimal') }}"><span data-rx-keypad-decimal>.</span></button>{% endif %}
+  <button class="rx-keypad__key rx-keypad__key--tool" type="button" data-rx-keypad-key="backspace" tabindex="-1" aria-label="{{ renox_blocks_t('blocks.keypad.backspace') }}">
+    <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M9 5h11a1 1 0 011 1v12a1 1 0 01-1 1H9l-6-7z" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linejoin="round"/><path d="M12 9.5l5 5M17 9.5l-5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+  </button>
+  {%- if not decimal and not zeros %}<span aria-hidden="true"></span>{% endif %}
+  <button class="rx-keypad__key rx-keypad__key--tool" type="button" data-rx-keypad-key="clear" tabindex="-1">{{ renox_blocks_t('blocks.keypad.clear') }}</button>
+  <button class="rx-keypad__key rx-keypad__key--enter" type="button" data-rx-keypad-key="enter" tabindex="-1">{{ enter_label or renox_blocks_t('blocks.keypad.enter') }}</button>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    swatches: a variant picker (a frame size, a colour) as chips. A group
+    of radio buttons, so one plain field, `name`, is sent.
+
+    {{ swatches("size", "Frame size", [
+         {"value": "S", "label": "S", "note": "150–165 cm"},
+         {"value": "L", "label": "L", "disabled": true}
+       ], selected="S") }}
+
+    Native radios: Tab reaches the group, the arrow keys choose. A chosen
+    chip is outlined and ticked (a shape, not only a colour); a disabled
+    one is crossed out and "sold out" for screen readers. With
+    `kind="colour"` each chip shows its `color` beside the label. Works
+    without JavaScript.
+    ====================================================================== -#}
+{% macro swatches(name, label, options, selected=none, kind="size", attrs={}, required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set current = old(name, selected if selected is not none else "") | string %}
+{%- set message = error(name, bag=bag) %}
+<fieldset class="rx-field rx-swatches rx-swatches--{{ kind }}" id="{{ id }}" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-error"
+  {%- for key, value in attrs | items %} {{ key }}="{{ value }}"{% endfor %}>
+  <legend class="rx-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</legend>
+  <div class="rx-swatches__options">
+    {%- for option in options %}
+    <label class="rx-swatches__option{% if option.disabled %} rx-swatches__option--disabled{% endif %}">
+      <input class="rx-swatches__input" type="radio" name="{{ name }}" value="{{ option.value }}"
+        {%- if (option.value | string) == current %} checked{% endif %}
+        {%- if option.disabled %} disabled{% endif %}
+        {%- if required %} required{% endif %}
+        {%- if message %} aria-invalid="true"{% endif %}>
+      <span class="rx-swatches__chip">
+        {%- if kind == "colour" %}<svg class="rx-swatches__colour" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="{{ option.color or 'currentColor' }}" stroke="currentColor" stroke-opacity="0.25"/></svg>{% endif %}
+        <span class="rx-swatches__label">{{ option.label }}</span>
+        {%- if option.note %}<span class="rx-swatches__note">{{ option.note }}</span>{% endif %}
+        {%- if option.disabled %}<span class="rx-visually-hidden">({{ renox_blocks_t('blocks.swatches.sold_out') }})</span>{% endif %}
+      </span>
+    </label>
+    {%- endfor %}
+  </div>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</fieldset>
+{%- endmacro %}
+
+{#- ======================================================================
+    datetime_range: a start and an end, each a day and a time, e.g. a
+    rental from Friday 10:00 to Sunday 18:00. Sent as two plain fields,
+    `name_start` and `name_end`, each "YYYY-MM-DDTHH:MM" (a
+    `NaiveDateTime`; Renox adds the seconds).
+
+    {{ datetime_range("starts_at", "ends_at", label="Rental", min="2026-10-06",
+                      max="2026-12-31", step=30, opens=9, closes=19) }}
+
+    Each end is the kit's `date_picker` beside a select of times. Those
+    visible fields belong to no form (`form="…-none"`); the script writes
+    the two hidden fields that are sent and says how long the range is.
+    An end before the start is pointed out at once; the server must still
+    check it (`gt` or `after`). Needs JavaScript.
+    ====================================================================== -#}
+{%- macro _times(id, which, label, current, opens, closes, step, required) -%}
+<div class="rx-field">
+  <label class="rx-label" for="{{ id }}-{{ which }}-time">{{ label }}</label>
+  <select class="rx-select" id="{{ id }}-{{ which }}-time" form="{{ id }}-none" data-rx-datetime-time="{{ which }}"{% if required %} aria-required="true"{% endif %}>
+    <option value="">--:--</option>
+    {%- for minutes in range(opens * 60, closes * 60 + 1, step) %}
+    {%- set value = _pad(minutes // 60) ~ ":" ~ _pad(minutes % 60) %}
+    <option value="{{ value }}"{% if value == current %} selected{% endif %}>{{ value }}</option>
+    {%- endfor %}
+  </select>
+</div>
+{%- endmacro -%}
+
+{% macro datetime_range(name_start, name_end, label=none, value_start=none, value_end=none, min=none, max=none, step=60, opens=8, closes=20, required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name_start) ~ "-range") %}
+{%- set start = old(name_start, value_start or "") | string %}
+{%- set end = old(name_end, value_end or "") | string %}
+{%- set start_error = error(name_start, bag=bag) %}
+{%- set end_error = error(name_end, bag=bag) %}
+{%- set texts = {
+  "hour": renox_blocks_t('blocks.datetime.hour'),
+  "hours": renox_blocks_t('blocks.datetime.hours'),
+  "day": renox_blocks_t('blocks.datetime.day'),
+  "days": renox_blocks_t('blocks.datetime.days'),
+  "minutes": renox_blocks_t('blocks.datetime.minutes'),
+  "order": renox_blocks_t('blocks.datetime.order')
+} %}
+<fieldset class="rx-fieldset rx-datetime-range" id="{{ id }}" data-rx-datetime-range data-rx-blocks-texts='{{ texts | tojson }}'
+  aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-summary">
+  {%- if label %}<legend class="rx-label rx-datetime-range__legend">{{ label }}</legend>{% endif %}
+  <input type="hidden" name="{{ name_start }}" value="{{ start }}" data-rx-datetime-value="start">
+  <input type="hidden" name="{{ name_end }}" value="{{ end }}" data-rx-datetime-value="end">
+  <div class="rx-datetime-range__ends">
+    <div class="rx-datetime-range__end" data-rx-datetime-end="start">
+      {{ date_picker(id ~ "-start-date", renox_blocks_t('blocks.datetime.start_date'), value=start[:10], min=min, max=max, required=required, id=id ~ "-start-date", attrs={"form": id ~ "-none", "data-rx-datetime-date": "start"}) }}
+      {{ _times(id, "start", renox_blocks_t('blocks.datetime.start_time'), start[11:16], opens, closes, step, required) }}
+      <p class="rx-error rx-datetime-range__error" id="{{ id }}-start-error" data-error-for="{{ _key(name_start) }}" aria-live="polite">{{ start_error }}</p>
+    </div>
+    <div class="rx-datetime-range__end" data-rx-datetime-end="end">
+      {{ date_picker(id ~ "-end-date", renox_blocks_t('blocks.datetime.end_date'), value=end[:10], min=min, max=max, required=required, id=id ~ "-end-date", attrs={"form": id ~ "-none", "data-rx-datetime-date": "end"}) }}
+      {{ _times(id, "end", renox_blocks_t('blocks.datetime.end_time'), end[11:16], opens, closes, step, required) }}
+      <p class="rx-error rx-datetime-range__error" id="{{ id }}-end-error" data-error-for="{{ _key(name_end) }}" aria-live="polite">{{ end_error }}</p>
+    </div>
+  </div>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-datetime-range__summary" id="{{ id }}-summary" aria-live="polite" data-rx-datetime-summary></p>
+</fieldset>
+{%- endmacro %}
+
+{#- ======================================================================
+    gallery: photos as a carousel, with thumbnails under it and an
+    enlarged view in the kit's sheet.
+
+    {{ gallery([
+         {"src": "/img/city-1.jpg", "alt": "The City 3 from the side"},
+         {"src": "/img/city-2.jpg", "alt": "Its handlebar", "large": "/img/city-2-big.jpg", "caption": "Swept-back bars"}
+       ], id="city-photos", label="Photos of the City 3") }}
+
+    The arrows, the thumbnails, a swipe, or the keyboard (Left/Right,
+    Home/End while the focus is in the gallery) change the photo. The
+    photos slide (Web Animations, `transform` only) and jump under
+    prefers-reduced-motion. Without JavaScript the photos scroll sideways
+    and the thumbnails are links to each photo.
+    ====================================================================== -#}
+{% macro gallery(photos, id="rx-gallery", label=none, enlarge=true) -%}
+{{- _assets() }}
+{%- set label = label or renox_blocks_t('blocks.gallery.label') %}
+{%- set total = photos | length %}
+<div class="rx-gallery" id="{{ id }}" data-rx-gallery role="region" aria-roledescription="{{ renox_blocks_t('blocks.gallery.carousel') }}" aria-label="{{ label }}">
+  <div class="rx-gallery__stage">
+    <div class="rx-gallery__viewport" data-rx-gallery-viewport tabindex="0" role="group" aria-label="{{ renox_blocks_t('blocks.gallery.keys') }}">
+      <ul class="rx-gallery__track" data-rx-gallery-track role="list">
+        {%- for photo in photos %}
+        <li class="rx-gallery__slide" id="{{ id }}-slide-{{ loop.index }}" role="group" aria-roledescription="{{ renox_blocks_t('blocks.gallery.slide') }}" aria-label="{{ renox_blocks_t('blocks.gallery.position', n=loop.index, total=total) }}" data-large="{{ photo.large or photo.src }}" data-alt="{{ photo.alt }}" data-caption="{{ photo.caption or '' }}">
+          <img class="rx-gallery__image" src="{{ photo.src }}" alt="{{ photo.alt }}" draggable="false"{% if not loop.first %} loading="lazy"{% endif %}>
+          {%- if photo.caption %}<p class="rx-gallery__caption">{{ photo.caption }}</p>{% endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+    </div>
+    {%- if total > 1 %}
+    <button class="rx-gallery__arrow rx-gallery__arrow--prev" type="button" data-rx-gallery-prev aria-controls="{{ id }}" aria-label="{{ renox_blocks_t('blocks.gallery.previous') }}" hidden>{{ _chevron('left') }}</button>
+    <button class="rx-gallery__arrow rx-gallery__arrow--next" type="button" data-rx-gallery-next aria-controls="{{ id }}" aria-label="{{ renox_blocks_t('blocks.gallery.next') }}" hidden>{{ _chevron('right') }}</button>
+    {%- endif %}
+    {%- if enlarge %}
+    <button class="rx-gallery__enlarge rx-button rx-button--secondary rx-button--small" type="button" data-rx-open="{{ id }}-zoom" data-rx-gallery-enlarge aria-haspopup="dialog">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12 3h5v5M8 17H3v-5M17 3l-6 6M3 17l6-6" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span>{{ renox_blocks_t('blocks.gallery.enlarge') }}</span>
+    </button>
+    {%- endif %}
+    <p class="rx-visually-hidden" aria-live="polite" data-rx-gallery-status></p>
+  </div>
+  {%- if total > 1 %}
+  <ul class="rx-gallery__thumbs" role="list" aria-label="{{ renox_blocks_t('blocks.gallery.thumbnails') }}">
+    {%- for photo in photos %}
+    <li>
+      <a class="rx-gallery__thumb" href="#{{ id }}-slide-{{ loop.index }}" data-rx-gallery-thumb="{{ loop.index0 }}" aria-label="{{ renox_blocks_t('blocks.gallery.show', n=loop.index, alt=photo.alt) }}"{% if loop.first %} aria-current="true"{% endif %}>
+        <img src="{{ photo.thumb or photo.src }}" alt="" draggable="false" loading="lazy">
+      </a>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+</div>
+{%- if enlarge %}
+{% call sheet(id ~ "-zoom", label, width="xl") %}
+  <figure class="rx-gallery__zoom">
+    <img class="rx-gallery__zoom-image" src="{{ (photos | first).large or (photos | first).src if photos else '' }}" alt="{{ (photos | first).alt if photos else '' }}" data-rx-gallery-zoom>
+    <figcaption class="rx-subtitle" data-rx-gallery-zoom-caption>{{ (photos | first).caption or '' if photos else '' }}</figcaption>
+  </figure>
+  <div class="rx-sheet__actions">
+    {{ button(renox_blocks_t('blocks.gallery.close'), variant="primary", type="button", attrs={"data-rx-close": id ~ "-zoom"}) }}
+  </div>
+{% endcall %}
+{%- endif %}
+{%- endmacro %}
+
+{#- ======================================================================
+    history: a vertical timeline of what happened to something (an order,
+    a repair).
+
+    {{ history([
+         {"time": "2026-10-06T09:12:00Z", "title": "Checked in", "body": "Brakes squeal.", "kind": "info"},
+         {"time": "2026-10-06T11:40:00Z", "title": "Ready for pickup", "kind": "success", "by": "Marta"}
+       ], label="Service history") }}
+
+    An ordered list, each event with its `<time>` first. `kind` (info,
+    success, warning, error) sets the marker's colour *and* its icon.
+    `body` is Markdown (the `markdown` filter). The events fade in one
+    after the other, not under prefers-reduced-motion.
+    ====================================================================== -#}
+{% macro history(items, label=none, date_format="%Y-%m-%d %H:%M", id=none) -%}
+{{- _assets() }}
+<ol class="rx-history"{% if id %} id="{{ id }}"{% endif %} role="list" aria-label="{{ label or renox_blocks_t('blocks.history.label') }}" data-rx-history>
+  {%- for item in items %}
+  {%- set kind = item.kind or "" %}
+  <li class="rx-history__item{% if kind %} rx-history__item--{{ kind }}{% endif %}">
+    <span class="rx-history__marker" aria-hidden="true">
+      {%- if kind == "success" %}<svg viewBox="0 0 20 20" width="14" height="14"><path d="M5 10.5l3 3L15 6.5" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      {%- elif kind == "warning" %}<svg viewBox="0 0 20 20" width="14" height="14"><path d="M10 4.5v7M10 15h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      {%- elif kind == "error" %}<svg viewBox="0 0 20 20" width="14" height="14"><path d="M6 6l8 8M14 6l-8 8" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      {%- elif kind == "info" %}<svg viewBox="0 0 20 20" width="14" height="14"><path d="M10 9v6M10 5.5h.01" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+      {%- endif %}
+    </span>
+    <div class="rx-history__content">
+      <p class="rx-history__meta">
+        <time datetime="{{ item.time }}">{{ item.when or (item.time | date(date_format)) }}</time>
+        {%- if item.by %}<span> · {{ item.by }}</span>{% endif %}
+        {%- if kind %}<span class="rx-visually-hidden"> · {{ renox_blocks_t('blocks.history.kind_' ~ kind) }}</span>{% endif %}
+      </p>
+      <p class="rx-history__title">{{ item.title }}</p>
+      {%- if item.body %}<div class="rx-history__body rx-prose">{{ item.body | markdown }}</div>{% endif %}
+    </div>
+  </li>
+  {%- endfor %}
+</ol>
+{%- endmacro %}
+
+{#- ======================================================================
+    compare_plans: pricing cards side by side, then a table comparing
+    every feature, with one plan highlighted.
+
+    {{ compare_plans([
+         {"key": "basic", "name": "Basic", "price": 2900, "interval": "month", "perks": ["Monthly check-up"], "url": "/plans/basic"},
+         {"key": "rider", "name": "Rider", "price": 4900, "interval": "month", "url": "/plans/rider"}
+       ], [
+         {"label": "Visits a month", "values": {"basic": "1", "rider": "2"}},
+         {"label": "Pickup and delivery", "values": {"basic": false, "rider": true}}
+       ], highlight="rider", label="Service plans") }}
+
+    The cards sit on a CSS grid (one column on a phone, up to four); the
+    highlighted one has the accent border and a badge, and its column in
+    the table is tinted. true in the table is a tick ("Included" for
+    screen readers), false a dash ("Not included"). The table scrolls
+    sideways inside its frame on a phone, the feature names staying put.
+    ====================================================================== -#}
+{% macro compare_plans(plans, features=[], highlight=none, highlight_label=none, label=none, table=true, id="rx-plans") -%}
+{{- _assets() }}
+<section class="rx-plans" id="{{ id }}" aria-label="{{ label or renox_blocks_t('blocks.plans.label') }}">
+  <ul class="rx-plans__cards" role="list">
+    {%- for plan in plans %}
+    {%- set on = plan.key == highlight %}
+    <li>
+      <article class="rx-plan{% if on %} rx-plan--highlight{% endif %}" aria-labelledby="{{ id }}-{{ plan.key }}">
+        <header class="rx-plan__header">
+          <h3 class="rx-plan__name" id="{{ id }}-{{ plan.key }}">{{ plan.name }}</h3>
+          {%- if on %}<span class="rx-badge rx-badge--info">{{ highlight_label or renox_blocks_t('blocks.plans.popular') }}</span>{% endif %}
+        </header>
+        <p class="rx-plan__price">
+          <span class="rx-plan__amount">{{ plan.price_label or (plan.price | money) }}</span>
+          {%- if plan.interval and not plan.price_label %}<span class="rx-plan__interval"> / {{ renox_blocks_t('blocks.plans.' ~ plan.interval) }}</span>{% endif %}
+        </p>
+        {%- if plan.description %}<p class="rx-plan__description">{{ plan.description }}</p>{% endif %}
+        {%- if plan.perks %}
+        <ul class="rx-plan__perks" role="list">
+          {%- for perk in plan.perks %}
+          <li>{{ _tick() }}{{ perk }}</li>
+          {%- endfor %}
+        </ul>
+        {%- endif %}
+        {%- if plan.url %}
+        <a class="rx-button rx-button--{{ 'primary' if on else 'secondary' }} rx-button--block rx-plan__cta" href="{{ plan.url }}" aria-describedby="{{ id }}-{{ plan.key }}">{{ plan.cta or renox_blocks_t('blocks.plans.choose') }}</a>
+        {%- endif %}
+      </article>
+    </li>
+    {%- endfor %}
+  </ul>
+  {%- if table and features %}
+  <div class="rx-plans__table" role="region" aria-labelledby="{{ id }}-caption" tabindex="0">
+    <table class="rx-table rx-plans__compare">
+      <caption class="rx-plans__caption" id="{{ id }}-caption">{{ renox_blocks_t('blocks.plans.compare') }}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{{ renox_blocks_t('blocks.plans.feature') }}</th>
+          {%- for plan in plans %}<th scope="col" class="rx-plans__col{% if plan.key == highlight %} rx-plans__col--highlight{% endif %}">{{ plan.name }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {%- for feature in features %}
+        <tr>
+          <th scope="row">{{ feature.label }}</th>
+          {%- for plan in plans %}
+          {%- set value = feature["values"][plan.key] %}
+          <td class="rx-plans__col{% if plan.key == highlight %} rx-plans__col--highlight{% endif %}">
+            {%- if value is true %}<span class="rx-plans__yes">{{ _tick(18) }}</span><span class="rx-visually-hidden">{{ renox_blocks_t('blocks.plans.included') }}</span>
+            {%- elif value is false or value is none or value is undefined %}<span class="rx-plans__no" aria-hidden="true">—</span><span class="rx-visually-hidden">{{ renox_blocks_t('blocks.plans.not_included') }}</span>
+            {%- else %}{{ value }}{% endif -%}
+          </td>
+          {%- endfor %}
+        </tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- endif %}
+</section>
+{%- endmacro %}
+
+{#- ======================================================================
+    month_calendar: one month as a grid of days with what happens on each,
+    and links to the months around it. On a phone it becomes a list of
+    the days that have something.
+
+    {{ month_calendar("2026-10", [
+         {"date": "2026-10-06", "time": "09:30", "title": "Tune-up", "url": "/visits/4", "kind": "info"}
+       ], url="/visits", today="2026-10-06", label="Service visits") }}
+
+    The days are an ordered list on a seven-column CSS grid (the first
+    day starts on its weekday column), so a screen reader reads them in
+    order, each with its full weekday and "Today" when it is. The month
+    is worked out in the template (Sakamoto's weekday formula). Pass
+    `today` from the handler: the template has no clock.
+    ====================================================================== -#}
+{%- macro _month_link(url, param, y, m) -%}{{ url }}{{ "&" if "?" in url else "?" }}{{ param }}={{ y }}-{{ _pad(m) }}{%- endmacro -%}
+
+{% macro month_calendar(month, events=[], url=none, param="month", today=none, first_day=1, label=none, heading="h2", id=none) -%}
+{{- _assets() }}
+{%- set y = month[:4] | int %}
+{%- set m = month[5:7] | int %}
+{%- set leap = (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 %}
+{%- set days = [31, 29 if leap else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1] %}
+{%- set yy = y - 1 if m < 3 else y %}
+{%- set first_dow = (yy + yy // 4 - yy // 100 + yy // 400 + [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4][m - 1] + 1) % 7 %}
+{%- set lead = (first_dow - first_day + 7) % 7 %}
+{%- set id = id or ("rx-month-" ~ month) %}
+{%- set title = renox_blocks_t('blocks.calendar.month_' ~ m) ~ " " ~ y %}
+{%- set ns = namespace(any=false) %}
+{%- for e in events %}{% if (e.date | string)[:7] == month %}{% set ns.any = true %}{% endif %}{% endfor %}
+<section class="rx-month" id="{{ id }}" aria-labelledby="{{ id }}-title">
+  <header class="rx-month__header">
+    <{{ heading }} class="rx-month__title" id="{{ id }}-title">{% if label %}<span class="rx-visually-hidden">{{ label }}: </span>{% endif %}{{ title }}</{{ heading }}>
+    {%- if url %}
+    <nav class="rx-month__nav" aria-label="{{ renox_blocks_t('blocks.calendar.months') }}">
+      <a class="rx-icon-button rx-icon-button--plain" href="{{ _month_link(url, param, y - 1 if m == 1 else y, 12 if m == 1 else m - 1) }}" aria-label="{{ renox_blocks_t('blocks.calendar.previous') }}" data-rx-month-prev rel="prev">{{ _chevron('left', 18) }}</a>
+      {%- if today and today[:7] != month %}
+      <a class="rx-button rx-button--secondary rx-button--small" href="{{ _month_link(url, param, today[:4] | int, today[5:7] | int) }}">{{ renox_blocks_t('blocks.calendar.today') }}</a>
+      {%- endif %}
+      <a class="rx-icon-button rx-icon-button--plain" href="{{ _month_link(url, param, y + 1 if m == 12 else y, 1 if m == 12 else m + 1) }}" aria-label="{{ renox_blocks_t('blocks.calendar.next') }}" data-rx-month-next rel="next">{{ _chevron('right', 18) }}</a>
+    </nav>
+    {%- endif %}
+  </header>
+  <div class="rx-month__weekdays" aria-hidden="true">
+    {%- for n in range(7) %}<span>{{ renox_blocks_t('blocks.calendar.day_' ~ ((n + first_day) % 7)) }}</span>{% endfor %}
+  </div>
+  <ol class="rx-month__days" role="list">
+    {%- for d in range(1, days + 1) %}
+    {%- set iso = month ~ "-" ~ _pad(d) %}
+    {%- set weekday = (first_dow + d - 1) % 7 %}
+    {%- set day = namespace(events=[]) %}
+    {%- for e in events %}{% if (e.date | string)[:10] == iso %}{% set day.events = day.events + [e] %}{% endif %}{% endfor %}
+    <li class="rx-month__day{% if iso == today %} rx-month__day--today{% endif %}{% if not day.events %} rx-month__day--empty{% endif %}{% if weekday == 0 or weekday == 6 %} rx-month__day--weekend{% endif %}"{% if d == 1 %} style="--rx-month-start: {{ lead + 1 }}"{% endif %}>
+      <p class="rx-month__date">
+        <time datetime="{{ iso }}"><span class="rx-month__weekday">{{ renox_blocks_t('blocks.calendar.day_long_' ~ weekday) }} </span><span class="rx-month__number">{{ d }}</span></time>
+        {%- if iso == today %}<span class="rx-month__today">{{ renox_blocks_t('blocks.calendar.today') }}</span>{% endif %}
+      </p>
+      {%- if day.events %}
+      <ul class="rx-month__events" role="list">
+        {%- for e in day.events %}
+        <li class="rx-month__event{% if e.kind %} rx-month__event--{{ e.kind }}{% endif %}">
+          {%- if e.url %}<a class="rx-month__event-link" href="{{ e.url }}">{% endif -%}
+          {%- if e.time %}<span class="rx-month__time">{{ e.time }}</span> {% endif %}<span class="rx-month__event-title">{{ e.title }}</span>
+          {%- if e.url %}</a>{% endif %}
+        </li>
+        {%- endfor %}
+      </ul>
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  </ol>
+  {%- if not ns.any %}<p class="rx-month__none rx-subtitle">{{ renox_blocks_t('blocks.calendar.none') }}</p>{% endif %}
+</section>
+{%- endmacro %}
+
+{#- ======================================================================
+    availability: a timeline of resources (bikes, rooms, people) against
+    hours or days, with the booked and free slots; a free slot is a link
+    or a small form that books it.
+
+    {{ availability(["09:00", "10:00", "11:00"], [
+         {"label": "Trail 5", "note": "M · #12", "slots": [
+            {"state": "booked", "span": 2, "title": "Ana R."},
+            {"state": "free", "action": "/rentals", "fields": {"bike": 12, "at": "11:00"}}]}
+       ], label="Bikes free today") }}
+
+    A table: each resource is a row heading and each time a column
+    heading, so a screen reader reads "Trail 5, 11:00, Book". Every link
+    says what it books. States differ by pattern and text, not colour
+    alone. On a phone the table scrolls inside its frame, the resource
+    column staying put. Booking with `action` needs no JavaScript.
+    ====================================================================== -#}
+{% macro availability(columns, rows, label=none, corner=none, id="rx-availability") -%}
+{{- _assets() }}
+<div class="rx-availability" id="{{ id }}" role="region" aria-labelledby="{{ id }}-caption" tabindex="0">
+  <table class="rx-availability__table" style="--rx-availability-columns: {{ columns | length }}">
+    <caption class="rx-visually-hidden" id="{{ id }}-caption">{{ label or renox_blocks_t('blocks.availability.label') }}</caption>
+    <thead>
+      <tr>
+        <th scope="col" class="rx-availability__corner">{{ corner or renox_blocks_t('blocks.availability.resource') }}</th>
+        {%- for column in columns %}<th scope="col">{{ column }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {%- for row in rows %}
+      {%- set at = namespace(column=0) %}
+      <tr>
+        <th scope="row" class="rx-availability__resource">
+          <span class="rx-availability__name">{{ row.label }}</span>
+          {%- if row.note %}<span class="rx-availability__note">{{ row.note }}</span>{% endif %}
+        </th>
+        {%- for slot in row.slots %}
+        {%- set span = slot.span or 1 %}
+        {%- set when = columns[at.column] if at.column < (columns | length) else "" %}
+        <td class="rx-availability__slot rx-availability__slot--{{ slot.state }}"{% if span > 1 %} colspan="{{ span }}"{% endif %}>
+          {%- if slot.state == "free" and slot.url %}
+          <a class="rx-availability__book" href="{{ slot.url }}" aria-label="{{ renox_blocks_t('blocks.availability.book', resource=row.label, slot=when) }}">{{ renox_blocks_t('blocks.availability.free') }}</a>
+          {%- elif slot.state == "free" and slot.action %}
+          <form class="rx-availability__form" method="post" action="{{ slot.action }}">
+            {{ csrf_field() }}
+            {%- for key, value in (slot.fields or {}) | items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+            <button class="rx-availability__book" type="submit" aria-label="{{ renox_blocks_t('blocks.availability.book', resource=row.label, slot=when) }}">{{ renox_blocks_t('blocks.availability.free') }}</button>
+          </form>
+          {%- elif slot.state == "free" %}
+          <span class="rx-availability__label">{{ renox_blocks_t('blocks.availability.free') }}</span>
+          {%- elif slot.state == "booked" %}
+          <span class="rx-availability__label">{% if slot.title %}<span class="rx-visually-hidden">{{ renox_blocks_t('blocks.availability.booked') }}: </span>{{ slot.title }}{% else %}{{ renox_blocks_t('blocks.availability.booked') }}{% endif %}</span>
+          {%- else %}
+          <span class="rx-availability__label">{{ renox_blocks_t('blocks.availability.closed') }}</span>
+          {%- endif %}
+        </td>
+        {%- set at.column = at.column + span %}
+        {%- endfor %}
+      </tr>
+      {%- endfor %}
+    </tbody>
+  </table>
+</div>
+<ul class="rx-availability__legend" role="list" aria-label="{{ renox_blocks_t('blocks.availability.legend') }}">
+  <li><span class="rx-availability__key rx-availability__key--free" aria-hidden="true"></span>{{ renox_blocks_t('blocks.availability.free') }}</li>
+  <li><span class="rx-availability__key rx-availability__key--booked" aria-hidden="true"></span>{{ renox_blocks_t('blocks.availability.booked') }}</li>
+  <li><span class="rx-availability__key rx-availability__key--closed" aria-hidden="true"></span>{{ renox_blocks_t('blocks.availability.closed') }}</li>
+</ul>
+{%- endmacro %}
+
+{#- ======================================================================
+    kanban: columns of cards moved between columns by dragging, or with
+    the keyboard, each move sent to the server with htmx.
+
+    {{ kanban("jobs", [
+         {"key": "waiting", "title": "Waiting", "cards": [{"id": 7, "title": "Tune-up", "subtitle": "City 3 · Ana"}]},
+         {"key": "ready", "title": "Ready", "cards": []}
+       ], url="/jobs/move", label="Workshop jobs") }}
+
+    Each move is an htmx POST to `url` with `card`, `column` and
+    `position` (0 for the top), plus `values`. Answer 2xx to keep it; any
+    other status puts the card back and says so. Drag a card with the
+    mouse, or by its handle with a finger or a pen; with the keyboard,
+    Space or Enter picks a card up, the arrow keys move it, Space or Enter
+    drops it, Escape puts it back. Every step is announced. The board
+    sends `rx:kanban-moved` after the server answered, with detail
+    {card, column, position, ok}. Without JavaScript the board is a
+    read-only list.
+    ====================================================================== -#}
+{% macro kanban_card(card) -%}
+<li class="rx-kanban__card" data-rx-kanban-card="{{ card.id }}">
+  <span class="rx-kanban__grip" aria-hidden="true">
+    <svg viewBox="0 0 12 20" width="10" height="16"><circle cx="3" cy="4" r="1.5" fill="currentColor"/><circle cx="9" cy="4" r="1.5" fill="currentColor"/><circle cx="3" cy="10" r="1.5" fill="currentColor"/><circle cx="9" cy="10" r="1.5" fill="currentColor"/><circle cx="3" cy="16" r="1.5" fill="currentColor"/><circle cx="9" cy="16" r="1.5" fill="currentColor"/></svg>
+  </span>
+  <span class="rx-kanban__body">
+    <strong class="rx-kanban__title" data-rx-kanban-title>{% if card.url %}<a class="rx-link" href="{{ card.url }}">{{ card.title }}</a>{% else %}{{ card.title }}{% endif %}</strong>
+    {%- if card.subtitle %}<span class="rx-kanban__subtitle">{{ card.subtitle }}</span>{% endif %}
+    {%- if card.badge %}<span class="rx-badge{% if card.badge_kind %} rx-badge--{{ card.badge_kind }}{% endif %}">{{ card.badge }}</span>{% endif %}
+  </span>
+</li>
+{%- endmacro %}
+
+{% macro kanban(id, columns, url, label=none, values={}) -%}
+{{- _assets() }}
+{%- set texts = {
+  "picked": renox_blocks_t('blocks.kanban.picked'),
+  "moved": renox_blocks_t('blocks.kanban.moved'),
+  "dropped": renox_blocks_t('blocks.kanban.dropped'),
+  "cancelled": renox_blocks_t('blocks.kanban.cancelled'),
+  "failed": renox_blocks_t('blocks.kanban.failed')
+} %}
+<div class="rx-kanban" id="{{ id }}" data-rx-kanban role="group" aria-label="{{ label or renox_blocks_t('blocks.kanban.label') }}" aria-describedby="{{ id }}-help" data-rx-blocks-texts='{{ texts | tojson }}'>
+  <p class="rx-visually-hidden" id="{{ id }}-help">{{ renox_blocks_t('blocks.kanban.help') }}</p>
+  <p class="rx-visually-hidden" aria-live="assertive" aria-atomic="true" data-rx-kanban-live></p>
+  <form class="rx-kanban__form" hidden hx-post="{{ url }}" hx-trigger="rx:kanban-move" hx-swap="none" data-rx-kanban-form>
+    <input type="hidden" name="card" value="">
+    <input type="hidden" name="column" value="">
+    <input type="hidden" name="position" value="">
+    {%- for key, value in values | items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+  </form>
+  {%- for column in columns %}
+  <section class="rx-kanban__column" data-rx-kanban-column="{{ column.key }}" data-rx-kanban-column-title="{{ column.title }}" aria-labelledby="{{ id }}-{{ column.key }}-title">
+    <h3 class="rx-kanban__heading" id="{{ id }}-{{ column.key }}-title">
+      <span>{{ column.title }}</span>
+      <span class="rx-badge" data-rx-kanban-count aria-hidden="true">{{ column.cards | length }}</span>
+    </h3>
+    <ul class="rx-kanban__list" role="list" data-rx-kanban-list aria-labelledby="{{ id }}-{{ column.key }}-title">
+      {%- for card in column.cards %}
+      {{ kanban_card(card) }}
+      {%- endfor %}
+    </ul>
+  </section>
+  {%- endfor %}
+</div>
+{%- endmacro %}

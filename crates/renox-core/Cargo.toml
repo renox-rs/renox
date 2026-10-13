@@ -1,0 +1,95 @@
+[package]
+name = "renox-core"
+description = "Runtime of the Renox web framework: routing, views, database and models, validation, auth, queue, scheduler, mail, storage. Use it through the `renox` crate."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+# docs.rs builds the API reference with these features on, so the PostgreSQL,
+# UUID and Excel APIs are documented too. Not `s3`: it builds aws-lc (C, cmake).
+[package.metadata.docs.rs]
+features = ["postgres", "uuid", "xlsx"]
+
+[features]
+default = ["fake", "http", "server-events"]
+# `renox::fake` for factories (`Factory::definition` with fake data).
+fake = ["dep:fake"]
+# `renox::http` sends real requests (the fake works without it).
+http = ["dep:reqwest", "dep:rustls"]
+# `analytics::ServerEvent`: GA4 events sent from the server (over `renox::http`).
+server-events = ["http"]
+# S3-compatible storage (AWS S3, Cloudflare R2, MinIO) for `STORAGE_DISK=s3`.
+s3 = ["dep:object_store"]
+# PostgreSQL databases (`DATABASE_URL=postgres://...`).
+postgres = ["sqlx/postgres"]
+# `uuid::Uuid` model fields (BLOB on SQLite, UUID on PostgreSQL).
+uuid = ["dep:uuid", "sqlx/uuid"]
+# Excel exports of data grids (`renox::grid`, `export=xlsx`).
+xlsx = ["dep:rust_xlsxwriter"]
+
+[dependencies]
+anyhow = "1.0.104"
+argon2 = "0.6.0"
+rust_xlsxwriter = { version = "0.99.1", default-features = false, features = ["chrono"], optional = true }
+# Verifies bcrypt hashes of users imported from Laravel (rehashed to Argon2id at login).
+bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
+axum = { version = "0.8.9", features = ["multipart"] }
+base64 = "0.23.1"
+chrono = { version = "0.4.45", features = ["serde"] }
+chrono-tz = "0.10.4"
+# Typed app commands (`AppCommand`); re-exported as `renox::clap`.
+clap = { version = "4.6.7", default-features = false, features = ["std", "derive", "help", "usage", "error-context", "suggestions"] }
+cookie = { version = "0.18.2", features = ["private", "key-expansion", "percent-encode"] }
+dotenvy = "0.15.7"
+fake = { version = "5.1.0", optional = true }
+form_urlencoded = "1.2.2"
+futures-util = "0.3.34"
+hmac = "0.13.0"
+http-body-util = "0.1.5"
+# Takes the listening socket from systemd (socket activation) for restarts without refused connections.
+listenfd = "1.0.2"
+lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "pool", "hostname", "tokio1-rustls-tls"] }
+mime_guess = "2.0.5"
+# The `markdown` template filter (raw HTML in the text is shown as text).
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }
+minijinja = { version = "2.24.0", features = ["loader", "json", "urlencode", "loop_controls"] }
+minijinja-autoreload = "2.24.0"
+multer = "3.1.0"
+object_store = { version = "0.14.2", optional = true, default-features = false, features = ["aws"] }
+reqwest = { version = "0.13.5", optional = true, default-features = false, features = ["rustls-no-provider", "json", "query"] }
+# `ring`, the provider lettre uses too; reqwest would otherwise build aws-lc (C, CMake).
+rustls = { version = "0.23.36", optional = true, default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rand = "0.10.3"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+serde_path_to_error = "0.1.20"
+regex = "1.12.2"
+# `prompt::secret`: typing without echo, on every platform.
+rpassword = "7.5.4"
+serde_html_form = "0.4.1"
+serde_urlencoded = "0.7.1"
+sha1 = "0.11"
+sha2 = "0.11.0"
+sqlx = { version = "0.9.0", default-features = false, features = ["sqlite", "runtime-tokio", "chrono", "json"] }
+uuid = { version = "1", optional = true, features = ["v4", "v7", "serde"] }
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["full"] }
+tokio-util = { version = "0.7.19", features = ["io"] }
+tower = { version = "0.5.3", features = ["util"] }
+tower-http = { version = "0.7.1", features = ["cors", "fs", "trace"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+
+[dev-dependencies]
+# Doc examples are written the way apps use Renox: through the `renox` crate.
+# Path only, so `cargo publish` drops it (`renox` is published after this crate).
+renox = { path = "../renox" }
+# A page body that fails while it is read (security.rs's ETag test).
+http-body = "1.0.1"
+# Paused time, for the queue's retry delays.
+tokio = { version = "1.53.1", features = ["test-util"] }

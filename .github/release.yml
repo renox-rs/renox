@@ -1,0 +1,16 @@
+# Sections of the notes GitHub writes for a release (from the merged PRs' labels).
+# CHANGELOG.md stays the full record; these are the release page's summary.
+changelog:
+  exclude:
+    labels: ["skip-changelog", "dependencies"]
+  categories:
+    - title: Breaking changes
+      labels: ["breaking"]
+    - title: New
+      labels: ["story", "enhancement"]
+    - title: Fixes
+      labels: ["bug"]
+    - title: Docs
+      labels: ["documentation"]
+    - title: Other
+      labels: ["*"]

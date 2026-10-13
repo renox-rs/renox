@@ -1,0 +1,26 @@
+{#- A walk-in work order (#236): a known customer or a new one, the bike, the tasks, the day. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('workshop.walkin.title') }}">
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('workshop.walkin.title') }}" subtitle="{{ t('workshop.walkin.lead') }}" :back="route('workshop.board')" back-label="{{ t('workshop.board.title') }}"/>
+    {# [explain:workshop.walkin.template] #}
+    <form method="post" action="{{ route('workshop.walkin.store') }}" novalidate>
+      {{ csrf_field() }}
+      <rx-card>
+        <rx-form-errors/>
+        <rx-fieldset legend="{{ t('workshop.walkin.who') }}">
+          <rx-select name="customer" label="{{ t('workshop.fields.customer') }}" :options="[]" placeholder="{{ t('workshop.walkin.search') }}" options-url="{{ route('workshop.customers') }}" searchable hint="{{ t('workshop.walkin.or_new') }}"/>
+          <rx-form-grid columns="2">
+            <rx-input name="new_name" label="{{ t('workshop.walkin.new_name') }}"/>
+            <rx-input name="new_phone" label="{{ t('workshop.walkin.new_phone') }}" type="tel"/>
+          </rx-form-grid>
+        </rx-fieldset>
+        <rx-input name="bike" label="{{ t('workshop.fields.bike') }}" required placeholder="{{ t('workshop.bikes.name_hint') }}"/>
+        <rx-checkbox-list name="tasks" label="{{ t('workshop.book.tasks') }}" :options="tasks" columns="2" required/>
+        <rx-date-picker name="day" label="{{ t('workshop.fields.day') }}" :disabled-dates="full" :closed-weekdays="closed" :value="today" :min="today" required/>
+        <rx-textarea name="note" label="{{ t('workshop.book.note') }}" rows="2"/>
+        <rx-button icon="check">{{ t('workshop.walkin.submit') }}</rx-button>
+      </rx-card>
+    </form>
+    {# [/explain:workshop.walkin.template] #}
+  </rx-stack>
+</rx-page>

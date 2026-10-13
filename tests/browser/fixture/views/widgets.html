@@ -1,0 +1,62 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import input, select, button, date_picker, show_when, tags_input, repeater, wizard, wizard_step, toggle_buttons, file %}
+{% block content %}
+<form id="busy-form" hx-post="/slow" hx-swap="none">{{ csrf_field() }}{{ button("Send slowly", attrs={"id": "busy"}) }}</form>
+<form id="plain-busy" method="post" action="/slow-plain">{{ csrf_field() }}{{ button("Send once", attrs={"id": "plain-busy-button"}) }}</form>
+
+<form id="fields" onsubmit="return false">
+  {{ input("secret", "Secret", type="password", value="hunter2", revealable=true) }}
+  {{ toggle_buttons("method", "Method", [["pickup", "Pickup"], ["courier", "Courier"]], selected="pickup") }}
+  {% call show_when("method", "courier") %}{{ input("address", "Address") }}{% endcall %}
+  {{ tags_input("labels", "Labels", value=["new"]) }}
+  {{ select("size", "Size", [["s", "Small"], ["m", "Medium"], ["l", "Large"], ["xl", "Extra large"]], searchable=true, required=true, placeholder="Pick a size") }}
+  {{ date_picker("on", "Delivery date", value="2026-10-02", min="2026-10-01", max="2026-12-31") }}
+  {{ date_picker("visit", "Workshop visit", value="2026-10-06", min="2026-10-01", max="2026-12-31", disabled_dates=["2026-10-07", "2026-10-08"], closed_weekdays=[0]) }}
+</form>
+
+<form id="order" method="post" action="/order" hx-post="/order" hx-target="#order-result" data-live-validate>
+  {{ csrf_field() }}
+  {% call(row, prefix) repeater("lines", "Lines", rows=[{"name": "Coffee", "qty": 2}], item_label="Line", min=1, max=3) %}
+    {{ input(prefix ~ "[name]", "Name", value=row.name) }}
+    {{ input(prefix ~ "[qty]", "Quantity", type="number", value=row.qty) }}
+  {% endcall %}
+  {{ button("Order") }}
+</form>
+<p id="order-result"></p>
+
+<form id="trip" method="post" action="/trip" hx-post="/trip" hx-target="#trip-result">
+  {{ csrf_field() }}
+  {% call wizard("w", [["start", "Start"], ["end", "End"]], submit_label="Book") %}
+    {% call wizard_step("w", "start") %}{{ input("from", "From", required=true) }}{% endcall %}
+    {% call wizard_step("w", "end") %}{{ input("to", "To", required=true) }}{% endcall %}
+  {% endcall %}
+</form>
+<p id="trip-result"></p>
+
+{#- What a form sends: a hidden show_when group's fields aren't in it. -#}
+<form id="ship" hx-post="/echo" hx-target="#ship-result">
+  {{ csrf_field() }}
+  {{ toggle_buttons("via", "Via", [["pickup", "Pickup"], ["courier", "Courier"]], selected="pickup") }}
+  {% call show_when("via", "courier") %}{{ input("street", "Street", id="ship-street") }}{% endcall %}
+  {{ button("Ship", attrs={"id": "ship-send"}) }}
+</form>
+<p id="ship-result"></p>
+
+<form id="extras" onsubmit="return false">
+  {{ input("code", "Code", value="RX-42", copyable=true) }}
+  {{ file("photos", "Photos", multiple=true) }}
+</form>
+
+{#- Options from the server, added and renamed (`editable`). -#}
+<form id="remote" onsubmit="return false">
+  {{ select("category", "Category", [], searchable=true, placeholder="Pick one", options_url="/categories", editable=true) }}
+</form>
+
+{#- A required searchable select blocks the submit until something is picked. -#}
+<form id="pick" hx-post="/picked" hx-target="#pick-result">
+  {{ csrf_field() }}
+  {{ select("flavour", "Flavour", [["vanilla", "Vanilla"], ["mint", "Mint"]], searchable=true, required=true, placeholder="Pick a flavour") }}
+  {{ button("Pick", attrs={"id": "pick-send"}) }}
+</form>
+<p id="pick-result"></p>
+{% endblock %}

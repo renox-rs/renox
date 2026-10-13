@@ -1,0 +1,53 @@
+name: Release build (bikeshop demo)
+
+# Builds examples/bikeshop on the same Ubuntu (glibc) as the server that runs
+# the live demo at bikeshop.renox.rs. The server pulls the newest
+# `bikeshop-<sha>` artifact from main every few minutes (autodeploy); CI holds
+# no server keys. Builds on pull requests too, so a change can be tried on the
+# server by run id before it is merged.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "examples/bikeshop/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/release-bikeshop.yml"
+  pull_request:
+    paths:
+      - ".github/workflows/release-bikeshop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-bikeshop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build bikeshop (x86_64-linux, ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p bikeshop
+      - name: Package
+        run: |
+          mkdir dist
+          cp target/release/bikeshop dist/
+          strip dist/bikeshop
+          echo "${GITHUB_SHA}" > dist/REVISION
+          (cd dist && sha256sum bikeshop > bikeshop.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bikeshop-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

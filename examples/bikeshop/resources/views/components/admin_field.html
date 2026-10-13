@@ -1,0 +1,26 @@
+{#- One field of a resource's form: the plugin's field, plus one change. A
+    textarea named `description` (products, service plans) is `renox-editors`'
+    `rx-markdown-editor`: a toolbar and a Preview button, sending plain Markdown,
+    which the shop shows with the `markdown` filter (HTML in it is shown as
+    text, so nothing typed can run in a browser). `f` is a field as the panel
+    serializes it: name, label, kind, value, options, required, hint,
+    placeholder, prefix, suffix, span, rows, attrs, searchable, autocomplete,
+    locked. Labels and hints are set in Rust in English; `tx` shows them in
+    the page's language. Used as `<app-admin-field :f="f" :currency="admin.currency"/>`
+    by the panel's form and its action sheets. -#}
+<rx-props f currency="">
+<rx-let name="label" :value="tx(f.label)"/>
+<rx-let name="hint" :value="tx(f.hint) if f.hint else none"/>
+<rx-let name="types" :value="{'email': 'email', 'password': 'password', 'url': 'url', 'tel': 'tel', 'number': 'number', 'money': 'number', 'date_time': 'datetime-local'}"/>
+<rx-markdown-editor rx-if="f.kind == 'textarea' and f.name == 'description'" :name="f.name" :label="label" :value="f.value" :rows="f.rows" :hint="hint" :required="f.required" :placeholder="f.placeholder" :readonly="f.locked" :span="f.span"/>
+<rx-textarea rx-elif="f.kind == 'textarea'" :name="f.name" :label="label" :value="f.value" :rows="f.rows" :hint="hint" :required="f.required" :placeholder="f.placeholder" :readonly="f.locked" :span="f.span"/>
+<template rx-elif="f.kind in ['select', 'belongs_to']">
+  <rx-select :name="f.name" :label="label" :options="f.options" :selected="f.value" :hint="hint" :required="f.required" :placeholder="f.placeholder or t('admin_panel.select')" :searchable="f.searchable" :disabled="f.locked" :span="f.span"/>
+  <input rx-if="f.locked" type="hidden" name="{{ f.name }}" value="{{ f.value if f.value is not none else '' }}">
+</template>
+<template rx-elif="f.kind in ['checkbox', 'toggle']">
+  <rx-checkbox :name="f.name" :label="label" :checked="f.value is true" :hint="hint" :switch="f.kind == 'toggle'" :disabled="f.locked" :span="f.span"/>
+  <input rx-if="f.locked and f.value is true" type="hidden" name="{{ f.name }}" value="on">
+</template>
+<rx-date-picker rx-elif="f.kind == 'date'" :name="f.name" :label="label" :value="f.value" :min="f.attrs.min or none" :max="f.attrs.max or none" :hint="hint" :required="f.required" :readonly="f.locked" :span="f.span"/>
+<rx-input rx-else :name="f.name" :label="label" :type="types[f.kind] if types[f.kind] is defined else 'text'" :value="f.value" :hint="hint" :required="f.required" :autocomplete="f.autocomplete" :placeholder="f.placeholder" :step="f.attrs.step or none" :min="f.attrs.min or none" :max="f.attrs.max or none" :prefix="f.prefix or (currency if f.kind == 'money' else none)" :suffix="f.suffix" :readonly="f.locked" :span="f.span" :revealable="f.kind == 'password'"/>

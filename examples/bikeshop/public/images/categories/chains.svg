@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A bike chain">
+<rect width="800" height="600" fill="#e6eef6"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="150" y="260" width="110" height="70" rx="35" stroke="#0b6e66" stroke-width="16"/>
+  <circle cx="185" cy="295" r="9" fill="#1c1917"/>
+  <rect x="240" y="260" width="110" height="70" rx="35" stroke="#1c1917" stroke-width="16"/>
+  <circle cx="275" cy="295" r="9" fill="#1c1917"/>
+  <rect x="330" y="260" width="110" height="70" rx="35" stroke="#0b6e66" stroke-width="16"/>
+  <circle cx="365" cy="295" r="9" fill="#1c1917"/>
+  <rect x="420" y="260" width="110" height="70" rx="35" stroke="#1c1917" stroke-width="16"/>
+  <circle cx="455" cy="295" r="9" fill="#1c1917"/>
+  <rect x="510" y="260" width="110" height="70" rx="35" stroke="#0b6e66" stroke-width="16"/>
+  <circle cx="545" cy="295" r="9" fill="#1c1917"/>
+  <rect x="600" y="260" width="110" height="70" rx="35" stroke="#1c1917" stroke-width="16"/>
+  <circle cx="635" cy="295" r="9" fill="#1c1917"/>
+
+</g>
+</svg>

@@ -1,0 +1,10 @@
+[package]
+name = "chaos"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "The app tests/chaos/run.sh injects faults into; not an example to copy."
+
+[dependencies]
+renox = { workspace = true, features = ["postgres"] }
+serde = { version = "1.0.229", features = ["derive"] }

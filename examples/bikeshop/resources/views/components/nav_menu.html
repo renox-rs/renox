@@ -1,0 +1,37 @@
+{#- Phones: the panel the tab bar's last tab opens (`tabs` in
+    layouts/app.html): the rest of the navigation (`nav`, which the layout
+    passes in), the language and the account. -#}
+<rx-props nav>
+<rx-sheet id="site-menu" :title="t('nav.menu')" slide-over width="sm">
+  <nav class="bs-menu" aria-label="{{ t('nav.menu') }}">
+    <div class="bs-menu__links">
+      {#- The tab bar has the first four. -#}
+      <rx-sidebar-link rx-for="link in nav" rx-if="loop.index > 4" :href="link.href" :label="link.label" :active="link.active"/>
+    </div>
+    <template rx-if="auth.check">
+    <p class="bs-menu__section">{{ auth.user.name }}</p>
+    <div class="bs-menu__links">
+      <rx-sidebar-link route="account.show" :label="t('nav.account')" :active="route_is('account.*')"/>
+      <rx-sidebar-link route="plans.mine" :label="t('plans.mine.title')" :active="route_is('plans.mine')"/>
+      <rx-sidebar-link route="api.tokens" :label="t('api.tokens.title')" :active="route_is('api.tokens')"/>
+      <rx-sidebar-link route="staff.dashboard" :label="t('nav.staff')"/>
+    </div>
+    </template>
+    <p class="bs-menu__section">{{ t('nav.language') }}</p>
+    <div class="bs-menu__row">
+      <form rx-for="code, name in [('en', 'English'), ('es', 'Español')]" method="post" action="{{ route('locale.update', code) }}">
+        {{ csrf_field() }}
+        <rx-button :label="name" :variant="'primary' if app.locale == code else 'secondary'" size="small" type="submit"/>
+      </form>
+    </div>
+  </nav>
+  <div class="rx-sheet__actions">
+    <template rx-if="auth.check">
+    <form method="post" action="{{ route('logout') }}">{{ csrf_field() }}<rx-button :label="t('nav.logout')" variant="secondary" type="submit"/></form>
+    </template>
+    <template rx-else>
+    <rx-link-button route="login" :label="t('nav.login')" variant="secondary"/>
+    <rx-link-button route="register" :label="t('nav.register')" variant="primary"/>
+    </template>
+  </div>
+</rx-sheet>

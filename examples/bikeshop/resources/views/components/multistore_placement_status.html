@@ -1,0 +1,4 @@
+{#- A placement's status as a badge: `<app-multistore-placement-status :status="p.status"/>`. -#}
+<rx-props status>
+<rx-let name="tones" :value="{'requested': 'info', 'approved': 'info', 'moved': 'success', 'recalled': none, 'refused': none}"/>
+<rx-badge :kind="tones[status]">{{ t('multistore.placements.status.' ~ status) }}</rx-badge>

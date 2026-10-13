@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  {#- Title, description, canonical URL and social cards; a page fills the
+      "seo" block with seo(title="…") -#}
+  <rx-outlet name="seo">{{ seo() }}</rx-outlet>
+  <rx-head/>
+  {#- The UI kit (renox/ui.html, docs/ui.md): its styles and behavior. -#}
+  <rx-ui/>
+  <link rel="stylesheet" href="{{ asset('app.css') }}">
+  {#- The page patterns (components/, styled by public/patterns.css): yours to change. -#}
+  <link rel="stylesheet" href="{{ asset('patterns.css') }}">
+  <rx-outlet stack="head"/>
+</head>
+{#- The signed-in pages: the kit's app shell, `rx-shell`, with a `sidebar`,
+    then the main column with a full-width `navbar` for the bell and the
+    account menu. On phones the links move to the kit's tab bar at the
+    bottom of the screen (`tabs`). The home page uses layouts/public.html. -#}
+<body class="rx-page">
+  {#- A guest sees this layout only on an error page. -#}
+  <rx-let name="tabs" :value="(
+    [{'href': route('dashboard'), 'label': t('nav.dashboard'), 'icon': 'layout-dashboard', 'active': route_is('dashboard')}]
+    + ([{'href': route('users.index'), 'label': t('nav.users'), 'icon': 'users', 'active': route_is('users.*')}] if can('users.manage') else [])
+    + ([{'href': route('activity.index'), 'label': t('nav.activity'), 'icon': 'history', 'active': route_is('activity.*')}] if can('activity.view') else [])
+    + [
+      {'href': route('notifications.index'), 'label': t('nav.notifications'), 'icon': 'bell', 'badge': unread_notifications or none, 'active': route_is('notifications.*')},
+      {'href': route('account.show'), 'label': t('nav.account'), 'icon': 'circle-user', 'active': route_is('account.*')},
+    ]
+  ) if auth.check else [
+    {'href': route('home'), 'label': t('nav.home'), 'icon': 'house'},
+    {'href': route('login'), 'label': t('nav.log_in'), 'icon': 'log-in'},
+    {'href': route('register'), 'label': t('nav.register'), 'icon': 'circle-user'},
+  ]"/>
+  <rx-shell>
+  <rx-sidebar brand="{{ app.name }}" href="{{ route('home') }}">
+    <template rx-if="auth.check">
+      <rx-sidebar-link route="dashboard" label="{{ t('nav.dashboard') }}" icon="layout-dashboard" :active="route_is('dashboard')"/>
+      <rx-sidebar-link route="notifications.index" label="{{ t('nav.notifications') }}" icon="bell" :active="route_is('notifications.*')"/>
+      {#- Links behind a permission show only to those who have it
+          (`can(…)` asks the Permissions module). -#}
+      <template rx-if="can('users.manage') or can('activity.view')">
+        <rx-sidebar-section title="{{ t('nav.admin') }}"/>
+        <rx-sidebar-link rx-if="can('users.manage')" route="users.index" label="{{ t('nav.users') }}" icon="users" :active="route_is('users.*')"/>
+        <rx-sidebar-link rx-if="can('activity.view')" route="activity.index" label="{{ t('nav.activity') }}" icon="history" :active="route_is('activity.*')"/>
+      </template>
+      <rx-sidebar-section title="{{ t('nav.app') }}"/>
+      <rx-sidebar-link route="home" label="{{ t('nav.home') }}" icon="house"/>
+      <rx-sidebar-link route="account.show" label="{{ t('nav.account') }}" icon="circle-user" :active="route_is('account.*')"/>
+    </template>
+    <rx-sidebar-link rx-else route="home" label="{{ t('nav.home') }}" icon="house"/>
+  </rx-sidebar>
+  <div class="rx-shell__main">
+    <rx-navbar width="full" :skip="false" :tabs="tabs" tabs-label="{{ t('nav.sections') }}">
+      <span class="rx-spacer"></span>
+      {#- New notifications, live: Auth::new().notifications(). -#}
+      <template rx-if="auth.check">
+        <rx-notification-bell :count="unread_notifications"/>
+        <rx-menu label="{{ auth.user.name }}" id="account-menu" variant="plain">
+          <rx-menu-link route="account.show" label="{{ t('nav.account') }}"/>
+          <rx-menu-link route="notifications.index" label="{{ t('nav.notifications') }}"/>
+          <rx-menu-separator/>
+          <rx-menu-action route="logout" label="{{ t('nav.log_out') }}"/>
+        </rx-menu>
+      </template>
+      <template rx-else>
+        <rx-link-button route="login" label="{{ t('nav.log_in') }}" variant="plain" size="small"/>
+        <rx-link-button route="register" label="{{ t('nav.register') }}" variant="primary" size="small"/>
+      </template>
+    </rx-navbar>
+    <main class="rx-shell__content" id="main">
+      <rx-alert rx-if="flash.status" kind="success">{{ flash.status }}</rx-alert>
+      <rx-outlet name="content"/>
+    </main>
+  </div>
+  </rx-shell>
+  {#- Toasts from `Toast::success(…)`, after a redirect or an htmx request. -#}
+  <rx-toasts/>
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Queue · {{ app.name }}</title>
+  {{ renox_head() }}
+  <style>
+    :root { color-scheme: light dark; --bg: #f5f5f4; --card: #fff; --text: #1c1917; --muted: #78716c; --line: #e7e5e4; --bad: #b91c1c; --ok: #047857; }
+    @media (prefers-color-scheme: dark) { :root { --bg: #1c1917; --card: #292524; --text: #f5f5f4; --muted: #a8a29e; --line: #44403c; --bad: #f87171; --ok: #34d399; } }
+    body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; }
+    main { max-width: 64rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+    .card { min-width: 0; }
+    header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: .5rem; }
+    h1 { margin: 0; font-size: 1.35rem; }
+    h2 { margin: 0 0 .75rem; font-size: 1rem; }
+    .muted { color: var(--muted); font-size: .85rem; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; }
+    .tile, .card { background: var(--card); border-radius: .75rem; padding: 1rem; box-shadow: 0 1px 3px rgb(0 0 0 / .1); }
+    .tile strong { display: block; font-size: 1.6rem; font-variant-numeric: tabular-nums; }
+    .bad { color: var(--bad); } .ok { color: var(--ok); }
+    .scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+    td.error { font-family: ui-monospace, monospace; font-size: .8rem; word-break: break-word; }
+    form { display: inline; }
+    button { font: inherit; font-size: .8rem; padding: .3rem .6rem; border: 1px solid var(--line); border-radius: .4rem; background: var(--card); color: var(--text); cursor: pointer; }
+    .bar { height: .5rem; background: var(--line); border-radius: 1rem; overflow: hidden; min-width: 6rem; }
+    .bar span { display: block; height: 100%; background: var(--ok); }
+    .empty { color: var(--muted); margin: 0; }
+    .nowrap { white-space: nowrap; }
+  </style>
+</head>
+<body>
+<main id="queue" hx-get="{{ route('queue.dashboard') }}" hx-trigger="every 5s" hx-select="#queue" hx-target="#queue" hx-swap="outerHTML">
+  <header>
+    <h1>Queue · {{ app.name }}</h1>
+    <span class="muted">Refreshes every 5 seconds</span>
+  </header>
+
+  <section class="tiles">
+    <div class="tile"><span class="muted">Ready</span><strong>{{ stats.queues | map(attribute='ready') | sum }}</strong></div>
+    <div class="tile"><span class="muted">Oldest wait</span><strong>{{ oldest_wait or "–" }}</strong></div>
+    <div class="tile"><span class="muted">Done, last hour</span><strong class="ok">{{ stats.done_last_hour }}</strong></div>
+    <div class="tile"><span class="muted">Failed, last hour</span><strong class="{{ 'bad' if stats.failed_last_hour else '' }}">{{ stats.failed_last_hour }}</strong></div>
+  </section>
+
+  <section class="card">
+    <h2>Queues</h2>
+    {% if stats.queues %}
+    <div class="scroll"><table>
+      <tr><th>Queue</th><th class="num">Ready</th><th class="num">Delayed</th><th class="num">Running</th></tr>
+      {% for q in stats.queues %}
+      <tr><td>{{ q.queue }}</td><td class="num">{{ q.ready }}</td><td class="num">{{ q.delayed }}</td><td class="num">{{ q.running }}</td></tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<p class="empty">No jobs waiting.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <header>
+      <h2>Failed jobs <span class="muted">({{ stats.failed_total }})</span></h2>
+      {% if failed %}
+      <form method="post" action="{{ route('queue.retry_all') }}">{{ csrf_field() }}<button>Retry all</button></form>
+      {% endif %}
+    </header>
+    {% if failed %}
+    <div class="scroll"><table>
+      <tr><th>#</th><th>Job</th><th>Error</th><th>When</th><th></th></tr>
+      {% for f in failed %}
+      <tr>
+        <td class="num">{{ f.id }}</td>
+        <td>{{ f.job }}<br><span class="muted">{{ f.queue }}</span></td>
+        <td class="error">{{ f.error }}</td>
+        <td class="muted nowrap">{{ f.ago }} ago</td>
+        <td>
+          <form method="post" action="{{ route('queue.retry', f.id) }}">{{ csrf_field() }}<button>Retry</button></form>
+          <form method="post" action="{{ route('queue.forget', f.id) }}">{{ csrf_field() }}<button>Forget</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<p class="empty">No failed jobs.</p>{% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Batches</h2>
+    {% if batches %}
+    <div class="scroll"><table>
+      <tr><th>#</th><th>Name</th><th>Progress</th><th class="num">Jobs</th><th class="num">Failed</th><th>State</th></tr>
+      {% for b in batches %}
+      <tr>
+        <td class="num">{{ b.batch.id }}</td>
+        <td>{{ b.batch.name }}</td>
+        <td><div class="bar" role="progressbar" aria-valuenow="{{ b.progress }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ b.progress }}%"></span></div></td>
+        <td class="num">{{ b.batch.total - b.batch.pending }}/{{ b.batch.total }}</td>
+        <td class="num {{ 'bad' if b.batch.failed else '' }}">{{ b.batch.failed }}</td>
+        <td>{% if b.batch.cancelled %}<span class="bad">cancelled</span>{% elif b.batch.finished %}<span class="ok">finished</span>{% else %}running{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    {% else %}<p class="empty">No batches.</p>{% endif %}
+  </section>
+</main>
+</body>
+</html>

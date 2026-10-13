@@ -1,0 +1,5 @@
+{#- Shown while the checklist is empty; every row answer resends it out of
+    band, so it hides after the first item is added and comes back after the
+    last one goes: `<app-about-htmx-empty :total="total"/>`. -#}
+<rx-props total>
+<p id="checklist-empty" class="rx-subtitle" ?hidden="total > 0" hx-swap-oob="true">{{ t('htmx.empty') }}</p>

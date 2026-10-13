@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  {#- Title, description, canonical URL and social cards; a page fills the "seo" block with seo(title="…", description="…", image="…") -#}
+  <rx-block name="seo">{{ seo() }}</rx-block>
+  <rx-head/>
+  {#- The UI kit (renox/ui.html): the navigation bar, fields, buttons, lists, toasts. -#}
+  <rx-ui/>
+  <link rel="stylesheet" href="{{ asset('app.css') }}">
+</head>
+<body class="rx-page">
+  <rx-navbar :brand="app.name" :href="route('guestbook.index')">
+    <span class="rx-spacer"></span>
+    <rx-menu rx-if="auth.check" :label="auth.user.name" id="account-menu" variant="plain">
+      <rx-menu-link route="account.show" :label="auth.user.name"/>
+      <rx-menu-separator/>
+      <rx-menu-action route="logout" :label="t('nav.logout')"/>
+    </rx-menu>
+    <rx-link-button rx-if="not auth.check" route="login" :label="t('nav.login')" variant="plain" size="small"/>
+    <rx-link-button rx-if="not auth.check" route="register" :label="t('nav.register')" variant="primary" size="small"/>
+    {#- The language: the route saves the choice in the session. -#}
+    <rx-menu :label="app.locale | upper" id="language-menu" variant="plain">
+      <rx-menu-link href="{{ route('language', 'en') }}" label="English"/>
+      <rx-menu-link href="{{ route('language', 'es') }}" label="Español"/>
+    </rx-menu>
+  </rx-navbar>
+  <main class="rx-container rx-stack" id="main">
+    <rx-alert rx-if="flash.status" :message="flash.status" kind="success"/>
+    <rx-block name="content"/>
+  </main>
+  <rx-toasts/>
+  {#- Scripts pushed by pages, e.g. the guestbook form's Alpine component. -#}
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

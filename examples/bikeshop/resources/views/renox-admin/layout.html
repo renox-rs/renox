@@ -1,0 +1,53 @@
+{#- The admin panel's frame (renox-admin/layout.html), replaced by a file of
+    the same name: the plugin's back-office shell with the shop's head (the
+    brand, the blocks and Motion), the store switcher (permissions here count
+    the store being worked in, src/app/staff/admin.rs), a way back to the
+    staff side, and the "About this page" panel, which explains each
+    resource's list, form and view page (src/app/staff/explain.rs). -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <title><rx-block name="title">{{ tx(admin.title) }}</rx-block></title>
+  <app-head/>
+  <rx-outlet stack="head"/>
+</head>
+<rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
+<body class="rx-page rx-shell{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+  <rx-sidebar :brand="tx(admin.title)" :href="admin.home" :label="t('admin_panel.navigation')">
+    <rx-sidebar-link :href="admin.home" :label="t('admin_panel.dashboard')" :active="admin.dashboard"/>
+    <template rx-for="group in admin.nav">
+      <rx-sidebar-section rx-if="group.title" :title="tx(group.title)"/>
+      <rx-sidebar-link rx-for="item in group.items" :href="item.url" :label="tx(item.label)" :active="item.active"/>
+    </template>
+    <rx-sidebar-section :title="t('nav.shop')"/>
+    <rx-sidebar-link :href="route('staff.dashboard')" :label="t('staff.nav.back_office')"/>
+    <rx-sidebar-link :href="route('about.pages')" :label="t('about.index_link')"/>
+  </rx-sidebar>
+  <div class="rx-shell__main">
+    <rx-navbar width="full" :skip="false" :label="t('nav.account')">
+      <app-store-switcher :switcher="store_switcher"/>
+      <span class="rx-spacer"></span>
+      <rx-open-button rx-if="about" id="about-page" :label="t('about.button')" variant="plain" size="small"/>
+      <rx-menu rx-if="auth.check" :label="auth.user.name" id="rx-admin-account" variant="plain">
+        <template rx-if="admin.account_url">
+          <rx-menu-link :href="admin.account_url" :label="t('nav.account')"/>
+          <rx-menu-separator/>
+        </template>
+        <rx-menu-action rx-if="admin.logout_url" :action="admin.logout_url" :label="t('nav.logout')"/>
+      </rx-menu>
+    </rx-navbar>
+    <main class="rx-shell__content" id="main">
+      <rx-block name="content"/>
+    </main>
+  </div>
+  {#- "About this page": docked beside the page on wide screens, a sheet on
+      narrower ones (<app-about-dock>, <app-about-panel>). -#}
+  <template rx-if="about">
+    <app-about-dock :about="about"/>
+    <app-about-panel :about="about"/>
+  </template>
+  <rx-toasts/>
+  <app-scripts/>
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

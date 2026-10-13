@@ -1,0 +1,3 @@
+{#- A purchase order's status as a badge: `<app-stock-order-status :status="o.status"/>`. -#}
+<rx-props status>
+<rx-badge :kind="{'draft': none, 'ordered': 'info', 'partial': 'warning', 'received': 'success', 'cancelled': none}[status]">{{ t('stock.purchasing.status.' ~ status) }}</rx-badge>

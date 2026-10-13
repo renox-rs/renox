@@ -1,0 +1,43 @@
+{#- Subscribe a bike to a plan (#237). The form posts to
+    `plans.subscribe.store`, which starts renox-billing's checkout; while it
+    changes, htmx asks this page again and swaps the weekdays (they depend on
+    the store's opening days) and the summary. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.subscribe.title') }}" description="{{ t('plans.subscribe.lead') }}">
+<app-plans-assets/>
+<rx-stack>
+  <rx-page-header title="{{ t('plans.subscribe.title') }}" subtitle="{{ t('plans.subscribe.lead') }}" :back="route('plans.index')" back-label="{{ t('plans.index.title') }}"/>
+  <div rx-if="not has_bikes" class="rx-card"><rx-empty title="{{ t('plans.subscribe.no_bike') }}" message="{{ t('plans.subscribe.no_bike_text') }}" route="workshop.bikes" action-label="{{ t('workshop.bikes.add') }}" icon="bike"/></div>
+  <div rx-elif="not bikes" class="rx-card"><rx-empty title="{{ t('plans.subscribe.all_taken') }}" message="{{ t('plans.subscribe.all_taken_text') }}" route="plans.mine" action-label="{{ t('plans.mine.title') }}" icon="circle-check"/></div>
+  <rx-alert rx-elif="not ways" kind="warning" message="{{ t('plans.subscribe.no_gateway') }}"/>
+  {# [explain:plans.subscribe.template] #}
+  <rx-form rx-else :action="route('plans.subscribe.store')" id="subscribe-form" novalidate data-bs-subscribe
+        hx-get="{{ route('plans.subscribe') }}" hx-trigger="change" hx-select="#subscribe-live" hx-target="#subscribe-live" hx-swap="outerHTML">
+    <div class="bs-subscribe">
+      <rx-card>
+        <rx-form-errors/>
+        <rx-select name="bike" label="{{ t('plans.fields.bike') }}" :options="bikes" :selected="bike" required/>
+        <rx-radio name="plan" label="{{ t('plans.fields.plan') }}" :options="plans" :selected="plan.slug if plan else none" required/>
+        <rx-select name="store" label="{{ t('plans.fields.store') }}" :options="stores" :selected="store_id" required hint="{{ t('plans.subscribe.store_hint') }}"/>
+        <rx-radio name="pay_with" label="{{ t('plans.fields.pay_with') }}" :options="ways" :selected="pay_with" required/>
+      </rx-card>
+      <div id="subscribe-live" class="bs-subscribe__summary rx-stack" aria-live="polite">
+        <rx-card title="{{ t('plans.subscribe.when') }}">
+          <rx-toggle-buttons name="weekday" label="{{ t('plans.fields.weekday') }}" :options="weekdays" :selected="weekday" required hint="{{ t('plans.subscribe.weekday_hint') }}"/>
+        </rx-card>
+  {# [/explain:plans.subscribe.template] #}
+        <rx-card title="{{ t('plans.subscribe.summary') }}">
+          <div data-bs-plan-summary>
+          <rx-infolist rx-if="plan">
+            <rx-entry label="{{ t('plans.fields.plan') }}" :value="plan.name"/>
+            <rx-entry label="{{ t('plans.fields.monthly') }}"><strong class="bs-subscribe__price">{{ monthly | money }}</strong> / {{ t('blocks.plans.month') }}</rx-entry>
+            <rx-entry label="{{ t('plans.fields.first_visit') }}" :value="first" format="date" placeholder="{{ t('plans.subscribe.pick_day') }}"/>
+          </rx-infolist>
+          <p rx-if="plan" class="rx-hint">{{ t('plans.subscribe.billing_hint') }}</p>
+          </div>
+          <rx-button label="{{ t('plans.subscribe.submit') }}" icon="check" block key="s"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-form>
+</rx-stack>
+</rx-page>

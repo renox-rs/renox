@@ -1,0 +1,45 @@
+{#- `about.fields.show`: a sample read back from the database, every field on
+    the kit's infolist formatted by its kind (money in APP_CURRENCY, a Yes/No,
+    swatches, badges, pairs, Markdown, rich text, highlighted JSON, dates),
+    some with buttons beside them (`suffix_actions`). -#}
+<rx-page layout="layouts/app.html" :title="sample.name">
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="sample.name" :subtitle="t('fields.show.lead')" :back="route('about.fields')" :back-label="t('fields.title')">
+    <rx-link-button :href="route('about.fields.edit', sample.id)" :label="t('fields.edit')" variant="primary" icon="edit"/>
+    <rx-confirm id="delete-sample" :label="t('fields.delete')" :action="route('about.fields.destroy', sample.id)"
+                :title="t('fields.confirm.title', name=sample.name)" :message="t('fields.confirm.text')"
+                :confirm-label="t('fields.delete')" icon="trash"/>
+  </rx-page-header>
+  <rx-card>
+    <rx-infolist columns="2">
+      <rx-entry :label="t('fields.form.key')" :value="sample.id" copyable span="full"
+                :suffix-actions="[{'label': t('fields.edit'), 'icon': 'edit', 'url': route('about.fields.edit', sample.id)}]"/>
+      <rx-entry :label="t('fields.form.brand')" :value="sample.brand"/>
+      <rx-entry :label="t('fields.form.price')" :value="sample.price" format="money"/>
+      <rx-entry :label="t('fields.form.description')" :value="sample.description" format="markdown" span="full" :placeholder="t('fields.show.none')"/>
+      <rx-entry :label="t('fields.form.stock')" :value="sample.stock" format="number" :suffix="t('fields.show.in_stock')"
+                :suffix-actions="[{'label': t('fields.title'), 'icon': 'box', 'url': route('about.fields')}]"/>
+      <rx-entry :label="t('fields.form.weight')" :value="sample.weight_kg" format="number" decimals="2" suffix="kg"/>
+      <rx-entry :label="t('fields.form.available')" :value="sample.available" format="bool"/>
+      <rx-entry :label="t('fields.form.size')" :value="sample.size" :badge="'info'" :labels="{'small': t('fields.size.small'), 'medium': t('fields.size.medium'), 'large': t('fields.size.large')}"/>
+      {# [explain:fields.show.template] #}
+      <rx-entry :label="t('fields.form.colours')" :value="sample.colors" format="color"/>
+      <rx-entry :label="t('fields.form.tags')" :value="sample.tags" :badge="true" limit-list="3"/>
+      <rx-entry :label="t('fields.form.specs')" :value="sample.specs" format="key_value" span="full"/>
+      {#- Stored rich text, cleaned again on the way out. -#}
+      <rx-entry rx-if="sample.details" :label="t('fields.form.rich')" span="full"><div class="rx-prose">{{ sample.details | rich_text }}</div></rx-entry>
+      <rx-entry rx-else :label="t('fields.form.rich')" :value="none" span="full" :placeholder="t('fields.show.none')"/>
+      <rx-code-entry :label="t('fields.form.settings')" :value="sample.settings" language="json" :placeholder="t('fields.show.none')"/>
+      {# [/explain:fields.show.template] #}
+      <rx-entry :label="t('fields.form.pickup')" :value="sample.pickup_at"/>
+      <rx-entry :label="t('fields.form.launch')" :value="sample.launch_at" format="datetime" date-format="%d %b %Y, %H:%M"/>
+      <rx-entry :label="t('fields.form.released')" :value="sample.released_on" format="date" date-format="%d %b %Y"/>
+      <rx-entry rx-if="photo_url" :label="t('fields.form.photo')"><img class="bs-sample-photo" src="{{ photo_url }}" alt="{{ t('fields.show.photo_alt', name=sample.name) }}"></rx-entry>
+      <rx-entry rx-else :label="t('fields.form.photo')" :value="none" :placeholder="t('fields.show.none')"/>
+      <rx-entry rx-if="sample.manual" :label="t('fields.form.manual')" :value="sample.manual_name" :url="route('about.fields.manual', sample.id)" new-tab/>
+      <rx-entry rx-else :label="t('fields.form.manual')" :value="none" :placeholder="t('fields.show.none')"/>
+      <rx-entry :label="t('fields.show.updated')" :value="sample.updated_at" format="since"/>
+    </rx-infolist>
+  </rx-card>
+</div>
+</rx-page>

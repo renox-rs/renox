@@ -1,0 +1,19 @@
+{#- `staff.catalog.move`: the products chosen in the panel's "Move to a
+    category…" action, and the category to move them to
+    (src/app/staff/catalog_tools.rs). -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.catalog.move_title')">
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.catalog.move_title')" :subtitle="t('staff.catalog.move_lead', count=products | length)" :back="route('admin.products.index')" :back-label="t('staff.catalog.products')"/>
+    {# [explain:staff.catalog.move.template] #}
+    <rx-form :action="route('staff.catalog.move.store', token)">
+      <rx-card>
+        <rx-list :label="t('staff.catalog.products')">
+          <li rx-for="p in products"><span class="rx-list__main">{{ p.name }}</span></li>
+        </rx-list>
+        <rx-select name="category_id" :label="t('staff.catalog.category')" :options="categories" required searchable :placeholder="t('staff.catalog.choose_category')"/>
+        <div class="rx-card__footer"><rx-link-button route="admin.products.index" :label="t('staff.cancel')" variant="plain"/><rx-button :label="t('staff.catalog.move_button')"/></div>
+      </rx-card>
+    </rx-form>
+    {# [/explain:staff.catalog.move.template] #}
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-07T17-41-10Z",
+  "machine": {"cpu": "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz", "cores": 8, "kernel": "7.0.0-34-generic"},
+  "settings": {"duration": "15s", "warmup": "5s", "connections": 64, "server_cpus": "0,1", "memory": "1g", "oha": "1.16.0"},
+  "servers": {
+    "renox": {"cold_start_ms": 655, "idle_mib": 2.8, "artifact_bytes": 19747352, "endpoints": {"plaintext": {"rps": 29286.7, "p50_ms": 2.231, "p99_ms": 3.453, "ok": 439315, "errors": 0, "peak_mib": 5.8},"json": {"rps": 28163.9, "p50_ms": 2.331, "p99_ms": 3.549, "ok": 422457, "errors": 0, "peak_mib": 6.0},"db": {"rps": 15100.2, "p50_ms": 4.283, "p99_ms": 7.464, "ok": 226470, "errors": 0, "peak_mib": 11.1},"page": {"rps": 9630.3, "p50_ms": 6.674, "p99_ms": 11.626, "ok": 144417, "errors": 0, "peak_mib": 11.7}}}
+,
+    "axum": {"cold_start_ms": 493, "idle_mib": 5.0, "artifact_bytes": 5944888, "endpoints": {"plaintext": {"rps": 106011.1, "p50_ms": 0.606, "p99_ms": 0.91, "ok": 1590435, "errors": 0, "peak_mib": 7.4},"json": {"rps": 101251.7, "p50_ms": 0.636, "p99_ms": 0.954, "ok": 1519043, "errors": 0, "peak_mib": 8.4},"db": {"rps": 29642.4, "p50_ms": 2.117, "p99_ms": 3.487, "ok": 444641, "errors": 0, "peak_mib": 10.2},"page": {"rps": 15137.1, "p50_ms": 4.165, "p99_ms": 6.914, "ok": 227046, "errors": 0, "peak_mib": 11.2}}}
+,
+    "laravel-fpm": {"cold_start_ms": 2694, "idle_mib": 35.8, "artifact_bytes": 27815772, "endpoints": {"plaintext": {"rps": 718.8, "p50_ms": 89.946, "p99_ms": 116.343, "ok": 10719, "errors": 0, "peak_mib": 80.7},"json": {"rps": 721.7, "p50_ms": 89.105, "p99_ms": 119.728, "ok": 10763, "errors": 0, "peak_mib": 82.5},"db": {"rps": 611.0, "p50_ms": 105.028, "p99_ms": 136.009, "ok": 9103, "errors": 0, "peak_mib": 105.0},"page": {"rps": 580.9, "p50_ms": 111.992, "p99_ms": 146.117, "ok": 8651, "errors": 0, "peak_mib": 106.0}}}
+,
+    "laravel-octane": {"cold_start_ms": 1120, "idle_mib": 93.2, "artifact_bytes": 27828016, "endpoints": {"plaintext": {"rps": 1398.5, "p50_ms": 45.351, "p99_ms": 62.162, "ok": 20917, "errors": 0, "peak_mib": 110.1},"json": {"rps": 1390.0, "p50_ms": 45.633, "p99_ms": 61.972, "ok": 20789, "errors": 0, "peak_mib": 110.6},"db": {"rps": 1216.5, "p50_ms": 52.108, "p99_ms": 68.045, "ok": 18186, "errors": 0, "peak_mib": 116.5},"page": {"rps": 1065.8, "p50_ms": 59.723, "p99_ms": 75.389, "ok": 15927, "errors": 0, "peak_mib": 127.9}}}
+  }
+}

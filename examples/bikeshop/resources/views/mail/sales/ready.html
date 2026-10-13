@@ -1,0 +1,7 @@
+{#- Sent when a pickup order is ready to collect. -#}
+<rx-mail subject="{{ t('sales.mail.ready.subject', number=order.number) }}">
+  <p>{{ t('sales.mail.hello', name=name) }}</p>
+  <rx-mail-panel>{{ t('sales.mail.ready.text', store=order.store.name, phone=order.store.phone) }}</rx-mail-panel>
+  <rx-mail-table :rows="table.rows" :head="table.head" :total="table.total"/>
+  <rx-mail-button :url="url" :label="t('sales.mail.view_order')"/>
+</rx-mail>

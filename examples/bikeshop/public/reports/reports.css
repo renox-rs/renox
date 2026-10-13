@@ -1,0 +1,28 @@
+/* The report pages (#242): CSS grids spaced with the kit's tokens (--rx-space-*), type from
+   the kit's scale; no sizes of our own. Loaded by those pages only (reports/_assets.html). */
+
+/* The controls over the dashboard: the period, books or work, the store. They wrap on
+   narrow screens, one per row on phones. */
+.bs-report-controls { display: grid; grid-template-columns: auto auto minmax(0, 1fr); gap: var(--rx-space-3); align-items: center; justify-items: start; }
+.bs-report-controls > .rx-period { grid-column: 1 / -1; }
+@media (max-width: 40rem) { .bs-report-controls { grid-template-columns: minmax(0, 1fr); } }
+.bs-report-controls > * { min-width: 0; max-width: 100%; }
+
+/* A figure and its label on one line, inside a widget (fees, help hours, positions). */
+.bs-figures { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: var(--rx-space-3); margin: 0; }
+.bs-figures div { display: grid; gap: var(--rx-space-1); }
+.bs-figures dt { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-figures dd { margin: 0; font: var(--rx-type-heading); font-variant-numeric: tabular-nums; }
+
+/* A widget's parts, top to bottom. */
+.bs-widget-stack { display: grid; gap: var(--rx-space-4); }
+
+/* The monthly report: the form and the runs side by side on wide screens. */
+.bs-monthly { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-monthly { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+.bs-run { display: grid; gap: var(--rx-space-2); }
+.bs-run__files { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); }
+
+/* The period's presets take the whole first row; a top list's name sits above its count. */
+.bs-report-controls > .rx-period { justify-self: stretch; }
+.bs-top .rx-list__main { display: grid; gap: var(--rx-space-1); }

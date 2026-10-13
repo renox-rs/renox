@@ -1,0 +1,31 @@
+{#- `staff.catalog.fits`: for a part, the bike models it fits; for a bike,
+    the parts that fit it; each with its note (`part_fits`, a Pivot). Gear
+    fits nothing. (src/app/staff/catalog_tools.rs) -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.catalog.fits_title', product=product.name)">
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.catalog.fits_title', product=product.name)" :subtitle="category.name" :back="route('admin.products.index')" :back-label="t('staff.catalog.products')"/>
+    <rx-card rx-if="gear"><rx-empty :title="t('staff.catalog.gear')" icon="tag"/></rx-card>
+    <template rx-else>
+    <rx-card :title="t('staff.catalog.fits_bikes') if part else t('staff.catalog.fits_parts')">
+      <rx-list id="fits" :label="t('staff.catalog.fits_title', product=product.name)">
+        <li rx-for="f in fitted">
+          <span class="rx-list__main"><strong>{{ f.product.name }}</strong><span rx-if="f.note" class="rx-subtitle">{{ f.note }}</span></span>
+          <rx-confirm :id="'unfit-' ~ f.product.id" :label="t('staff.catalog.remove')" :action="route('staff.catalog.fits.destroy', product.id, f.product.id)" :title="t('staff.catalog.remove_title', product=f.product.name)" :message="t('staff.catalog.remove_text')"/>
+        </li>
+        <li rx-if="not fitted"><span class="rx-subtitle">{{ t('staff.catalog.none_yet') }}</span></li>
+      </rx-list>
+    </rx-card>
+    {# [explain:staff.catalog.fits.template] #}
+    <rx-form :action="route('staff.catalog.fits.store', product.id)" live>
+      <rx-card :title="t('staff.catalog.add_fit')">
+        <rx-form-grid columns="2">
+          <rx-select name="other_id" :label="t('staff.catalog.bike') if part else t('staff.catalog.part')" :options="choices" required searchable :placeholder="t('staff.catalog.choose')"/>
+          <rx-input name="note" :label="t('staff.catalog.note')" :hint="t('staff.catalog.note_hint')"/>
+        </rx-form-grid>
+        <div class="rx-card__footer"><rx-button :label="t('staff.catalog.add_fit')"/></div>
+      </rx-card>
+    </rx-form>
+    {# [/explain:staff.catalog.fits.template] #}
+    </template>
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,3138 @@
+{
+  "shop": {
+    "name": "Bike Shop",
+    "footer": "A Renox example: three bike stores that sell, rent and service bikes.",
+    "services": {
+      "buy": {
+        "title": "Bikes and gear",
+        "text": "From three stores' shelves"
+      },
+      "rent": {
+        "title": "Rentals",
+        "text": "By the hour or the day"
+      },
+      "repair": {
+        "title": "Workshop",
+        "text": "Tune-ups, repairs, fittings"
+      },
+      "plans": {
+        "title": "Service plans",
+        "text": "Visits booked for you"
+      }
+    }
+  },
+  "nav": {
+    "home": "Home",
+    "account": "Account",
+    "staff": "Staff area",
+    "login": "Log in",
+    "register": "Register",
+    "logout": "Log out",
+    "dashboard": "Dashboard",
+    "shop": "Shop",
+    "storefront": "Storefront",
+    "menu": "Menu",
+    "language": "Language",
+    "tabs": {
+      "label": "Main sections",
+      "home": "Home",
+      "shop": "Shop",
+      "rent": "Rent",
+      "workshop": "Service"
+    }
+  },
+  "home": {
+    "title": "Bikes to buy, rent and keep riding",
+    "lead": "Three stores, one shop: buy a bike or gear, rent one by the hour or the day, and have it serviced when it needs it.",
+    "buy": {
+      "title": "Buy",
+      "text": "Road, mountain, city and electric bikes, helmets, lights, locks and the spare parts that fit your bike."
+    },
+    "rent": {
+      "title": "Rent",
+      "text": "Pick a bike up at any of our stores by the hour or the day, and bring it back to whichever is closest."
+    },
+    "service": {
+      "title": "Service",
+      "text": "A one-off tune-up, or a service plan whose visits are booked for you, weekly or monthly."
+    },
+    "stores": {
+      "title": "Three stores, working together",
+      "text": "Staff help each other's stores, bikes move to where riders need them, and the stores settle up every month.",
+      "store": "The :name store",
+      "buy": "Buy",
+      "rent": "Rent",
+      "service": "Service"
+    },
+    "hero": {
+      "eyebrow": "Three stores · one shop",
+      "title": "Bikes to buy, rent and",
+      "accent": "keep riding.",
+      "bikes": "bikes to choose from",
+      "stores": "stores in town",
+      "hours_figure": "7 days",
+      "hours": "a week, Sundays too",
+      "badge_title": "Our own workshop",
+      "badge_text": "Book a service online"
+    },
+    "all": "All",
+    "popular": {
+      "title": "Popular",
+      "accent": "this week"
+    },
+    "ride": {
+      "title": "Shop by",
+      "accent": "ride",
+      "all": "Every category"
+    },
+    "services": {
+      "label": "Our services",
+      "workshop": {
+        "title": "A workshop that tells you what it's doing."
+      },
+      "rent": {
+        "title": "Rent by the hour",
+        "button": "See what's free"
+      },
+      "plans": {
+        "title": "Service plans",
+        "text": "Visits booked for you, weekly or monthly, with parts and labour priced in advance.",
+        "button": "Compare plans"
+      }
+    }
+  },
+  "staff": {
+    "dashboard": {
+      "title": "Dashboard",
+      "lead": "The back office of the three stores.",
+      "empty_title": "Nothing here yet",
+      "empty_text": "Each store's sales, rentals, workshop and stock appear here as the example grows.",
+      "welcome": "Good to see you, :name.",
+      "ways": {
+        "label": "Today's work",
+        "rentals": "Pick-ups, bikes out and overdue",
+        "workshop": "Work orders by status",
+        "counter": "Sell at the till",
+        "stock": "What is on the shelves"
+      }
+    },
+    "two_factor": {
+      "required": "Staff accounts need two-factor login. Turn it on below to open the back office."
+    },
+    "cancel": "Cancel",
+    "nav": {
+      "back_office": "Back office",
+      "team": "Team",
+      "stores": "Stores",
+      "roles": "Roles",
+      "audit": "Audit log",
+      "admin": "Admin panel",
+      "sections": {
+        "front": "Front desk",
+        "work": "Workshop and stock",
+        "stores": "Between stores",
+        "manage": "Manage"
+      }
+    },
+    "stores": {
+      "title": "Stores",
+      "lead": "Each store's details, opening hours, workshop time and fee rate.",
+      "phone": "Phone",
+      "email": "Email",
+      "workshop": "Workshop time per day",
+      "minutes": ":minutes minutes",
+      "minutes_unit": "min",
+      "fee": "Fee rate for other stores",
+      "hours": "Opening hours",
+      "days": {
+        "mon": "Monday",
+        "tue": "Tuesday",
+        "wed": "Wednesday",
+        "thu": "Thursday",
+        "fri": "Friday",
+        "sat": "Saturday",
+        "sun": "Sunday"
+      },
+      "edit": "Edit",
+      "none": "No store to manage here.",
+      "edit_lead": "Changes show on the shop's pages at once.",
+      "details": "Details",
+      "name": "Name",
+      "workshop_hint": "Mechanic minutes the workshop can book each day.",
+      "fee_hint": "What this store earns for work done for another store (renting out its bike, selling its goods). Audited.",
+      "hours_lead": "One row per day the store opens; leave a day out when it's closed.",
+      "day": "Day",
+      "add_day": "Add a day",
+      "opens": "Opens",
+      "closes": "Closes",
+      "saved": ":store was saved."
+    },
+    "team": {
+      "title": "Team of :store",
+      "lead": "Who works here: their home store, or a role given in this store.",
+      "name": "Name",
+      "roles": "Roles",
+      "home": "Home store",
+      "status": "Status",
+      "active": "Active",
+      "inactive": "Deactivated",
+      "open": "Open",
+      "no_role": "No role",
+      "empty": "Nobody works here yet.",
+      "roles_lead": "Roles in every store, with their dates. Those given in this store can be taken away here.",
+      "everywhere": "Every store",
+      "from": "from :date",
+      "until": "until :date",
+      "not_in_force": "Not in force now",
+      "remove": "Remove",
+      "remove_title": "Remove the role :role?",
+      "remove_text": "They lose what it allowed in :store from their next page.",
+      "give": "Give a role in :store",
+      "give_lead": "Optionally from and until a date: help for a week ends by itself.",
+      "role": "Role",
+      "choose_role": "Choose a role",
+      "starts_on": "From",
+      "starts_hint": "Empty: from now.",
+      "ends_on": "Until (included)",
+      "ends_hint": "Empty: for good.",
+      "give_button": "Give the role",
+      "details": "Details",
+      "hired": "Hired",
+      "access": "Access",
+      "deactivate_lead": "They leave the company: every role is removed and they are logged out everywhere at once.",
+      "reactivate_lead": "Deactivated. Give them a role again to let them work.",
+      "deactivate": "Deactivate",
+      "deactivate_title": "Deactivate :name?",
+      "deactivate_text": "All their roles are removed and every session they have ends now.",
+      "reactivate": "Reactivate",
+      "role_given": "The role was given.",
+      "role_removed": "The role was removed.",
+      "deactivated": "Deactivated and logged out everywhere.",
+      "reactivated": "Back on the team: give them a role."
+    },
+    "invitations": {
+      "title": "Invite to the team",
+      "lead": "They get a mail with a link to join :store's team.",
+      "email": "Email address",
+      "role_hint": "Only roles whose every permission you hold here.",
+      "send": "Send the invitation",
+      "sent": "The invitation is on its way to :email.",
+      "joined": "Welcome to :store's team. Log in: you'll set up two-factor login first.",
+      "mail": {
+        "subject": "Join the team at :store",
+        "text": ":inviter invites you to work at :store as :role.",
+        "button": "Join the team",
+        "expires": "The link works for :days days.",
+        "two_factor": "Staff accounts use two-factor login: have an authenticator app on your phone ready."
+      }
+    },
+    "join": {
+      "title": "Join :store",
+      "lead": "You're invited as :role at :store.",
+      "used": "This invitation was already accepted. Log in to start.",
+      "log_in_first": "You already have an account with :email. Log in, then open the link again.",
+      "name": "Your name",
+      "password": "Choose a password",
+      "password_confirmation": "Type it again",
+      "button": "Join the team",
+      "two_factor": "After logging in you'll set up two-factor login, required for staff."
+    },
+    "roles": {
+      "title": "Roles and permissions",
+      "lead": "What each role may do. Changes count from everyone's next page.",
+      "note": "Code checks permissions, never role names: a switch here changes what a role allows without a deploy. Where each role counts is set per person, per store, on the team pages.",
+      "permission": "Permission",
+      "global": "Every store",
+      "count": ":count permissions",
+      "cell": ":role may :permission",
+      "granted": ":role now has :permission.",
+      "revoked": ":role no longer has :permission."
+    },
+    "audit": {
+      "title": "Audit log",
+      "lead": "Sensitive changes in every store: who, in which store, with which role, and when."
+    },
+    "catalog": {
+      "move_title": "Move to a category",
+      "move_lead": ":count products selected in the panel.",
+      "products": "Products",
+      "category": "Category",
+      "choose_category": "Choose a category",
+      "move_button": "Move them",
+      "moved": ":count products moved.",
+      "fits_title": "What fits: :product",
+      "gear": "Gear doesn't fit bikes: nothing to set here.",
+      "fits_bikes": "Bikes this part fits",
+      "fits_parts": "Parts that fit this bike",
+      "remove": "Remove",
+      "remove_title": "Remove :product?",
+      "remove_text": "Customers won't see it among what fits any more.",
+      "none_yet": "Nothing yet.",
+      "add_fit": "Add",
+      "bike": "Bike model",
+      "part": "Part",
+      "choose": "Choose…",
+      "note": "Note",
+      "note_hint": "Optional, e.g. \"needs a 12-speed hub\".",
+      "fit_added": "Added.",
+      "fit_removed": "Removed.",
+      "fits_link": "What fits",
+      "selected": ":count selected.",
+      "move_link": "Choose the category"
+    }
+  },
+  "about": {
+    "button": "About this page",
+    "index_link": "Every page and its features",
+    "panel": {
+      "who": "Who uses it",
+      "roles": "Roles and flow",
+      "features": "Renox features used, and why",
+      "under_hood": "Under the hood",
+      "docs": "In the guide",
+      "sources": "Source files",
+      "close": "Close",
+      "code": "The code",
+      "github": "Open these lines on GitHub",
+      "copy": "Copy the code",
+      "copied": "Copied",
+      "hide": "Fold the explanation away",
+      "show": "How this page is built"
+    },
+    "pages": {
+      "title": "Every page and its features",
+      "lead": "Each page of the bike shop, what it is for, and the Renox features that make it work. Start from a feature or from a role.",
+      "filters": "Filter the pages",
+      "feature": "Renox feature",
+      "any_feature": "Any feature",
+      "audience": "Used by",
+      "anyone": "Anyone",
+      "filter": "Filter",
+      "clear": "Show all",
+      "count": ":shown of :total pages",
+      "none_title": "No page matches",
+      "none_text": "No page uses that feature for that role yet."
+    }
+  },
+  "blocks": {
+    "gallery": {
+      "label": "Photos",
+      "carousel": "carousel",
+      "slide": "slide",
+      "position": "Photo :n of :total",
+      "keys": "Photo: the arrow keys show the next one",
+      "previous": "Previous photo",
+      "next": "Next photo",
+      "enlarge": "Enlarge",
+      "thumbnails": "Choose a photo",
+      "show": "Photo :n: :alt",
+      "close": "Close"
+    },
+    "range": {
+      "label": "Range",
+      "minimum": "Lowest :label",
+      "maximum": "Highest :label"
+    },
+    "quantity": {
+      "label": "Quantity",
+      "decrease": "One less (:label)",
+      "increase": "One more (:label)"
+    },
+    "keypad": {
+      "label": "Number pad",
+      "decimal": "Decimal point",
+      "backspace": "Delete the last digit",
+      "clear": "Clear",
+      "enter": "Enter"
+    },
+    "kanban": {
+      "label": "Board",
+      "help": "To move a card: Space or Enter picks it up, the arrow keys move it, Space or Enter drops it, Escape cancels.",
+      "picked": "Picked up :card, in :column, position :position of :total.",
+      "moved": ":card: :column, position :position of :total.",
+      "dropped": ":card dropped in :column, position :position of :total.",
+      "cancelled": "Move cancelled. :card is back in :column, position :position of :total.",
+      "failed": "The move of :card couldn't be saved. It is back in :column."
+    },
+    "calendar": {
+      "months": "Months",
+      "previous": "Previous month",
+      "next": "Next month",
+      "today": "Today",
+      "none": "Nothing booked this month.",
+      "month_1": "January",
+      "month_2": "February",
+      "month_3": "March",
+      "month_4": "April",
+      "month_5": "May",
+      "month_6": "June",
+      "month_7": "July",
+      "month_8": "August",
+      "month_9": "September",
+      "month_10": "October",
+      "month_11": "November",
+      "month_12": "December",
+      "day_0": "Sun",
+      "day_1": "Mon",
+      "day_2": "Tue",
+      "day_3": "Wed",
+      "day_4": "Thu",
+      "day_5": "Fri",
+      "day_6": "Sat",
+      "day_long_0": "Sunday",
+      "day_long_1": "Monday",
+      "day_long_2": "Tuesday",
+      "day_long_3": "Wednesday",
+      "day_long_4": "Thursday",
+      "day_long_5": "Friday",
+      "day_long_6": "Saturday"
+    },
+    "availability": {
+      "label": "Availability",
+      "resource": "Resource",
+      "free": "Free",
+      "booked": "Booked",
+      "closed": "Closed",
+      "book": "Book :resource at :slot",
+      "legend": "What the slots mean"
+    },
+    "datetime": {
+      "start_date": "From (day)",
+      "start_time": "From (time)",
+      "end_date": "Until (day)",
+      "end_time": "Until (time)",
+      "hour": "1 hour",
+      "hours": ":n hours",
+      "day": "1 day",
+      "days": ":n days",
+      "minutes": ":n min",
+      "order": "The end must come after the start."
+    },
+    "swatches": {
+      "sold_out": "sold out"
+    },
+    "history": {
+      "label": "History",
+      "kind_info": "note",
+      "kind_success": "done",
+      "kind_warning": "needs attention",
+      "kind_error": "problem"
+    },
+    "plans": {
+      "label": "Plans",
+      "popular": "Most popular",
+      "month": "month",
+      "year": "year",
+      "choose": "Choose this plan",
+      "compare": "Compare the plans",
+      "feature": "Feature",
+      "included": "Included",
+      "not_included": "Not included"
+    },
+    "page": {
+      "title": "Bike shop blocks",
+      "lead": "The UI pieces Renox's kit doesn't have, from the renox-blocks crate (and one of the shop's own), as macros on the kit's tokens. Each one works here, with its signature.",
+      "contents": "On this page",
+      "signature": "Macro",
+      "gallery": "A product's photos: arrows, thumbnails, swipes and the arrow keys, and an enlarged view in the kit's sheet.",
+      "form_title": "Form fields",
+      "form_lead": "These blocks are plain form fields, so Valid<T> reads them. Send the form: the server checks every value again.",
+      "range": "Two handles on one track, sent as two fields.",
+      "quantity": "A number with − and + buttons.",
+      "keypad": "A counter's number pad, typing into the amount.",
+      "datetime": "A start and an end with hours, sent as two date-times.",
+      "swatches": "Variants as chips; a change asks the server for the price and stock.",
+      "send": "Send the form",
+      "received": "The server accepted: :summary",
+      "paid": "Amount paid",
+      "filter_title": "A price filter",
+      "filter_lead": "A GET form: the two handles become ?price_min=…&price_max=… in the address.",
+      "filter": "Filter",
+      "filtering": "Showing bikes from :low to :high.",
+      "kanban": "The workshop's jobs: drag a card, or pick it up with Space and move it with the arrow keys. Each move is sent with htmx.",
+      "calendar": "Service visits in a month; the arrows go to the months around it.",
+      "availability": "Bikes against the hours of a day; a free slot is a link that books it.",
+      "history": "What happened to a bike in the workshop.",
+      "plans": "The service plans, side by side and compared.",
+      "variant": "Price and stock",
+      "in_stock": ":n in stock",
+      "out_of_stock": "Out of stock",
+      "booked": "Booking :slot (a demo: nothing is saved).",
+      "errors": {
+        "past_start": "A rental can't start in the past."
+      }
+    }
+  },
+  "access": {
+    "switcher": {
+      "working_in": "Working in :store",
+      "switch_to": "Switch store"
+    }
+  },
+  "data_page": {
+    "title": "The data model",
+    "lead": "Every table of the bike shop, how they relate, and the choices behind them: Pagila's shape grown into a business with three stores that sell, rent and service bikes.",
+    "glance": {
+      "tables": "Tables",
+      "rows": "Rows now",
+      "volume": "Pagila's volume"
+    },
+    "tables": {
+      "title": "Tables, by area",
+      "lead": "Each area of src/app owns the models of its tables. The counts are live: run the large seed and they grow to Pagila's size.",
+      "table": "Table",
+      "model": "Model",
+      "holds": "One row is",
+      "rows": "Rows"
+    },
+    "relations": {
+      "title": "Relations",
+      "lead": "No lazy relations in Renox: each one is loaded for a whole page in a fixed number of queries, so lists never run a query per row.",
+      "from": "From",
+      "kind": "Kind",
+      "to": "To",
+      "how": "Loaded with"
+    },
+    "pagila": {
+      "title": "From Pagila to the bike shop",
+      "lead": "Sakila/Pagila is the sample database whose shape touches the most of a framework. A DVD shop is dated; a bike shop keeps the shape.",
+      "pagila": "Pagila",
+      "here": "Here"
+    },
+    "stores": {
+      "title": "Owner, location and operating store",
+      "text": "Three stores work together, so a record can belong to more than one store, and each action is checked against the one that matters:\n\n- the **owner store** has the bike or the goods in its books: prices, retiring or selling a bike and recalling consigned goods are its decisions;\n- the **location store** is where the bike or goods are now: renting them out, the counter and stock takes happen there;\n- the **operating store** served the customer: it holds the deposit and earns a fee (its `fee_rate_bp`, 20 % unless the owner changes it) when the bike or goods are another store's, and the books between stores record who owes whom.\n\n`access::require(user, permission, StoreAttr::Owner, &bike)` checks a permission in the store an attribute names; `access::visible::<RentalBike>(permission)` lists what is owned by, or located at, the stores where the person holds it.",
+      "record": "Record",
+      "owner": "Owner store",
+      "location": "Location store",
+      "operating": "Operating store"
+    },
+    "money": {
+      "title": "Money as integers",
+      "text": "Every amount is an `i64` in the smallest unit of `APP_CURRENCY` (cents with `USD`; `INTEGER` on SQLite, `BIGINT` on PostgreSQL), never a float: `0.1 + 0.2` isn't `0.3` in floating point, and a sum of prices must be exact. Templates show it with the `money` filter; fees are worked out in basis points with integer rounding (`staff::model::fee`).",
+      "stored": "Stored",
+      "shown": "Shown"
+    },
+    "encrypted": {
+      "title": "Secrets: Encrypted",
+      "text": "A customer's ID number (needed to rent a bike) is an `Encrypted<String>`: sealed with `APP_KEY` when it's written, so the `customers.id_number` column holds unreadable text and a stolen database leaks nothing. The app reads the plain value; the field is `#[serde(skip_serializing)]`, so it never reaches a template or an API answer by accident, and staff see `masked_id_number()`."
+    },
+    "enums": {
+      "title": "Statuses: DbEnum",
+      "text": "Every status and kind is a Rust enum with `#[derive(DbEnum)]`: stored as a word (`overdue`, `waiting_parts`), read back as the enum, so a typo is a compile error and a form sending an unknown value gets a validation error."
+    },
+    "soft_deletes": {
+      "title": "Soft deletes",
+      "text": "Customers who leave and discontinued products are **soft deleted** (`#[model(soft_deletes)]`, a `deleted_at` column): queries skip them, `restore` brings them back, and the rentals, orders and payments that point at them keep working. Everything else is history that is never deleted: a rental is returned or cancelled, an order refunded."
+    },
+    "seed": {
+      "title": "Factories and the seeders",
+      "text": "Every model has a `Factory` in its area's `factories.rs`, with states and sequences named after the business: `rentals().of_bike(&bike).overdue()`, `rental_bikes().owned_by(north).placed_at(south)`, `orders().at(store).paid()`, `work_orders().waiting_parts()`. Tests make exactly the rows they need with them (`seed::fixtures` adds stores and people with roles).\n\n`cargo run -- db:seed` builds a small shop in a second; `cargo run -- demo:seed --size large` builds Pagila's volume (about 1,000 variants, 600 customers, 16,000 rentals, 5,000 orders, 3,000 work orders) in a few seconds. The dates count back from today, so the shop is always alive: rentals out and overdue, one due back later today, work on the bench, low stock, bikes and goods at other stores, someone helping another store this week, last month's balances still open. A seed never runs twice: `db:seed` skips a seeded database and `demo:seed` refuses it."
+    },
+    "access": {
+      "title": "Who may do what: RBAC + ABAC",
+      "lead": "Roles say what, stores say where.",
+      "text": "The code checks **permissions** (`access::catalogue`), never a role's name: a role is a named set of permissions that the owner can change without a deploy. Roles are given **in a store** (`assign_role_in(…, &Scope::of(&store))`), optionally between two dates (staff helping another store), and only the owner's role is global. On the staff side a middleware picks the store the request works in and calls `permissions::set_scope`, so `require_permission`, `allows` and `can()` count the roles in that store; another store's record answers 404.",
+      "role": "Role",
+      "where": "Given",
+      "grants": "Permissions",
+      "everywhere": "Everywhere",
+      "in_a_store": "In a store"
+    }
+  },
+  "catalog": {
+    "all": {
+      "title": "All products",
+      "description": "Bikes, gear and spare parts from our three stores, with prices and stock per store."
+    },
+    "category": {
+      "description": "Shop :name at our three stores: compare prices, sizes and what is in stock where."
+    },
+    "categories": "Categories",
+    "search": {
+      "title": "Search",
+      "results": "Results for “:q”",
+      "label": "Search the shop",
+      "placeholder": "Search bikes, gear, parts…",
+      "lead": "Best matches first; narrow them down with the filters."
+    },
+    "found": "{0} No products|{1} One product|[2,*] :count products",
+    "price_from": "from :price",
+    "sort": {
+      "label": "Sort by",
+      "relevance": "Best match",
+      "popular": "Most popular",
+      "newest": "Newest",
+      "price_asc": "Price: low to high",
+      "price_desc": "Price: high to low"
+    },
+    "filters": {
+      "title": "Filters",
+      "brand": "Brand",
+      "price": "Price",
+      "size": "Size",
+      "wheels": "Wheel size",
+      "frame": "Frame material",
+      "ebike": "E-bikes only",
+      "store": "In stock at",
+      "any": "Any",
+      "any_store": "Any store",
+      "apply": "Apply",
+      "clear": "Clear filters",
+      "on": "Filters that are on",
+      "remove": "Remove the filter :filter"
+    },
+    "chip": {
+      "brand": "Brand: :value",
+      "size": "Size: :value",
+      "price": "Price range",
+      "wheels": "Wheels: :value",
+      "frame": "Frame: :value",
+      "ebike": "E-bikes",
+      "store": "In stock at :value",
+      "fits": "Fits my bike"
+    },
+    "fits": {
+      "label": "Fits my bike",
+      "any": "Any of my bikes",
+      "off": "Show every part",
+      "hint": "Only parts known to fit the bikes in your account."
+    },
+    "empty": {
+      "title": "Nothing matches",
+      "text": "Try fewer filters, or another category.",
+      "search": "Nothing matches “:q”. Try other words, or fewer filters."
+    },
+    "suggest": {
+      "label": "Suggestions",
+      "none": "No product matches “:q”.",
+      "all": "All results for “:q”"
+    },
+    "home": {
+      "featured": "Popular bikes",
+      "all_bikes": "All bikes",
+      "categories": "Shop by category",
+      "shop": "Browse the shop",
+      "rent": "Rent a bike",
+      "service": "Book a service"
+    },
+    "product": {
+      "photos": "Photos of :name",
+      "size": "Size",
+      "colour": "Colour",
+      "show_variant": "Show",
+      "sold_out": "sold out",
+      "sku": "SKU :sku",
+      "stock_title": "Stock in our stores",
+      "stock_at": "{0} Out of stock at :store|{1} One at :store|[2,*] :count at :store",
+      "quantity": "Quantity",
+      "add_to_cart": "Add to cart",
+      "sold_out_everywhere": "Sold out in every store for now.",
+      "rent": "Rent this model",
+      "description": "Description",
+      "specs": "Specifications",
+      "brand": "Brand",
+      "prices": "Prices",
+      "variants": "Variants",
+      "fits_bikes": "Fits these bikes",
+      "fitting_parts": "Parts and accessories that fit",
+      "recently_viewed": "Recently viewed"
+    }
+  },
+  "sales": {
+    "cart": {
+      "title": "Cart",
+      "lead": "Checked against the stock of the store you pick up from.",
+      "keep_shopping": "Keep shopping",
+      "lines": "Products in your cart",
+      "summary": "Summary",
+      "changed": "Some quantities changed: the store has fewer than your cart asked for.",
+      "line_lowered": "{0} None left at this store.|{1} Only one left at this store.|[2,*] Only :count left at this store.",
+      "quantity_of": "Quantity of :name",
+      "update": "Update",
+      "remove": "Remove :name",
+      "store": "Store",
+      "store_hint": "Pick up there, or delivered from there.",
+      "change_store": "Change store",
+      "items": "{0} No items|{1} One item|[2,*] :count items",
+      "fees_later": "Delivery fee and discounts are added at the checkout.",
+      "checkout": "Check out",
+      "empty_title": "Your cart is empty",
+      "empty_text": "Find a bike, gear or a part, and add it here.",
+      "browse": "Browse the shop",
+      "link_label": "{0} Cart, empty|{1} Cart, one item|[2,*] Cart, :count items",
+      "added": ":name is in your cart.",
+      "view": "View cart",
+      "none_left": "There are no more :name at :store.",
+      "only_left": "Only :count more :name at :store: that's what was added.",
+      "lowered": "The store has fewer: the quantity was lowered.",
+      "updated": "Cart updated.",
+      "removed": "Removed from your cart.",
+      "store_set": "Your cart is checked against :store now.",
+      "store_lowered": ":store has fewer of some products: the quantities were lowered.",
+      "not_sold": "This product isn't sold any more."
+    },
+    "checkout": {
+      "title": "Checkout",
+      "lead": "Three short steps, then you pay on the payment page. We hold the stock for :minutes minutes while you pay.",
+      "step": {
+        "contact": "Contact",
+        "delivery": "Pickup or delivery",
+        "review": "Review"
+      },
+      "name": "Full name",
+      "email": "Email",
+      "email_hint": "Your confirmation and updates go here.",
+      "phone": "Phone",
+      "fulfilment": "How do you get it?",
+      "pickup": "Pick up in store",
+      "delivery": "Delivery",
+      "store": "Store",
+      "store_hint": "Where you pick it up, or where it is sent from.",
+      "city": "City",
+      "city_pick": "Pick a city",
+      "line1": "Street and number",
+      "postal_code": "Postal code",
+      "fees": "Delivery: :local in a city with one of our stores, :country elsewhere in the country, :abroad abroad.",
+      "next": "Next, the payment page. Your order is held for :minutes minutes; unpaid, it is cancelled and the stock goes back on the shelf.",
+      "place": "Place the order and pay",
+      "summary": "Your order",
+      "plan_discount": "Service plan: :percent% off parts",
+      "plan_note": "Your service plan gives :percent% off spare parts.",
+      "delivery_fee": "Delivery",
+      "free_pickup": "Free (pickup)",
+      "total": "Total",
+      "from_store": "Checked against the stock of :store.",
+      "empty": "Your cart is empty: add something first.",
+      "cart_changed": "Your cart changed (a store has fewer now): check it before paying.",
+      "sold_out": "Someone was quicker: only :count of “:name” were left. Your cart has been updated.",
+      "phone_digits": "Write the phone number with digits, like +62 812 3456 7890."
+    },
+    "pay": {
+      "title": "Payment",
+      "for_order": "Order :number",
+      "for_orders": "An order",
+      "for_rentals": "A rental",
+      "for_work_orders": "A workshop job",
+      "paid": "Thank you, it's paid",
+      "paid_text": "We received :amount. A confirmation is on its way to your inbox.",
+      "see_order": "See your order",
+      "waiting": "Waiting for the payment…",
+      "waiting_text": "The payment provider tells us in a moment; this page updates by itself. Your order is held for :minutes minutes.",
+      "failed": "The payment didn't go through",
+      "failed_text": "Nothing was charged and the order is cancelled. Your cart's products are back on the shelf: you can order again.",
+      "offer_title": "Follow your orders",
+      "offer_account": "Create an account with the same email address and this order (and every one after it) is in your account, with your bikes and their service.",
+      "create_account": "Create an account"
+    },
+    "demo": {
+      "title": "Demo payment page",
+      "notice_title": "This is not a real payment",
+      "notice": "The demo gateway stands in for Midtrans when MIDTRANS_SERVER_KEY isn't set. Paying here sends the app the same signed notification Midtrans would; no money moves.",
+      "merchant": "Paying :shop",
+      "amount": "Amount",
+      "reference": "Reference",
+      "status": "Status",
+      "pay": "Pay :amount",
+      "cancel": "Cancel the payment"
+    },
+    "orders": {
+      "title": "Order :number",
+      "placed": "Placed on :date",
+      "invoice": "Invoice",
+      "lines": "Products",
+      "product": "Product",
+      "quantity": "Quantity",
+      "price": "Price",
+      "line_total": "Amount",
+      "subtotal": "Subtotal",
+      "discount": "Discount",
+      "total": "Total",
+      "payments": "Payments",
+      "progress": "Progress",
+      "details": "Details",
+      "store": "Store",
+      "fulfilment": "Pickup or delivery",
+      "address": "Delivery address",
+      "customer": "Customer",
+      "returns": "Returns",
+      "returns_text": "Within :days days of the handover, at the store.",
+      "pending_note": "Waiting for the payment. Unpaid after :minutes minutes, the order is cancelled.",
+      "cancelled_note": "This order was cancelled: nothing was charged.",
+      "number": "Order number",
+      "placed_at": "Placed",
+      "paid_at": "Paid",
+      "completed_at": "Handed over",
+      "channel": "Channel",
+      "status": "Status"
+    },
+    "status": {
+      "pending": "Waiting for payment",
+      "paid": "Paid",
+      "ready": "Ready",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "refunded": "Refunded"
+    },
+    "step": {
+      "placed": "Placed",
+      "paid": "Paid",
+      "ready": "Ready for pickup",
+      "shipped": "Sent out",
+      "completed": "Handed over",
+      "cancelled": "Cancelled",
+      "refunded": "Returned and refunded"
+    },
+    "channel": {
+      "online": "Online",
+      "counter": "Counter"
+    },
+    "method": {
+      "cash": "Cash",
+      "card": "Card",
+      "gateway": "Online payment"
+    },
+    "payment_status": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "failed": "Failed",
+      "refunded": "Refunded"
+    },
+    "movement": {
+      "purchase": "Received",
+      "sale": "Sold",
+      "return": "Returned",
+      "service": "Used in service",
+      "consign_out": "Sent on consignment",
+      "consign_in": "Arrived on consignment",
+      "recall": "Recalled",
+      "adjustment": "Adjusted",
+      "reserved": "Reserved",
+      "released": "Released"
+    },
+    "invoice": {
+      "title": "Invoice :number",
+      "receipt": "Receipt :number",
+      "print": "Print",
+      "back": "Back to the order",
+      "billed_to": "Billed to",
+      "footer": "Thank you for riding with us. Returns within :days days with this receipt."
+    },
+    "staff": {
+      "title": "Orders",
+      "lead": "The orders of the store you work in: online and at the counter.",
+      "tabs": "Orders by status",
+      "tab": {
+        "open": "To prepare",
+        "pending": "Unpaid",
+        "ready": "Ready",
+        "completed": "Completed",
+        "cancelled": "Cancelled",
+        "refunded": "Refunded"
+      },
+      "walk_in": "Walk-in",
+      "empty": "No orders here.",
+      "mark_ready": "Ready for pickup",
+      "mark_shipped": "Sent out",
+      "ready_done": "Order :number is ready; the customer has been told.",
+      "shipped_done": "Order :number is on its way; the customer has been told.",
+      "hand_over": "Hand over",
+      "hand_over_title": "Hand over order :number",
+      "hand_over_text": "The customer has the goods. Write each bike's frame number: it goes on the bike in the customer's account.",
+      "frame_of": "Frame number of :name",
+      "no_bikes": "No bikes in this order.",
+      "completed": "Order :number is handed over.",
+      "cancel": "Cancel the order",
+      "cancel_title": "Cancel order :number?",
+      "cancel_text": "It isn't paid. The reserved stock goes back on the shelf.",
+      "cancelled": "Order :number is cancelled.",
+      "return": "Return and refund",
+      "return_title": "Return from order :number",
+      "return_text": "How many of each line come back (within :days days). The stock goes back on the shelf and the refund is recorded.",
+      "reason": "Why it came back",
+      "refunded": "The return of order :number is recorded and refunded.",
+      "owner": "Owner store",
+      "consigned": "Consigned",
+      "ledger": "Stock ledger",
+      "ledger_lead": "Every movement this order caused.",
+      "when": "When",
+      "reason_col": "Movement",
+      "note": "Note",
+      "bikes": "Bikes registered",
+      "no_frame": "no frame number yet",
+      "no_payments": "No payment yet.",
+      "return_until": "Returns until",
+      "not_paid": "Only a paid order can move on.",
+      "not_pending": "Only an unpaid order can be cancelled.",
+      "not_returnable": "Returns are taken within :days days of the handover.",
+      "nothing_returned": "Say how many of a line come back."
+    },
+    "counter": {
+      "title": "Counter",
+      "lead": "Selling at :store.",
+      "find": "Find a product",
+      "product": "Product",
+      "product_hint": "SKU, barcode or name",
+      "add": "Add",
+      "sale": "This sale",
+      "empty": "Nothing rung up yet",
+      "empty_text": "Scan or type a SKU, or search by name.",
+      "customer": "Customer",
+      "walk_in": "Walk-in (no customer)",
+      "attach": "Attach",
+      "customer_hint": "Their bikes are registered to them and their plan discount applies.",
+      "pay_title": "Payment",
+      "method": "Paid by",
+      "tendered": "Amount received",
+      "tendered_hint": "For cash: what the customer hands over.",
+      "keypad": "Number pad for the amount received",
+      "pay": "Pay",
+      "pay_amount": "Take :amount",
+      "clear": "Start again",
+      "here": "{0} none here|{1} one here|[2,*] :count here",
+      "added": "Added (:count).",
+      "none_left": "None left at this store.",
+      "changed": "The store has fewer of something in this sale now: check it.",
+      "not_enough": "That's less than the total.",
+      "not_an_amount": "Write the amount received, like 50 or 50.00.",
+      "sold": "Sale :number is done.",
+      "new_sale": "New sale",
+      "change": "Change",
+      "short": "Short",
+      "change_due": "Change to give: :amount"
+    },
+    "mail": {
+      "hello": "Hello :name,",
+      "view_order": "See your order",
+      "confirmation": {
+        "subject": "Order :number is paid",
+        "thanks": "Thank you: we received your payment for order :number.",
+        "pickup": "We'll write when it's ready to pick up at :store.",
+        "delivery": "We'll write when it's on its way to :address.",
+        "returns": "Changed your mind? Bring it back within :days days of receiving it."
+      },
+      "ready": {
+        "subject": "Order :number is ready for pickup",
+        "text": "It's waiting for you at :store (:phone). Bring this mail or your order number."
+      },
+      "shipped": {
+        "subject": "Order :number is on its way",
+        "text": "It left the store today, on its way to :address."
+      },
+      "refund": {
+        "subject": "Your refund for order :number",
+        "text": "We refunded :amount for the products you brought back from order :number.",
+        "when": "It reaches your account the way you paid, usually within a few days."
+      },
+      "expired": {
+        "subject": "Order :number was cancelled",
+        "text": "We didn't receive the payment within :minutes minutes, so the order is cancelled and nothing was charged.",
+        "again": "Order again"
+      }
+    },
+    "mails": {
+      "title": "The shop's mails",
+      "lead": "What customers receive about their orders, for a made-up order, in your language.",
+      "confirmation": "Confirmation (paid)",
+      "ready": "Ready for pickup",
+      "shipped": "Sent out",
+      "refund": "Refund",
+      "expired": "Cancelled (not paid in time)"
+    },
+    "notice": {
+      "confirmation": "Thank you! Order :number is paid.",
+      "ready": "Order :number is ready for pickup.",
+      "shipped": "Order :number is on its way.",
+      "refund": "Your return from order :number is refunded.",
+      "expired": "Order :number wasn't paid in time and is cancelled."
+    }
+  },
+  "rentals": {
+    "nav": {
+      "rent": "Rent",
+      "counter": "Rental counter",
+      "fleet": "Fleet",
+      "identities": "ID checks",
+      "mine": "My rentals"
+    },
+    "search": {
+      "title": "Rent a bike",
+      "lead": "Pick a store and when you'll ride: the bikes standing there and free for the whole time are listed with their price.",
+      "filters": "What you're looking for",
+      "results": "Bikes you can rent",
+      "show": "Show bikes",
+      "any_type": "Any type",
+      "any_size": "Any size",
+      "pick": "One bike is free|:count bikes are free",
+      "placed_by": "placed here by :store",
+      "rule": "Hours are counted when started and never cost more than a day; a bike back more than :grace minutes late costs an hour for every started hour.",
+      "reserve": "Reserve this bike",
+      "login": "Log in to reserve",
+      "none_title": "No bike is free then",
+      "none_text": "Try another time, another type or size, or another store.",
+      "day": "The store's day",
+      "taken": "Taken",
+      "eyebrow": "By the hour or the day",
+      "perks": {
+        "stores": "Pick up and return at any of three stores",
+        "hours": "By the hour or the day, never more than a day's price",
+        "deposit": "The deposit comes back when the bike does"
+      }
+    },
+    "fields": {
+      "store": "Store",
+      "period": "When",
+      "type": "Type",
+      "size": "Size",
+      "bike": "Bike",
+      "frame": "Frame number",
+      "code": "Reservation code",
+      "status": "Status",
+      "starts": "Pick-up",
+      "ends": "Return by",
+      "price": "Price",
+      "deposit": "Deposit",
+      "late_fee": "Late fee",
+      "damage_fee": "Damage fee",
+      "refund": "Deposit given back",
+      "kept": "Kept from the deposit",
+      "paid_now": "Paid at the counter",
+      "customer": "Customer",
+      "owner": "Owner store",
+      "location": "Standing at",
+      "operating": "Served by",
+      "ridden": "Hours ridden",
+      "daily_rate": "Daily rate",
+      "hourly_rate": "Hourly rate",
+      "service": "Service",
+      "condition": "Condition"
+    },
+    "errors": {
+      "order": "The end must be after the start.",
+      "past": "The start can't be in the past.",
+      "too_long": "A rental can last at most 14 days.",
+      "pick_bike": "Pick a bike.",
+      "pick_customer": "Pick a customer.",
+      "taken": "Someone just reserved this bike for that time. Pick another one.",
+      "gone": "This bike can't be rented at this store now. Pick another one.",
+      "unverified": "The customer's ID hasn't been checked yet.",
+      "no_staff": "Only people on the staff can take payments at the counter.",
+      "damage_fee": "Give the damage a fee, or a photo of it."
+    },
+    "status": {
+      "rental": {
+        "reserved": "Reserved",
+        "active": "Out",
+        "overdue": "Overdue",
+        "returned": "Returned",
+        "cancelled": "Cancelled",
+        "no_show": "No-show"
+      },
+      "bike": {
+        "available": "Available",
+        "reserved": "Reserved",
+        "rented": "Out",
+        "overdue": "Overdue",
+        "maintenance": "Maintenance",
+        "in_transit": "In transit",
+        "retired": "Retired"
+      }
+    },
+    "deposit": {
+      "unpaid": "Not paid yet",
+      "held": "Held by the store",
+      "settled": "Settled at the return",
+      "refunded": "Given back",
+      "forfeited": "Partly kept (no-show)",
+      "paid_online": "Paid online"
+    },
+    "condition": {
+      "new": "New",
+      "good": "Good",
+      "fair": "Fair",
+      "needs_repair": "Needs repair"
+    },
+    "methods": {
+      "cash": "Cash",
+      "card": "Card",
+      "gateway": "Online"
+    },
+    "checklist": {
+      "frame": "Frame",
+      "brakes": "Brakes",
+      "tyres": "Tyres",
+      "gears": "Gears",
+      "lights": "Lights",
+      "lock": "Lock",
+      "bell": "Bell"
+    },
+    "photos": {
+      "pickup": "Pick-up photo",
+      "return": "Return photo",
+      "damage": "Damage photo"
+    },
+    "show": {
+      "title": "Reservation :code",
+      "heading": "Your reservation",
+      "unpaid": "Pay the deposit to keep the bike",
+      "pay_by": "The reservation is called off if the deposit isn't paid by :time.",
+      "confirmed": "Your bike is reserved",
+      "held_until": "Show the code at the counter. The bike is held until :time.",
+      "code": "Your code",
+      "code_hint": "Show it at the counter (or tell it): it's all they need.",
+      "details": "Details",
+      "pay": "Pay the deposit (:amount)",
+      "cancel": "Cancel the reservation",
+      "cancel_title": "Cancel this reservation?",
+      "cancel_text": "A paid deposit is given back in full.",
+      "no_cancel": "It can no longer be cancelled online: less than an hour to go.",
+      "too_late": "Less than an hour to go: it can no longer be cancelled.",
+      "cancelled": "The reservation is cancelled."
+    },
+    "mine": {
+      "title": "My rentals",
+      "lead": "Your reservations, the bikes you have out, and the rentals before.",
+      "current": "Now and coming up",
+      "past": "Before",
+      "none": "No rental coming up",
+      "none_text": "Find a bike for your next ride.",
+      "verified": "Your ID is checked: you can rent in every store.",
+      "pending": "Your ID is waiting to be checked. You can reserve; staff check it before you ride.",
+      "unverified": "Before your first rental, send your ID once."
+    },
+    "identity": {
+      "title": "ID check",
+      "lead": "Once, before your first rental: a photo of your ID document and its number. Staff check it, then you rent in every store.",
+      "needed": "Before your first rental, send your ID once.",
+      "send": "Send your ID",
+      "number": "ID number",
+      "number_hint": "As printed on the document. It is stored encrypted; staff see only its last characters.",
+      "photo": "Photo of the document",
+      "photo_hint": "A clear photo or scan, at most 5 MB. Only staff who check IDs can open it.",
+      "store": "Store that checks it",
+      "store_hint": "Where you'll pick up your first bike.",
+      "submit": "Send for checking",
+      "sent": "Sent: the store checks it soon.",
+      "waiting": "The store checks it before your first ride. You'll get a mail.",
+      "done": "Checked",
+      "verified": "Your ID was checked on :date.",
+      "refused": "Your ID couldn't be checked"
+    },
+    "identities": {
+      "title": "ID checks",
+      "lead": "IDs customers sent to your store. Open the photo, compare it with the number, approve or refuse.",
+      "none": "Nothing to check",
+      "none_text": "New ID documents appear here, and in your notifications.",
+      "open_photo": "Open photo",
+      "approve": "Approve",
+      "approved": "The customer is verified.",
+      "refuse": "Refuse",
+      "refuse_title": "Refuse this ID",
+      "note": "Why (the customer reads it)",
+      "refused": "The customer is told why."
+    },
+    "counter": {
+      "title": "Rental counter",
+      "lead": "Today's pick-ups, the bikes out and the overdue ones at your store.",
+      "search": "Code or customer",
+      "search_hint": "Reservation code or customer name",
+      "found": "One rental found|:count rentals found",
+      "nothing": "Nothing found",
+      "nothing_text": "Check the code, or search by the customer's name or email.",
+      "pickups": "Pick-ups today",
+      "out": "Out",
+      "overdue": "Overdue",
+      "empty_pickups": "No pick-up left today",
+      "empty_out": "No bike out",
+      "empty_overdue": "Nothing overdue"
+    },
+    "desk": {
+      "title": "Rental :code",
+      "rental": "Rental",
+      "customer": "Customer",
+      "id_check": "ID check",
+      "verified": "Verified",
+      "not_verified": "Not verified",
+      "photos": "Photos",
+      "pickup": "Hand the bike over",
+      "pickup_lead": "Tick what is in order, take what's due, and hand it over.",
+      "checklist": "Condition",
+      "due_now": "Due now",
+      "method": "Payment",
+      "hand_over": "Hand over",
+      "picked_up": "The bike is out. Have a good ride!",
+      "return": "Take the bike back",
+      "return_lead": "Tick what is in order and note any damage. The deposit covers the fees first.",
+      "late": ":minutes minutes past the return time: late fee :fee.",
+      "damaged": "Damaged",
+      "damage": "Damage found at the return",
+      "damage_note": "What's damaged",
+      "damage_photos": "Photos of the damage",
+      "photos_hint": "Up to six photos, 5 MB each.",
+      "undamaged_hint": "No damage found: the deposit comes back, less any late fee.",
+      "deposit_held": "Deposit held",
+      "to_pay": "To pay now",
+      "settle_hint": "Late and damage fees come out of the deposit; the rest is given back.",
+      "take_back": "Take back",
+      "returned": "The bike is back.",
+      "closed": "This rental is closed.",
+      "nothing": "Nothing to do at the counter for this rental.",
+      "other_store": "This bike is picked up at :store. Switch store to hand it over.",
+      "not_here": "This rental can't be handed over here.",
+      "not_out": "This bike isn't out."
+    },
+    "receipt": {
+      "title": "Rental receipt",
+      "customer": "For the customer",
+      "total": "Total",
+      "kept": "Kept from the deposit",
+      "books": "Between the stores",
+      "books_lead": "The bike's owner store earns the rental and its fees; the store that served the customer earns its fee.",
+      "owner_share": "To the owner store",
+      "fee": "Serving store's fee (:rate %)",
+      "same_store": "Owned and served by the same store.",
+      "payments": "Payments",
+      "when": "When",
+      "amount": "Amount",
+      "no_payments": "No payment recorded.",
+      "send_back": "Send it back to :store",
+      "send_back_text": "This bike was placed at :store: send it back there when you can."
+    },
+    "walkin": {
+      "title": "Walk-in rental",
+      "lead": "For someone at the counter without a reservation.",
+      "customer_hint": "Type a name or email",
+      "verified_only": "Only customers whose ID is checked.",
+      "submit": "Continue to the pick-up",
+      "no_bikes": "No bike is free now",
+      "no_bikes_text": "Every bike standing here is out, reserved or in the workshop."
+    },
+    "fleet": {
+      "title": "Fleet board",
+      "lead": "Your store's rental bikes: where they are, whose they are, and what they're doing.",
+      "views": "Which bikes",
+      "view": {
+        "all": "All",
+        "mine_here": "Ours, here",
+        "others_here": "Placed here by others",
+        "mine_elsewhere": "Ours, elsewhere"
+      },
+      "empty": "No bike here",
+      "service_due": "Service due",
+      "service_due_text": "This bike has reached its service interval.",
+      "hours_left": ":hours h to service",
+      "service_note": "Periodic service (:hours h ridden)",
+      "bike": "The bike",
+      "owner_hint": "Its books, rates, retiring or selling it",
+      "location_hint": "Renting it out and repairs",
+      "history": "History",
+      "rentals": "Rentals",
+      "placements": "Placements",
+      "work_orders": "Work orders",
+      "no_rentals": "Not rented yet",
+      "no_placements": "Never placed at another store",
+      "no_work": "No work order yet",
+      "billed_to": "billed to :store"
+    },
+    "abilities": {
+      "title": "Who may do what",
+      "lead": "Each action is checked in the store that matters for it.",
+      "rent_out": "Rent it out",
+      "take_back": "Take it back",
+      "repair": "Repair it",
+      "rates": "Change its rates",
+      "place": "Place it at another store",
+      "retire": "Retire or sell it",
+      "checked_in": "Checked in :store (:attribute)",
+      "owner_store": "owner",
+      "location_store": "location",
+      "yes": "You may",
+      "no": "Not you"
+    },
+    "mail": {
+      "open": "Open",
+      "reserved": {
+        "title": "Your bike is reserved: :code",
+        "body": "Show the code :code at :store when you pick it up."
+      },
+      "unpaid": {
+        "title": "Reservation :code called off",
+        "body": "The deposit wasn't paid in time, so the bike is free again. You're welcome to reserve another."
+      },
+      "cancelled": {
+        "title": "Reservation :code cancelled",
+        "body": "Your reservation is cancelled. A paid deposit is given back in full."
+      },
+      "no_show": {
+        "title": "You missed your pick-up (:code)",
+        "body": "The bike was held for half an hour after the start, then released. The deposit keeps the rental's price at most; the rest is given back."
+      },
+      "reminder": {
+        "title": "An hour left on your bike (:code)",
+        "body": "Please bring it back by :time, to any of our stores."
+      },
+      "overdue": {
+        "title": "Your bike is overdue (:code)",
+        "body": "The return time has passed. A late fee is added for every started hour; please bring it back to any store."
+      },
+      "overdue_staff": {
+        "title": "Overdue: :code",
+        "body": ":name hasn't brought the bike back yet."
+      },
+      "returned": {
+        "title": "Thanks for riding with us (:code)",
+        "body": "Your bike is back. Here is your receipt."
+      },
+      "identity_sent": {
+        "title": "ID to check: :name",
+        "body": ":name sent their ID for their first rental."
+      },
+      "identity_ok": {
+        "title": "Your ID is checked",
+        "body": "You can now rent bikes in every store."
+      },
+      "identity_refused": {
+        "title": "Your ID couldn't be checked",
+        "body": ":note You can send another photo."
+      }
+    }
+  },
+  "workshop": {
+    "nav": {
+      "bikes": "My bikes",
+      "book": "Book a service",
+      "board": "Workshop"
+    },
+    "status": {
+      "booked": "Scheduled",
+      "checked_in": "Checked in",
+      "in_progress": "In progress",
+      "waiting_parts": "Waiting for parts",
+      "waiting_approval": "Waiting for approval",
+      "ready": "Ready",
+      "completed": "Collected",
+      "cancelled": "Cancelled"
+    },
+    "source": {
+      "walk_in": "Walk-in",
+      "booking": "Booking",
+      "plan": "Plan visit",
+      "fleet": "Fleet"
+    },
+    "extra_status": {
+      "pending": "Waiting for the answer",
+      "approved": "Approved",
+      "refused": "Refused"
+    },
+    "packages": {
+      "tune-up": {
+        "name": "Tune-up",
+        "text": "Safety check, brakes, gears, chain"
+      },
+      "overhaul": {
+        "name": "Full overhaul",
+        "text": "Full service, wheels trued, brakes bled, new chain"
+      }
+    },
+    "fields": {
+      "bike": "Bike",
+      "store": "Store",
+      "day": "Day",
+      "status": "Status",
+      "customer": "Customer",
+      "minutes": "Mechanic time (minutes)",
+      "estimate": "Estimate",
+      "total": "Total",
+      "labour": "Labour",
+      "parts": "Parts",
+      "paid": "Paid",
+      "extra_total": "Price of the extra work"
+    },
+    "errors": {
+      "past": "That day has passed.",
+      "too_far": "Bookings open 60 days ahead.",
+      "closed": "The store is closed that day.",
+      "full": "The workshop is full that day. Pick another.",
+      "bike": "Pick one of your bikes.",
+      "no_tasks": "Pick a package or at least one task.",
+      "step": "A work order can't go there from where it is.",
+      "unpaid": "It has to be paid before it is collected.",
+      "not_payable": "There's nothing to pay on this work order now.",
+      "empty_note": "Write a note or add a photo.",
+      "no_extra": "Pick a task or a part to propose.",
+      "no_customer": "Extra work is proposed to a customer; a fleet repair has none."
+    },
+    "bikes": {
+      "title": "My bikes",
+      "lead": "Your bikes, their services, and the next one to book.",
+      "none": "No bike yet",
+      "none_text": "Add your bike below; bikes bought in our shop appear here by themselves.",
+      "add": "Add a bike",
+      "added": "Bike added.",
+      "model": "Model",
+      "model_hint": "From our catalogue, or another model.",
+      "other_model": "Another model",
+      "name": "Name",
+      "name_hint": "e.g. Blue Trek Domane",
+      "brand": "Brand",
+      "frame": "Frame number",
+      "size": "Size",
+      "photo": "Photo",
+      "save": "Add the bike",
+      "no_frame": "No frame number",
+      "last": "Last service :date",
+      "never": "Never serviced here yet.",
+      "details": "The bike",
+      "bought": "Bought",
+      "spent": "Spent on services",
+      "open_photo": "Open the photo",
+      "open": "Open now",
+      "nothing_open": "Nothing open.",
+      "history": "Service history",
+      "event": "Work order #:number at :store: :status"
+    },
+    "book": {
+      "title": "Book a service",
+      "lead": "Pick your bike, a store, what to do and a day with room. The estimate updates as you choose.",
+      "no_bike": "Add your bike first",
+      "no_bike_text": "A service is booked for one of your bikes.",
+      "package": "Package",
+      "no_package": "No package",
+      "tasks": "Tasks",
+      "tasks_hint": "On top of the package, or on their own.",
+      "note": "Anything we should know?",
+      "note_hint": "A noise, a rattle, a deadline…",
+      "when": "When",
+      "day_hint": "Days that are full or closed can't be picked (the workshop has :minutes minutes a day).",
+      "estimate": "Estimate",
+      "estimate_hint": "Parts are added when the mechanic uses them; extra work is always asked first.",
+      "total": "Total (:minutes min)",
+      "pick": "Pick a package or tasks to see the estimate.",
+      "submit": "Book",
+      "booked": "Booked! We sent you a confirmation.",
+      "what": {
+        "label": "What the workshop does",
+        "repair": {
+          "title": "Repairs",
+          "text": "Brakes, gears, wheels and e-bike diagnostics"
+        },
+        "care": {
+          "title": "Clean and care",
+          "text": "Chain clean and lube, tyres, safety checks"
+        },
+        "tune": {
+          "title": "Tune-ups",
+          "text": "From a quick tune-up to a full overhaul"
+        }
+      }
+    },
+    "service": {
+      "title": "Service #:number",
+      "progress": "Progress",
+      "work": "The work",
+      "notes": "Notes from the workshop",
+      "extras": "Extra work",
+      "details": "Details",
+      "not_paid": "Not paid yet",
+      "pay": "Pay :amount",
+      "reschedule": "Another day",
+      "cancel": "Cancel the booking",
+      "cancel_title": "Cancel this booking?",
+      "cancel_text": "The day is freed for someone else.",
+      "no_change": "Less than 24 hours to go: call the store to change it.",
+      "too_late": "Less than 24 hours to go: it can no longer be changed online.",
+      "cancelled": "The booking is cancelled.",
+      "rescheduled": "Moved to :day.",
+      "extra_waiting": "The mechanic proposed extra work: answer from the mail we sent you.",
+      "ready": "Your bike is ready at :store."
+    },
+    "approve": {
+      "title": "Extra work on your bike",
+      "lead": "Work order #:number at :store",
+      "yes": "Approve",
+      "no": "Refuse",
+      "until": "Please answer by :time.",
+      "already": "This proposal was already answered, or it expired.",
+      "done_approved": "You approved this work. Thank you!",
+      "done_refused": "You refused this work; we carry on with the rest.",
+      "thanks_yes": "Approved: the mechanic goes on.",
+      "thanks_no": "Refused: the mechanic carries on with the rest."
+    },
+    "board": {
+      "title": "Workshop board",
+      "lead": "One work order open|:count work orders open",
+      "filters": "Filters",
+      "mechanic": "Mechanic",
+      "everyone": "Everyone",
+      "unassigned": "Unassigned",
+      "filter": "Filter",
+      "clear": "Clear",
+      "mechanic_name": "Mechanic"
+    },
+    "walkin": {
+      "title": "Walk-in work order",
+      "lead": "For someone at the counter: a customer, the bike, what to do.",
+      "who": "Customer",
+      "search": "Search a customer",
+      "or_new": "Or a new customer below.",
+      "new_name": "New customer's name",
+      "new_phone": "Phone",
+      "submit": "Create the work order"
+    },
+    "order": {
+      "title": "Work order #:number",
+      "customer_note": "From the customer",
+      "billed": "A fleet repair, billed to :store.",
+      "checklist": "Checklist",
+      "tasks_done": "Done",
+      "no_tasks": "No task yet.",
+      "save_checklist": "Save the checklist",
+      "saved": "Checklist saved.",
+      "parts": "Parts",
+      "notes": "Notes and photos",
+      "photo_link": "photo",
+      "summary": "Work order",
+      "mechanic": "Mechanic",
+      "take": "I'll take it",
+      "assigned": "It's yours.",
+      "noted": "Added.",
+      "proposed": "Sent to the customer for approval.",
+      "paid": "Paid.",
+      "moved": "Now: :status.",
+      "pay": "Take :amount",
+      "to": {
+        "checked_in": "Check in",
+        "in_progress": "Start the work",
+        "waiting_parts": "Waiting for parts",
+        "ready": "Ready for pick-up",
+        "completed": "Collected",
+        "cancelled": "Cancel"
+      },
+      "mechanic_name": "Mechanic"
+    },
+    "parts": {
+      "part": "Part",
+      "search": "Type a part's name",
+      "fitting": "Parts that fit this bike.",
+      "any": "Any spare part (the bike isn't a catalogue model).",
+      "quantity": "Quantity",
+      "add": "Use the part",
+      "taken": "Taken from stock.",
+      "short": "Out of stock: the work order waits for the part.",
+      "waiting": "Waiting",
+      "used": "Used",
+      "take": "It's here",
+      "in_stock": ":count in stock"
+    },
+    "notes": {
+      "kind": "Kind",
+      "note": "Note",
+      "before": "Before",
+      "after": "After",
+      "body": "Note",
+      "photo": "Photo",
+      "add": "Add"
+    },
+    "extra": {
+      "propose": "Propose extra work",
+      "lead": "The customer approves or refuses it from a mail, before you do it.",
+      "description": "What and why",
+      "tasks": "Tasks"
+    },
+    "mail": {
+      "booked": {
+        "title": "Service booked: #:number",
+        "body": "We expect your bike at :store on :day."
+      },
+      "reminder": {
+        "title": "Your service is tomorrow (#:number)",
+        "body": "Bring your bike in from :time."
+      },
+      "status": {
+        "title": "Your service #:number: :status",
+        "body": "Your work order is now: :status.",
+        "ready": "Your bike is ready to pick up.",
+        "parts": "We're waiting for a part; we'll let you know when it's in."
+      },
+      "extra": {
+        "title": "Extra work on your bike (#:number)",
+        "body": ":description Approve or refuse it before we do it."
+      },
+      "extra_approved": {
+        "title": "Extra work approved (#:number)"
+      },
+      "extra_refused": {
+        "title": "Extra work refused (#:number)"
+      },
+      "extra_answered": {
+        "body": "The customer answered the proposal of :total."
+      }
+    }
+  },
+  "stock": {
+    "index": {
+      "title": "Stock",
+      "lead": "Every level comes from the ledger: who owns the goods and where they are.",
+      "empty": "No stock here yet.",
+      "views": "Whose goods, where",
+      "view": {
+        "own": "Our goods here",
+        "held": "Held for other stores",
+        "away": "Ours at other stores",
+        "low": "Under reorder level"
+      },
+      "view_hint": {
+        "own": "Goods this store owns, on its own shelf.",
+        "held": "Other stores' goods on consignment here: we sell and count them, their owner keeps them in its books.",
+        "away": "Our goods on consignment at other stores: still in our books.",
+        "low": "Goods at this store under their reorder level (own and consigned)."
+      }
+    },
+    "fields": {
+      "product": "Product",
+      "sku": "SKU",
+      "size": "Size",
+      "category": "Category",
+      "owner_store": "Owner store",
+      "location_store": "Location store",
+      "on_hand": "On hand",
+      "reserved": "Reserved",
+      "available": "Available",
+      "reorder_level": "Reorder level",
+      "cost": "Average cost",
+      "value": "Value at cost",
+      "quantity": "Quantity",
+      "reason": "Reason",
+      "when": "When",
+      "change": "Change",
+      "after": "Level after",
+      "source": "Document",
+      "by": "By",
+      "status": "Status",
+      "missing": "Missing",
+      "short": "Short",
+      "spare": "Spare elsewhere"
+    },
+    "reason": {
+      "purchase": "Purchase",
+      "sale": "Sale",
+      "return": "Return",
+      "service": "Used in a service",
+      "consign_out": "Sent on consignment",
+      "consign_in": "Arrived on consignment",
+      "recall": "Recall",
+      "adjustment": "Adjustment",
+      "reserved": "Reserved",
+      "released": "Released",
+      "to_fleet": "Into the rental fleet",
+      "from_fleet": "From the rental fleet"
+    },
+    "ledger": {
+      "title": "Ledger: :name",
+      "level": "This level",
+      "movements": "Movements",
+      "empty": "No movements yet.",
+      "consigned": "Consigned",
+      "consigned_text": "These goods belong to :owner and stand at :location: :location sells and counts them, :owner decides on them.",
+      "owner_hint": "Whose books they are in",
+      "location_hint": "Where they are",
+      "write_off": "Write off",
+      "write_off_lead": "Broken, lost or given away: taken out of :owner's books with a reason.",
+      "written_off": "Written off.",
+      "not_enough": "There aren't that many available any more."
+    },
+    "abilities": {
+      "title": "Who may do what",
+      "lead": "Each action is checked in the store that matters for it.",
+      "sell": "Sell them",
+      "count": "Count them (stock take)",
+      "recall": "Call them back",
+      "write_off": "Write them off",
+      "checked_in": "Checked in :store (:attribute)",
+      "yes": "You may",
+      "no": "Not you"
+    },
+    "take": {
+      "title": "Stock take",
+      "lead": "Count one category at a time; differences become adjustments with a reason.",
+      "open": "Open this category",
+      "nothing": "Nothing stands at this store yet.",
+      "own": "Our goods (:count)",
+      "held": "Held for other stores (:count)",
+      "held_lead": "Their owner is told when we find fewer, and we owe them their cost.",
+      "no_own": "None of ours in this category.",
+      "no_held": "No other store's goods in this category.",
+      "counted": "Counted",
+      "counted_of": "Counted: :name",
+      "owned_by": "owned by :store",
+      "why": "Why",
+      "note": "Note",
+      "save": "Save the count",
+      "done": "Count saved: :count lines adjusted.",
+      "reason": {
+        "count": "Regular count",
+        "damage": "Damage",
+        "loss": "Loss or theft",
+        "found": "Found"
+      }
+    },
+    "consignments": {
+      "title": "Consignment",
+      "lead": "Goods sent between stores stay their owner's until sold.",
+      "new": "New shipment",
+      "new_lead": "Send our goods to another store, or ask another store for its goods.",
+      "send": "Send our goods",
+      "ask": "Ask for theirs",
+      "direction": "What",
+      "other_store": "Other store",
+      "search": "Find goods",
+      "show_goods": "Show goods",
+      "goods_send": "Our goods to send",
+      "goods_ask": "Their goods to ask for",
+      "goods_lead": "On the owner's shelf now; a blank quantity isn't sent.",
+      "no_goods": "No goods available.",
+      "quantity_of": "Quantity: :name",
+      "note": "Note",
+      "submit_send": "Create the shipment",
+      "submit_ask": "Send the request",
+      "created": "Shipment created.",
+      "views": "Shipments",
+      "view": {
+        "open": "Open",
+        "transit": "In transit",
+        "all": "All"
+      },
+      "number": "Shipment",
+      "units": "Units",
+      "in_transit": "In transit",
+      "in_transit_text": "Goods are on their way: out of one store, not yet in the other.",
+      "updated": "Updated",
+      "ours": "ours",
+      "empty": "No shipments.",
+      "from_to": ":owner → :location",
+      "steps": "Where the shipment stands",
+      "details": "Details",
+      "owner_hint": "Owns the goods until sold",
+      "location_hint": "Holds and sells them",
+      "history": "History",
+      "lines": "Lines",
+      "sent": "Sent",
+      "received": "Received",
+      "returned": "Sent back",
+      "to_arrive": "To arrive",
+      "arrived": "Arrived",
+      "arrived_of": "Arrived: :name",
+      "approve": "Approve",
+      "refuse": "Refuse",
+      "refused_text": ":owner refused this request.",
+      "ship": "Ship",
+      "ship_text": "The goods leave our shelf for :location (still ours until sold).",
+      "receive": "Receive",
+      "receive_lead": "Count what arrived; less than sent is a partial receipt.",
+      "close": "Nothing more will come",
+      "close_hint": "What didn't arrive is missing; the owner store is told.",
+      "recall": "Call back",
+      "recall_text": "Ask :location to send what is left of these goods back.",
+      "send_back": "Send back",
+      "send_back_text": "What is left goes back to :owner.",
+      "receive_back": "Receive back",
+      "receive_back_text": "The goods are back on our own shelf.",
+      "moved": "The shipment is now: :status.",
+      "status": {
+        "draft": "Draft",
+        "requested": "Requested",
+        "approved": "Approved",
+        "refused": "Refused",
+        "sent": "Sent",
+        "partly_received": "Partly received",
+        "received": "Received",
+        "recall_requested": "Recall requested",
+        "recall_sent": "Sent back",
+        "recalled": "Back home"
+      },
+      "errors": {
+        "store": "Pick another store.",
+        "empty": "Ask for at least one item.",
+        "available": "Only :count available.",
+        "moved_on": "This shipment has moved on; reload the page.",
+        "nothing": "None of these goods is available any more."
+      }
+    },
+    "suppliers": {
+      "title": "Suppliers",
+      "lead": "Who we buy from, their lead time and their price list.",
+      "new": "New supplier",
+      "edit": "Edit",
+      "save": "Save",
+      "saved": "Supplier saved.",
+      "empty": "No suppliers yet.",
+      "name": "Name",
+      "email": "Email",
+      "email_hint": "Purchase orders are mailed here.",
+      "phone": "Phone",
+      "lead_days": "Lead time (days)",
+      "lead_hint": "Usual days between ordering and delivery.",
+      "lead_time": "Delivers in :days days",
+      "contact": "Contact",
+      "items": "Price list",
+      "open": "Open orders",
+      "price_list": "Price list",
+      "price_list_lead": "Loaded from the supplier's CSV file.",
+      "no_items": "No price list yet: import one.",
+      "their_cost": "Their price",
+      "our_price": "Our price",
+      "orders": "Our orders",
+      "no_orders": "No orders yet."
+    },
+    "import": {
+      "button": "Import price list",
+      "title": "Price list of :supplier",
+      "lead": "Rows update the variant with that SKU (or add it to the product named by its slug). Files over :rows rows are imported in the background and the report is mailed to you.",
+      "queued": "The file is being imported; you'll get the report by mail."
+    },
+    "purchasing": {
+      "title": "Purchase orders",
+      "lead": "Orders to suppliers for this store, which owns what arrives.",
+      "new": "New purchase order",
+      "new_lead": "What the store needs comes first: parts work orders wait for, and goods under their reorder level.",
+      "tabs": "Orders",
+      "tab": {
+        "open": "Open",
+        "received": "Received",
+        "all": "All"
+      },
+      "number": "Order",
+      "supplier": "Supplier",
+      "pick_supplier": "Pick a supplier",
+      "use_supplier": "Use this supplier",
+      "pick_first": "Pick a supplier first.",
+      "expected": "Expected",
+      "total": "Total",
+      "empty": "No purchase orders.",
+      "suggested": "Suggested",
+      "suggested_text": "The daily reorder check drafted this order. Check it and send it, or cancel it.",
+      "needs": "What we need (:count)",
+      "needs_lead": "Quantities are suggestions; change them as you like.",
+      "no_needs": "Nothing is short at this store.",
+      "waiting": "waiting",
+      "low": ":available left, reorder at :level",
+      "not_listed": "not on this supplier's list",
+      "price_list": "Price list of :supplier",
+      "unit_cost": "Unit cost",
+      "unit_cost_of": "Unit cost: :name",
+      "quantity_of": "Quantity: :name",
+      "note": "Note for the supplier",
+      "save_draft": "Save as draft",
+      "created": "Draft saved.",
+      "details": "Details",
+      "store": "Store",
+      "store_hint": "Receives and owns the goods",
+      "ordered_at": "Ordered",
+      "steps": "Where the order stands",
+      "lines": "Lines",
+      "ordered": "Ordered",
+      "arrived": "Arrived",
+      "arrived_of": "Arrived: :name",
+      "open": "Open",
+      "receive": "Receive",
+      "receive_lead": "What arrived goes on :store's shelf; average costs follow.",
+      "received_partial": "Received in part.",
+      "received_received": "Received in full.",
+      "send": "Send to supplier",
+      "send_text": "Mail the order to :supplier (:email) with a link to its printable page.",
+      "sent": "Order sent.",
+      "cancel": "Cancel",
+      "cancel_text": "Nothing arrived yet; the order is called off.",
+      "cancelled": "Order cancelled.",
+      "cancelled_text": "This order was cancelled.",
+      "print": "Printable page",
+      "waiting_title": "Work orders waiting",
+      "waiting_lead": "These parts let them go on.",
+      "status": {
+        "draft": "Draft",
+        "ordered": "Ordered",
+        "partial": "Partly received",
+        "received": "Received",
+        "cancelled": "Cancelled"
+      },
+      "errors": {
+        "empty": "Order at least one item.",
+        "moved_on": "This order has moved on; reload the page."
+      }
+    },
+    "print": {
+      "title": "Purchase order PO-:number",
+      "print": "Print",
+      "supplier": "Supplier",
+      "deliver_to": "Deliver to",
+      "ordered": "Ordered",
+      "expected": "Expected"
+    },
+    "fleet": {
+      "title": "Fleet and stock",
+      "lead": "New bikes join the rental fleet; old rental bikes go back to stock to be sold as used.",
+      "to_fleet": "Into the rental fleet",
+      "to_fleet_lead": "A new bike from our shelf, still ours.",
+      "bike": "Bike",
+      "frame": "Frame number",
+      "hourly": "Hourly rate",
+      "daily": "Daily rate",
+      "deposit": "Deposit",
+      "add": "Add to the fleet",
+      "added": "The bike joined the rental fleet.",
+      "no_bikes_in_stock": "No new bikes on our shelf.",
+      "retire": "Retire to sale stock",
+      "retire_lead": "Our rental bikes at this store, not out or booked.",
+      "retire_one": "Retire",
+      "retire_title": "Retire :frame?",
+      "retire_text": "It leaves the fleet and goes on the shelf as a used bike, priced at its book value.",
+      "retired": "The bike is in sale stock as used.",
+      "busy": "This bike is out or booked; retire it once it's back.",
+      "book_value": "book value :value",
+      "no_fleet": "No rental bikes of ours here."
+    },
+    "reorder": {
+      "line": ":name (:sku): :available left, reorder at :level; order :order",
+      "spare": ":store can spare :units of :name: ask for a consignment"
+    },
+    "mail": {
+      "short": {
+        "title": "Consigned goods missing at :store",
+        "body": "A stock take at :store found fewer of our goods than sent; :store owes us their cost."
+      },
+      "missing": {
+        "title": "Shipment CS-:number arrived incomplete",
+        "body": "Some goods never arrived; they were still ours."
+      },
+      "consignment": {
+        "title": "Shipment CS-:number: :status",
+        "requested": "Another store asks for our goods.",
+        "coming": "Goods are coming to us on consignment.",
+        "moved": "The shipment moved on."
+      },
+      "reorder": {
+        "title": ":store: :count items under their reorder level",
+        "body": "Suggested purchase orders are drafted; another store may have spare."
+      },
+      "purchase_order": {
+        "subject": "Purchase order PO-:number from :store",
+        "hello": "Hello :supplier,",
+        "body": "Please deliver order PO-:number to :store.",
+        "open": "Open the printable order"
+      },
+      "import": {
+        "subject": "Price list import: :supplier",
+        "failed": "These rows were left out:",
+        "row": "Row :row",
+        "more": "… and :count more.",
+        "open": "Open the supplier"
+      }
+    }
+  },
+  "multistore": {
+    "help": {
+      "title": "Help between stores",
+      "lead": "Borrow someone from another store for some days, with a role here that ends by itself.",
+      "new": "Ask for help",
+      "new_lead": "Who, with which role here, from when to when, and why. The other store's manager decides.",
+      "lending_store": "Store to ask",
+      "show_people": "Show its people",
+      "person": "Person",
+      "role": "Role here",
+      "role_hint": "What they may do here: the role's permissions, in this store only.",
+      "starts_on": "First day",
+      "ends_on": "Last day",
+      "ends_hint": "The role ends by itself at the end of this day.",
+      "reason": "Why",
+      "send": "Send the request",
+      "sent": "Request sent.",
+      "no_people": "Nobody to ask for at this store.",
+      "asked_of_us": "Asked of us",
+      "asked_of_us_lead": "Other stores asking to borrow our people.",
+      "asked_by_us": "Asked by us",
+      "asked_by_us_lead": "People we asked for, and who is helping here.",
+      "none": "Nothing here.",
+      "from_to": ":from → :to",
+      "hours_done": ":hours h helped",
+      "approve": "Approve",
+      "approved": "Approved: the role is given for those days.",
+      "refuse": "Refuse",
+      "refused": "Refused.",
+      "withdraw": "Withdraw",
+      "withdrawn": "Request withdrawn.",
+      "end": "End now",
+      "end_title": "End :name's help now?",
+      "end_text": "Their role at :store stops now instead of at its end date.",
+      "ended": "The help ended.",
+      "log": "Log hours",
+      "log_title": "Hours of :name",
+      "log_lead": "Recorded for reports; never charged between stores.",
+      "worked_on": "Day",
+      "hours": "Hours",
+      "note": "Note",
+      "logged": "Hours logged.",
+      "hours_title": "Hours helped",
+      "hours_lead": "Per person and store, for reports. Help between stores is never charged.",
+      "total_hours": "Hours in all",
+      "people": "Person × store",
+      "home": "Home store",
+      "helped": "Store helped",
+      "days": "Days",
+      "no_hours": "No hours logged yet.",
+      "status": {
+        "active": "Helping now",
+        "requested": "Requested",
+        "approved": "Approved",
+        "refused": "Refused",
+        "withdrawn": "Withdrawn",
+        "ended_early": "Ended early"
+      },
+      "errors": {
+        "order": "The last day comes after the first.",
+        "past": "The first day can't be in the past.",
+        "staff": "Pick someone who works at that store.",
+        "store": "Ask another store than the one you work in.",
+        "already": "They already have that role at this store for good.",
+        "moved_on": "This request has moved on; reload the page.",
+        "day": "That day isn't within the help's days."
+      }
+    },
+    "placements": {
+      "title": "Bike placements",
+      "lead": "Bikes placed at other stores stay their owner's: the owner decides on them, the store they stand at rents them out.",
+      "place": "Place one of ours",
+      "ask": "Ask for one of theirs",
+      "new": "New placement",
+      "new_lead": "A bike standing at its owner store goes to another store until it is called back.",
+      "direction": "What",
+      "other_store": "Other store",
+      "show_bikes": "Show bikes",
+      "bikes_place": "Our bikes at home",
+      "bikes_ask": "Their bikes at home",
+      "bike": "Bike",
+      "note": "Note",
+      "submit_place": "Place it",
+      "submit_ask": "Send the request",
+      "no_bikes": "No bike available to move.",
+      "created": "Placement saved.",
+      "list": "Placements",
+      "list_lead": "To and from this store.",
+      "none": "No placements yet.",
+      "approve": "Approve",
+      "refuse": "Refuse",
+      "decided": "Decided.",
+      "move": "Move it",
+      "moved": "The bike is at the other store now.",
+      "recall": "Call back",
+      "recall_title": "Call :frame back?",
+      "recall_text": "It leaves :store for home. Refused while it is out or booked there.",
+      "recalled": "The bike is back home.",
+      "send_back_title": "Send back",
+      "send_back_lead": "Bikes brought back at another store than their home.",
+      "away": "At :at; home :home (owner :owner)",
+      "send_back": "Send back to :store",
+      "sent_back": "Sent back.",
+      "all_home": "Every bike is at home.",
+      "status": {
+        "requested": "Requested",
+        "approved": "Approved",
+        "moved": "Placed",
+        "recalled": "Called back",
+        "refused": "Refused"
+      },
+      "errors": {
+        "bike": "That bike can't be placed: it must stand at its owner store, free.",
+        "busy": "The bike is out or booked; try once it is back.",
+        "moved_on": "This placement has moved on; reload the page."
+      }
+    },
+    "books": {
+      "title": "Books between stores",
+      "lead": "Who owes whom for work done for each other: rentals, sales of consigned goods, repairs.",
+      "entries": "Entries",
+      "empty": "No entries yet.",
+      "balances": "Open balances",
+      "balances_lead": "Entries not settled yet, netted per pair of stores.",
+      "owes": ":debtor owes :creditor",
+      "square": "All square.",
+      "position": "Position of :store",
+      "position_hint": "Owed to the store minus owed by it, not settled yet.",
+      "pairs": "Pairs with a balance",
+      "fields": {
+        "booked_at": "Booked",
+        "kind": "Why",
+        "debtor": "Owes",
+        "creditor": "Is owed",
+        "amount": "Amount",
+        "rate": "Rate (bp)",
+        "source": "For"
+      },
+      "kind": {
+        "rental_revenue": "Rental revenue",
+        "operating_fee": "Operating fee",
+        "sale_revenue": "Sale revenue",
+        "selling_fee": "Selling fee",
+        "late_fee": "Late fee",
+        "damage_fee": "Damage fee",
+        "repair": "Repair",
+        "consignment_loss": "Consigned goods lost"
+      }
+    },
+    "settlements": {
+      "title": "Monthly settlements",
+      "lead": "On the 1st, last month's entries are netted per pair of stores and mailed; both stores confirm.",
+      "empty": "No settlements yet.",
+      "month": "Month",
+      "pays": "Pays",
+      "paid": "Is paid",
+      "amount": "Amount",
+      "status": "Status",
+      "status_open": "Open",
+      "status_settled": "Settled",
+      "confirmed_short": "confirmed",
+      "confirmed": "Confirmed; waiting for the other store.",
+      "settled": "Settled by both stores.",
+      "errors": {
+        "done": "Already confirmed."
+      }
+    },
+    "statement": {
+      "title": "Statement for :month",
+      "owes": ":store owes",
+      "entries": "Entries",
+      "total": "Total",
+      "nothing": "Nothing.",
+      "net": "Net: :debtor pays :creditor :amount.",
+      "confirmed_debtor": ":store confirmed it paid",
+      "confirmed_creditor": ":store confirmed it was paid",
+      "waiting_debtor": "Waiting for :store to pay",
+      "waiting_creditor": "Waiting for :store to confirm",
+      "confirm_debtor": ":store paid",
+      "confirm_creditor": ":store was paid"
+    },
+    "fees": {
+      "title": "Fee rates",
+      "lead": "What a store earns for work done for another store; the rate in force is copied onto each entry.",
+      "rates": "Rates",
+      "earns": "Earns :rate % of the work it does for other stores",
+      "change": "Change",
+      "change_title": "Fee rate of :store",
+      "change_lead": "Applies to entries booked from now on.",
+      "percent": "Rate",
+      "saved": "Rate changed.",
+      "owner_only": "Only the owner changes fee rates.",
+      "history": "Changes",
+      "changed": ":store: :from % → :to %",
+      "no_history": "No changes yet."
+    },
+    "mail": {
+      "help": {
+        "title": "Help request #:number",
+        "requested": "Another store asks to borrow one of our people.",
+        "approved": "Your help request was approved.",
+        "refused": "Your help request was refused.",
+        "ended": "A help between stores ended early.",
+        "helper_title": "You're helping :store",
+        "helper_body": "From :from to :until you work at :store too; switch to it in the staff area."
+      },
+      "placement": {
+        "title": "Placement #:number: :status",
+        "body": "A bike placement between stores moved on."
+      },
+      "statement": {
+        "subject": "Statement :month: :debtor → :creditor",
+        "title": "Statement for :month",
+        "body": ":debtor pays :creditor :amount.",
+        "pays": "Pays",
+        "paid": "Is paid",
+        "confirm": "Each store confirms on the statement's page once the money has moved. The entries are attached.",
+        "open": "Open the statement"
+      }
+    }
+  },
+  "accounts": {
+    "save": "Save",
+    "page": {
+      "lead": "Hello, :name. Your orders, rentals, bikes and settings, in one place.",
+      "notifications": "Notifications"
+    },
+    "contact": {
+      "title": "Contact details",
+      "lead": "Where we reach you, and your home address.",
+      "phone": "Phone",
+      "line1": "Street and number",
+      "line2": "Apartment, floor",
+      "district": "District",
+      "postal_code": "Postal code",
+      "city": "City",
+      "country": "Country",
+      "choose_country": "Choose a country",
+      "saved": "Your contact details were saved."
+    },
+    "id": {
+      "title": "ID check",
+      "lead": "Renting a bike needs an ID document checked at a store's counter.",
+      "status": "Status",
+      "verified": "Checked",
+      "checked_on": "Checked on",
+      "waiting": "Waiting for a check",
+      "missing": "Not on file",
+      "number": "Document number"
+    },
+    "notifications": {
+      "title": "Notifications",
+      "lead": "Choose how we tell you about each thing: by mail, here in the app, both, or not at all.",
+      "saved": "Your notification choices were saved.",
+      "choice": {
+        "both": "Both",
+        "mail": "Mail",
+        "in_app": "In the app",
+        "none": "None"
+      },
+      "kind": {
+        "order": "Orders",
+        "rental": "Rentals",
+        "workshop": "Workshop",
+        "plan": "Service plan",
+        "marketing": "News and offers"
+      },
+      "hint": {
+        "order": "Confirmed, ready to collect, refunded.",
+        "rental": "Reserved, due back soon, late.",
+        "workshop": "Booked, ready, waiting for parts.",
+        "plan": "Your next visit, a payment that failed.",
+        "marketing": "New bikes and offers, now and then."
+      }
+    },
+    "language": {
+      "title": "Language",
+      "lead": "The language of these pages and of the mails we send you.",
+      "label": "Language",
+      "saved": "Your language was saved."
+    },
+    "privacy": {
+      "title": "Your data",
+      "lead": "Download everything we keep about you as one file. We mail you a link that works for :days days.",
+      "export": "Download my data",
+      "export_queued": "We're gathering your data. You'll get a mail with a link in a few minutes.",
+      "delete_intro": "Your login and personal details are removed. Orders and payments stay in the books with your name taken out; a running service plan is cancelled.",
+      "delete_confirm": "This can't be undone. Your name, contact details, address and ID document are removed for good.",
+      "mail": {
+        "subject": "Your data from the bike shop",
+        "hello": "Hello :name,",
+        "text": "Here is everything we keep about you, as one JSON file.",
+        "button": "Download my data",
+        "expires": "The link works for :days days."
+      }
+    },
+    "claim": {
+      "title": "Claim your record",
+      "lead": "Link what you did at our stores to your account, :name.",
+      "what": "This record has:",
+      "orders": "Orders",
+      "rentals": "Rentals",
+      "bikes": "Bikes",
+      "button": "This is me: link it to my account",
+      "done": "Your past orders, rentals and bikes are now in your account.",
+      "taken": "This record is already linked to an account.",
+      "other_email": "This invitation was sent to :email, but you're logged in as :current. Log in with :email to claim it.",
+      "mail": {
+        "subject": "Your bike shop account is waiting",
+        "hello": "Hello :name,",
+        "text": "You've shopped with us at the counter. Create an account (or log in) and link your past purchases, rentals and bikes to it.",
+        "button": "Claim my record",
+        "expires": "The link works for :days days."
+      }
+    },
+    "invite": {
+      "title": "Invite to an account",
+      "lead": "Mail this customer a link to claim their record online.",
+      "since": "Customer since",
+      "email": "Their email address",
+      "email_hint": "Saved on the record; the link works for seven days.",
+      "send": "Send the invitation",
+      "sent": "The invitation is on its way to :email."
+    },
+    "demo": {
+      "title": "Try the demo",
+      "lead": "Log in as one of these people (tap one to fill the form). Every password is",
+      "two_factor": "Staff accounts are asked to turn on two-factor login before they reach the staff pages.",
+      "who": {
+        "shopper": "Customer: orders, rentals, bikes, a plan",
+        "shop_owner": "Owner: every store, reports, admin",
+        "store_manager": "Manager of the North store",
+        "till": "Cashier at North: the till",
+        "workshop": "Mechanic at North: the workshop",
+        "two_stores": "Cashier in two stores"
+      }
+    }
+  },
+  "plans": {
+    "nav": "Service plans",
+    "index": {
+      "title": "Service plans",
+      "lead": "Your bike looked after on a schedule: pick a plan, a store and a weekday, and we book the visits for you.",
+      "choose": "Choose this plan",
+      "how_title": "How a plan works",
+      "how_1": "Choose one of your bikes, a plan, the store whose workshop looks after it and the weekday that suits you.",
+      "how_2": "Pay monthly by card (or through Xendit, charged in rupiah). Each visit is booked a week ahead on your weekday, or the next day with room.",
+      "how_3": "Skip or move a visit, change plan from the next month, pause, or cancel at the end of the month you paid for.",
+      "eyebrow": "Keep your bike running"
+    },
+    "every": {
+      "weekly": "A visit every week",
+      "fortnightly": "A visit every two weeks",
+      "monthly": "A visit every month",
+      "quarterly": "A visit every three months"
+    },
+    "frequency": {
+      "weekly": "Weekly",
+      "fortnightly": "Every two weeks",
+      "monthly": "Monthly",
+      "quarterly": "Every three months"
+    },
+    "perks": {
+      "discount": ":percent % off spare parts"
+    },
+    "compare": {
+      "how_often": "How often",
+      "per_visit": "Price a visit",
+      "discount": "Discount on parts",
+      "flexible": "Skip or move a visit"
+    },
+    "fields": {
+      "bike": "Bike",
+      "plan": "Plan",
+      "store": "Home store",
+      "weekday": "Preferred weekday",
+      "pay_with": "Pay with",
+      "monthly": "Price a month",
+      "first_visit": "First visit",
+      "next_visit": "Next visit",
+      "visits_done": "Visits done",
+      "last_invoice": "Last payment",
+      "status": "Status",
+      "discount": "Discount on parts",
+      "gateway": "Paid through",
+      "renews": "Renews on",
+      "ends": "Ends on",
+      "amount": "Amount",
+      "day": "Day"
+    },
+    "weekday": {
+      "mon": "Monday",
+      "tue": "Tuesday",
+      "wed": "Wednesday",
+      "thu": "Thursday",
+      "fri": "Friday",
+      "sat": "Saturday",
+      "sun": "Sunday"
+    },
+    "pay_with": {
+      "stripe": "Card (Stripe)",
+      "demo": "Demo card (no real money)",
+      "xendit": "Card or e-wallet, charged in rupiah at :rate to the dollar (Xendit)",
+      "counter": "At the store's counter"
+    },
+    "subscribe": {
+      "title": "Subscribe a bike",
+      "lead": "Choose the bike, the plan and when it suits you; you pay on the next page.",
+      "no_bike": "Add your bike first",
+      "no_bike_text": "A plan looks after one of your bikes: add it to your bikes, then come back.",
+      "all_taken": "Every bike has a plan",
+      "all_taken_text": "A bike can have one plan at a time. Change a bike's plan from its page.",
+      "no_gateway": "Plans can't be paid online right now. Ask at a store.",
+      "store_hint": "Its workshop does the visits.",
+      "when": "When",
+      "weekday_hint": "Days the store is closed aren't offered.",
+      "summary": "Summary",
+      "pick_day": "Pick a weekday",
+      "billing_hint": "Charged monthly from today. Visits start the week after the payment is confirmed.",
+      "submit": "Continue to payment"
+    },
+    "status": {
+      "active": "Running",
+      "paused": "Paused",
+      "held": "On hold",
+      "ending": "Ending",
+      "pending": "Waiting for payment",
+      "cancelled": "Ended"
+    },
+    "visit_status": {
+      "scheduled": "Booked",
+      "done": "Done",
+      "skipped": "Skipped",
+      "missed": "Missed",
+      "held": "On hold",
+      "cancelled": "Cancelled"
+    },
+    "mine": {
+      "title": "My plans",
+      "lead": "Your bikes' service plans, their next visits and what you paid.",
+      "none": "No plan yet",
+      "none_text": "A plan books your bike's visits for you.",
+      "open": "Visits and changes",
+      "past": "Plans that ended",
+      "counter": "Paid at the store"
+    },
+    "show": {
+      "title": "Plan for :bike",
+      "upcoming": "Upcoming visits",
+      "past": "Past visits",
+      "details": "The plan",
+      "due": "due :day",
+      "move": "Move",
+      "move_title": "Move this visit",
+      "move_text": "Pick another day with room at the workshop.",
+      "skip": "Skip",
+      "skip_title": "Skip this visit?",
+      "skip_text": "The workshop frees the slot. Your next visit comes as planned.",
+      "keep": "Keep it",
+      "no_upcoming": "No visit booked yet",
+      "no_upcoming_text": "Visits are booked a week ahead, every morning.",
+      "work_order": "Work order #:number",
+      "swap": "Change plan",
+      "swap_title": "Change plan",
+      "swap_text": "The new plan and its price start with the next month; this month's visits stay as they are.",
+      "pause": "Pause visits",
+      "unpause": "Resume visits",
+      "resume": "Keep the plan",
+      "cancel": "Cancel plan",
+      "cancel_title": "Cancel the plan?",
+      "cancel_text": "Visits go on until the end of the month you paid for; nothing more is charged.",
+      "cancel_now_text": "The plan ends now and its booked visits are cancelled.",
+      "keep_plan": "Keep the plan",
+      "invoices": "Payments",
+      "no_invoices": "No payment yet.",
+      "pending": "The payment is being confirmed. Your first visits are booked as soon as it is.",
+      "held": "The last payment failed. Your visits are on hold until it is paid; the payment provider tries again.",
+      "ending": "The plan was cancelled: visits go on until :day.",
+      "paused_note": "No visits are booked while the plan is paused.",
+      "next_plan": "The plan changes to :plan on :day.",
+      "swapped": "The plan changes with the next month.",
+      "paused": "Visits paused.",
+      "unpaused": "Visits are back on.",
+      "cancelled": "The plan ends with the month you paid for.",
+      "ended": "The plan has ended.",
+      "resumed": "The plan goes on.",
+      "skipped": "Visit skipped.",
+      "moved": "Visit moved to :day."
+    },
+    "invoice": {
+      "date": "Date",
+      "paid": "Paid",
+      "failed": "Failed"
+    },
+    "errors": {
+      "bike": "Choose one of your bikes.",
+      "one_plan": "This bike has a plan already: a bike can have one plan at a time.",
+      "not_sold": "This plan isn't sold any more.",
+      "closed": "The store is closed on that day.",
+      "pay_with": "That way of paying isn't available.",
+      "gateway": "The payment provider didn't answer. Please try again.",
+      "not_running": "The plan isn't running.",
+      "not_scheduled": "This visit isn't booked any more.",
+      "too_late": "This visit can't change any more: its day has come.",
+      "on_hold": "Your visits are on hold until the last payment goes through."
+    },
+    "mail": {
+      "started": {
+        "title": "Your :plan plan has started",
+        "body": "Thank you! :bike is on the :plan plan. We'll book its visits and remind you the day before each."
+      },
+      "renewed": {
+        "title": "Your :plan plan is renewed",
+        "body": "We received :amount for :bike's :plan plan. Thank you!"
+      },
+      "failed": {
+        "title": "Your payment for :plan didn't go through",
+        "body": "We couldn't take :amount for :bike's plan. The visits are on hold until it is paid; the payment provider tries again in a few days, so please check your payment method."
+      },
+      "visit": {
+        "title": "Visit booked on :day",
+        "body": "Your plan's next visit is booked for :day (work order #:number). Skip it or move it from your plan's page."
+      },
+      "missed": {
+        "title": "We missed you on :day",
+        "body": "Your bike didn't come in for its plan visit on :day. The next visit comes as planned."
+      }
+    },
+    "mails": {
+      "title": "The plans' mails",
+      "lead": "Every mail a service plan sends, for a made-up subscriber.",
+      "sent_by": "Sent on",
+      "started": "Plan started",
+      "renewed": "Plan renewed",
+      "failed": "Payment failed",
+      "visit": "Visit booked",
+      "missed": "Visit missed"
+    },
+    "demo": {
+      "title": "Demo payment",
+      "merchant": "Paying :shop",
+      "notice_title": "No real money",
+      "notice": "This page stands in for Stripe's or Xendit's while their keys aren't set. Nothing is charged.",
+      "pay": "Pay :amount",
+      "decline": "Decline (the payment fails)",
+      "renewing": "The renewal is on its way: refresh in a moment.",
+      "renew_title": "Demo: next month's payment",
+      "renew_text": "A real gateway charges each month on its own; try it here.",
+      "renew_paid": "Renew, paid",
+      "renew_failed": "Renew, payment fails"
+    },
+    "billing_page": {
+      "lead": "Our plans look after one bike each: choose one, then the bike."
+    },
+    "account": {
+      "title": "Service plans",
+      "lead": "Your bikes' plans, visits and payments."
+    }
+  },
+  "api": {
+    "abilities": {
+      "rentals_read": "See the store's free bikes and its reservations",
+      "rentals_checkout": "Hand reserved bikes over",
+      "rentals_return": "Take bikes back, with damage and photos",
+      "read": "Read the catalogue, my bikes, work orders and plans",
+      "rent": "See, reserve and cancel my rentals",
+      "order": "See my orders"
+    },
+    "tokens": {
+      "title": "API tokens",
+      "lead": "Tokens let the shop's app (or your own scripts) use your account through the JSON API, each only for what you tick.",
+      "yours": "Your tokens",
+      "new": "A new token",
+      "name": "Name",
+      "name_hint": "Where you'll use it, e.g. \"My phone\".",
+      "abilities": "What it may do",
+      "make": "Make the token",
+      "token": "The token",
+      "last_used": "Last used",
+      "expires": "Expires",
+      "never": "Never",
+      "revoke": "Revoke",
+      "revoke_title": "Revoke this token?",
+      "revoke_text": "Whatever uses it stops working at once.",
+      "none": "No token yet",
+      "none_text": "Make one for the app below.",
+      "once_title": "Copy it now",
+      "once": "This token is shown only once: only a fingerprint of it is kept. Send it as Authorization: Bearer.",
+      "made": "Token made: copy it now, it is shown only once.",
+      "revoked": "Token revoked."
+    },
+    "kiosks": {
+      "nav": "Kiosk tokens",
+      "title": "Kiosk tokens",
+      "lead": "The self-service kiosks of :store: each acts through its own token, only for the rentals of this store.",
+      "list": "Kiosks of :store",
+      "new": "A new kiosk",
+      "name_hint": "Where it stands, e.g. \"Racks by the door\".",
+      "state": "State",
+      "active": "Working",
+      "revoked": "Revoked",
+      "none": "No kiosk yet",
+      "none_text": "Make a token for a kiosk below.",
+      "revoke_title": "Revoke this kiosk's token?",
+      "revoke_text": "The kiosk stops working at once. Do it when a kiosk is lost or replaced."
+    },
+    "about": {
+      "title": "The JSON API",
+      "lead": "Every endpoint for the store kiosks and the shop's app: what it needs, what to send, what comes back.",
+      "link": "Every endpoint, with curl examples",
+      "how": "How it works",
+      "ability": "Ability",
+      "request": "Request",
+      "answer": "Answer",
+      "kiosk": "Kiosks",
+      "customer": "The customer's app",
+      "rule_token": "Send a token as Authorization: Bearer; without one the answer is 401, without the endpoint's ability 403.",
+      "rule_errors": "A refused request is 422 {\"message\", \"errors\"}, with the same rules as the website; lists come in pages with links.",
+      "rule_limit": ":count requests a minute per token; over that, 429 with Retry-After.",
+      "rule_cors": "Browsers on :origin may call it (CORS)."
+    }
+  },
+  "reports": {
+    "nav": "Reports",
+    "tabs": "Reports",
+    "all_stores": "All my stores",
+    "hours": ":hours h",
+    "tab": {
+      "dashboard": "Dashboard",
+      "orders": "Orders",
+      "rentals": "Rentals",
+      "work_orders": "Work orders",
+      "payments": "Payments",
+      "customers": "Customers",
+      "entries": "Between stores"
+    },
+    "period": {
+      "label": "Period",
+      "7d": "7 days",
+      "30d": "30 days",
+      "12w": "12 weeks",
+      "90d": "90 days",
+      "12m": "12 months",
+      "ytd": "This year"
+    },
+    "by": {
+      "label": "Count income",
+      "work": "Where the work was done",
+      "books": "In whose books",
+      "hint_work": "Income at the store that served the customer, whoever owns the bike or the goods.",
+      "hint_books": "Income in the books of the store that owns the bike or the goods, wherever it was rented out or sold."
+    },
+    "stream": {
+      "sales": "Sales",
+      "rentals": "Rentals",
+      "workshop": "Workshop",
+      "plans": "Plans"
+    },
+    "dashboard": {
+      "title": "Reports",
+      "lead": "How the stores are doing: income by stream, the fleet, the workshop, plans and the books between stores.",
+      "lead_store": "How :store is doing: income by stream, the fleet, the workshop, plans and the books between stores."
+    },
+    "stat": {
+      "revenue": "Revenue",
+      "orders": "Orders",
+      "average_order": "Average order",
+      "average_order_hint": "Sales ÷ orders",
+      "rentals": "Rentals",
+      "rentals_hint": "Returned in the period",
+      "fleet_use": "Fleet use",
+      "fleet_use_hint": "Bike-hours rented, of :bikes bikes",
+      "overdue": "Overdue now",
+      "overdue_hint": "Bikes not back by their due time",
+      "overdue_now": ":n overdue now",
+      "work_done": "Work orders done",
+      "turnaround": ":hours h from booking to done, on average",
+      "no_turnaround": "None completed",
+      "plans": "Active plans",
+      "plans_active": ":n active plans",
+      "mrr": ":amount a month",
+      "mrr_label": "Plans per month",
+      "mrr_hint": "What the active plans bring in a month",
+      "churn": "Plan churn",
+      "churn_hint": "Plans cancelled in the period",
+      "fees_earned": "Fees earned",
+      "fees_earned_hint": "For renting and selling other stores' bikes and goods",
+      "fees_paid": "Fees paid",
+      "fees_paid_hint": "To stores that rented or sold ours"
+    },
+    "widget": {
+      "revenue": "Revenue by stream",
+      "revenue_hint": "Per day, week or month, stacked by stream.",
+      "mix": "Income mix",
+      "mix_hint": "Each stream's share of the period's income.",
+      "hours": "Rentals by weekday and hour",
+      "hours_hint": "When bikes are picked up: the darker the cell, the more rentals.",
+      "hour": "Hour of the day",
+      "weekday": "Weekday",
+      "rentals": "Rentals",
+      "between": "Between stores",
+      "between_hint": "Open balances, and staff help in the period.",
+      "position": "Position (owed to us − owed by us)",
+      "help_received": "Help received",
+      "help_given": "Help given",
+      "balances": "Open balances",
+      "owes": "Who owes whom",
+      "owes_line": ":debtor owes :creditor",
+      "square": "All square between the stores.",
+      "products": "Top products",
+      "products_hint": "Sales by revenue.",
+      "categories": "Top categories",
+      "categories_hint": "Sales and rentals by revenue.",
+      "customers": "Best customers",
+      "customers_hint": "All streams, by revenue.",
+      "comparison": "Store comparison",
+      "comparison_hint_work": "Income at each store, by stream (who did the work).",
+      "comparison_hint_books": "Income in each store's books, by stream (whose bikes and goods).",
+      "share": "Share",
+      "share_of": "Share of :store",
+      "nothing": "Nothing in this period.",
+      "units_line": ":n units",
+      "visits_line": ":n visits"
+    },
+    "orders": {
+      "title": "Orders report",
+      "lead": "Every order of your stores: filter, group by store, status or channel, and export."
+    },
+    "rentals": {
+      "title": "Rentals report",
+      "lead": "Rentals served by your stores or of your bikes: group by store, owner store, category or status."
+    },
+    "work_orders": {
+      "title": "Work orders report",
+      "lead": "The workshops' work: group by store, status or source, with labour and parts summed."
+    },
+    "payments": {
+      "title": "Payments report",
+      "lead": "Money received at your stores, for orders, rentals, work orders and plans."
+    },
+    "customers": {
+      "title": "Customers report",
+      "lead": "Customers who did business with your stores, with their lifetime value across the company."
+    },
+    "entries": {
+      "title": "Between stores report",
+      "lead": "The books between stores: who owes whom, why, and whether it is settled."
+    },
+    "empty": {
+      "orders": "No orders yet",
+      "rentals": "No rentals yet",
+      "work_orders": "No work orders yet",
+      "payments": "No payments yet",
+      "customers": "No customers yet",
+      "entries": "Nothing booked between stores yet"
+    },
+    "fields": {
+      "number": "Order",
+      "placed_at": "Placed",
+      "store": "Store",
+      "customer": "Customer",
+      "channel": "Channel",
+      "status": "Status",
+      "units": "Units",
+      "discount": "Discount",
+      "total": "Total",
+      "paid_at": "Paid",
+      "code": "Reservation",
+      "starts_at": "Starts",
+      "owner_store": "Owner store",
+      "bike": "Bike",
+      "model": "Model",
+      "category": "Category",
+      "rate": "Rate",
+      "price": "Price",
+      "late_fee": "Late fee",
+      "damage_fee": "Damage fee",
+      "returned_at": "Returned",
+      "work_order": "Work order",
+      "scheduled_for": "Booked for",
+      "source": "Source",
+      "mechanic_name": "Mechanic",
+      "labour": "Labour",
+      "parts": "Parts",
+      "completed_at": "Completed",
+      "payment": "Payment",
+      "kind": "For",
+      "payable_id": "Document",
+      "method": "Method",
+      "amount": "Amount",
+      "reference": "Reference",
+      "email": "Email",
+      "city": "City",
+      "visits": "Visits",
+      "sales_value": "Purchases",
+      "rentals_value": "Rentals",
+      "workshop_value": "Services",
+      "plans_value": "Plans",
+      "lifetime_value": "Lifetime value",
+      "value": "Value",
+      "first_at": "First visit",
+      "last_at": "Last visit",
+      "booked_at": "Booked",
+      "debtor": "Owes",
+      "creditor": "Is owed",
+      "fee_rate_bp": "Rate (bp)",
+      "settlement": "Settlement",
+      "product": "Product",
+      "company": "All stores"
+    },
+    "rate": {
+      "hourly": "Hourly",
+      "daily": "Daily"
+    },
+    "payable": {
+      "orders": "Order",
+      "rentals": "Rental",
+      "work_orders": "Work order",
+      "plan_subscriptions": "Plan"
+    },
+    "payment_status": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "failed": "Failed",
+      "refunded": "Refunded"
+    },
+    "settlement": {
+      "unsettled": "Not settled yet",
+      "open": "On a statement",
+      "settled": "Settled"
+    },
+    "overview": {
+      "title": ":store, last 7 days",
+      "open": "Open the reports"
+    },
+    "monthly": {
+      "title": "Monthly report",
+      "lead": "One Excel workbook per store and month, mailed to the owner and each manager. It runs by itself on the 1st; run any month here.",
+      "run_title": "Run a month",
+      "run_lead": "For :stores.",
+      "month": "Month",
+      "month_hint": "The workbooks of an earlier run of this month are replaced.",
+      "run": "Run the report",
+      "runs": "Runs",
+      "runs_hint": "Each run is a queue batch: one job per store, then the mail.",
+      "started": "The report for :month is on its way.",
+      "started_at": "Started :at",
+      "progress": "Progress of :month",
+      "done": "Mailed",
+      "running": "Running",
+      "failed": "Failed",
+      "empty": "No runs yet",
+      "empty_text": "The first one runs on the 1st of next month, or start one here.",
+      "invalid": "Pick a month up to this one."
+    },
+    "mail": {
+      "subject": "Monthly report: :month",
+      "title": "Monthly report for :month",
+      "hello": "Hello :name,",
+      "body": "The bike shop's report for :month is attached, one workbook per store:",
+      "sheets": "Each workbook has a summary, the store's books (its own bikes and goods), its work (the customers it served) and its statement between stores.",
+      "open": "Open the reports"
+    },
+    "workbook": {
+      "summary": "Summary",
+      "stream": "Stream",
+      "books": "Books (owner)",
+      "work": "Work (operator)",
+      "total": "Total",
+      "owed_to": "Owed to the store",
+      "owed_by": "Owed by the store",
+      "net": "Net",
+      "intercompany": "Between stores",
+      "date": "Date",
+      "kind": "For",
+      "debtor": "Owes",
+      "creditor": "Is owed",
+      "amount": "Amount",
+      "signed": "For this store",
+      "document": "Document",
+      "operating": "Served at",
+      "owner_store": "Owner store"
+    }
+  },
+  "renox": {
+    "validation": {
+      "attributes": {
+        "name": "name",
+        "email": "email",
+        "phone": "phone",
+        "fulfilment": "pickup or delivery",
+        "store_id": "store",
+        "city_id": "city",
+        "line1": "street and number",
+        "postal_code": "postal code",
+        "variant_id": "product",
+        "quantity": "quantity",
+        "customer_id": "customer",
+        "method": "payment",
+        "tendered": "amount received",
+        "reason": "reason",
+        "brand_id": "brand",
+        "category_id": "category",
+        "country_id": "country",
+        "parent_id": "parent category",
+        "product_id": "product",
+        "id_number": "ID number",
+        "fee_percent": "fee"
+      }
+    }
+  },
+  "plugins": {
+    "two_factor": {
+      "title": "Two-factor authentication",
+      "challenge_lead": "Type the code your authenticator app shows for :app.",
+      "code": "Code",
+      "challenge_hint": "Lost your phone? Type one of your recovery codes instead.",
+      "log_in": "Log in",
+      "codes_title": "Your recovery codes",
+      "codes_lead": "If you lose your phone, each of these codes logs you in once. Keep them somewhere safe: this is the only time they're shown.",
+      "download": "Download",
+      "done": "Done",
+      "on_since": "On since :date. Logging in asks for a code from your authenticator app.",
+      "codes_left": "{0} No recovery codes left.|{1} One recovery code left.|[2,*] :count recovery codes left.",
+      "new_codes": "New recovery codes",
+      "turn_off": "Turn off",
+      "turn_off_question": "Turn off two-factor authentication?",
+      "turn_off_text": "Logging in will only ask for your password.",
+      "off": "Off. Add a second step to logging in: a code from an authenticator app on your phone.",
+      "turn_on": "Turn on",
+      "setup_title": "Turn on two-factor authentication",
+      "setup_lead": "Scan this code with an authenticator app (Google Authenticator, 1Password, Authy…), then type the code it shows.",
+      "no_scan": "Can't scan it? Type this key into the app instead:",
+      "app_code": "Code from the app",
+      "cancel": "Cancel"
+    },
+    "oauth": {
+      "confirm_with": "Or confirm it's you with",
+      "continue_with": "Or continue with",
+      "title": "Linked accounts",
+      "lead": "Log in with these instead of typing your password.",
+      "linked": "Linked",
+      "since": "since :date",
+      "unlink": "Unlink",
+      "unlink_question": "Unlink :provider?",
+      "unlink_text": "You won't be able to log in with :provider until you link it again.",
+      "only_login": "Your only login",
+      "link": "Link",
+      "no_password": "You don't have a password: you log in with a linked account.",
+      "set_password_before": "To have one too, ",
+      "set_password": "set a password",
+      "set_password_after": " (we email you a link)."
+    }
+  },
+  "admin_panel": {
+    "navigation": "Admin navigation",
+    "dashboard": "Dashboard",
+    "empty_title": "Nothing here yet",
+    "empty_text": "No resources are open to you.",
+    "new": "New :label",
+    "filters": ":label filters",
+    "delete": "Delete",
+    "delete_question": "Delete this :label?",
+    "to_trash": "It goes to the trash, where it can be restored.",
+    "for_good_text": "This can't be undone.",
+    "cancel": "Cancel",
+    "deleted": "Deleted",
+    "edit": "Edit",
+    "restore": "Restore",
+    "delete_for_good": "Delete for good",
+    "delete_for_good_question": "Delete this :label for good?",
+    "in_trash": "This :label is in the trash.",
+    "select": "Select…"
+  },
+  "errors": {
+    "maintenance": {
+      "title": "We're giving the shop a quick tune-up",
+      "body": "We'll be back in a few minutes. Your cart, rentals and bookings are safe."
+    },
+    "not_found": "That page isn't here. The link may be old or mistyped.",
+    "failed": "Sorry, that didn't work.",
+    "home": "Go to the home page"
+  },
+  "auth_art": {
+    "quote": "Ride further. We'll keep the bike ready."
+  },
+  "stores": {
+    "site": {
+      "lead": "The :name store: buy, rent and service bikes, with our own workshop on site.",
+      "rent": "Rent a bike here",
+      "service": "Book a service",
+      "bikes_free": "Bikes free to rent now",
+      "bikes_here": ":count rental bikes at this store",
+      "products": "Products on the shelves",
+      "products_hint": "Bikes, gear and parts in stock here",
+      "workshop": "Mechanic hours a day",
+      "workshop_hint": "Shared by the bookings; book a service online",
+      "hours_value": ":hours hours",
+      "visit": "Visit us",
+      "address": "Address",
+      "phone": "Phone",
+      "email": "Email",
+      "hours": "Opening hours",
+      "day": "Day",
+      "open": "Open",
+      "closed": "Closed every day for now.",
+      "all": "All three stores"
+    }
+  },
+  "fields": {
+    "title": "Form fields and their types",
+    "lead": "Every kind of form input, the Rust type it is read into, and the column it is stored in on SQLite and on PostgreSQL. Try them all in the form below.",
+    "reference": {
+      "title": "Input, Rust and database",
+      "lead": "One row per field of the form below, from the browser to the column and back.",
+      "field": "Field",
+      "input": "Input",
+      "form": "Form type",
+      "model": "Model type"
+    },
+    "samples": {
+      "title": "Your samples",
+      "lead": "Only you see the samples you save.",
+      "none": "No samples yet",
+      "none_text": "Fill in the form below to save your first one."
+    },
+    "try": {
+      "title": "Try every field",
+      "lead": "Save a sample bike, then open it to see each value read back from the database.",
+      "login": "Log in to try the form: the samples you save are kept with your account."
+    },
+    "form": {
+      "basics": "Basics",
+      "key": "Sample ID",
+      "key_hint": "A UUID v7, made when the sample was saved.",
+      "name": "Name",
+      "brand": "Brand",
+      "brand_hint": "Type freely, or pick one of the shop's brands.",
+      "description": "Description",
+      "description_hint": "Markdown: **bold**, _italic_, lists, links.",
+      "stock": "Stock",
+      "weight": "Weight",
+      "price": "Price",
+      "available": "Available",
+      "options": "Options",
+      "size": "Frame size",
+      "colours": "Colours",
+      "details": "Details",
+      "tags": "Tags",
+      "tags_hint": "Press Enter or a comma after each.",
+      "specs": "Specifications",
+      "spec_name": "Name",
+      "spec_value": "Value",
+      "spec_add": "Add a specification",
+      "rich": "Rich text",
+      "rich_hint": "Formatted text, cleaned on the server.",
+      "settings": "Settings",
+      "settings_hint": "JSON, checked when saved.",
+      "dates": "Dates and times",
+      "pickup": "Pick-up time",
+      "launch": "Launch",
+      "released": "Released on",
+      "files": "Files",
+      "photo": "Photo",
+      "photo_hint": "An image up to 2 MB; anyone with its address can see it.",
+      "manual": "Manual",
+      "manual_hint": "A PDF up to 5 MB; only you can open it."
+    },
+    "size": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "colour": {
+      "teal": "Teal",
+      "tan": "Sand",
+      "slategray": "Graphite",
+      "black": "Black"
+    },
+    "yes": "Yes",
+    "no": "No",
+    "edit": "Edit",
+    "delete": "Delete",
+    "confirm": {
+      "title": "Delete “:name”?",
+      "text": "The sample and its files are removed for good."
+    },
+    "cancel": "Cancel",
+    "save": "Save changes",
+    "create": "Save the sample",
+    "show": {
+      "lead": "Every field of the form, read back from the database.",
+      "none": "None",
+      "in_stock": "in stock",
+      "photo_alt": "The photo of :name",
+      "updated": "Updated"
+    },
+    "edit_title": "Edit :name",
+    "edit_lead": "Each stored value is back in the format its input expects.",
+    "saved": "Sample saved.",
+    "updated": "Changes saved.",
+    "deleted": "“:name” deleted."
+  },
+  "htmx": {
+    "title": "htmx recipes",
+    "lead": "The interactions people reach for a JavaScript framework for, each a few htmx attributes on the kit's components and a handler that answers with a fragment. Try them on a pre-ride checklist and the catalogue's bikes.",
+    "live": {
+      "title": "htmx recipes, as a live component",
+      "lead": "The checklist of the htmx page again, written as a live component: a Rust struct for the state, a method for each action, and rx-click / rx-model in the template. No routes, fragments or out-of-band swaps.",
+      "card": "The same items as the htmx page, kept in your session: add, tick, rename and delete.",
+      "cancel": "Cancel",
+      "see_htmx": "The htmx version",
+      "see_live": "The live component version",
+      "left_out": {
+        "title": "What this version leaves out",
+        "body": "The bikes' infinite scroll, the duplicate that the server retargets onto its row (HxRetarget/HxReswap), the reload and redirect of Clear and Ready (HxRefresh/HX-Redirect), the double-click and Escape of the inline edit, and hx-confirm on delete. The page about htmx shows them."
+      }
+    },
+    "checklist": {
+      "title": "Pre-ride checklist",
+      "lead": "Kept in your session: add, tick, double-click to rename, delete from the row's menu."
+    },
+    "open": "{0} nothing left to do|{1} :count to do|[2,*] :count to do",
+    "show": "Show",
+    "tabs": {
+      "all": "All",
+      "open": "To do",
+      "done": "Done"
+    },
+    "new": "New item",
+    "add": "Add",
+    "item": "Item",
+    "placeholder": "What needs checking?",
+    "done_label": "Done: :title",
+    "dblclick": "Double-click to rename",
+    "more": "More",
+    "edit": "Rename",
+    "delete": "Delete",
+    "confirm": "Delete “:title”?",
+    "save": "Save",
+    "empty": "Nothing on the list. Add an item.",
+    "clear": "Clear the done items",
+    "ready_button": "Ready: take me to the shop",
+    "already": "That item is already on the list.",
+    "full": "The checklist holds at most :max items.",
+    "deleted": "“:title” deleted.",
+    "cleared": "{0} Nothing was done yet.|{1} One done item cleared.|[2,*] :count done items cleared.",
+    "ready": "{0} Have a good ride.|{1} One item checked. Have a good ride.|[2,*] :count items checked. Have a good ride.",
+    "more_bikes": "More bikes…",
+    "scroll": {
+      "title": "Infinite scroll",
+      "lead": "The catalogue's bikes, eight at a time: the next ones load as the last row scrolls into view."
+    },
+    "recipes": {
+      "title": "The recipes",
+      "lead": "What each one does, how to try it here, what the server answers, and where the shop uses it.",
+      "recipe": "Recipe",
+      "try": "Try it",
+      "answer": "Answer",
+      "shop": "In the shop",
+      "modal": {
+        "name": "A modal form that adds a row",
+        "try": "Press N, or the New item button"
+      },
+      "oob": {
+        "name": "Two places change at once",
+        "try": "Tick an item: the count at the top follows",
+        "shop": "The cart"
+      },
+      "retarget": {
+        "name": "The server picks where its answer goes",
+        "try": "Add an item that is already on the list"
+      },
+      "inline": {
+        "name": "Inline edit",
+        "try": "Double-click an item; Escape cancels"
+      },
+      "toggle": {
+        "name": "A checkbox that saves itself",
+        "try": "Tick an item",
+        "shop": "The role matrix"
+      },
+      "menu": {
+        "name": "A menu whose Delete asks first",
+        "try": "More, then Delete"
+      },
+      "tabs": {
+        "name": "Tabs with no request",
+        "try": "All, To do, Done"
+      },
+      "refresh": {
+        "name": "Reload after a change to many rows",
+        "try": "Clear the done items",
+        "shop": "Staff orders"
+      },
+      "redirect": {
+        "name": "Go to another page after an action",
+        "try": "Ready: take me to the shop",
+        "shop": "Your plans"
+      },
+      "scroll": {
+        "name": "Infinite scroll",
+        "try": "Scroll the bikes down"
+      }
+    }
+  }
+}

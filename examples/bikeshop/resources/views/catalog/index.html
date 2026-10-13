@@ -1,0 +1,82 @@
+{#- The catalogue: every product (/shop), a category (/shop/{slug}) or search
+    results (/search?q=). One page, three scopes (src/app/catalog/browse.rs);
+    htmx asks for the `results` block alone. -#}
+<rx-page layout="layouts/app.html">
+<rx-slot name="seo">{{ seo(title=title ~ " · " ~ t('shop.name'), description=description, canonical=reset) }}</rx-slot>
+<rx-push stack="head"><link rel="stylesheet" href="{{ asset('catalog/catalog.css') }}"></rx-push>
+<rx-let name="parent" :value="breadcrumbs[-2] if breadcrumbs | length > 1 else none"/>
+<rx-page-header :title="title" :subtitle="t('catalog.search.lead') if search else description"
+                :back="('/shop/' ~ parent.slug) if parent else (route('catalog.index') if category else none)"
+                :back-label="parent.name if parent else t('catalog.all.title')"/>
+
+<div class="bs-catalog">
+  {#- The filters: a plain GET form (shareable addresses, works without
+      JavaScript). With htmx, a change sends it and swaps only #results. On a
+      phone they fold away under "Filters". -#}
+  <details class="bs-catalog__filters" data-bs-filters open>
+    <summary class="rx-button rx-button--secondary">{{ t('catalog.filters.title') }}<template rx-if="filters.brands or filters.sizes or filters.wheels or filters.frame or filters.ebike or filters.store or filters.fits or filters.price_min is not none or filters.price_max is not none"> <span class="rx-badge">{{ chips | length }}</span></template></summary>
+    <div class="bs-catalog__filters-body">
+      <nav rx-if="category_menu" class="bs-catalog__menu" aria-label="{{ t('catalog.categories') }}">
+        <ul class="bs-tree" role="list">
+          <li rx-for="root in category_menu">
+            <a class="rx-link bs-tree__root" href="{{ root.href }}" ?aria-current="'page' if root.current"><span class="bs-icon-circle bs-icon-circle--small"><app-category-icon :href="root.href"/></span>{{ root.name }}</a>
+            <ul rx-if="root.children" class="bs-tree" role="list">
+              <li rx-for="child in root.children"><a class="rx-link bs-tree__leaf" href="{{ child.href }}" ?aria-current="'page' if child.current"><app-category-icon :href="child.href" :size="16"/>{{ child.name }}</a></li>
+            </ul>
+          </li>
+        </ul>
+      </nav>
+
+      {# [explain:catalog.index.form] #}
+      <rx-form id="catalog-filters" class="bs-catalog__form" method="GET" :action="path" role="search" aria-label="{{ t('catalog.filters.title') }}"
+            hx-get="{{ path }}" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" hx-sync="this:replace"
+            hx-trigger="change delay:250ms, submit" hx-indicator="#results">
+        <rx-input rx-if="search" name="q" :label="t('catalog.search.label')" type="search" :value="filters.q" id="filter-q" autocomplete="off" hx-trigger="none"/>
+        <rx-select name="sort" :label="t('catalog.sort.label')" :options="sorts" :selected="filters.sort" id="filter-sort"/>
+        <rx-select rx-if="facets.fits" name="fits" :label="t('catalog.fits.label')" :options="facets.fits" :selected="filters.fits" :placeholder="t('catalog.fits.off')" :hint="t('catalog.fits.hint')" id="filter-fits"/>
+        <rx-checkbox-list rx-if="facets.brands" name="brand" :label="t('catalog.filters.brand')" :options="facets.brands" :selected="filters.brands" id="filter-brand"/>
+        <rx-range-slider rx-if="facets.price_high > facets.price_low" name-min="price_min" name-max="price_max" :min="facets.price_low" :max="facets.price_high" :step="facets.price_step"
+                         :value-min="filters.price_min" :value-max="filters.price_max" :label="t('catalog.filters.price')" format="money" id="filter-price"/>
+      {# [/explain:catalog.index.form] #}
+        <rx-checkbox-list rx-if="facets.sizes" name="size" :label="t('catalog.filters.size')" :options="facets.sizes" :selected="filters.sizes" inline id="filter-size"/>
+        <rx-select rx-if="facets.wheels | length > 1" name="wheels" :label="t('catalog.filters.wheels')" :options="facets.wheels" :selected="filters.wheels" :placeholder="t('catalog.filters.any')" id="filter-wheels"/>
+        <rx-select rx-if="facets.frames | length > 1" name="frame" :label="t('catalog.filters.frame')" :options="facets.frames" :selected="filters.frame" :placeholder="t('catalog.filters.any')" id="filter-frame"/>
+        <rx-checkbox rx-if="facets.ebikes" name="ebike" :label="t('catalog.filters.ebike')" :checked="filters.ebike" value="1" switch id="filter-ebike"/>
+        <rx-select name="store" :label="t('catalog.filters.store')" :options="facets.stores" :selected="filters.store | string if filters.store is not none else none" :placeholder="t('catalog.filters.any_store')" id="filter-store"/>
+        <div class="bs-catalog__actions">
+          <rx-button :label="t('catalog.filters.apply')" variant="primary" data-bs-apply=""/>
+          <rx-link-button :href="reset ~ (('?q=' ~ (filters.q | urlencode)) if search and filters.q else '')" :label="t('catalog.filters.clear')" variant="plain"/>
+        </div>
+      </rx-form>
+    </div>
+  </details>
+
+  {# [explain:catalog.index.results] #}
+  <rx-block name="results">
+  <section id="results" class="bs-catalog__results" aria-labelledby="results-count">
+    <div class="bs-catalog__summary">
+      <p class="rx-subtitle" id="results-count" role="status">{{ t('catalog.found', count=total) }}</p>
+      <ul rx-if="chips" class="bs-chips" role="list" aria-label="{{ t('catalog.filters.on') }}">
+        <li rx-for="chip in chips"><a class="bs-chip" href="{{ chip.href }}" hx-get="{{ chip.href }}" hx-target="#results" hx-swap="outerHTML" hx-push-url="true" aria-label="{{ t('catalog.filters.remove', filter=chip.label) }}">{{ chip.label }} <span aria-hidden="true">×</span></a></li>
+      </ul>
+    </div>
+    <div rx-if="cards" data-bs-reveal>
+    <rx-card-grid>
+      <rx-media-card rx-for="c in cards" :href="route('catalog.show', c.slug)" :title="c.name" :image="c.photo" :image-alt="c.photo_alt"
+                     :subtitle="t('catalog.price_from', price=(c.price_from | money)) if c.variants | length > 1 and c.price_from is not none else (c.price_from | money if c.price_from is not none else none)"
+                     :note="c.brand.name if c.brand else none"/>
+    </rx-card-grid>
+    </div>
+  {# [/explain:catalog.index.results] #}
+    <rx-card rx-else>
+      <rx-empty :title="t('catalog.empty.title')" :message="t('catalog.empty.search', q=filters.q) if search and filters.q else t('catalog.empty.text')" :action-href="reset" :action-label="t('catalog.filters.clear')" icon="search"/>
+    </rx-card>
+    {# [explain:catalog.index.results] #}
+    <div class="bs-catalog__pages" hx-boost="true" hx-target="#results" hx-select="#results" hx-swap="outerHTML">
+      <rx-pagination :page="pages"/>
+    </div>
+  </section>
+  </rx-block>
+    {# [/explain:catalog.index.results] #}
+</div>
+</rx-page>

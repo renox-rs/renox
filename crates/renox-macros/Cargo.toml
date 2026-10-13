@@ -1,0 +1,27 @@
+[package]
+name = "renox-macros"
+description = "Procedural macros for the Renox web framework: derive Model, FromRow and DbEnum, migrations!(), embedded!() and #[renox::test]."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+heck = "0.5.0"
+proc-macro2 = "1.0.107"
+quote = "1.0.47"
+syn = { version = "3", features = ["full"] }
+
+[dev-dependencies]
+# The examples in the docs use the macros through `renox`, as apps do. Path
+# only, so `cargo publish` drops it: `renox` depends on these macros and is
+# published after them (a version here would ask for it first).
+renox = { path = "../renox" }
+serde = { version = "1.0.229", features = ["derive"] }

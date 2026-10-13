@@ -1,0 +1,15 @@
+{#- The navbar's search box (the catalogue, #233): a plain GET form to
+    /search, so Enter always works; while typing, htmx asks
+    `catalog.suggest` for the best matches and shows them under the box.
+    public/catalog/catalog.js adds the arrow keys and Escape. -#}
+<rx-props>
+<rx-push stack="head"><link rel="stylesheet" href="{{ asset('catalog/catalog.css') }}"></rx-push>
+<form class="bs-search" id="nav-search-form" role="search" method="get" action="{{ route('catalog.search') }}" data-bs-search>
+  <label class="rx-visually-hidden" for="nav-search">{{ t('catalog.search.label') }}</label>
+  <input class="rx-input bs-search__input" id="nav-search" type="search" name="q" autocomplete="off"
+         placeholder="{{ t('catalog.search.placeholder') }}" maxlength="100"
+         aria-controls="nav-suggestions" aria-autocomplete="list"
+         hx-get="{{ route('catalog.suggest') }}" hx-trigger="input changed delay:200ms, search" hx-target="#nav-suggestions" hx-swap="innerHTML" hx-sync="this:replace">
+  <div class="bs-suggest" id="nav-suggestions" aria-live="polite"></div>
+</form>
+<rx-script :src="asset('catalog/catalog.js')" defer></rx-script>

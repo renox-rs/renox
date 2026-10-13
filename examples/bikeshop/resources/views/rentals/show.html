@@ -1,0 +1,45 @@
+{#- A reservation (#235): its code, the bike and the store, the money, and
+    what can still be done (pay the deposit, cancel). -#}
+<rx-page layout="layouts/app.html" title="{{ t('rentals.show.title', code=row.reservation_code) }}">
+  <app-rentals-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.show.heading') }}" :subtitle="row.model" :back="route('rentals.mine')" back-label="{{ t('rentals.mine.title') }}"/>
+    <rx-alert rx-if="needs_payment" kind="warning" title="{{ t('rentals.show.unpaid') }}" message="{{ t('rentals.show.pay_by', time=(pay_by | date('%H:%M'))) }}"/>
+    <rx-alert rx-elif="row.status == 'reserved'" kind="success" title="{{ t('rentals.show.confirmed') }}" message="{{ t('rentals.show.held_until', time=(held_until | date('%d %b %H:%M'))) }}"/>
+    <div class="bs-desk">
+      <div class="bs-desk__side">
+        <rx-card title="{{ t('rentals.show.code') }}">
+          <p class="rx-subtitle">{{ t('rentals.show.code_hint') }}</p>
+          <rx-infolist>
+            <rx-entry label="{{ t('rentals.fields.code') }}" :value="row.reservation_code" copyable/>
+          </rx-infolist>
+        </rx-card>
+        {# [explain:rentals.show.actions] #}
+        <div rx-if="needs_payment or row.status == 'reserved'" class="rx-card rx-stack">
+          <form rx-if="needs_payment" method="post" action="{{ route('rentals.pay', row.reservation_code) }}">
+            {{ csrf_field() }}
+            <rx-button icon="check" block>{{ t('rentals.show.pay', amount=(row.deposit | money)) }}</rx-button>
+          </form>
+          <rx-confirm rx-if="cancellable" id="cancel-rental" label="{{ t('rentals.show.cancel') }}" :action="route('rentals.cancel', row.reservation_code)" title="{{ t('rentals.show.cancel_title') }}" message="{{ t('rentals.show.cancel_text') }}" confirm-label="{{ t('rentals.show.cancel') }}" method="POST"/>
+          <p rx-else class="rx-hint">{{ t('rentals.show.no_cancel') }}</p>
+        </div>
+        {# [/explain:rentals.show.actions] #}
+      </div>
+      <rx-card title="{{ t('rentals.show.details') }}">
+        <rx-infolist columns="2">
+          <rx-entry label="{{ t('rentals.fields.status') }}"><app-rentals-status :rental="row" :overdue="row.overdue"/></rx-entry>
+          <rx-entry label="{{ t('rentals.fields.store') }}" :value="row.operating_store.name if row.operating_store else none"/>
+          <rx-entry label="{{ t('rentals.fields.bike') }}" :value="row.model"/>
+          <rx-entry label="{{ t('rentals.fields.frame') }}" :value="row.bike.frame_number if row.bike else none"/>
+          <rx-entry label="{{ t('rentals.fields.starts') }}" :value="row.starts_at" format="datetime"/>
+          <rx-entry label="{{ t('rentals.fields.ends') }}" :value="row.due_at" format="datetime"/>
+          <rx-entry label="{{ t('rentals.fields.price') }}" :value="row.price" format="money"/>
+          <rx-entry label="{{ t('rentals.fields.deposit') }}" :value="row.deposit" format="money" hint="{{ t('rentals.deposit.' ~ row.deposit_status) }}"/>
+          <rx-entry rx-if="row.late_fee" label="{{ t('rentals.fields.late_fee') }}" :value="row.late_fee" format="money"/>
+          <rx-entry rx-if="row.damage_fee" label="{{ t('rentals.fields.damage_fee') }}" :value="row.damage_fee" format="money"/>
+          <rx-entry rx-if="row.deposit_refunded" label="{{ t('rentals.fields.refund') }}" :value="row.deposit_refunded" format="money"/>
+        </rx-infolist>
+      </rx-card>
+    </div>
+  </rx-stack>
+</rx-page>

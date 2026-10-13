@@ -1,0 +1,14 @@
+Motion (https://motion.dev), the JavaScript animation library, vendored so the bike shop
+serves it itself: no CDN, and it works under the app's Content-Security-Policy.
+
+Package:   motion 14.0.0 (npm), the latest stable release on 2026-10-06
+File:      motion.js = dist/motion.js from https://registry.npmjs.org/motion/-/motion-14.0.0.tgz
+           (the UMD build: it defines the global `Motion`, with animate, stagger, inView…)
+Integrity: the tarball's sha512 matched the registry's
+           (sha512-oGc2lkge2lkRZCP+J8/JsnYu4NFjqP1MtXirNdetn3QbvK2JqwM9A200EdT4C598KfzDhjLT12zF21xDM4Oilw==)
+SHA-256:   cbd68b4c7f906740542503da2f45aa42a511114959eeb116320afc77812a3d04  motion.js
+Licence:   MIT, Copyright (c) 2024 Motion B.V.; the full text is LICENSE.md next to this file.
+
+To update: download the new tarball, check its integrity against
+https://registry.npmjs.org/motion/latest, copy package/dist/motion.js and package/LICENSE.md
+here, and update this file.

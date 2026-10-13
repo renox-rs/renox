@@ -1,0 +1,92 @@
+{#- A product (src/app/catalog/product.rs); htmx asks for the `buybox` block
+    alone (a change of size or colour). -#}
+<rx-page layout="layouts/app.html">
+<rx-slot name="seo">{{ seo(title=product.name ~ " · " ~ t('shop.name'), description=summary, image=og_image, type="product") }}</rx-slot>
+<rx-push stack="head"><link rel="stylesheet" href="{{ asset('catalog/catalog.css') }}"></rx-push>
+<rx-page-header :title="product.name"
+                :subtitle="((brand.name ~ ' · ') if brand else '') ~ (category.name if category else '')"
+                :back="route('catalog.category', category.slug) if category else route('catalog.index')"
+                :back-label="category.name if category else t('catalog.all.title')"/>
+
+<div class="bs-product">
+  <div class="bs-product__media">
+    <rx-gallery rx-if="gallery" :photos="gallery" id="product-photos" :label="t('catalog.product.photos', name=product.name)"/>
+  </div>
+
+  <div class="bs-product__buy">
+    {#- The variant picker: a GET form on this page's address. htmx sends it
+        on every change and swaps the buy box; without JavaScript, "Show"
+        reloads the page with the choice. -#}
+    {# [explain:catalog.show.template] #}
+    <rx-form rx-if="sizes or colours" id="variant-form" class="bs-product__variants" method="GET" :action="route('catalog.show', product.slug)"
+          hx-get="{{ route('catalog.show', product.slug) }}" hx-target="#buybox" hx-swap="outerHTML" hx-trigger="change" hx-push-url="true" hx-sync="this:replace">
+    {# [/explain:catalog.show.template] #}
+      <rx-swatches rx-if="sizes" name="size" :label="t('catalog.product.size')" :options="sizes" :selected="chosen.size if chosen else none" required/>
+      <rx-swatches rx-if="colours" name="colour" :label="t('catalog.product.colour')" :options="colours" :selected="chosen.colour if chosen else none" kind="colour" required/>
+      <noscript><rx-button :label="t('catalog.product.show_variant')" variant="secondary" size="small"/></noscript>
+    </rx-form>
+
+    {# [explain:catalog.show.template] #}
+    <rx-block name="buybox">
+    <section id="buybox" class="rx-card bs-buybox" aria-labelledby="buybox-price" aria-live="polite">
+    {# [/explain:catalog.show.template] #}
+      <template rx-if="chosen">
+      <p class="bs-buybox__price" id="buybox-price">{{ chosen.price | money }}</p>
+      <p class="rx-subtitle">{{ t('catalog.product.sku', sku=chosen.sku) }}<template rx-if="chosen.size"> · {{ chosen.size }}</template><template rx-if="chosen.colour"> · {{ chosen.colour }}</template></p>
+      <h2 class="bs-buybox__heading">{{ t('catalog.product.stock_title') }}</h2>
+      <ul class="bs-stock" role="list">
+        <li rx-for="s in chosen.stock" class="bs-stock__row{{ ' bs-stock__row--out' if s.available == 0 }}">
+          <span class="bs-stock__dot" aria-hidden="true"></span><rx-icon name="store" :size="16"/>
+          <span>{{ t('catalog.product.stock_at', count=s.available, store=s.store) }}</span>
+        </li>
+      </ul>
+      {# [explain:catalog.show.template] #}
+      {#- Add to cart: a plain POST form (the cart, #234). With htmx the
+          answer is a toast and the navbar's cart, swapped out of band. -#}
+      <rx-form rx-if="chosen.available > 0" class="bs-buybox__add" :action="route('cart.add')"
+            hx-post="{{ route('cart.add') }}" hx-swap="none" data-bs-add-to-cart>
+        <input type="hidden" name="variant_id" value="{{ chosen.id }}">
+        <rx-quantity name="quantity" :value="1" :min="1" :max="[chosen.available, 10] | min" :label="t('catalog.product.quantity')" id="add-quantity"/>
+        <rx-button :label="t('catalog.product.add_to_cart')" variant="primary" key="a" icon="shopping-cart"/>
+      </rx-form>
+      {# [/explain:catalog.show.template] #}
+      <rx-alert rx-else :message="t('catalog.product.sold_out_everywhere')" kind="warning"/>
+      </template>
+      <p rx-if="rent_url" class="bs-buybox__rent"><rx-link-button :href="rent_url" :label="t('catalog.product.rent')" variant="secondary" icon="key-round"/></p>
+    </section>
+    </rx-block>
+  </div>
+</div>
+
+<div class="bs-product__details" data-bs-reveal>
+  <rx-card :title="t('catalog.product.description')">
+    <div class="rx-prose">{{ product.description | markdown }}</div>
+  </rx-card>
+  <rx-card rx-if="specs" :title="t('catalog.product.specs')">
+    <rx-infolist columns="2">
+      <rx-entry rx-if="brand" :label="t('catalog.product.brand')" :value="brand.name" :url="brand.website" new-tab/>
+      <rx-entry rx-for="spec in specs" :label="spec[0]" :value="spec[1]"/>
+      <rx-entry rx-if="price_low is not none and price_low != price_high" :label="t('catalog.product.prices')" :value="(price_low | money) ~ ' – ' ~ (price_high | money)"/>
+      <rx-entry :label="t('catalog.product.variants')" :value="variants | length"/>
+    </rx-infolist>
+  </rx-card>
+</div>
+
+<section rx-if="related" class="bs-product__related" aria-labelledby="related-title">
+  <h2 class="rx-title" id="related-title">{{ t('catalog.product.fits_bikes') if kind == 'part' else t('catalog.product.fitting_parts') }}</h2>
+  <div data-bs-reveal>
+  <rx-card-grid>
+    <rx-media-card rx-for="r in related" :href="route('catalog.show', r.slug)" :title="r.name" :image="r.photo" :image-alt="r.photo_alt"
+                   :subtitle="r.price_from | money if r.price_from is not none else none" :note="r.note"/>
+  </rx-card-grid>
+  </div>
+</section>
+
+<section rx-if="recently" class="bs-product__related" aria-labelledby="recent-title">
+  <h2 class="rx-title" id="recent-title">{{ t('catalog.product.recently_viewed') }}</h2>
+  <rx-card-grid>
+    <rx-media-card rx-for="c in recently" :href="route('catalog.show', c.slug)" :title="c.name" :image="c.photo" :image-alt="c.photo_alt"
+                   :subtitle="c.price_from | money if c.price_from is not none else none"/>
+  </rx-card-grid>
+</section>
+</rx-page>

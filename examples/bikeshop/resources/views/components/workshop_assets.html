@@ -1,0 +1,4 @@
+{#- The workshop pages' stylesheet (public/areas/workshop.css), once, through
+    the layout's head stack: `<app-workshop-assets/>`. -#}
+<rx-props>
+<rx-push stack="head" once="workshop-css"><link rel="stylesheet" href="{{ asset('areas/workshop.css') }}"></rx-push>

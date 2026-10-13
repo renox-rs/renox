@@ -1,0 +1,21 @@
+/* The API pages (#241): CSS grids spaced with the kit's tokens (--rx-space-*),
+   type from the kit's scale (--rx-type-*); no sizes of our own. */
+
+/* The tokens beside the form on a wide screen, above it on a phone. */
+.bs-tokens { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-tokens { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); } }
+.bs-token-form { display: grid; gap: var(--rx-space-3); }
+.bs-token-once { display: grid; gap: var(--rx-space-3); }
+
+/* A code sample: scrolls inside its frame, never the page. */
+.bs-code { margin: 0; padding: var(--rx-space-3); overflow-x: auto; max-width: 100%; border: var(--rx-surface-border); border-radius: var(--rx-radius-s); background: var(--rx-surface-raised); font: var(--rx-type-note); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* /about/api: the endpoints one after the other. */
+.bs-endpoints { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-endpoint { display: grid; gap: var(--rx-space-3); min-width: 0; }
+.bs-endpoint__head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: var(--rx-space-2) var(--rx-space-3); }
+.bs-endpoint__head .rx-subtitle { grid-column: 1 / -1; }
+.bs-endpoint__path { font: var(--rx-type-label); overflow-wrap: anywhere; }
+.bs-api-group { font: var(--rx-type-heading); margin: var(--rx-space-4) 0 0; }
+.bs-api-rules { display: grid; gap: var(--rx-space-2); margin: 0; padding-inline-start: var(--rx-space-5); font: var(--rx-type-body); }
+.bs-api-links { display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-2); margin-top: var(--rx-space-3); }

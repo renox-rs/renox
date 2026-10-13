@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  {% block seo %}{{ seo(title="Renox: Laravel's productivity, Rust's performance") }}{% endblock %}
+  {{ renox_head() }}
+  <link rel="icon" href="data:,">
+  <link rel="preload" href="{{ asset('fonts/jetbrains-mono-latin-wght.woff2') }}" as="font" type="font/woff2" crossorigin>
+  {{ renox_ui() }}
+  <link rel="stylesheet" href="{{ asset('site.css') }}">
+  <script src="{{ asset('site.js') }}" defer></script>
+</head>
+{#- The kit's shell: the guides in a sidebar (each with its icon), the page beside it. -#}
+<body class="rx-page rx-shell site">
+  {% from "renox/ui.html" import sidebar, navbar %}
+  {% call sidebar("Renox", href=route('home'), label="Documentation") %}
+    {%- for section in nav %}
+    <p class="rx-sidebar__section site-nav-section">{{ section.title }}</p>
+    {%- for page in section.pages %}
+    <a class="rx-sidebar__link site-nav-link" href="{{ route('docs.show', page.slug) }}"{% if page.slug == current %} aria-current="page"{% endif %}>{{ icon(page.icon) }}<span>{{ page.nav }}</span></a>
+    {%- endfor %}
+    {%- endfor %}
+  {% endcall %}
+  <div class="rx-shell__main">
+    {% call navbar(none, width="full", skip=false, label="Search and links") %}
+      <form class="site-search" action="{{ route('search') }}" method="get" role="search">
+        <label class="rx-visually-hidden" for="site-search">Search the docs</label>
+        {{ icon("search") }}
+        <input class="rx-input" id="site-search" type="search" name="q" placeholder="Search the docs" value="{{ q if q is defined else '' }}">
+      </form>
+      <span class="rx-spacer"></span>
+      <a class="site-top-link" href="{{ route('docs.show', 'tutorial') }}">{{ icon("graduation-cap") }}<span>Tutorial</span></a>
+      <a class="site-top-link" href="{{ repository }}">{{ icon("github") }}<span>GitHub</span></a>
+    {% endcall %}
+    <main class="rx-shell__content" id="main">
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</body>
+</html>

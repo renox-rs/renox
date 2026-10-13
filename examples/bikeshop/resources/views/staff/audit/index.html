@@ -1,0 +1,12 @@
+{#- `staff.audit.index`: the audit log on the data grid (src/app/staff/audit.rs).
+    Every heading filters; `data` is drawn here as the entry's JSON. -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.audit.title')">
+  <rx-stack>
+    <rx-page-header :title="t('staff.audit.title')" :subtitle="t('staff.audit.lead')"/>
+    {# [explain:staff.audit.index.template] #}
+    <rx-grid :page="entries">
+      <code rx-if="column.key == 'data' and row.data and row.data != '{}'">{{ row.data[:120] }}<template rx-if="row.data | length > 120">…</template></code>
+    </rx-grid>
+    {# [/explain:staff.audit.index.template] #}
+  </rx-stack>
+</rx-page>

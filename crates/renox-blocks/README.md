@@ -1,0 +1,36 @@
+# renox-blocks
+
+Interactive blocks for [Renox](https://github.com/renox-rs/renox) apps: components the UI kit
+doesn't carry, as template macros built on the kit's tokens. A page loads the blocks' script
+only when it has a block, and then only the code of the blocks it has (no library, no build
+step).
+
+```rust
+use renox::prelude::*;
+use renox_blocks::Blocks;
+
+App::new().module(Blocks::new())
+```
+
+```html
+{% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
+{{ gallery(product.photos, id="photos", label="Photos of " ~ product.name) }}
+{{ swatches("size", "Frame size", sizes, selected="M", required=true) }}
+{{ quantity("qty", 1, min=1, max=10) }}
+```
+
+The blocks:
+
+- input: `quantity` (a stepper), `range_slider` (two handles), `keypad` (a point-of-sale
+  number pad), `swatches` (variant chips), `datetime_range` (a start and an end, with times);
+- showing data: `gallery` (a carousel), `history` (a timeline), `compare_plans` (pricing cards
+  and a comparison table);
+- scheduling and work: `month_calendar`, `availability` (resources against hours), `kanban`
+  (cards dragged or moved by keyboard, each move sent with htmx).
+
+The input blocks send plain form fields, so `Valid<T>` reads them; every block works with the
+keyboard, says its states in words, follows `prefers-reduced-motion`, works under
+`CSP=strict`, and has English texts an app translates in its lang files
+(`renox_blocks::TEXTS`). The guide is
+[docs/blocks.md](https://github.com/renox-rs/renox/blob/main/docs/blocks.md);
+examples/bikeshop uses every block. Versioned with `renox`: use the same version for both.

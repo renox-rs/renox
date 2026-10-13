@@ -1,0 +1,116 @@
+/* The catalogue's page layouts (#233): the listing (filters beside the
+   results), the product page (photos beside the buy box), the navbar's
+   search box and the home page's storefront. CSS grid for every
+   arrangement; type, colours, radii and spacing are the kit's tokens
+   (--rx-*), so dark mode and the type scale follow the kit. `bs-` like the
+   blocks; nothing styles bare elements. */
+
+/* ---------- the listing: filters | results ---------- */
+
+.bs-catalog { display: grid; grid-template-columns: minmax(14rem, 17rem) minmax(0, 1fr); gap: var(--rx-space-6); align-items: start; }
+.bs-catalog__filters { display: grid; gap: var(--rx-space-4); position: sticky; top: var(--rx-space-4); max-height: calc(100dvh - 2 * var(--rx-space-4)); overflow-y: auto; scrollbar-width: thin; padding-right: var(--rx-space-1); }
+.bs-catalog__filters > summary { display: none; }
+.bs-catalog__filters-body { display: grid; gap: var(--rx-space-5); }
+.bs-catalog__form { display: grid; gap: var(--rx-space-4); }
+/* Filters are all optional: no "(optional)" after each label (as the kit's toolbar). */
+.bs-catalog__form .rx-required { display: none; }
+.bs-catalog__actions { display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-2); }
+/* With the script, a change sends the form: the "Apply" button is for keyboards only. */
+.bs-catalog__filters[data-bs-live] [data-bs-apply] { display: none; }
+.bs-catalog__results { display: grid; gap: var(--rx-space-4); min-width: 0; align-content: start; transition: opacity var(--rx-duration) var(--rx-ease); }
+.bs-catalog__results.htmx-request { opacity: 0.6; }
+.bs-catalog__summary { display: grid; gap: var(--rx-space-2); }
+.bs-catalog__summary > p { margin: 0; }
+.bs-catalog__pages { display: grid; justify-content: center; }
+
+/* The category tree (also on the home page). */
+.bs-tree { display: grid; gap: var(--rx-space-1); margin: 0; padding: 0; list-style: none; }
+.bs-tree .bs-tree { padding-left: var(--rx-space-3); margin-top: var(--rx-space-1); }
+.bs-tree [aria-current="page"] { font-weight: 600; color: var(--rx-label); }
+/* The categories with their icons: the top ones in a tinted circle, the
+   others small and muted, in line with the circles' centre. */
+.bs-tree__root, .bs-tree__leaf { display: inline-flex; align-items: center; gap: var(--rx-space-2); text-decoration: none; }
+.bs-tree__root { font-weight: 600; color: var(--rx-label); }
+.bs-tree .bs-tree { padding-left: var(--rx-space-6); }
+.bs-tree__leaf { min-height: 2rem; color: var(--rx-secondary-label); }
+.bs-tree__leaf .rx-icon { color: var(--rx-tertiary-label); }
+.bs-tree__leaf:hover, .bs-tree__leaf:hover .rx-icon, .bs-tree__leaf[aria-current="page"], .bs-tree__leaf[aria-current="page"] .rx-icon { color: var(--rx-accent-text); }
+
+/* Filters that are on, as chips that take one off. */
+.bs-chips { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-chip {
+  display: inline-grid; grid-auto-flow: column; align-items: center; gap: var(--rx-space-1);
+  padding: var(--rx-space-1) var(--rx-space-3); border-radius: 999px;
+  background: var(--rx-fill); color: var(--rx-label); font: var(--rx-type-note); text-decoration: none;
+}
+.bs-chip:hover { background: var(--rx-fill-strong); }
+.bs-chip:focus-visible { outline: 2px solid var(--rx-focus); outline-offset: 2px; }
+
+/* Two cards side by side on a phone. */
+@media (max-width: 40rem) { .bs-catalog__results, .bs-product__related { --rx-card-min: 9.5rem; } }
+
+@media (max-width: 52rem) {
+  .bs-catalog { grid-template-columns: minmax(0, 1fr); gap: var(--rx-space-4); }
+  .bs-catalog__filters { position: static; max-height: none; overflow: visible; }
+  .bs-catalog__filters > summary { display: inline-grid; justify-self: start; list-style: none; cursor: pointer; }
+  .bs-catalog__filters > summary::-webkit-details-marker { display: none; }
+}
+
+/* ---------- the product page: photos | buy box ---------- */
+
+.bs-product { display: grid; grid-template-columns: minmax(0, 7fr) minmax(18rem, 5fr); gap: var(--rx-space-6); align-items: start; }
+.bs-product__media { min-width: 0; }
+.bs-product__buy { display: grid; gap: var(--rx-space-4); position: sticky; top: var(--rx-space-4); }
+.bs-product__variants { display: grid; gap: var(--rx-space-4); }
+.bs-buybox { display: grid; gap: var(--rx-space-3); }
+.bs-buybox > p, .bs-buybox > h2 { margin: 0; }
+.bs-buybox__price { font: var(--rx-type-display); color: var(--rx-label); }
+.bs-buybox__heading { font: var(--rx-type-label); color: var(--rx-secondary-label); }
+.bs-buybox__add { display: grid; grid-template-columns: minmax(0, 9rem) minmax(0, 1fr); gap: var(--rx-space-3); align-items: end; }
+.bs-stock { display: grid; gap: var(--rx-space-1); margin: 0; padding: 0; list-style: none; }
+.bs-stock__row { display: grid; grid-template-columns: auto auto 1fr; align-items: center; gap: var(--rx-space-2); font: var(--rx-type-body); }
+.bs-stock__dot { width: 0.6em; height: 0.6em; border-radius: 50%; background: var(--rx-success); }
+.bs-stock__row--out { color: var(--rx-secondary-label); }
+.bs-stock__row--out .bs-stock__dot { background: var(--rx-tertiary-label); }
+.bs-product__details { display: grid; grid-template-columns: minmax(0, 7fr) minmax(18rem, 5fr); gap: var(--rx-space-6); align-items: start; margin-top: var(--rx-space-6); }
+.bs-product__related { display: grid; gap: var(--rx-space-4); margin-top: var(--rx-space-6); }
+.bs-product__related > h2 { margin: 0; }
+
+@media (max-width: 52rem) {
+  .bs-product, .bs-product__details { grid-template-columns: minmax(0, 1fr); gap: var(--rx-space-4); }
+  .bs-product__buy { position: static; }
+}
+
+/* ---------- the navbar's search box and its suggestions ---------- */
+
+.bs-search { position: relative; display: grid; width: min(20rem, 40vw); }
+.bs-search__input { width: 100%; }
+.bs-suggest:empty { display: none; }
+.bs-suggest {
+  position: absolute; top: calc(100% + var(--rx-space-1)); left: 0; right: 0; z-index: 30; min-width: 18rem;
+  background: var(--rx-surface-raised, var(--rx-surface)); border: var(--rx-surface-border); border-radius: var(--rx-radius-l);
+  box-shadow: var(--rx-shadow-raised); overflow: hidden;
+}
+.bs-suggest__panel { display: grid; gap: var(--rx-space-1); padding: var(--rx-space-2); }
+.bs-suggest__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.bs-suggest__item {
+  display: grid; grid-template-columns: 2.5rem minmax(0, 1fr); gap: var(--rx-space-3); align-items: center;
+  padding: var(--rx-space-2); border-radius: var(--rx-radius-s); color: var(--rx-label); text-decoration: none;
+}
+.bs-suggest__item:hover, .bs-suggest__item:focus-visible { background: var(--rx-fill); outline: none; }
+.bs-suggest__image { width: 2.5rem; height: 2.5rem; border-radius: var(--rx-radius-s); object-fit: cover; background: var(--rx-fill); }
+.bs-suggest__text { display: grid; min-width: 0; }
+.bs-suggest__name { font: var(--rx-type-body); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-suggest__meta, .bs-suggest__empty { font: var(--rx-type-note); color: var(--rx-secondary-label); margin: 0; }
+.bs-suggest__empty { padding: var(--rx-space-2); }
+.bs-suggest__all { padding: var(--rx-space-2); border-top: 0.5px solid var(--rx-separator); }
+.bs-suggest__all:focus-visible { outline: 2px solid var(--rx-focus); outline-offset: -2px; }
+@media (max-width: 40rem) { .bs-search { width: 100%; grid-column: 1 / -1; } }
+
+/* ---------- the home page's storefront ---------- */
+
+
+@media (prefers-reduced-motion: reduce) {
+  .bs-catalog__results { transition: none; }
+}
+.bs-stock__row > .rx-icon { color: var(--rx-secondary-label); }

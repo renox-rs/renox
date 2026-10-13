@@ -1,0 +1,5 @@
+{%- if not component.answer and once('rx-live') %}{{ renox_live() }}{% endif -%}
+{%- import "renox/ui.html" as _ui -%}
+<div id="{{ component.id }}" data-rx-live="{{ component.name }}" data-rx-snapshot="{{ component.snapshot }}"{% if live_attrs is defined %}{% if live_attrs.class %} class="{{ live_attrs.class }}"{% endif %}{{ _ui._root_attrs(live_attrs) }}{% endif %}>
+{%- with state = component.state, data = component.data %}{% include component.view %}{% endwith -%}
+</div>

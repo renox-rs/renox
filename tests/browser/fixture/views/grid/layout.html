@@ -1,0 +1,37 @@
+{#- The grid pages' layout (src/grid.rs): the kit's navbar over a page as tall
+    as the screen, so a grid in it scrolls only its rows. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  {% block seo %}{{ seo(title="Sales dashboard") }}{% endblock %}
+  {{ renox_head() }}
+  {{ renox_ui() }}
+  {{ stack('head') }}
+</head>
+{#- `rx-page--fill`: the page is as tall as the screen and <main> takes the
+    rest, so a grid in it (`rx-grid-fill`) scrolls only its rows. -#}
+<body class="rx-page rx-page--fill">
+  {% from "renox/ui.html" import navbar, nav_links, nav_link, menu, menu_action, link_button %}
+  {% call navbar("Sales", href=route('orders.index'), width="full") %}
+    {% call nav_links() %}
+      {{ nav_link(route('orders.index'), "Orders", active=route_is('orders.index')) }}
+      {{ nav_link(route('orders.regions'), "By region", active=route_is('orders.regions')) }}
+      {{ nav_link(route('orders.follow_up'), "Follow up", active=route_is('orders.follow_up')) }}
+    {% endcall %}
+    <span class="rx-spacer"></span>
+    {%- if auth.check %}
+    {% call menu(auth.user.name, id="account-menu", variant="plain") %}
+      {{ menu_action(route('logout'), "Log out") }}
+    {% endcall %}
+    {%- else %}
+    {{ link_button(route('login'), "Log in", variant="plain", size="small") }}
+    {%- endif %}
+  {% endcall %}
+  {% block content %}{% endblock %}
+  {{ toasts() }}
+  {{ stack('scripts') }}
+</body>
+</html>

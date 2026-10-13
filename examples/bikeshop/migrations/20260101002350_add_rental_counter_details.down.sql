@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS identity_documents;
+DROP TABLE IF EXISTS rental_photos;
+ALTER TABLE rental_bikes DROP COLUMN serviced_at_hours;
+ALTER TABLE rentals DROP COLUMN ridden_minutes;
+ALTER TABLE rentals DROP COLUMN cancelled_at;
+ALTER TABLE rentals DROP COLUMN reminded_at;
+ALTER TABLE rentals DROP COLUMN returned_by;
+ALTER TABLE rentals DROP COLUMN damage_note;
+ALTER TABLE rentals DROP COLUMN return_checklist;
+ALTER TABLE rentals DROP COLUMN pickup_checklist;
+ALTER TABLE rentals DROP COLUMN deposit_refunded;
+ALTER TABLE rentals DROP COLUMN deposit_status;

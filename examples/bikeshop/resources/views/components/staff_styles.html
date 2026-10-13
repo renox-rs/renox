@@ -1,0 +1,28 @@
+{#- <app-staff-styles/>: the staff pages' own grids, on the kit's spacing tokens only. Inline so
+    the area keeps its styles with its views. -#}
+<rx-props>
+<rx-style>
+/* Store cards and team members: a grid that fills the row. */
+.bs-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); gap: var(--rx-space-4); align-items: start; }
+/* The opening hours repeater's row: day, opens, closes side by side. */
+.bs-hours { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); gap: var(--rx-space-3); align-items: end; }
+@media (max-width: 30rem) { .bs-hours { grid-template-columns: minmax(0, 1fr); } }
+/* The role × permission matrix: the permission, then one switch per role.
+   A real grid (role="table"), with sticky role headings, scrolling sideways
+   inside its card on a phone rather than the page. */
+.bs-matrix-wrap { position: relative; overflow-x: auto; }
+.bs-matrix { display: grid; grid-template-columns: minmax(14rem, 2fr) repeat(var(--bs-roles), minmax(5.5rem, 1fr)); min-width: min-content; }
+.bs-matrix [role="row"] { display: contents; }
+.bs-matrix [role="columnheader"], .bs-matrix [role="rowheader"], .bs-matrix [role="cell"] { padding: var(--rx-space-2) var(--rx-space-3); border-bottom: 0.5px solid var(--rx-separator); display: grid; align-items: center; }
+.bs-matrix [role="columnheader"] { position: sticky; top: 0; background: var(--rx-surface); font: var(--rx-type-label); justify-items: center; text-align: center; gap: var(--rx-space-1); z-index: 1; }
+.bs-matrix [role="columnheader"]:first-child { justify-items: start; text-align: start; }
+.bs-matrix [role="cell"] { justify-items: center; }
+.bs-matrix [role="rowheader"] { gap: var(--rx-space-1); }
+.bs-matrix [role="rowheader"] code { font: var(--rx-type-label); }
+.bs-matrix [role="rowheader"] span { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-matrix__group { grid-column: 1 / -1; padding: var(--rx-space-3) var(--rx-space-3) var(--rx-space-1); font: var(--rx-type-caption); color: var(--rx-secondary-label); }
+.bs-matrix .rx-field { margin: 0; }
+/* A detail page: the main column and a side column. */
+.bs-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--rx-space-4); align-items: start; }
+@media (min-width: 60rem) { .bs-split { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); } }
+</rx-style>

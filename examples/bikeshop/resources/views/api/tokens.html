@@ -1,0 +1,24 @@
+{#- A customer's personal API tokens (#241): make one, see it once, revoke. -#}
+<rx-page layout="layouts/app.html" title="{{ t('api.tokens.title') }}">
+<app-api-assets/>
+<rx-stack>
+  <rx-page-header title="{{ t('api.tokens.title') }}" subtitle="{{ t('api.tokens.lead') }}"/>
+  <app-api-fresh-token rx-if="fresh" :token="fresh" :base="base"/>
+  <div class="bs-tokens">
+    <rx-card title="{{ t('api.tokens.yours') }}">
+      <rx-table :rows="tokens" as="tk" caption="{{ t('api.tokens.yours') }}">
+        <rx-column label="{{ t('api.tokens.name') }}">{{ tk.name }}</rx-column>
+        <rx-column label="{{ t('api.tokens.abilities') }}">{{ tk.abilities | join(", ") }}</rx-column>
+        <rx-column label="{{ t('api.tokens.last_used') }}">{{ (tk.last_used_at | since) if tk.last_used_at else t('api.tokens.never') }}</rx-column>
+        <rx-column label="{{ t('api.tokens.expires') }}">{{ (tk.expires_at | date) if tk.expires_at else "—" }}</rx-column>
+        <rx-column label=""><rx-confirm :id="'revoke-' ~ tk.id" label="{{ t('api.tokens.revoke') }}" :action="route('api.tokens.destroy', tk.id)" title="{{ t('api.tokens.revoke_title') }}" message="{{ t('api.tokens.revoke_text') }}" method="POST" size="small"/></rx-column>
+        <rx-slot name="empty"><rx-empty title="{{ t('api.tokens.none') }}" message="{{ t('api.tokens.none_text') }}" icon="key-round"/></rx-slot>
+      </rx-table>
+    </rx-card>
+    <rx-card title="{{ t('api.tokens.new') }}">
+      <app-api-token-form :action="route('api.tokens.store')" :abilities="abilities" :name-hint="t('api.tokens.name_hint')"/>
+      <p class="rx-hint"><rx-link-button route="api.about" label="{{ t('api.about.link') }}" variant="plain" size="small"/></p>
+    </rx-card>
+  </div>
+</rx-stack>
+</rx-page>

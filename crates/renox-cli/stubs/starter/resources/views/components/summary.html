@@ -1,0 +1,7 @@
+<rx-props lines :total="none">
+{#- <app-summary :lines="[…]" :total="{…}"/>: lines and their figures, then a total under a rule.
+    `lines` are `{"label": …, "value": …, "icon": …}`, `total` is `{"label": …, "value": …}`. -#}
+<dl class="app-summary">
+  <template rx-for="line in lines"><dt><rx-icon rx-if="line.icon" :name="line.icon" :size="16"/><span>{{ line.label }}</span></dt><dd>{{ line.value }}</dd></template>
+  <template rx-if="total"><dt class="app-summary__total">{{ total.label }}</dt><dd class="app-summary__total">{{ total.value }}</dd></template>
+</dl>

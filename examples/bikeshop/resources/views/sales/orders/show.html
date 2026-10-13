@@ -1,0 +1,48 @@
+{#- The customer's order page (src/app/sales/orders.rs `show`): where the
+    order stands, its lines, totals and payments. -#}
+<rx-page layout="layouts/app.html" :title="t('sales.orders.title', number=page.number) ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-let name="o" :value="page"/>
+  {# [explain:orders.show.template] #}
+  <rx-page-header :title="t('sales.orders.title', number=o.number)" :subtitle="t('sales.orders.placed', date=(o.placed_at | date('%Y-%m-%d %H:%M')))" :badge="t('sales.status.' ~ o.status)" :badge-kind="'success' if o.status in ['paid', 'ready', 'completed'] else ('warning' if o.status == 'pending' else none)">
+    <rx-link-button :href="route('orders.invoice', o.id)" label="{{ t('sales.orders.invoice') }}"/>
+  </rx-page-header>
+  {# [/explain:orders.show.template] #}
+
+  <div class="bs-order" data-bs-reveal>
+    <div class="bs-order__main">
+      <rx-alert rx-if="o.status == 'pending'" kind="warning" message="{{ t('sales.orders.pending_note', minutes=30) }}"/>
+      <rx-alert rx-if="o.status == 'cancelled'" kind="error" message="{{ t('sales.orders.cancelled_note') }}"/>
+      <rx-card title="{{ t('sales.orders.lines') }}">
+        <rx-table :rows="o.lines" as="line" caption="{{ t('sales.orders.lines') }}">
+          <rx-column label="{{ t('sales.orders.product') }}"><a rx-if="line.slug" class="rx-link" href="{{ route('catalog.show', line.slug) }}">{{ line.name }}</a><template rx-else>{{ line.name }}</template><br><span class="rx-subtitle">{{ line.sku }}<template rx-if="line.variant"> · {{ line.variant }}</template></span></rx-column>
+          <rx-column label="{{ t('sales.orders.quantity') }}" align="num">{{ line.quantity }}</rx-column>
+          <rx-column label="{{ t('sales.orders.price') }}" align="num">{{ line.unit_price | money }}</rx-column>
+          <rx-column label="{{ t('sales.orders.line_total') }}" align="num">{{ line.total | money }}</rx-column>
+        </rx-table>
+        <app-sales-totals :o="o"/>
+      </rx-card>
+      <rx-card rx-if="page.payments" title="{{ t('sales.orders.payments') }}">
+        <ul class="bs-plain-list" role="list">
+          <li rx-for="p in page.payments"><span>{{ t('sales.payment_status.' ~ p.status) }} · {{ t('sales.method.' ~ p.method) }}<template rx-if="p.paid_at"> · {{ p.paid_at | date("%Y-%m-%d %H:%M") }}</template></span><span class="rx-num">{{ p.amount | money }}</span></li>
+        </ul>
+      </rx-card>
+    </div>
+    {# [explain:orders.show.template] #}
+    <aside class="bs-order__side">
+      <rx-card title="{{ t('sales.orders.progress') }}">
+        <rx-history :items="progress" label="{{ t('sales.orders.progress') }}"/>
+      </rx-card>
+    {# [/explain:orders.show.template] #}
+      <rx-card title="{{ t('sales.orders.details') }}">
+        <rx-infolist>
+          <rx-entry label="{{ t('sales.orders.store') }}" :value="o.store.name if o.store else none"/>
+          <rx-entry label="{{ t('sales.orders.fulfilment') }}" :value="t('sales.checkout.delivery') if o.delivery else t('sales.checkout.pickup')"/>
+          <rx-entry rx-if="o.address" label="{{ t('sales.orders.address') }}" :value="o.address"/>
+          <rx-entry rx-if="o.customer" label="{{ t('sales.orders.customer') }}" :value="o.customer.name"/>
+          <rx-entry rx-if="page.returnable" label="{{ t('sales.orders.returns') }}" :value="t('sales.orders.returns_text', days=14)"/>
+        </rx-infolist>
+      </rx-card>
+    </aside>
+  </div>
+</rx-page>

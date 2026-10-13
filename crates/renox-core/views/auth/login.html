@@ -1,0 +1,20 @@
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, input, checkbox, button, alert %}
+{% block title %}{{ text.login_title }} · {{ app.name }}{% endblock %}
+{% block content %}
+<form method="post" action="{{ route('login') }}" hx-post="{{ route('login') }}">
+  {{ csrf_field() }}
+  {% call card(title=text.login_title) %}
+    {% if flash.status %}{{ alert(flash.status, kind="success") }}{% endif %}
+    {{ input("email", text.email, type="email", required=true, autocomplete="username", attrs={"autofocus": true}) }}
+    {{ input("password", text.password, type="password", revealable=true, required=true, autocomplete="current-password") }}
+    {{ checkbox("remember", text.remember, value="1") }}
+    {{ button(text.login_button, block=true) }}
+    <p class="rx-auth__alt"><a class="rx-link" href="{{ route('password.request') }}">{{ text.forgot_link }}</a></p>
+  {% endcall %}
+</form>
+{% with page="login" %}{% include "renox/auth/login_options.html" ignore missing %}{% endwith %}
+{% if registration %}
+<p class="rx-auth__alt">{{ text.no_account }} <a class="rx-link" href="{{ route('register') }}">{{ text.register_button }}</a></p>
+{% endif %}
+{% endblock %}

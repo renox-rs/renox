@@ -1,0 +1,5 @@
+{#- Multi-store messages to staff (src/app/rentals/notify.rs `Notice`, with this view): a
+    sentence, details and a button, on the kit's mail layout. -#}
+<rx-mail>
+  <app-mail-notice :title="title" :body="body" :table="table" :url="url" :action="action"/>
+</rx-mail>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A tyre">
+<rect width="800" height="600" fill="#f3efe6"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="400" cy="300" r="190" stroke="#1c1917" stroke-width="46"/>
+  <circle cx="400" cy="300" r="190" stroke="#0b6e66" stroke-width="8" stroke-dasharray="18 22"/>
+  <circle cx="400" cy="300" r="130" stroke="#1c1917" stroke-width="6"/>
+
+</g>
+</svg>

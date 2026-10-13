@@ -1,0 +1,16 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import navbar, nav_links, nav_link %}
+{% block content %}
+{% call navbar("Fixture", href="/") %}
+  {% call nav_links() %}
+    {{ nav_link("/nav", "Dashboard", active=true) }}
+    {{ nav_link("/widgets", "Widgets") }}
+    {{ nav_link("/overlays", "Overlays") }}
+    {{ nav_link("/charts", "Charts") }}
+    {{ nav_link("/errors", "Errors") }}
+    {{ nav_link("/form", "Forms") }}
+    {{ nav_link("/plain", "Plain") }}
+  {% endcall %}
+{% endcall %}
+<h1>Navigation</h1>
+{% endblock %}

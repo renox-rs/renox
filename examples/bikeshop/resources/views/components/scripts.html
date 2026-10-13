@@ -1,0 +1,8 @@
+{#- What both layouts load at the end of <body>: Motion (motion.dev, served from
+    public/vendor/motion, see its NOTICE) and the shop's motion in app.js. They run
+    before the first paint, so content doesn't flash before it slides in. The
+    nonce lets them run under CSP=strict too (where 'self' already allows them). -#}
+<rx-props>
+<rx-script :src="asset('vendor/motion/motion.js')"></rx-script>
+<rx-script :src="asset('app.js')"></rx-script>
+<rx-script :src="asset('explain.js')"></rx-script>

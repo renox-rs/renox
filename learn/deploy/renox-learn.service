@@ -1,0 +1,17 @@
+# /etc/systemd/system/renox-learn.service
+[Unit]
+Description=learn.renox.rs (the Renox course)
+After=network.target
+
+[Service]
+User=renox-learn
+WorkingDirectory=/opt/renox-learn
+EnvironmentFile=/opt/renox-learn/.env
+ExecStartPre=/opt/renox-learn/renox-learn migrate
+ExecStart=/opt/renox-learn/renox-learn
+Restart=on-failure
+KillSignal=SIGTERM
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

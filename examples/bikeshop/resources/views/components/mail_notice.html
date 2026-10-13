@@ -1,0 +1,11 @@
+{#- The body of every notice mail (rentals, workshop, plans, multistore, stock;
+    src/app/rentals/notify.rs `Notice`): a sentence, the details as the mail
+    kit's table and a button.
+
+    <rx-mail><app-mail-notice :title="title" :body="body" :table="table"
+                              :url="url" :action="action"/></rx-mail> -#}
+<rx-props title body :table="none" :url="none" action="">
+<p><strong>{{ title }}</strong></p>
+<p>{{ body }}</p>
+<rx-mail-table rx-if="table" :rows="table"/>
+<rx-mail-button rx-if="url" :url="url" :label="action"/>

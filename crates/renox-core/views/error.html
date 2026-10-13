@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>{{ status }} · {{ reason }}</title>
+  {{ renox_ui() }}
+  <style>
+    .rx-error-page { min-height: 100vh; display: grid; place-items: center; }
+    .rx-error-page__code { font-size: 3.5rem; font-weight: 700; letter-spacing: -0.04em; line-height: 1; margin: 0; color: var(--rx-tertiary-label); font-variant-numeric: tabular-nums; }
+    .rx-error-page pre { margin: 0; font-family: var(--rx-mono); font-size: 0.8125rem; line-height: 1.5; white-space: pre-wrap; word-break: break-word; background: var(--rx-fill); border-radius: var(--rx-radius-s); padding: 12px; overflow: auto; }
+    .rx-error-page h2 { font-size: var(--rx-text-footnote); text-transform: uppercase; letter-spacing: 0.02em; color: var(--rx-secondary-label); margin: 0; }
+  </style>
+</head>
+<body class="rx-page">
+  <main class="rx-container rx-error-page">
+    <div class="rx-stack" style="width: 100%">
+      <div class="rx-stack" style="gap: 8px; text-align: center">
+        <p class="rx-error-page__code">{{ status }}</p>
+        <h1 class="rx-title">{{ reason }}</h1>
+        {% if detail and not debug %}<p class="rx-subtitle">{{ detail }}</p>{% endif %}
+        <p><a class="rx-button rx-button--secondary" href="/"><span class="rx-button__label">Go to the home page</span></a></p>
+      </div>
+      {% if debug and (request_line or detail or template) %}
+      <section class="rx-card" aria-label="Details for developers">
+        {% if request_line %}<h2>Request</h2><pre>{{ request_line }}</pre>{% endif %}
+        {% if detail %}<h2>Error</h2><pre>{{ detail }}</pre>{% endif %}
+        {% if template %}<h2>Template</h2><pre>{{ template }}</pre>{% endif %}
+        <p class="rx-hint">Shown because APP_DEBUG is on. Visitors see only the status.</p>
+      </section>
+      {% endif %}
+    </div>
+  </main>
+</body>
+</html>

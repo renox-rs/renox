@@ -1,0 +1,15 @@
+<rx-props title :accent="none" :lead="none" :eyebrow="none" :eyebrow-icon="none" art="app" :compact="false" id="page-title">
+{#- <app-hero :title="…" :accent="…" :lead="…"><rx-link-button …/></app-hero>: a headline, then
+    `accent` in the brand's colour (`<em>`), a `lead`, the content (buttons), and the art beside
+    it (`art`: "app" or "icons"). `compact`: a page's top rather than the home page's (a smaller
+    headline, in a card). -#}
+<section class="app-hero{{ ' app-hero--compact' if compact }}" aria-labelledby="{{ id }}">
+  <div class="app-hero__text">
+    <p rx-if="eyebrow" class="app-hero__eyebrow"><rx-icon rx-if="eyebrow_icon" :name="eyebrow_icon" :size="16"/><span>{{ eyebrow }}</span></p>
+    <h1 class="app-hero__title" id="{{ id }}">{{ title }}<template rx-if="accent"> <em>{{ accent }}</em></template></h1>
+    <p rx-if="lead" class="app-hero__lead">{{ lead }}</p>
+    <div class="app-hero__actions"><rx-slot /></div>
+  </div>
+  <app-art-app rx-if="art == 'app'"/>
+  <app-art-icons rx-elif="art == 'icons'"/>
+</section>

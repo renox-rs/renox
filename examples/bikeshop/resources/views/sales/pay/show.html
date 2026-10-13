@@ -1,0 +1,52 @@
+{#- Back from the gateway (src/app/sales/gateway.rs `show`): waits for the
+    webhook, then shows the result. While the payment is pending, htmx asks
+    for the `status` block again every two seconds. -#}
+<rx-page layout="layouts/app.html" :title="t('sales.pay.title') ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-page-header title="{{ t('sales.pay.title') }}" :subtitle="t('sales.pay.for_order', number=paying.order.number) if paying.order else t('sales.pay.for_' ~ paying.kind)"/>
+  {# [explain:pay.show.template] #}
+  <rx-block name="status">
+  <rx-let name="p" :value="paying.payment"/>
+  <rx-let name="polling" :value="p.status == 'pending' and not expired"/>
+  <section id="pay-status" class="rx-card bs-pay" aria-live="polite" ?hx-get="request.path if polling" ?hx-trigger="'every 2s' if polling" ?hx-target="'this' if polling" ?hx-swap="'outerHTML' if polling">
+    <template rx-if="p.status == 'paid'">
+  {# [/explain:pay.show.template] #}
+    <div class="bs-pay__icon bs-pay__icon--paid" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="48" height="48"><circle cx="24" cy="24" r="22" fill="currentColor"/><path d="M14 25l7 7 13-15" stroke="#fff" stroke-width="4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <h2 class="rx-title">{{ t('sales.pay.paid') }}</h2>
+    <p>{{ t('sales.pay.paid_text', amount=(p.amount | money)) }}</p>
+    <template rx-if="paying.order">
+    <rx-infolist columns="2">
+      <rx-entry label="{{ t('sales.orders.number') }}" :value="paying.order.number" copyable/>
+      <rx-entry label="{{ t('sales.orders.total') }}" :value="paying.order.total" format="money"/>
+    </rx-infolist>
+    <p class="bs-pay__actions"><rx-link-button :href="route('orders.show', paying.order.id)" variant="primary" label="{{ t('sales.pay.see_order') }}"/></p>
+    <template rx-if="guest">
+    <rx-alert kind="info" title="{{ t('sales.pay.offer_title') }}" message="{{ t('sales.pay.offer_account') }}"/>
+    <p class="bs-pay__actions"><rx-link-button route="register" label="{{ t('sales.pay.create_account') }}"/></p>
+    </template>
+    </template>
+    </template>
+    {# [explain:pay.show.template] #}
+    <template rx-elif="p.status == 'pending' and not expired">
+    <div class="bs-pay__icon bs-pay__icon--waiting" aria-hidden="true" data-bs-waiting>
+      <svg viewBox="0 0 48 48" width="48" height="48"><circle cx="24" cy="24" r="20" stroke="currentColor" stroke-opacity="0.25" stroke-width="5" fill="none"/><path d="M24 4a20 20 0 0 1 20 20" stroke="currentColor" stroke-width="5" fill="none" stroke-linecap="round"/></svg>
+    </div>
+    <h2 class="rx-title">{{ t('sales.pay.waiting') }}</h2>
+    <p>{{ t('sales.pay.waiting_text', minutes=minutes) }}</p>
+    {# [/explain:pay.show.template] #}
+    </template>
+    <template rx-else>
+    <div class="bs-pay__icon bs-pay__icon--failed" aria-hidden="true">
+      <svg viewBox="0 0 48 48" width="48" height="48"><circle cx="24" cy="24" r="22" fill="currentColor"/><path d="M16 16l16 16M32 16L16 32" stroke="#fff" stroke-width="4" stroke-linecap="round"/></svg>
+    </div>
+    <h2 class="rx-title">{{ t('sales.pay.failed') }}</h2>
+    <p>{{ t('sales.pay.failed_text') }}</p>
+    <p class="bs-pay__actions"><rx-link-button route="catalog.index" variant="primary" label="{{ t('sales.cart.browse') }}"/></p>
+    {# [explain:pay.show.template] #}
+    </template>
+  </section>
+  </rx-block>
+  {# [/explain:pay.show.template] #}
+</rx-page>

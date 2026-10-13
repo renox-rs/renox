@@ -1,0 +1,12 @@
+[package]
+name = "renox-site"
+version.workspace = true
+edition = "2024"
+publish = false
+description = "renox.dev: Renox's documentation site, built with Renox."
+
+[dependencies]
+renox.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+# The same Markdown parser renox-core uses for its `markdown` filter.
+pulldown-cmark = { version = "0.13.4", default-features = false, features = ["html"] }

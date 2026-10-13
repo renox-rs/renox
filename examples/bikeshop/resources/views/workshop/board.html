@@ -1,0 +1,28 @@
+{#- The workshop board (#236): the kanban block, one column per status; each
+    move is an htmx POST checked on the server. The board reloads itself every
+    minute (hx-get on #workshop-board) so other mechanics' moves show up. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('workshop.board.title') }}">
+  <app-workshop-assets/>
+  <div class="bs-board">
+    {#- The page's title over a photo of the workshop's tool wall (public/app.css, `bs-banner`). -#}
+    <header class="bs-banner">
+      <img src="/images/site/workshop-tools.webp" alt="" width="1200" height="900">
+      <p class="bs-banner__eyebrow"><rx-icon name="wrench" :size="16"/><span>{{ t('workshop.nav.board') }}</span></p>
+      <h1 class="bs-banner__title">{{ t('workshop.board.title') }}</h1>
+      <p class="bs-banner__lead">{{ t('workshop.board.lead', count=count) }}</p>
+    </header>
+    {# [explain:workshop.board.template] #}
+    <form class="bs-board__filters" method="get" action="{{ route('workshop.board') }}" aria-label="{{ t('workshop.board.filters') }}">
+      <rx-select name="by" label="{{ t('workshop.board.mechanic') }}" :options="[['', t('workshop.board.everyone')], ['none', t('workshop.board.unassigned')]] + mechanics" :selected="by"/>
+      <rx-date-picker name="day" label="{{ t('workshop.fields.day') }}" :value="day or none"/>
+      <rx-button variant="secondary">{{ t('workshop.board.filter') }}</rx-button>
+      <rx-link-button rx-if="by or day" route="workshop.board" label="{{ t('workshop.board.clear') }}" variant="plain"/>
+      <span class="rx-spacer"></span>
+      <rx-link-button rx-if="can('workorders.update')" route="workshop.walkin" label="{{ t('workshop.walkin.title') }}" variant="primary" icon="plus"/>
+    </form>
+    <div id="workshop-board" class="bs-board__body" hx-get="{{ request.path }}{{ '?' ~ request.query if request.query }}" hx-trigger="every 60s" hx-select="#workshop-board" hx-swap="outerHTML">
+      <rx-kanban id="workshop-kanban" :columns="columns" :url="route('workshop.move')" :label="t('workshop.board.title')"/>
+    </div>
+    {# [/explain:workshop.board.template] #}
+  </div>
+</rx-page>

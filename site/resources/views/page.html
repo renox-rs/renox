@@ -1,0 +1,47 @@
+{% extends "layouts/app.html" %}
+
+{% block seo %}{{ seo(title=title ~ " · Renox", description=blurb) }}{% endblock %}
+
+{% block content %}
+<div class="site-page">
+  <article class="site-article">
+    <header class="site-head">
+      <p class="site-head__section">{{ section }}</p>
+      <div class="site-head__title">
+        <span class="site-head__icon">{{ icon(page_icon) }}</span>
+        <h1>{{ title }}</h1>
+      </div>
+      <p class="site-head__blurb">{{ blurb }}</p>
+      <p class="site-head__meta">
+        <span>{{ icon("clock") }}{{ minutes }} min read</span>
+        <a href="{{ edit }}">{{ icon("pencil") }}Edit this page</a>
+      </p>
+    </header>
+    <div class="site-prose">{{ html | safe }}</div>
+    <nav class="site-pager" aria-label="Previous and next page">
+      {%- if previous %}
+      <a class="site-pager__link" href="{{ route('docs.show', previous.slug) }}">
+        <span class="site-pager__label">{{ icon("arrow-left") }}Previous</span>
+        <span class="site-pager__name">{{ icon(previous.icon) }}{{ previous.nav }}</span>
+      </a>
+      {%- else %}<span></span>{% endif %}
+      {%- if next %}
+      <a class="site-pager__link site-pager__link--next" href="{{ route('docs.show', next.slug) }}">
+        <span class="site-pager__label">Next{{ icon("arrow-right") }}</span>
+        <span class="site-pager__name">{{ icon(next.icon) }}{{ next.nav }}</span>
+      </a>
+      {%- endif %}
+    </nav>
+  </article>
+  {%- if toc | length > 2 %}
+  <aside class="site-toc" aria-label="On this page">
+    <p class="site-toc__title">{{ icon("list") }}On this page</p>
+    <ul>
+      {%- for heading in toc if heading.level == 2 %}
+      <li><a href="#{{ heading.id }}">{{ heading.text }}</a></li>
+      {%- endfor %}
+    </ul>
+  </aside>
+  {%- endif %}
+</div>
+{% endblock %}

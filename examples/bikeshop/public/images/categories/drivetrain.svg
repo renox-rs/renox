@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A drivetrain">
+<rect width="800" height="600" fill="#f1ebf3"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="330" cy="300" r="170" stroke="#0b6e66" stroke-width="14" stroke-dasharray="14 10"/>
+  <circle cx="330" cy="300" r="130" stroke="#1c1917" stroke-width="14" stroke-dasharray="14 10"/>
+  <circle cx="330" cy="300" r="90" stroke="#0b6e66" stroke-width="14" stroke-dasharray="14 10"/>
+  <circle cx="560" cy="300" r="80" stroke="#1c1917" stroke-width="14" stroke-dasharray="14 10"/>
+  <circle cx="560" cy="300" r="50" stroke="#0b6e66" stroke-width="14" stroke-dasharray="14 10"/>
+  <circle cx="330" cy="300" r="20" fill="#1c1917"/>
+  <path d="M330 130 L560 220 M330 470 L560 380" stroke="#1c1917" stroke-width="8"/>
+
+</g>
+</svg>

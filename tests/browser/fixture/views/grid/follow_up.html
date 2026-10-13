@@ -1,0 +1,11 @@
+{% extends "grid/layout.html" %}
+{% from "renox/grid.html" import grid %}
+
+{% block content %}
+<main class="rx-container rx-container--wide rx-stack" id="main">
+  {#- Two grids on one page: each keeps the other's query string values in
+      its links and forms (`prefix`), so they page and filter apart. -#}
+  <section>{{ grid(unpaid) }}</section>
+  <section>{{ grid(largest) }}</section>
+</main>
+{% endblock %}

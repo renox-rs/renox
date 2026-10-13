@@ -1,0 +1,3 @@
+{#- The products list's custom column (src/app/staff/admin.rs): a link to
+    what the product fits (a part) or what fits it (a bike). -#}
+<rx-link-button rx-if="column.key == 'fits'" :href="route('staff.catalog.fits', row.id)" :label="t('staff.catalog.fits_link')" size="small"/>

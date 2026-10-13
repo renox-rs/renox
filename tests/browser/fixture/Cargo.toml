@@ -1,0 +1,11 @@
+[package]
+name = "browser-fixture"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "The pages tests/browser drives in headless Chrome; not an example to copy."
+
+[dependencies]
+# `xlsx`: the grid pages export Excel files (grid-more.test.mjs).
+renox = { workspace = true, features = ["xlsx"] }
+serde = { version = "1.0.229", features = ["derive"] }

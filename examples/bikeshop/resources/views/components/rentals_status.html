@@ -1,0 +1,6 @@
+{#- A rental's status as a badge: the tone and the word agree.
+    `<app-rentals-status :rental="row" :overdue="row.overdue"/>` -#}
+<rx-props rental :overdue="false">
+<rx-let name="tones" :value="{'reserved': 'info', 'active': 'success', 'overdue': 'error', 'returned': none, 'cancelled': none, 'no_show': 'warning'}"/>
+<rx-let name="tone_key" :value="'overdue' if overdue and rental.status == 'active' else rental.status"/>
+<rx-badge text="{{ t('rentals.status.rental.' ~ tone_key) }}" :kind="tones[tone_key]"/>

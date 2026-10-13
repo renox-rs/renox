@@ -1,0 +1,51 @@
+<rx-page layout="layouts/app.html" title="{{ t('dashboard.title') }}">
+  {#- The dashboard: a welcome card (the compact hero), figures over a period
+      (`?period=`), sign-ups as a chart, a summary with totals and the
+      signed-in person's recent activity. The patterns are components
+      (resources/views/components/), their texts are in resources/lang/en.json. -#}
+  <app-hero :title="t('dashboard.welcome')" :accent="auth.user.name ~ '.'" :lead="t('dashboard.lead')" :eyebrow="t('dashboard.title')" eyebrow-icon="layout-dashboard" art="icons" :compact="true">
+    <rx-link-button route="account.show" label="{{ t('dashboard.account') }}" icon="circle-user"/>
+    <rx-link-button rx-if="can('users.manage')" route="users.index" label="{{ t('dashboard.users') }}" icon="users"/>
+  </app-hero>
+
+  <rx-row>
+    {#- One period for the figures and the chart (`?period=`). -#}
+    <rx-period-filter :selected="period"/>
+  </rx-row>
+
+  <rx-stats columns="3">
+    <app-stat-card icon="user" :label="t('dashboard.stats.signups')" :value="signups_total | number" :delta="signups_change" :trend="signups.values"/>
+    <app-stat-card icon="users" :label="t('dashboard.stats.users')" :value="users | number" tone="clay" :url="route('users.index') if can('users.manage') else none"/>
+    <app-stat-card icon="bell" :label="t('dashboard.stats.unread')" :value="unread | number" tone="sand" :url="route('notifications.index')"/>
+  </rx-stats>
+
+  <rx-dashboard columns="2">
+    <rx-widget title="{{ t('dashboard.chart.title') }}" description="{{ t('dashboard.chart.description') }}">
+      <rx-chart kind="bar" :data="signups" name="{{ t('dashboard.chart.title') }}" title="{{ t('dashboard.chart.title') }}" :height="180"/>
+    </rx-widget>
+    <rx-widget title="{{ t('dashboard.summary.title') }}" description="{{ t('dashboard.summary.description') }}">
+      <app-summary :lines="[
+        {'label': t('dashboard.summary.this_period'), 'value': signups_total | number, 'icon': 'trending-up'},
+        {'label': t('dashboard.summary.before'), 'value': signups_before | number, 'icon': 'history'},
+        {'label': t('dashboard.summary.verified'), 'value': verified | number, 'icon': 'circle-check'},
+      ]" :total="{'label': t('dashboard.summary.total'), 'value': users | number}"/>
+    </rx-widget>
+  </rx-dashboard>
+
+  <rx-let name="see_all" :value="route('activity.index') if can('activity.view') else none"/>
+  <app-section-head :title="t('dashboard.activity.title')" id="activity-title" :more-href="see_all" :more-label="t('dashboard.activity.more')" :compact="true">
+    <template rx-if="activity">
+      {#- An icon per kind of entry; others get the clock. -#}
+      <rx-let name="marks" :value="{'auth.login': 'log-in', 'auth.logout': 'log-out', 'auth.login_failed': 'triangle-alert', 'auth.locked_out': 'lock',
+                     'auth.registered': 'user', 'auth.email_verified': 'mail', 'auth.password_changed': 'key-round', 'auth.password_reset': 'key-round',
+                     'auth.profile_updated': 'pencil', 'user.roles_changed': 'shield-check'}"/>
+      <rx-list label="{{ t('dashboard.activity.title') }}">
+        <li rx-for="entry in activity"><app-icon-circle :icon="marks[entry.action] | default('history')" :size="18"/><div class="rx-list__main">
+          <span>{{ entry.action }}</span>
+          <span class="rx-subtitle">{{ entry.created_at | since }}<template rx-if="entry.ip"> · {{ entry.ip }}</template></span>
+        </div></li>
+      </rx-list>
+    </template>
+    <div rx-else class="app-panel"><app-empty-state icon="history" :title="t('dashboard.activity.empty')" :text="t('dashboard.activity.empty_text')"/></div>
+  </app-section-head>
+</rx-page>

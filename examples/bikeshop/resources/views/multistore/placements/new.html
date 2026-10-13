@@ -1,0 +1,25 @@
+{#- Place one of our bikes at another store, or ask another store for one of its bikes (#245). -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.placements.new')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.placements.new')" :subtitle="t('multistore.placements.new_lead')" :back="route('multistore.placements')" :back-label="t('multistore.placements.title')"/>
+    <rx-form method="GET" :action="route('multistore.placements.create')" class="bs-filters" id="placement-pick">
+      <rx-toggle-buttons name="direction" :label="t('multistore.placements.direction')" :options="[['place', t('multistore.placements.place')], ['ask', t('multistore.placements.ask')]]" :selected="direction"/>
+      <rx-select name="store" :label="t('multistore.placements.other_store')" :options="store_options" :selected="other"/>
+      <rx-button :label="t('multistore.placements.show_bikes')" variant="secondary"/>
+    </rx-form>
+    <rx-form :action="route('multistore.placements.store')" id="placement-form" novalidate>
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <input type="hidden" name="store" value="{{ other }}">
+      <rx-card :title="t('multistore.placements.bikes_' ~ direction)">
+        <rx-form-errors/>
+        <template rx-if="options">
+          <rx-select name="bike" :label="t('multistore.placements.bike')" :options="options" required searchable/>
+          <rx-input name="note" :label="t('multistore.placements.note')"/>
+          <rx-button :label="t('multistore.placements.submit_' ~ direction)" icon="check"/>
+        </template>
+        <rx-empty rx-else :title="t('multistore.placements.no_bikes')" icon="bike"/>
+      </rx-card>
+    </rx-form>
+  </rx-stack>
+</rx-page>

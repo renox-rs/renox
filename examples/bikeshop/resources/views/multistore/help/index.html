@@ -1,0 +1,26 @@
+{#- Staff helping other stores (#245): help asked by this store and of it. An approved request
+    is a role in the helped store between two dates (assign_role_in(…).from(…).until(…)); it
+    ends by itself. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.help.title')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.help.title')" :subtitle="t('multistore.help.lead')">
+      <rx-link-button route="multistore.help.hours" :label="t('multistore.help.hours_title')"/>
+      <rx-link-button route="multistore.help.create" :label="t('multistore.help.new')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    <div class="bs-split" data-bs-reveal>
+      <div>
+        <rx-card :title="t('multistore.help.asked_of_us')" :subtitle="t('multistore.help.asked_of_us_lead')">
+          <app-multistore-help-rows rx-if="asked_of_us" :items="asked_of_us" id="help-of-us" :label="t('multistore.help.asked_of_us')"/>
+          <rx-empty rx-else :title="t('multistore.help.none')"/>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('multistore.help.asked_by_us')" :subtitle="t('multistore.help.asked_by_us_lead')">
+          <app-multistore-help-rows rx-if="asked_by_us" :items="asked_by_us" id="help-by-us" :label="t('multistore.help.asked_by_us')"/>
+          <rx-empty rx-else :title="t('multistore.help.none')"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

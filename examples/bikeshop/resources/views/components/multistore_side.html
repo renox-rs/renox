@@ -1,0 +1,20 @@
+{#- One store's side of a settlement statement (multistore/books/statement.html):
+    what it owes by kind, whether it confirmed, and its confirm button.
+    `side`: {lines: [kind, count, amount]…, total}; `which`: "debtor" or
+    "creditor"; `allowed`: whether this person may confirm for the store.
+    <app-multistore-side :name="…" :side="…" :confirmed="…" :allowed="…" which="debtor" :statement-id="…"/> -#}
+<rx-props name side confirmed allowed which statement-id>
+{# [explain:multistore.settlements.show.template] #}
+<rx-card :title="t('multistore.statement.owes', store=name)">
+  <rx-simple-table rx-if="side.lines" :head="[t('multistore.books.fields.kind'), [t('multistore.statement.entries'), 'num'], [t('multistore.books.fields.amount'), 'num']]" :caption="t('multistore.statement.owes', store=name)">
+    <tr rx-for="kind, count, amount in side.lines"><td>{{ t('multistore.books.kind.' ~ kind) }}</td><td class="rx-num">{{ count }}</td><td class="rx-num">{{ amount | money }}</td></tr>
+    <rx-slot name="footer"><tr><th scope="row" colspan="2">{{ t('multistore.statement.total') }}</th><td class="rx-num"><strong>{{ side.total | money }}</strong></td></tr></rx-slot>
+  </rx-simple-table>
+  <p rx-else class="rx-subtitle">{{ t('multistore.statement.nothing') }}</p>
+  <p>
+    <rx-badge rx-if="confirmed" kind="success">{{ t('multistore.statement.confirmed_' ~ which, store=name) }}</rx-badge>
+    <rx-badge rx-else kind="warning">{{ t('multistore.statement.waiting_' ~ which, store=name) }}</rx-badge>
+  </p>
+  <rx-form rx-if="allowed" :action="route('multistore.settlements.confirm', statement_id)" :id="'confirm-' ~ which"><input type="hidden" name="side" value="{{ which }}"><rx-button :label="t('multistore.statement.confirm_' ~ which, store=name)" icon="check"/></rx-form>
+</rx-card>
+{# [/explain:multistore.settlements.show.template] #}

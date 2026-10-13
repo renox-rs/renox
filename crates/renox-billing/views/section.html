@@ -1,0 +1,57 @@
+{#- renox-billing: its card on the account page (`section.data`: current
+    (plan, plan_label, price, status, status_label, valid, on_trial,
+    generic_trial, trial_ends_at, canceled, on_grace_period, ends_at,
+    current_period_end, past_due, can_resume, paused, can_pause, gateway) or none, plans_url).
+    Replace it with resources/views/billing/section.html in your app. -#}
+{% from "renox/ui.html" import card, link_button, button, badge, confirm, alert %}
+{% set sub = section.data.current %}
+{% if sub and sub.paused %}
+{% call card(title="Subscription", subtitle=sub.plan_label ~ (" · " ~ sub.price if sub.price else "")) %}
+  <p id="billing-status">
+    {{ badge("Paused", kind="warning") }}
+    <span class="rx-subtitle">Billing is paused: nothing is charged, and your plan is off until you take it up again.</span>
+  </p>
+  <div class="rx-card__footer">
+    <form method="post" action="{{ route('billing.unpause') }}">
+      {{ csrf_field() }}{{ button("Take it up again", variant="primary") }}
+    </form>
+  </div>
+{% endcall %}
+{% elif sub and sub.valid %}
+{% call card(title="Subscription", subtitle=sub.plan_label ~ (" · " ~ sub.price if sub.price else "")) %}
+  <p id="billing-status">
+    {{ badge(sub.status_label, kind=("warning" if sub.canceled else "success")) }}
+    {%- if sub.on_grace_period %}
+    <span class="rx-subtitle">Canceled: you have access until {{ sub.ends_at | date }}.</span>
+    {%- elif sub.on_trial %}
+    <span class="rx-subtitle">Free trial until {{ sub.trial_ends_at | date }}.{% if sub.generic_trial %} Subscribe before then to keep your plan.{% endif %}</span>
+    {%- elif sub.current_period_end %}
+    <span class="rx-subtitle">Renews on {{ sub.current_period_end | date }}{% if sub.gateway %} through {{ sub.gateway }}{% endif %}.</span>
+    {%- endif %}
+  </p>
+  <div class="rx-card__footer">
+    {{ link_button(section.data.plans_url, "Subscribe" if sub.generic_trial else "Change plan") }}
+    {%- if sub.on_grace_period %}
+      {%- if sub.can_resume %}
+      <form method="post" action="{{ route('billing.resume') }}">
+        {{ csrf_field() }}{{ button("Resume", variant="secondary") }}
+      </form>
+      {%- endif %}
+    {%- else %}
+    {%- if sub.can_pause %}
+    <form method="post" action="{{ route('billing.pause') }}">
+      {{ csrf_field() }}{{ button("Pause billing", variant="secondary") }}
+    </form>
+    {%- endif %}
+    {{ confirm("billing-cancel", "Cancel subscription", route('billing.cancel'), "Cancel your subscription?", "You keep access until the end of the period you paid for (or of your trial). Nothing more is charged.", confirm_label="Cancel subscription", cancel_label="Keep it", method="POST") }}
+    {%- endif %}
+  </div>
+{% endcall %}
+{% else %}
+{% call card(title="Subscription", subtitle=("Your " ~ sub.plan_label ~ " subscription has ended." if sub and sub.canceled else "You're not subscribed.")) %}
+  {%- if sub and sub.past_due %}
+  {{ alert("Your last payment failed. The payment provider will try again; check your payment method there.", kind="error") }}
+  {%- endif %}
+  <div class="rx-card__footer">{{ link_button(section.data.plans_url, "See plans", variant="primary") }}</div>
+{% endcall %}
+{% endif %}

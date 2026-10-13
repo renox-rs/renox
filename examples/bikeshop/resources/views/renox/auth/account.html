@@ -1,0 +1,90 @@
+{#- "My account" (`account.show`): Renox's account page, replaced by a file of
+    the same name so it sits in the shop's layout instead of the narrow sign-in
+    one. Renox's handler still runs it and gives it the same context: `text`
+    (its own labels, in the page's language), `user`, `has_password`,
+    `verify_email` and `sections`, the cards every module adds with
+    `Registry::account_section` (src/app/accounts/mod.rs lists the order:
+    contact, ID check, bikes, orders, rentals, service visits, plan, payments,
+    two-factor, linked logins, notifications, language, privacy).
+
+    The cards sit on a CSS grid (`.bs-account`, <app-accounts-styles>): two
+    columns on a wide screen, one on a phone, each section one cell; the forms
+    are Renox's own (`account.profile`, `account.password`,
+    `account.logout_others`, `account.destroy`), so nothing about passwords is
+    written here. -#}
+<rx-page layout="layouts/app.html">
+<rx-slot name="seo">{{ seo(title=text.account_title) }}</rx-slot>
+<app-accounts-styles/>
+<div class="rx-stack" data-bs-reveal>
+  {#- The page's header: a band of photo, the person as initials, the title. -#}
+  <section class="bs-profile" aria-labelledby="account-title">
+    <div class="bs-profile__band"><img src="/images/site/riders.webp" alt="" width="1200" height="900"></div>
+    <div class="bs-profile__body">
+      <app-avatar :name="user.name" size="l"/>
+      <div class="bs-profile__text">
+        <h1 class="rx-title" id="account-title">{{ text.account_title }}</h1>
+        <p class="rx-subtitle">{{ t('accounts.page.lead', name=user.name) }}</p>
+      </div>
+      <div rx-if="unread_notifications is defined" class="bs-profile__actions"><rx-link-button :href="route('notifications.index')" :label="t('accounts.page.notifications')" :badge="unread_notifications or none" icon="bell"/></div>
+    </div>
+  </section>
+
+  {# [explain:account.show.template] #}
+  <div class="bs-account">
+    <form method="post" action="{{ route('account.profile') }}" hx-post="{{ route('account.profile') }}" id="account-profile">
+      {{ csrf_field() }}{{ method_field('PUT') }}
+      <rx-card :title="text.profile_title">
+        <rx-input name="name" :label="text.name" :value="user.name" required autocomplete="name"/>
+        <rx-input name="email" :label="text.email" type="email" :value="user.email" required autocomplete="email"/>
+        <rx-alert rx-if="verify_email and not user.email_verified_at" :message="text.email_unverified" kind="warning"/>
+        <div class="rx-card__footer"><rx-button :label="text.save"/></div>
+      </rx-card>
+    </form>
+
+    {#- Every module's section, in order (src/app/accounts/mod.rs: section_order). -#}
+    {#- The one statement left: a dynamic include, which no tag covers (docs/ui.md, "No raw MiniJinja"). -#}
+    <div rx-for="section in sections | default([])" class="bs-account__section"><rx-include :template="section.template"/></div>
+  {# [/explain:account.show.template] #}
+
+    <form method="post" action="{{ route('account.password') }}" hx-post="{{ route('account.password') }}" id="account-password">
+      {{ csrf_field() }}{{ method_field('PUT') }}
+      {#- A user made by a social login has no password yet: they choose one
+          without a current one (after confirming it's them, docs/oauth.md). -#}
+      <rx-card :title="text.password_title if has_password else text.set_password_title" :subtitle="none if has_password else text.set_password_intro">
+        <rx-input rx-if="has_password" name="current_password" :label="text.current_password" type="password" revealable required autocomplete="current-password"/>
+        <rx-input name="password" :label="text.new_password" type="password" revealable required autocomplete="new-password"/>
+        <rx-input name="password_confirmation" :label="text.password_confirmation" type="password" revealable required autocomplete="new-password"/>
+        <div class="rx-card__footer"><rx-button :label="text.save" variant="secondary"/></div>
+      </rx-card>
+    </form>
+
+    <form method="post" action="{{ route('account.logout_others') }}" hx-post="{{ route('account.logout_others') }}" id="account-devices">
+      {{ csrf_field() }}
+      <rx-card :title="text.other_devices_title" :subtitle="text.other_devices_intro">
+        <rx-input rx-if="has_password" name="password" :label="text.password" type="password" revealable required autocomplete="current-password" id="rx-password-others"/>
+        <div class="rx-card__footer"><rx-button :label="text.other_devices_button" variant="secondary"/></div>
+      </rx-card>
+    </form>
+
+    {#- Destructive: red text here, the filled red button only in the sheet,
+        which asks for the password. What happens to the customer's data is
+        said before they confirm (src/app/accounts/privacy.rs). -#}
+    <div class="bs-account__wide" id="account-delete">
+      <rx-card :title="text.delete_title" :subtitle="t('accounts.privacy.delete_intro')">
+        <div class="rx-card__footer"><rx-open-button id="delete-account" :label="text.delete_button" variant="plain-danger"/></div>
+      </rx-card>
+    </div>
+  </div>
+</div>
+
+<rx-sheet id="delete-account" :title="text.delete_title" :message="t('accounts.privacy.delete_confirm')">
+  <form method="post" action="{{ route('account.destroy') }}" hx-post="{{ route('account.destroy') }}" class="rx-stack">
+    {{ csrf_field() }}{{ method_field('DELETE') }}
+    <rx-input rx-if="has_password" name="password" :label="text.password" type="password" revealable required autocomplete="current-password" id="rx-password-delete"/>
+    <div class="rx-sheet__actions">
+      <button class="rx-button rx-button--secondary" type="button" data-rx-close autofocus><span class="rx-button__label">{{ t('ui.cancel') }}</span></button>
+      <rx-button :label="text.delete_button" variant="danger"/>
+    </div>
+  </form>
+</rx-sheet>
+</rx-page>

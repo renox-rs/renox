@@ -1,0 +1,6 @@
+{#- Every rentals message (src/app/rentals/notify.rs `Notice`): a sentence, a table of
+    details and a button, on the kit's mail layout and components (styled inline for
+    mail clients). The workshop's mails extend it. -#}
+<rx-mail>
+  <app-mail-notice :title="title" :body="body" :table="table" :url="url" :action="action"/>
+</rx-mail>

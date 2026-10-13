@@ -1,0 +1,55 @@
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, input, button, alert, open_button, sheet %}
+{% block title %}{{ text.account_title }} · {{ app.name }}{% endblock %}
+{% block main_class %} rx-auth--wide{% endblock %}
+{% block content %}
+{% if flash.status %}{{ alert(flash.status, kind="success") }}{% endif %}
+
+<form method="post" action="{{ route('account.profile') }}" hx-post="{{ route('account.profile') }}">
+  {{ csrf_field() }}{{ method_field('PUT') }}
+  {% call card(title=text.profile_title) %}
+    {{ input("name", text.name, value=user.name, required=true, autocomplete="name") }}
+    {{ input("email", text.email, type="email", value=user.email, required=true, autocomplete="email") }}
+    {% if verify_email and not user.email_verified_at %}{{ alert(text.email_unverified, kind="warning") }}{% endif %}
+    <div class="rx-card__footer">{{ button(text.save) }}</div>
+  {% endcall %}
+</form>
+
+<form method="post" action="{{ route('account.password') }}" hx-post="{{ route('account.password') }}">
+  {{ csrf_field() }}{{ method_field('PUT') }}
+  {#- A user made by a social login has no password yet: they choose one
+      without a current one (after confirming it's them, see docs/oauth.md). -#}
+  {% call card(title=text.password_title if has_password else text.set_password_title, subtitle=none if has_password else text.set_password_intro) %}
+    {% if has_password %}{{ input("current_password", text.current_password, type="password", revealable=true, required=true, autocomplete="current-password") }}{% endif %}
+    {{ input("password", text.new_password, type="password", revealable=true, required=true, autocomplete="new-password") }}
+    {{ input("password_confirmation", text.password_confirmation, type="password", revealable=true, required=true, autocomplete="new-password") }}
+    <div class="rx-card__footer">{{ button(text.save, variant="secondary") }}</div>
+  {% endcall %}
+</form>
+
+<form method="post" action="{{ route('account.logout_others') }}" hx-post="{{ route('account.logout_others') }}">
+  {{ csrf_field() }}
+  {% call card(title=text.other_devices_title, subtitle=text.other_devices_intro) %}
+    {% if has_password %}{{ input("password", text.password, type="password", revealable=true, required=true, autocomplete="current-password", id="rx-password-others") }}{% endif %}
+    <div class="rx-card__footer">{{ button(text.other_devices_button, variant="secondary") }}</div>
+  {% endcall %}
+</form>
+
+{% include "renox/auth/account_sections.html" %}
+
+{#- Destructive: red text here, the filled red button only in the sheet,
+    which asks for the password (docs/ui.md). -#}
+{% call card(title=text.delete_title, subtitle=text.delete_intro) %}
+  <div class="rx-card__footer">{{ open_button("delete-account", text.delete_button, variant="plain-danger") }}</div>
+{% endcall %}
+{% call sheet("delete-account", text.delete_title, text.delete_confirm) %}
+  <form method="post" action="{{ route('account.destroy') }}" hx-post="{{ route('account.destroy') }}" class="rx-stack">
+    {{ csrf_field() }}{{ method_field('DELETE') }}
+    {% if has_password %}{{ input("password", text.password, type="password", revealable=true, required=true, autocomplete="current-password", id="rx-password-delete") }}{% endif %}
+    <div class="rx-sheet__actions">
+      <button class="rx-button rx-button--secondary" type="button" data-rx-close autofocus><span class="rx-button__label">{{ t('ui.cancel') }}</span></button>
+      {{ button(text.delete_button, variant="danger") }}
+    </div>
+  </form>
+{% endcall %}
+{% endblock %}

@@ -1,0 +1,35 @@
+{#- A new purchase order (#240): pick a supplier; the lines start with what the store needs
+    (parts work orders wait for, #236; goods under their reorder level), then the rest of the
+    supplier's price list. A blank quantity isn't ordered. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.purchasing.new')">
+  <app-stock-assets/>
+
+  <rx-stack>
+    <rx-page-header :title="t('stock.purchasing.new')" :subtitle="t('stock.purchasing.new_lead')" :back="route('stock.purchasing')" :back-label="t('stock.purchasing.title')"/>
+    <rx-form method="GET" :action="route('stock.purchasing.create')" class="bs-filters" id="po-supplier">
+      <rx-select name="supplier" :label="t('stock.purchasing.supplier')" :options="supplier_options" :selected="supplier.id if supplier else none" :placeholder="t('stock.purchasing.pick_supplier')"/>
+      <rx-button :label="t('stock.purchasing.use_supplier')" variant="secondary"/>
+    </rx-form>
+    <rx-alert rx-if="not supplier" :message="t('stock.purchasing.pick_first')" kind="info"/>
+    <rx-form :action="route('stock.purchasing.store')" id="po-form" novalidate>
+      <input type="hidden" name="supplier" value="{{ supplier.id if supplier else '' }}">
+      <rx-form-errors/>
+      <rx-card :title="t('stock.purchasing.needs', count=needs | length)" :subtitle="t('stock.purchasing.needs_lead')">
+        <ul rx-if="needs" class="bs-rows bs-rows--3 bs-rows--inputs" role="list" data-bs-reveal>
+          <li class="bs-row bs-row--head" aria-hidden="true"><span>{{ t('stock.fields.product') }}</span><span class="bs-row__figure">{{ t('stock.fields.reorder_level') }}</span><span>{{ t('stock.purchasing.unit_cost') }}</span><span>{{ t('stock.fields.quantity') }}</span></li>
+          <app-stock-po-line rx-for="row in needs" :row="row" :i="loop.index0" :need="true" :money-scale="money_scale" :money-step="money_step"/>
+        </ul>
+        <rx-empty rx-else :title="t('stock.purchasing.no_needs')" icon="circle-check"/>
+      </rx-card>
+      <rx-card rx-if="rest" :title="t('stock.purchasing.price_list', supplier=supplier.name)">
+        <ul class="bs-rows bs-rows--3 bs-rows--inputs" role="list">
+          <app-stock-po-line rx-for="row in rest" :row="row" :i="needs | length + loop.index0" :need="false" :money-scale="money_scale" :money-step="money_step"/>
+        </ul>
+      </rx-card>
+      <rx-card>
+        <rx-input name="note" :label="t('stock.purchasing.note')"/>
+        <rx-button :label="t('stock.purchasing.save_draft')" icon="check" :disabled="not supplier" :disabled-reason="t('stock.purchasing.pick_first')"/>
+      </rx-card>
+    </rx-form>
+  </rx-stack>
+</rx-page>

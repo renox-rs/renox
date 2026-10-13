@@ -1,0 +1,44 @@
+{#- A rental's receipt (#235): money in and out, payments, how it is booked between stores, where the bike goes next. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.receipt.title') }}">
+  <app-rentals-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.receipt.title') }}" :subtitle="row.reservation_code" :back="route('rentals.desk', row.id)" back-label="{{ t('rentals.desk.rental') }}"/>
+    <rx-alert rx-if="send_back" kind="info" title="{{ t('rentals.receipt.send_back', store=send_back) }}" message="{{ t('rentals.receipt.send_back_text', store=send_back) }}"/>
+    <rx-columns count="2">
+      <rx-card title="{{ t('rentals.receipt.customer') }}">
+        <dl class="bs-figures">
+          <dt>{{ t('rentals.fields.price') }}</dt><dd>{{ row.price | money }}</dd>
+          <dt>{{ t('rentals.fields.late_fee') }}</dt><dd>{{ row.late_fee | money }}</dd>
+          <dt>{{ t('rentals.fields.damage_fee') }}</dt><dd>{{ row.damage_fee | money }}</dd>
+          <dt class="bs-figures__total">{{ t('rentals.receipt.total') }}</dt><dd class="bs-figures__total">{{ (row.price + row.late_fee + row.damage_fee) | money }}</dd>
+          <dt>{{ t('rentals.fields.deposit') }}</dt><dd>{{ row.deposit | money }}</dd>
+          <dt>{{ t('rentals.receipt.kept') }}</dt><dd>{{ settlement.kept | money }}</dd>
+          <dt>{{ t('rentals.fields.refund') }}</dt><dd>{{ row.deposit_refunded | money }}</dd>
+        </dl>
+        <p rx-if="row.damage_note" class="rx-hint">{{ t('rentals.desk.damage_note') }}: {{ row.damage_note }}</p>
+      </rx-card>
+      {# [explain:rentals.receipt.template] #}
+      <rx-card title="{{ t('rentals.receipt.books') }}" subtitle="{{ t('rentals.receipt.books_lead') }}">
+        <rx-infolist>
+          <rx-entry label="{{ t('rentals.fields.owner') }}" :value="books.owner"/>
+          <rx-entry label="{{ t('rentals.fields.operating') }}" :value="books.operating"/>
+          <template rx-if="books.split">
+            <rx-entry label="{{ t('rentals.receipt.owner_share') }}" :value="books.owner_share" format="money"/>
+            <rx-entry label="{{ t('rentals.receipt.fee', rate=books.fee_rate) }}" :value="books.fee" format="money"/>
+          </template>
+          <rx-entry rx-else label="{{ t('rentals.receipt.owner_share') }}" :value="row.price + row.late_fee + row.damage_fee" format="money" hint="{{ t('rentals.receipt.same_store') }}"/>
+        </rx-infolist>
+      </rx-card>
+      {# [/explain:rentals.receipt.template] #}
+    </rx-columns>
+    <rx-card title="{{ t('rentals.receipt.payments') }}">
+      <rx-table :rows="payments" as="p" caption="{{ t('rentals.receipt.payments') }}">
+        <rx-column label="{{ t('rentals.receipt.when') }}">{{ p.paid_at | date('%d %b %H:%M') }}</rx-column>
+        <rx-column label="{{ t('rentals.desk.method') }}">{{ t('rentals.methods.' ~ p.method) }}</rx-column>
+        <rx-column label="{{ t('rentals.receipt.amount') }}" align="num">{{ p.amount | money }}</rx-column>
+        <rx-slot name="empty"><p class="rx-subtitle">{{ t('rentals.receipt.no_payments') }}</p></rx-slot>
+      </rx-table>
+    </rx-card>
+    <p><rx-link-button route="rentals.counter" label="{{ t('rentals.counter.title') }}"/></p>
+  </rx-stack>
+</rx-page>

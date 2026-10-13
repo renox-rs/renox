@@ -1,0 +1,23 @@
+{#- Every endpoint of the JSON API (#241), from src/app/api/endpoints.rs; its
+    texts in another language under `api.endpoints.<route>`. -#}
+<rx-page layout="layouts/app.html" title="{{ t('api.about.title') }}" description="{{ t('api.about.lead') }}">
+<app-api-assets/>
+<rx-stack>
+  <rx-page-header title="{{ t('api.about.title') }}" subtitle="{{ t('api.about.lead') }}"/>
+  <rx-card title="{{ t('api.about.how') }}">
+    <ul class="bs-api-rules">
+      <li>{{ t('api.about.rule_token') }}</li>
+      <li>{{ t('api.about.rule_errors') }}</li>
+      <li>{{ t('api.about.rule_limit', count=per_minute) }}</li>
+      <li>{{ t('api.about.rule_cors', origin=origin) }}</li>
+    </ul>
+    <div class="bs-api-links">
+      <rx-link-button rx-if="auth.check" route="api.tokens" label="{{ t('api.tokens.title') }}" size="small"/>
+    </div>
+  </rx-card>
+  <h2 class="bs-api-group">{{ t('api.about.kiosk') }}</h2>
+  <div class="bs-endpoints" data-bs-reveal><app-api-endpoint rx-for="e in kiosk" :e="e" :base="base"/></div>
+  <h2 class="bs-api-group">{{ t('api.about.customer') }}</h2>
+  <div class="bs-endpoints" data-bs-reveal><app-api-endpoint rx-for="e in customer" :e="e" :base="base"/></div>
+</rx-stack>
+</rx-page>

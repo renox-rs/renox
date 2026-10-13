@@ -1,0 +1,12 @@
+{#- "About this page" as the kit's sheet (#231), for screens narrower than
+    75rem, where the panel isn't docked beside the page (<app-about-dock>):
+    the same content (<app-about-explain>), code included. The navbar's
+    "About this page" button (`data-rx-open="about-page"`) opens it; Esc, the
+    backdrop or the close button shut it. -#}
+<rx-props about about-base="">
+<rx-sheet id="about-page" :title="about.title" slide-over width="lg">
+  <app-about-explain :about="about" explain-id="about-page" :about-base="about_base"/>
+  <div class="rx-sheet__actions">
+    <rx-button :label="t('about.panel.close')" variant="primary" type="button" data-rx-close="about-page"/>
+  </div>
+</rx-sheet>

@@ -1,0 +1,11 @@
+{#- The navbar's cart link and its count (`cart.mini`). Asked for by the
+    navbar after the page loads (layouts/app.html), and sent back with `oob`
+    after a change, which htmx swaps in out of band (hx-swap-oob) wherever
+    the answer was going: `<app-sales-cart-mini :count="n" :oob="true"/>`. -#}
+<rx-props count :oob="false">
+<a class="rx-button rx-button--plain rx-button--small bs-cart-link" id="nav-cart" href="{{ route('cart.show') }}" ?hx-swap-oob="'true' if oob"
+   aria-label="{{ t('sales.cart.link_label', count=count) }}" data-bs-cart-count="{{ count }}">
+  <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M3 4h2l2.4 10.2a1.5 1.5 0 001.5 1.1h7.7a1.5 1.5 0 001.4-1l2-6.3H6.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="9.5" cy="19.5" r="1.4" fill="currentColor"/><circle cx="17" cy="19.5" r="1.4" fill="currentColor"/></svg>
+  <span class="rx-button__label">{{ t('sales.cart.title') }}</span>
+  <span rx-if="count > 0" class="rx-button__badge">{{ count }}</span>
+</a>

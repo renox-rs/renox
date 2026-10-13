@@ -1,0 +1,23 @@
+{#- The service plans compared (#237): the shop's `compare_plans` block
+    (cards on a CSS grid, then a table, task by task). Prices are a month. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.index.title') }}" description="{{ t('plans.index.lead') }}">
+<app-plans-assets/>
+<rx-stack>
+  <app-hero :title="t('plans.index.title')" :lead="t('plans.index.lead')" :eyebrow="t('plans.index.eyebrow')" photo="/images/site/plans.webp" compact/>
+  {# [explain:plans.index.template] #}
+  <div class="bs-plans-page" data-bs-reveal>
+    <rx-compare-plans :plans="cards" :features="rows" :highlight="highlight" :label="t('plans.index.title')"/>
+    <section class="rx-card bs-plans-page__how" aria-labelledby="plans-how">
+      <h2 class="rx-card__title" id="plans-how">{{ t('plans.index.how_title') }}</h2>
+      <ol class="bs-plans-steps">
+        <li rx-for="step in [[1, 'bike'], [2, 'calendar-check'], [3, 'refresh-cw']]"><span class="bs-icon-circle"><rx-icon :name="step[1]"/></span><span>{{ t('plans.index.how_' ~ step[0]) }}</span></li>
+      </ol>
+      <div class="bs-plans-page__actions">
+        <rx-link-button rx-if="auth.check" route="plans.mine" label="{{ t('plans.mine.title') }}" variant="secondary"/>
+        <rx-link-button route="plans.mails" label="{{ t('plans.mails.title') }}" variant="plain"/>
+      </div>
+    </section>
+  {# [/explain:plans.index.template] #}
+  </div>
+</rx-stack>
+</rx-page>

@@ -1,0 +1,6 @@
+{#- What other modules add to the account page (`Registry::account_section`):
+    each section's template, with what its closure returned as `section.data`.
+    A page of your own that replaces renox/auth/account.html can include this. -#}
+{%- for section in sections | default([]) %}
+{% include section.template %}
+{%- endfor %}

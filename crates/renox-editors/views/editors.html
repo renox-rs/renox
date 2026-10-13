@@ -1,0 +1,207 @@
+{#- renox-editors: rich text, Markdown and code editor fields, and a code
+    entry for infolists. Add the module (`.module(Editors::new())`), then:
+
+    {% from "renox-editors/editors.html" import rich_editor, markdown_editor, code_editor, code_entry %}
+    <form method="post" action="/posts" data-live-validate>
+      {{ csrf_field() }}
+      {{ rich_editor("body", "Body", value=post.body, required=true) }}
+      {{ markdown_editor("notes", "Notes", value=post.notes) }}
+      {{ code_editor("config", "Config", value=post.config, language="json") }}
+    </form>
+
+    Each sends a plain form field named `name`, so `Valid<T>` reads it as
+    any other; after a failed submit it shows the old input and its error,
+    with the kit's label, hint and error places. The editors' script and
+    styles load once, on pages that use them. Texts come from the app's
+    lang files (`editors.bold`, …) and are English otherwise. Replace this
+    file with resources/views/renox-editors/editors.html in your app. -#}
+
+{%- macro _id(name) -%}rx-{{ name | replace(".", "-") | replace("[", "-") | replace("]", "") }}{%- endmacro -%}
+
+{#- How a field's errors are keyed: `items[0][body]` → `items.0.body`. -#}
+{%- macro _key(name) -%}{{ name | replace("][", ".") | replace("[", ".") | replace("]", "") | trim(".") }}{%- endmacro -%}
+
+{#- An app's translation of `key`, else the English `default`. -#}
+{%- macro _text(key, default) -%}{%- set said = t(key) %}{{ default if said == key else said }}{%- endmacro -%}
+
+{%- macro _assets() -%}{%- if once('renox-editors') %}{{ renox_editors() }}{% endif -%}{%- endmacro -%}
+
+{%- macro _label(id, label, required, hidden, for_id=none) -%}
+<label class="rx-label{% if hidden %} rx-visually-hidden{% endif %}" id="{{ id }}-label"{% if for_id %} for="{{ for_id }}"{% endif %}>{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</label>
+{%- endmacro -%}
+
+{%- macro _describe(id, name, hint, message) -%}
+{%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+<p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+{%- endmacro -%}
+
+{%- macro _classes(kind, span, message, disabled) -%}
+rx-field rx-editor rx-editor--{{ kind }}{% if span %} rx-span-{{ span }}{% endif %}{% if message %} rx-editor--invalid{% endif %}{% if disabled %} rx-editor--disabled{% endif %}
+{%- endmacro -%}
+
+{%- macro _icon(kind) -%}
+<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+{%- if kind == "bold" %}<path d="M6 12h9a4 4 0 0 1 0 8H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h7a4 4 0 0 1 0 8"/>
+{%- elif kind == "italic" %}<path d="M19 4h-9M14 20H5M15 4 9 20"/>
+{%- elif kind == "strike" %}<path d="M16 4H9a3 3 0 0 0-2.83 4M14 12a4 4 0 0 1 0 8H6M4 12h16"/>
+{%- elif kind == "link" %}<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+{%- elif kind == "heading" %}<path d="M6 12h12M6 20V4M18 20V4"/>
+{%- elif kind == "quote" %}<path d="M17 6H3M21 12H8M21 18H8M3 12v6"/>
+{%- elif kind == "code" %}<path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/>
+{%- elif kind == "bullets" %}<path d="M3 6h.01M3 12h.01M3 18h.01M8 6h13M8 12h13M8 18h13"/>
+{%- elif kind == "numbers" %}<path d="M10 6h11M10 12h11M10 18h11M4 10h2M4 6h1v4M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"/>
+{%- elif kind == "undo" %}<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>
+{%- elif kind == "redo" %}<path d="m15 14 5-5-5-5"/><path d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/>
+{%- elif kind == "preview" %}<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>
+{%- endif -%}
+</svg>
+{%- endmacro -%}
+
+{%- macro _tool(kind, label, attrs) -%}
+<button class="rx-editor__tool" type="button" aria-label="{{ label }}" data-rx-tip="{{ label }}"{{ attrs | safe }}>{{ _icon(kind) }}</button>
+{%- endmacro -%}
+
+{#- A rich text editor (Trix): bold, italic, struck text, links, a heading,
+    quotes, code and lists, with undo and redo. It sends HTML in a field
+    named `name`: read it as `renox_editors::RichText` (cleaned as it is
+    read) and show it with `{{ body | rich_text }}`. `value` is HTML (it is
+    cleaned before the editor gets it). Files can't be dropped in. `rows`:
+    the editor's height in lines before it grows. -#}
+{% macro rich_editor(name, label, value=none, hint=none, required=false, placeholder=none, rows=8, id=none, disabled=false, span=none, hide_label=false, bag=none) -%}
+{%- set id = id or _id(name) %}
+{%- set message = error(name, bag=bag) %}
+{{- _assets() }}
+<div class="{{ _classes('rich', span, message, disabled) }}" data-rx-rich>
+  {{ _label(id, label, required, hide_label) }}
+  <div class="rx-editor__frame">
+    <div class="rx-editor__toolbar" id="{{ id }}-toolbar" role="toolbar" aria-label="{{ _text('editors.formatting', 'Formatting') }}" aria-controls="{{ id }}-editor">
+      <span class="rx-editor__group">
+        {{- _tool("bold", _text('editors.bold', 'Bold'), ' data-trix-attribute="bold" data-trix-key="b"') }}
+        {{- _tool("italic", _text('editors.italic', 'Italic'), ' data-trix-attribute="italic" data-trix-key="i"') }}
+        {{- _tool("strike", _text('editors.strike', 'Strikethrough'), ' data-trix-attribute="strike"') }}
+        {{- _tool("link", _text('editors.link', 'Link'), ' data-trix-attribute="href" data-trix-action="link" data-trix-key="k"') -}}
+      </span>
+      <span class="rx-editor__group">
+        {{- _tool("heading", _text('editors.heading', 'Heading'), ' data-trix-attribute="heading1"') }}
+        {{- _tool("quote", _text('editors.quote', 'Quote'), ' data-trix-attribute="quote"') }}
+        {{- _tool("code", _text('editors.code', 'Code'), ' data-trix-attribute="code"') }}
+        {{- _tool("bullets", _text('editors.bullets', 'Bulleted list'), ' data-trix-attribute="bullet"') }}
+        {{- _tool("numbers", _text('editors.numbers', 'Numbered list'), ' data-trix-attribute="number"') -}}
+      </span>
+      <span class="rx-editor__group rx-editor__group--end">
+        {{- _tool("undo", _text('editors.undo', 'Undo'), ' data-trix-action="undo" data-trix-key="z"') }}
+        {{- _tool("redo", _text('editors.redo', 'Redo'), ' data-trix-action="redo" data-trix-key="shift+z"') -}}
+      </span>
+      <div class="rx-editor__dialog" data-trix-dialog="href" data-trix-dialog-attribute="href">
+        {#- `form` names no form, so the address isn't sent with the page's. #}
+        <input class="rx-input" type="url" name="href" form="rx-editor-none" placeholder="https://…" aria-label="{{ _text('editors.url', 'Link address') }}" data-trix-input data-trix-validate-href required>
+        <input class="rx-button rx-button--primary rx-button--small" type="button" value="{{ _text('editors.link', 'Link') }}" data-trix-method="setAttribute">
+        <input class="rx-button rx-button--secondary rx-button--small" type="button" value="{{ _text('editors.unlink', 'Remove link') }}" data-trix-method="removeAttribute">
+      </div>
+    </div>
+    <input type="hidden" id="{{ id }}" name="{{ name }}" value="{{ renox_editors_html(old(name, value if value is defined and value is not none else '')) }}"{% if disabled %} disabled{% endif %}{% if message %} aria-invalid="true"{% endif %}>
+    <trix-editor class="rx-editor__area rx-prose" id="{{ id }}-editor" input="{{ id }}" toolbar="{{ id }}-toolbar" style="--rx-editor-rows: {{ rows }}"
+      aria-labelledby="{{ id }}-label" aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-error"
+      {%- if required %} aria-required="true"{% endif %}
+      {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+      {%- if disabled %} disabled{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %}></trix-editor>
+  </div>
+  {{ _describe(id, name, hint, message) }}
+</div>
+{%- endmacro %}
+
+{#- A Markdown editor: a textarea with a toolbar (bold, italic, struck
+    text, a heading, a link, a quote, code and lists; Ctrl or ⌘ with B, I
+    and K) and a Preview button, which shows the text as the `markdown`
+    filter renders it on the page. It sends the Markdown as typed, in a
+    field named `name`; without JavaScript it is a plain textarea. -#}
+{% macro markdown_editor(name, label, value=none, rows=8, hint=none, required=false, placeholder=none, id=none, disabled=false, readonly=false, span=none, hide_label=false, bag=none) -%}
+{%- set id = id or _id(name) %}
+{%- set message = error(name, bag=bag) %}
+{{- _assets() }}
+<div class="{{ _classes('markdown', span, message, disabled) }}" data-rx-markdown data-preview-url="{{ route('editors.preview') }}" data-preview-empty="{{ _text('editors.preview_empty', 'Nothing to preview yet.') }}" data-preview-failed="{{ _text('editors.preview_failed', 'The preview could not be loaded.') }}">
+  {{ _label(id, label, required, hide_label, for_id=id) }}
+  <div class="rx-editor__frame">
+    <div class="rx-editor__toolbar" role="toolbar" aria-label="{{ _text('editors.formatting', 'Formatting') }}" aria-controls="{{ id }}">
+      <span class="rx-editor__group" data-rx-markdown-tools>
+        {{- _tool("bold", _text('editors.bold', 'Bold'), ' data-md="bold"') }}
+        {{- _tool("italic", _text('editors.italic', 'Italic'), ' data-md="italic"') }}
+        {{- _tool("strike", _text('editors.strike', 'Strikethrough'), ' data-md="strike"') }}
+        {{- _tool("link", _text('editors.link', 'Link'), ' data-md="link"') -}}
+      </span>
+      <span class="rx-editor__group" data-rx-markdown-tools>
+        {{- _tool("heading", _text('editors.heading', 'Heading'), ' data-md="heading"') }}
+        {{- _tool("quote", _text('editors.quote', 'Quote'), ' data-md="quote"') }}
+        {{- _tool("code", _text('editors.code', 'Code'), ' data-md="code"') }}
+        {{- _tool("bullets", _text('editors.bullets', 'Bulleted list'), ' data-md="bullets"') }}
+        {{- _tool("numbers", _text('editors.numbers', 'Numbered list'), ' data-md="numbers"') -}}
+      </span>
+      <span class="rx-editor__group rx-editor__group--end">
+        <button class="rx-editor__tool rx-editor__tool--text" type="button" aria-pressed="false" aria-controls="{{ id }}-preview" data-md-preview>{{ _icon("preview") }}<span>{{ _text('editors.preview', 'Preview') }}</span></button>
+      </span>
+    </div>
+    <textarea class="rx-editor__area rx-editor__textarea" id="{{ id }}" name="{{ name }}" rows="{{ rows }}"
+      {%- if required %} required aria-required="true"{% endif %}
+      {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+      {%- if disabled %} disabled{% endif %}
+      {%- if readonly %} readonly{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %}
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-error">{{ old(name, value if value is defined and value is not none else "") }}</textarea>
+    <div class="rx-editor__area rx-editor__preview rx-prose" id="{{ id }}-preview" tabindex="0" aria-label="{{ _text('editors.preview', 'Preview') }}" aria-live="polite" hidden></div>
+  </div>
+  {{ _describe(id, name, hint, message) }}
+</div>
+{%- endmacro %}
+
+{#- A code editor (CodeJar) with syntax highlighting (Prism) for
+    `language`: "rust", "json", "javascript", "typescript", "html", "css",
+    "sql", "bash", "python", "yaml", "toml", "markdown", "diff", "go", or
+    "none". Tab indents (with `tab`, two spaces by default); Esc, then Tab,
+    leaves the editor. It sends the code as typed, in a field named `name`;
+    without JavaScript it is a plain textarea. -#}
+{% macro code_editor(name, label, value=none, language="none", rows=10, hint=none, required=false, placeholder=none, tab="  ", id=none, disabled=false, readonly=false, span=none, hide_label=false, bag=none) -%}
+{%- set id = id or _id(name) %}
+{%- set message = error(name, bag=bag) %}
+{{- _assets() }}
+<div class="{{ _classes('code', span, message, disabled) }}" data-rx-code-editor data-language="{{ language }}" data-tab="{{ tab }}">
+  {{ _label(id, label, required, hide_label, for_id=id) }}
+  <div class="rx-editor__frame">
+    <textarea class="rx-editor__area rx-editor__textarea rx-editor__source" id="{{ id }}" name="{{ name }}" rows="{{ rows }}" spellcheck="false" autocapitalize="off" autocomplete="off" translate="no"
+      {%- if required %} required aria-required="true"{% endif %}
+      {%- if placeholder %} placeholder="{{ placeholder }}"{% endif %}
+      {%- if disabled %} disabled{% endif %}
+      {%- if readonly %} readonly{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %}
+      aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-keys {{ id }}-error">{{ old(name, value if value is defined and value is not none else "") }}</textarea>
+  </div>
+  <p class="rx-visually-hidden" id="{{ id }}-keys">{{ _text('editors.code_keys', 'Tab indents. To leave the editor, press Escape, then Tab.') }}</p>
+  {{ _describe(id, name, hint, message) }}
+</div>
+{%- endmacro %}
+
+{#- Code shown highlighted in an `infolist`, read-only, with a copy
+    button: `{{ code_entry("Payload", call.payload, language="json") }}`.
+    A value that isn't text (a map or a list) is shown as indented JSON.
+    `language` as for `code_editor` (JSON for such values when not given);
+    `max_height` (CSS, "20rem") scrolls longer code. -#}
+{% macro code_entry(label, value=none, language=none, copyable=true, hint=none, placeholder="—", max_height=none, span="full", hide_label=false, id=none) -%}
+{%- set code = renox_editors_code(value) %}
+{%- set language = language or ("plaintext" if value is string or value is none or value is undefined else "json") %}
+{{- _assets() }}
+<div class="rx-entry rx-entry--code{% if span %} rx-span-{{ span }}{% endif %}"{% if id %} id="{{ id }}"{% endif %}>
+  <dt class="rx-entry__label{% if hide_label %} rx-visually-hidden{% endif %}">{{ label }}</dt>
+  <dd class="rx-entry__value">
+  {%- if code | trim == "" %}<span class="rx-entry__empty">{{ placeholder }}</span>
+  {%- else %}
+    <div class="rx-code-entry">
+      <pre class="rx-code-entry__pre" tabindex="0"{% if max_height %} style="max-height: {{ max_height }}"{% endif %} aria-label="{{ label }}"><code class="language-{{ language }}" data-rx-highlight translate="no">{{ code }}</code></pre>
+      {%- if copyable %}
+      <button class="rx-affix__button rx-entry__copy rx-code-entry__copy" type="button" data-rx-copy data-rx-copy-text="{{ code }}" aria-label="{{ t('ui.copy') }} {{ label }}" data-label-done="{{ t('ui.copied') }}"><svg class="rx-icon-off" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><rect x="6.5" y="6.5" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M13.5 6.5V5a1.5 1.5 0 00-1.5-1.5H5A1.5 1.5 0 003.5 5v7A1.5 1.5 0 005 13.5h1.5" fill="none" stroke="currentColor" stroke-width="1.6"/></svg><svg class="rx-icon-on" viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M4.5 10.5l3.5 3.5 7.5-8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="rx-visually-hidden" aria-live="polite"></span></button>
+      {%- endif %}
+    </div>
+  {%- endif %}
+  </dd>
+  {%- if hint %}<dd class="rx-hint rx-entry__hint">{{ hint }}</dd>{% endif %}
+</div>
+{%- endmacro %}

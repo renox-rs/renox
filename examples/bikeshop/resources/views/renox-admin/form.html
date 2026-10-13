@@ -1,0 +1,23 @@
+{#- A resource's create and edit page (renox-admin/form.html), replaced by the
+    bike shop for its translations. Sent with htmx: errors show under their
+    fields (422), a success goes back to the list with a toast. Without
+    JavaScript it is a plain form. -#}
+<rx-page layout="renox-admin/layout.html">
+<rx-slot name="title">{{ title }} · {{ tx(admin.title) }}</rx-slot>
+<rx-page-header :title="title" :back="resource.index_url" :back-label="tx(resource.plural_label)">
+  <rx-confirm rx-if="delete" id="rx-admin-delete" :label="t('admin_panel.delete')" :action="delete.url" :title="t('admin_panel.delete_question', label=(tx(delete.label) | lower))" :message="t('admin_panel.to_trash') if delete.soft else t('admin_panel.for_good_text')" icon="trash"/>
+</rx-page-header>
+<form method="post" action="{{ action }}" hx-post="{{ action }}" hx-swap="none" data-live-validate novalidate>
+  {{ csrf_field() }}{{ method_field(method) if method != "POST" else "" }}
+  <rx-form-errors/>
+  <rx-card>
+    <rx-form-grid :columns="2">
+      <app-admin-field rx-for="f in fields" :f="f" :currency="admin.currency"/>
+    </rx-form-grid>
+    <div class="rx-row">
+      <rx-button :label="submit_label" key="mod+s"/>
+      <rx-link-button :href="resource.index_url" :label="t('admin_panel.cancel')" variant="plain"/>
+    </div>
+  </rx-card>
+</form>
+</rx-page>

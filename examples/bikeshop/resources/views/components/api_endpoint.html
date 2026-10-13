@@ -1,0 +1,21 @@
+{#- One endpoint of the JSON API (api/about.html): a card with its method, path,
+    ability, what it is for and a `curl` ready to paste. Its texts in another
+    language are under `api.endpoints.<route>.`; the English ones are in
+    src/app/api/endpoints.rs. -#}
+<rx-props e base>
+{# [explain:api.about.template] #}
+<rx-let name="key" :value="'api.endpoints.' ~ e.route ~ '.'"/>
+<article class="rx-card bs-endpoint" id="{{ e.route | replace('.', '-') }}">
+  <header class="bs-endpoint__head">
+    <rx-badge text="{{ e.method }}" :kind="'info' if e.method == 'GET' else 'warning'"/>
+    <code class="bs-endpoint__path">{{ e.path }}</code>
+    <span class="rx-subtitle">{{ t('api.about.ability') }} <code>{{ e.ability }}</code></span>
+  </header>
+  <p>{{ tk(key ~ 'purpose', e.purpose) | markdown }}</p>
+  <rx-infolist columns="2">
+    <rx-entry label="{{ t('api.about.request') }}">{{ tk(key ~ 'request', e.request) | markdown if e.request else "—" }}</rx-entry>
+    <rx-entry label="{{ t('api.about.answer') }}">{{ tk(key ~ 'answer', e.answer) | markdown }}</rx-entry>
+  </rx-infolist>
+  <pre class="bs-code"><code>{{ e.curl | replace("$URL", base) }}</code></pre>
+</article>
+{# [/explain:api.about.template] #}

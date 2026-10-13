@@ -1,0 +1,6 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import notification_bell %}
+{% block content %}
+<div id="bar">{{ notification_bell(unread_notifications) }}</div>
+<button id="notify" type="button" hx-post="/notify-me" hx-swap="none">Notify me</button>
+{% endblock %}

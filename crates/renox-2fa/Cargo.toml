@@ -1,0 +1,27 @@
+[package]
+name = "renox-2fa"
+description = "Two-factor authentication (TOTP and recovery codes) for Renox apps."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "2fa", "totp", "authentication"]
+categories = ["web-programming::http-server", "authentication"]
+
+[dependencies]
+renox.workspace = true
+# RFC 6238 (TOTP) is HMAC-SHA1 over the time step: the same crates renox-core uses.
+hmac = "0.13.0"
+sha1 = "0.11"
+rand = "0.10.3"
+# Recovery codes are kept as SHA-256 hashes (the version renox-core uses).
+sha2 = "0.11.0"
+serde = { version = "1.0.229", features = ["derive"] }
+# The QR code an authenticator app scans, drawn as SVG (no image crates).
+qrcode = { version = "0.14.1", default-features = false, features = ["svg"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

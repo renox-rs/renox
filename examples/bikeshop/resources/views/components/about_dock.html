@@ -1,0 +1,26 @@
+{#- "About this page" docked beside the page on wide screens (75rem and up,
+    public/app.css), in every layout: the layout's body gets `bs-docked`, and
+    `bs-docked--rail` when the panel is folded (the `bikeshop_explain` cookie,
+    read on the server by src/explain.rs `dock_layer`, so the page never
+    jumps when it loads). The panel scrolls on its own; its button folds it
+    to a rail, whose button opens it again (public/app.js writes the
+    cookie). Narrower screens hide it and use the sheet (<app-about-panel>). -#}
+<rx-props about about-base="">
+<aside class="bs-dock" id="explain-dock" aria-labelledby="explain-dock-title" data-bs-dock>
+  <div class="bs-dock__panel" id="explain-dock-panel" ?hidden="about.rail">
+    <header class="bs-dock__header">
+      <div class="bs-dock__heading">
+        <p class="bs-dock__eyebrow">{{ t('about.button') }}</p>
+        <h2 class="bs-dock__title" id="explain-dock-title">{{ about.title }}</h2>
+      </div>
+      <rx-icon-button icon="next" :label="t('about.panel.hide')" aria-expanded="true" aria-controls="explain-dock-panel" data-bs-dock-toggle="rail"/>
+    </header>
+    <app-about-explain :about="about" explain-id="explain-dock" :about-base="about_base"/>
+  </div>
+  <div class="bs-dock__rail" ?hidden="not about.rail">
+    <button class="bs-dock__open" type="button" aria-expanded="false" aria-controls="explain-dock-panel" data-bs-dock-toggle="open">
+      <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M12.5 4.5L7 10l5.5 5.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <span class="bs-dock__open-label">{{ t('about.panel.show') }}</span>
+    </button>
+  </div>
+</aside>

@@ -1,0 +1,63 @@
+{#- The cart (src/app/sales/cart.rs). With htmx a change answers the `lines`
+    block and the navbar's `mini` block (swapped out of band). The `lines`
+    block imports the app macros it uses inside itself, so it renders alone. -#}
+<rx-page layout="layouts/app.html" :title="t('sales.cart.title') ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-page-header title="{{ t('sales.cart.title') }}" subtitle="{{ t('sales.cart.lead') }}" :back="route('catalog.index')" back-label="{{ t('sales.cart.keep_shopping') }}"/>
+  {# [explain:cart.show.template] #}
+  <rx-block name="lines">
+  <div id="cart" class="bs-cart">
+    <rx-alert rx-if="cart.changed" kind="warning" message="{{ t('sales.cart.changed') }}"/>
+    <template rx-if="cart.lines">
+    <section class="rx-card bs-cart__lines" aria-label="{{ t('sales.cart.lines') }}">
+      <ul class="bs-cart__list" role="list" data-bs-reveal>
+        <li rx-for="line in cart.lines" class="bs-cart__line" id="line-{{ line.variant.id }}">
+  {# [/explain:cart.show.template] #}
+          <rx-thumbnail rx-if="line.photo" :src="line.photo" :alt="line.product.name" :href="route('catalog.show', line.product.slug)"/>
+          <span rx-else></span>
+          <div class="bs-cart__what">
+            <a class="rx-link bs-cart__name" href="{{ route('catalog.show', line.product.slug) }}">{{ line.product.name }}</a>
+            <p class="rx-subtitle">{{ line.variant.sku }}<template rx-if="line.variant.size"> · {{ line.variant.size }}</template><template rx-if="line.variant.colour"> · {{ line.variant.colour }}</template> · {{ line.variant.price | money }}</p>
+            <p rx-if="line.lowered" class="rx-hint bs-cart__lowered" role="status">{{ t('sales.cart.line_lowered', count=line.available) }}</p>
+          </div>
+          {# [explain:cart.show.template] #}
+          <form class="bs-cart__qty" method="post" action="{{ route('cart.update', line.variant.id) }}"
+                hx-patch="{{ route('cart.update', line.variant.id) }}" hx-trigger="change delay:300ms" hx-target="#cart" hx-swap="outerHTML">
+            {{ csrf_field() }}{{ method_field('PATCH') }}
+            <rx-quantity name="quantity" :value="line.quantity" :min="1" :max="([line.available, 20] | min) if line.available > 0 else line.quantity" label="{{ t('sales.cart.quantity_of', name=line.product.name) }}" hide-label :id="'qty-' ~ line.variant.id"/>
+            <noscript><rx-button variant="secondary" size="small">{{ t('sales.cart.update') }}</rx-button></noscript>
+          </form>
+          <p class="bs-cart__total rx-num">{{ line.total | money }}</p>
+          <form method="post" action="{{ route('cart.remove', line.variant.id) }}" hx-delete="{{ route('cart.remove', line.variant.id) }}" hx-target="#cart" hx-swap="outerHTML">
+            {{ csrf_field() }}{{ method_field('DELETE') }}
+            <button class="rx-icon-button rx-icon-button--small" type="submit" aria-label="{{ t('sales.cart.remove', name=line.product.name) }}">
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+          </form>
+          {# [/explain:cart.show.template] #}
+        </li>
+      </ul>
+    </section>
+    <aside class="rx-card bs-cart__summary" aria-label="{{ t('sales.cart.summary') }}">
+      <form method="post" action="{{ route('cart.store') }}" hx-post="{{ route('cart.store') }}" hx-trigger="change" hx-target="#cart" hx-swap="outerHTML">
+        {{ csrf_field() }}
+        <rx-select name="store_id" label="{{ t('sales.cart.store') }}" :options="cart.store_options" :selected="cart.store.id | string if cart.store else none" hint="{{ t('sales.cart.store_hint') }}" required id="cart-store"/>
+        <noscript><rx-button variant="secondary" size="small">{{ t('sales.cart.change_store') }}</rx-button></noscript>
+      </form>
+      <dl class="bs-totals">
+        <div><dt>{{ t('sales.cart.items', count=cart.count) }}</dt><dd class="rx-num">{{ cart.subtotal | money }}</dd></div>
+      </dl>
+      <p class="rx-hint">{{ t('sales.cart.fees_later') }}</p>
+      <rx-link-button route="checkout.show" variant="primary" data-rx-key="c">{{ t('sales.cart.checkout') }}</rx-link-button>
+    </aside>
+    </template>
+    <div rx-else class="rx-card"><rx-empty title="{{ t('sales.cart.empty_title') }}" message="{{ t('sales.cart.empty_text') }}" route="catalog.index" action-label="{{ t('sales.cart.browse') }}" icon="shopping-cart"/></div>
+  </div>
+  </rx-block>
+
+  {# [explain:cart.show.template] #}
+  {#- The navbar's count, swapped out of band after a change (`.also("mini")`).
+      Not part of the page itself: only rendered on its own. -#}
+  <rx-slot name="mini"><app-sales-cart-mini :count="cart.count" :oob="oob"/></rx-slot>
+  {# [/explain:cart.show.template] #}
+</rx-page>

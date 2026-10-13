@@ -1,0 +1,12 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import input, button, form_errors %}
+{% block content %}
+{#- A plain form: errors and old input come back after a redirect. -#}
+<form id="plain" method="post" action="/plain" novalidate>
+  {{ csrf_field() }}{{ form_errors() }}
+  {{ input("name", "Name", required=true) }}
+  {{ input("email", "Email", type="email", required=true) }}
+  {{ input("password", "Password", type="password") }}
+  {{ button("Save") }}
+</form>
+{% endblock %}

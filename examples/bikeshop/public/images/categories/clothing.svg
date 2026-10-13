@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A cycling jersey">
+<rect width="800" height="600" fill="#eef3e6"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M300 160 l-120 60 l40 100 l60 -20 v260 h240 v-260 l60 20 l40 -100 l-120 -60 q-100 60 -200 0z" fill="#0b6e66" stroke="#1c1917" stroke-width="12"/>
+  <path d="M280 330 h240" stroke="#eef3e6" stroke-width="14"/>
+
+</g>
+</svg>

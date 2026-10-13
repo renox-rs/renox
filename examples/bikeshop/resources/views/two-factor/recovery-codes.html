@@ -1,0 +1,14 @@
+{#- renox-2fa's recovery codes, shown once; replaced by the bike shop for its
+    translations (`plugins.two_factor.*`). -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ t('plugins.two_factor.codes_title') }} · {{ app.name }}</rx-slot>
+{# [explain:two-factor.recovery-codes.template] #}
+<rx-card title="{{ t('plugins.two_factor.codes_title') }}" subtitle="{{ t('plugins.two_factor.codes_lead') }}">
+  <pre class="rx-2fa__codes">{{ text }}</pre>
+  <div class="rx-card__footer">
+    <a class="rx-button rx-button--secondary" href="data:text/plain;charset=utf-8,{{ text | urlencode }}" download="{{ app.name | lower | replace(' ', '-') }}-recovery-codes.txt"><span class="rx-button__label">{{ t('plugins.two_factor.download') }}</span></a>
+    <rx-link-button :href="account" label="{{ t('plugins.two_factor.done') }}" variant="primary"/>
+  </div>
+</rx-card>
+{# [/explain:two-factor.recovery-codes.template] #}
+</rx-page>

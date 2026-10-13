@@ -1,0 +1,10 @@
+{#- The panel's home (renox-admin/dashboard.html), replaced by the bike shop
+    for its translations: how many records each resource the user may see
+    has, each a link to its list. -#}
+<rx-page layout="renox-admin/layout.html">
+<rx-page-header :title="t('admin_panel.dashboard')"/>
+<rx-stats rx-if="cards" :columns="4">
+  <rx-stat rx-for="card in cards" :label="tx(card.label)" :value="card.count | number" :url="card.url"/>
+</rx-stats>
+<rx-empty rx-else :title="t('admin_panel.empty_title')" :message="t('admin_panel.empty_text')" icon="settings"/>
+</rx-page>

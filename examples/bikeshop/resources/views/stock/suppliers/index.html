@@ -1,0 +1,32 @@
+{#- The suppliers (#240): contact, lead time, price list size, open orders. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('stock.suppliers.title') }}">
+  <rx-push stack="head" once="stock-css"><link rel="stylesheet" href="{{ asset('areas/stock.css') }}"></rx-push>
+  <rx-push stack="scripts" once="stock-js"><script src="{{ asset('areas/stock.js') }}" nonce="{{ csp_nonce() }}"></script></rx-push>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('stock.suppliers.title') }}" subtitle="{{ t('stock.suppliers.lead') }}">
+      <rx-link-button route="stock.purchasing" label="{{ t('stock.purchasing.title') }}"/>
+      <rx-wizard-action id="new-supplier" route="stock.suppliers.store" :label="t('stock.suppliers.new')" :title="t('stock.suppliers.new')" :submit-label="t('stock.suppliers.save')" variant="primary" icon="plus">
+        <rx-wizard-step key="contact" :title="t('stock.suppliers.contact')">
+          <rx-form-grid columns="2">
+            <rx-input name="name" label="{{ t('stock.suppliers.name') }}" required span="full"/>
+            <rx-input name="email" label="{{ t('stock.suppliers.email') }}" type="email" hint="{{ t('stock.suppliers.email_hint') }}"/>
+            <rx-input name="phone" label="{{ t('stock.suppliers.phone') }}" type="tel"/>
+          </rx-form-grid>
+        </rx-wizard-step>
+        <rx-wizard-step key="delivery" :title="t('stock.suppliers.lead_days')">
+          <rx-input name="lead_days" label="{{ t('stock.suppliers.lead_days') }}" type="number" value="7" required hint="{{ t('stock.suppliers.lead_hint') }}" min="0" max="180"/>
+        </rx-wizard-step>
+      </rx-wizard-action>
+    </rx-page-header>
+    <rx-table :rows="suppliers" card caption="{{ t('stock.suppliers.title') }}" :key="row.supplier.id">
+      {# [explain:stock.suppliers.template] #}
+      <rx-column label="{{ t('stock.suppliers.name') }}"><a class="rx-link" href="{{ route('stock.suppliers.show', row.supplier.id) }}">{{ row.supplier.name }}</a></rx-column>
+      <rx-column label="{{ t('stock.suppliers.contact') }}">{{ row.supplier.email or "—" }}<template rx-if="row.supplier.phone"><br><span class="rx-subtitle">{{ row.supplier.phone }}</span></template></rx-column>
+      <rx-column label="{{ t('stock.suppliers.lead_days') }}" align="num">{{ row.supplier.lead_days }}</rx-column>
+      <rx-column label="{{ t('stock.suppliers.items') }}" align="num">{{ row.items }}</rx-column>
+      <rx-column label="{{ t('stock.suppliers.open') }}" align="num">{{ row.open }}</rx-column>
+      {# [/explain:stock.suppliers.template] #}
+      <rx-slot name="empty"><div class="rx-card"><rx-empty title="{{ t('stock.suppliers.empty') }}" route="stock.suppliers.create" action-label="{{ t('stock.suppliers.new') }}" icon="building-2"/></div></rx-slot>
+    </rx-table>
+  </rx-stack>
+</rx-page>

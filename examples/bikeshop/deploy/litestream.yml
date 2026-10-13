@@ -1,0 +1,12 @@
+# /etc/litestream.yml — continuous SQLite backups to S3-compatible storage
+# (AWS S3, Cloudflare R2, MinIO). See https://litestream.io
+dbs:
+  - path: /opt/bikeshop/storage/app.db
+    replicas:
+      - type: s3
+        bucket: CHANGE-ME
+        path: bikeshop
+        # For Cloudflare R2 or MinIO, also set the endpoint:
+        # endpoint: https://<account-id>.r2.cloudflarestorage.com
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}

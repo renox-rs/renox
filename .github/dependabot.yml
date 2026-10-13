@@ -1,0 +1,25 @@
+# Dependency updates as pull requests, grouped so they stay few. Breaking upgrades of the
+# crates in Renox's public API (docs/stability.md) need a major release: close those PRs.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: ["dependencies"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    # `dtolnay/rust-toolchain@<version>` picks a Rust version, not an action release: the
+    # MSRV job pins 1.94 on purpose (rust-version in Cargo.toml), and the others use @stable.
+    ignore:
+      - dependency-name: dtolnay/rust-toolchain
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies"]

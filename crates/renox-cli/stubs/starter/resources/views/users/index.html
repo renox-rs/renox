@@ -1,0 +1,20 @@
+<rx-page layout="layouts/app.html" title="{{ t('users.title') }}">
+  <app-page-title icon="users" title="{{ t('users.title') }}" subtitle="{{ t('users.subtitle') }}"/>
+  <app-figures label="{{ t('users.figures.label') }}" :items="[
+    {'value': totals.people | number, 'label': t('users.figures.people'), 'icon': 'users'},
+    {'value': totals.admins | number, 'label': t('users.figures.admins'), 'icon': 'shield-check', 'tone': 'clay'},
+    {'value': totals.verified | number, 'label': t('users.figures.verified'), 'icon': 'circle-check', 'tone': 'sand'},
+  ]"/>
+  <rx-grid :page="users">
+    <template rx-if="column.key == 'roles'">
+      <template rx-for="role in row.roles"><rx-badge :kind="'info' if role == 'admin' else none">{{ role }}</rx-badge> </template>
+      <span rx-if="not row.roles" class="rx-subtitle">{{ t('users.no_role') }}</span>
+    </template>
+    <rx-open-button rx-elif="column.key == 'actions'" id="roles-{{ row.id }}" label="{{ t('users.roles') }}" size="small"/>
+  </rx-grid>
+  {#- A sheet per person to change their roles: a form sent with htmx; errors
+      stay in the sheet, a success refreshes the page. -#}
+  <rx-action-sheet rx-for="member in members" :button="false" id="roles-{{ member.id }}" label="{{ t('users.roles') }}" action="{{ route('users.roles', member.id) }}" method="PUT" title="{{ t('users.roles_of', name=member.name) }}" submit-label="{{ t('users.save') }}">
+    <rx-checkbox-list name="roles" label="{{ t('users.roles') }}" :options="role_names" :selected="member.roles" id="roles-{{ member.id }}-list" hint="{{ t('users.roles_hint') }}"/>
+  </rx-action-sheet>
+</rx-page>

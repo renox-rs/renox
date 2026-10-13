@@ -1,0 +1,20 @@
+[package]
+name = "renox-admin"
+description = "An admin panel generated from a Renox app's models: lists, forms, filters, bulk actions and exports."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "admin", "back-office", "htmx"]
+categories = ["web-programming::http-server"]
+
+[features]
+# Excel exports in every resource's list (renox's `xlsx` feature).
+xlsx = ["renox/xlsx"]
+
+[dependencies]
+renox.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }

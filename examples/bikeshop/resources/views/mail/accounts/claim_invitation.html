@@ -1,0 +1,9 @@
+{#- The invitation a walk-in customer gets (src/app/accounts/claim.rs):
+    `customer`, `link` (signed), `days`. In the language the staff member
+    worked in. -#}
+<rx-mail>
+  <p>{{ t('accounts.claim.mail.hello', name=customer.name) }}</p>
+  <p>{{ t('accounts.claim.mail.text') }}</p>
+  <rx-mail-button :url="link" :label="t('accounts.claim.mail.button')"/>
+  <p>{{ t('accounts.claim.mail.expires', days=days) }}</p>
+</rx-mail>

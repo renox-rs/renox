@@ -1,0 +1,12 @@
+[package]
+name = "bench-renox"
+version = "0.1.0"
+edition.workspace = true
+publish.workspace = true
+
+[dependencies]
+renox = { path = "../../crates/renox" }
+serde = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+tokio = { version = "1.53.1", features = ["rt-multi-thread", "macros"] }

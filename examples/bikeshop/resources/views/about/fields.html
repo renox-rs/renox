@@ -1,0 +1,49 @@
+{#- /about/fields (src/app/about/fields.rs): every HTML input with the Rust type
+    it is read into, the model's type and the column on SQLite and on
+    PostgreSQL (`reference`), the visitor's samples, and the form that tries
+    every row (components/about_fields_form.html). Only the kit. -#}
+<rx-page layout="layouts/app.html" title="{{ t('fields.title') }}" description="{{ t('fields.lead') }}">
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('fields.title') }}" subtitle="{{ t('fields.lead') }}"/>
+
+    <rx-card title="{{ t('fields.reference.title') }}" subtitle="{{ t('fields.reference.lead') }}">
+      {#- `bs-types`: the type names stay whole; on a phone the table scrolls
+          sideways inside its frame, not the page. -#}
+      <div class="bs-types">
+        <rx-table :rows="reference" as="r" caption="{{ t('fields.reference.title') }}">
+          <rx-column label="{{ t('fields.reference.field') }}"><code>{{ r.field }}</code></rx-column>
+          <rx-column label="{{ t('fields.reference.input') }}"><code>{{ r.input }}</code></rx-column>
+          <rx-column label="{{ t('fields.reference.form') }}"><code>{{ r.form }}</code></rx-column>
+          <rx-column label="{{ t('fields.reference.model') }}"><code>{{ r.model }}</code></rx-column>
+          <rx-column label="SQLite"><code>{{ r.sqlite }}</code></rx-column>
+          <rx-column label="PostgreSQL"><code>{{ r.postgres }}</code></rx-column>
+        </rx-table>
+      </div>
+    </rx-card>
+
+    <rx-card rx-if="logged_in" title="{{ t('fields.samples.title') }}" subtitle="{{ t('fields.samples.lead') }}">
+      <rx-table :rows="samples" as="s" caption="{{ t('fields.samples.title') }}">
+        <rx-column label="{{ t('fields.form.name') }}"><a class="rx-link" href="{{ route('about.fields.show', s.id) }}"><strong>{{ s.name }}</strong></a></rx-column>
+        <rx-column label="{{ t('fields.form.price') }}" align="num">{{ s.price | money }}</rx-column>
+        <rx-column label="{{ t('fields.form.size') }}" hide-narrow><rx-badge kind="info">{{ t('fields.size.' ~ s.size) }}</rx-badge></rx-column>
+        <rx-column label="{{ t('fields.form.available') }}" hide-narrow>
+          <rx-badge rx-if="s.available" kind="success">{{ t('fields.yes') }}</rx-badge>
+          <rx-badge rx-else>{{ t('fields.no') }}</rx-badge>
+        </rx-column>
+        <rx-row-actions>
+          <rx-link-button route="about.fields.edit" label="{{ t('fields.edit') }}" variant="plain" size="small" icon="edit"/>
+          <rx-confirm id="delete-{{ s.id }}" route="about.fields.destroy" label="{{ t('fields.delete') }}" title="{{ t('fields.confirm.title', name=s.name) }}" confirm-label="{{ t('fields.delete') }}" size="small" icon="trash">{{ t('fields.confirm.text') }}</rx-confirm>
+        </rx-row-actions>
+        <rx-slot name="empty"><rx-empty title="{{ t('fields.samples.none') }}" message="{{ t('fields.samples.none_text') }}"/></rx-slot>
+      </rx-table>
+    </rx-card>
+
+    <rx-card rx-if="logged_in" title="{{ t('fields.try.title') }}" subtitle="{{ t('fields.try.lead') }}">
+      <app-about-fields-form :brands="brands" :price="price" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>
+    </rx-card>
+    <rx-card rx-else title="{{ t('fields.try.title') }}" subtitle="{{ t('fields.try.lead') }}">
+      <rx-alert kind="info">{{ t('fields.try.login') }}</rx-alert>
+      <p><rx-link-button route="login" label="{{ t('nav.login') }}" variant="primary"/></p>
+    </rx-card>
+  </rx-stack>
+</rx-page>

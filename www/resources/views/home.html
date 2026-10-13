@@ -1,0 +1,209 @@
+{% extends "layouts/app.html" %}
+{#- The landing page. Everything here is in the HTML (search engines and
+    language models read it as it is); public/www.js animates it: the
+    terminal replays, the crates gather, a packet runs the pipeline, the
+    Laravel ↔ Renox pairs become tabs, the bars grow. -#}
+{% block body_class %}home{% endblock %}
+{% block content %}
+<section class="hero" aria-labelledby="hero-title">
+  <canvas id="field" aria-hidden="true"></canvas>
+  <div class="wrap hero__grid">
+    <div>
+      <p class="tag"><b aria-hidden="true">●</b> Open source · MIT / Apache-2.0 · Rust 1.94+</p>
+      <h1 id="hero-title">Laravel's productivity.<br><span class="accent">Rust's guarantees.</span></h1>
+      <p class="lead">Renox is a batteries-included web framework for Rust. Routing, models, migrations, validation, auth, queues, mail, a UI kit and more, behind one dependency, compiled into one binary.</p>
+      <div class="hero__ctas">
+        <a class="btn btn--primary" href="{{ links.docs }}/docs/tutorial">Start the tutorial →</a>
+        <span class="install"><span aria-hidden="true">$</span><code>cargo install renox-cli</code><button type="button" data-copy="cargo install renox-cli">copy</button></span>
+      </div>
+      <ul class="hero__meta" role="list"><li><b>1 crate</b> to depend on</li><li><b>1 binary</b> to deploy</li><li><b>0</b> JavaScript build steps</li></ul>
+    </div>
+    <figure class="stage" aria-label="A new Renox app, made and served from a terminal">
+      <div class="term"><div class="bar" aria-hidden="true"><i></i><i></i><i></i><span>~/code — zsh</span></div>
+<pre id="tty"><span class="p">❯</span> <span class="c" data-cmd>cargo install renox-cli</span>
+<span class="d">  Installed</span> rnx v1.1.0
+<span class="p">❯</span> <span class="c" data-cmd>rnx new shop</span>
+<span class="g">  created</span> Cargo.toml
+<span class="g">  created</span> src/lib.rs
+<span class="g">  created</span> src/app/home/mod.rs
+<span class="g">  created</span> resources/views/layouts/app.html
+<span class="g">  created</span> migrations/
+<span class="g">  created</span> tests/home.rs
+<span class="g">  created</span> AGENTS.md
+<span class="p">❯</span> <span class="c" data-cmd>cd shop &amp;&amp; rnx serve</span>
+<span class="d">  Compiling shop v0.1.0</span>
+<span class="d">  migrated 9 tables</span>
+<span class="a">  ▲ Renox</span> listening on <span class="c">http://127.0.0.1:3000</span></pre></div>
+      <div class="browser" id="browser" aria-hidden="true"><div class="bar"><i></i><i></i><i></i><div class="url">127.0.0.1:3000</div></div>
+        <div class="page"><p class="h">Welcome to Shop</p><p>Your Renox app is running. Log in, register, or start editing <code>src/app</code>.</p><div class="row"><div></div><div></div><div></div></div></div>
+        <span class="ok">200 OK · 0.4 ms</span></div>
+    </figure>
+  </div>
+</section>
+
+<section class="strip" aria-label="Renox in numbers"><div class="wrap strip__in">
+  {%- for m in metrics %}
+  <p class="metric"><b data-count="{{ m.value }}" data-suffix="{{ m.suffix }}">{{ m.value | number }}{{ m.suffix }}</b><span>{{ m.label }}</span></p>
+  {%- endfor %}
+</div></section>
+
+<section class="s light gridlines" id="why" aria-labelledby="why-title"><div class="wrap problem">
+  <div>
+    <p class="tag"><b>001</b> The problem</p>
+    <h2 id="why-title">A Rust web app today is twenty crates <span class="dim">and a week of glue.</span></h2>
+    <p class="sub">Rust gives you speed and a compiler that catches bugs before your users do. But for a web app you pick a router, an ORM, a session store, CSRF protection, a queue, a mailer, templates and migrations, then wire them together and keep them in step. Laravel solved that years ago, without Rust's guarantees. Renox brings that productivity to Rust.</p>
+    <ul class="list" role="list">
+      <li><span class="n" aria-hidden="true">→</span><span><b>One dependency.</b> <code>renox = "1"</code> and <code>use renox::prelude::*</code>: everything else is already there, and already fits.</span></li>
+      <li><span class="n" aria-hidden="true">→</span><span><b>Laravel's ideas, Rust's types.</b> Routes, models, form requests, jobs, mailables and policies: names you know, checked at compile time. <a href="{{ links.docs }}/docs/laravel">Laravel → Renox, concept by concept</a>.</span></li>
+      <li><span class="n" aria-hidden="true">→</span><span><b>Upgrades are a version bump.</b> Apps depend on Renox; framework code is never copied into them.</span></li>
+    </ul>
+  </div>
+  <div class="crates" id="crates">
+    <ul class="crates__list" role="list" aria-label="Crates a Rust web app usually wires by hand">
+      {%- for c in crates %}<li class="crate">{{ c }}</li>{% endfor %}
+    </ul>
+    <p class="one">renox = <em>"1.1"</em><small>all of it, in one crate</small></p>
+  </div>
+</div></section>
+
+<section class="s" id="features" aria-labelledby="features-title"><div class="wrap">
+  <p class="tag"><b>002</b> Batteries included</p>
+  <h2 id="features-title">Everything a real app needs. <span class="dim">Already wired.</span></h2>
+  <p class="sub">Not a starter template: a framework you depend on, tested as one piece on SQLite and PostgreSQL, on Linux, macOS and Windows.</p>
+  <ul class="features" role="list">
+    {%- for f in features %}
+    <li class="f reveal"><span class="n">00{{ loop.index }}</span><span class="ico" aria-hidden="true">{{ f.icon }}</span>
+      <h3>{{ f.title }}</h3><p>{{ f.text }}</p><code>{{ f.code }}</code>
+      <a class="more" href="{{ links.docs }}/docs/{{ f.doc }}">Read the {{ f.title | lower }} guide →</a></li>
+    {%- endfor %}
+  </ul>
+</div></section>
+
+<section class="s" id="pipeline" aria-labelledby="pipeline-title"><div class="wrap">
+  <p class="tag"><b>003</b> Under the hood</p>
+  <h2 id="pipeline-title">Every request goes through a pipeline <span class="dim">you don't have to build.</span></h2>
+  <p class="sub">Security headers, sessions, CSRF, auth and error pages are on from the first line. Hover a layer to see what it does.</p>
+  <div class="pipe" id="pipe">
+    <div class="pipe__track" aria-hidden="true">
+      {%- for l in pipeline %}<div class="node" data-i="{{ loop.index0 }}"><div class="dot">{{ l.short }}</div><span>{{ l.name }}</span></div>{% endfor %}
+      <div class="packet"></div>
+    </div>
+    <ol class="layers">
+      {%- for l in pipeline %}
+      <li class="layer" data-i="{{ loop.index0 }}"><div><h3>{{ l.title }}</h3><p>{{ l.text }}</p></div><pre><code>{{ l.code | safe }}</code></pre></li>
+      {%- endfor %}
+    </ol>
+  </div>
+</div></section>
+
+<section class="s" id="laravel" aria-labelledby="laravel-title"><div class="wrap">
+  <p class="tag"><b>004</b> Coming from Laravel?</p>
+  <h2 id="laravel-title">You already know Renox. <span class="dim">The compiler just checks your work now.</span></h2>
+  <div class="morph" id="morph">
+    <div class="morph__tabs" role="tablist" aria-label="Laravel and Renox, side by side">
+      {%- for p in pairs %}<button type="button" role="tab" id="tab-{{ loop.index }}" aria-controls="pair-{{ loop.index }}" aria-selected="{{ 'true' if loop.first else 'false' }}">{{ p.name }}<span class="prog"></span></button>{% endfor %}
+    </div>
+    <div class="morph__pairs">
+      {%- for p in pairs %}
+      <section class="pair" id="pair-{{ loop.index }}" role="tabpanel" aria-labelledby="tab-{{ loop.index }}">
+        <h3 class="pair__name">{{ p.name }}</h3>
+        <figure class="pane"><figcaption><b>Laravel</b><span>{{ p.laravel_file }}</span></figcaption><pre><code class="language-php">{{ p.laravel | safe }}</code></pre></figure>
+        <figure class="pane"><figcaption><b class="me">Renox</b><span>{{ p.renox_file }}</span></figcaption><pre><code class="language-rust">{{ p.renox | safe }}</code></pre></figure>
+      </section>
+      {%- endfor %}
+    </div>
+  </div>
+  <p class="aside"><a href="{{ links.docs }}/docs/laravel">The whole Laravel → Renox guide</a>, from routes to queues, with what is different and why.</p>
+</div></section>
+
+{%- if bench %}
+<section class="s" id="bench" aria-labelledby="bench-title"><div class="wrap">
+  <p class="tag"><b>005</b> Benchmarks</p>
+  <h2 id="bench-title">All those batteries, <span class="dim">a tenth of Laravel&#39;s latency.</span></h2>
+  <p class="sub">{{ bench.summary }}</p>
+  <div class="bench">
+    {%- for chart in bench.charts %}
+    <figure class="chart"><figcaption><b>{{ chart.title }}</b><span>{{ chart.unit }}</span></figcaption>
+      <table class="bars">
+        <caption class="sr">{{ chart.title }}, {{ chart.unit }}</caption>
+        <tbody>
+        {%- set top = chart.rows | map(attribute="value") | max %}
+        {%- for r in chart.rows %}
+          <tr class="{{ 'me' if r.name == 'Renox' else '' }}"><th scope="row">{{ r.name }}</th><td class="track"><span class="fill" style="--w: {{ (r.value / top * 100) | round(1) }}%"></span></td><td class="v">{{ r.label }}</td></tr>
+        {%- endfor %}
+        </tbody>
+      </table>
+    </figure>
+    {%- endfor %}
+  </div>
+  <p class="note">{{ bench.note }} <a href="{{ links.github }}/tree/main/benchmarks" rel="noopener">How it is measured, and how to run it yourself</a>.</p>
+</div></section>
+{%- endif %}
+
+<section class="s" id="deploy" aria-labelledby="deploy-title"><div class="wrap ship">
+  <div>
+    <p class="tag"><b>006</b> Deploy</p>
+    <h2 id="deploy-title">Your whole app is one file. <span class="dim">Copy it. Run it.</span></h2>
+    <p class="sub">Views, translations, migrations and public files are embedded at build time. The binary is its own CLI too: <code>migrate</code>, <code>queue:work</code>, <code>schedule:work</code>, <code>db:seed</code>. No PHP-FPM, no <code>node_modules</code>, no runtime to keep patched. <a href="{{ links.docs }}/docs/operations">Running Renox in production</a>.</p>
+  </div>
+  <div class="ship__stage" id="ship" aria-hidden="true">
+    <span class="part" style="left:6%;top:9%">resources/views/</span>
+    <span class="part" style="left:9%;top:42%">migrations/</span>
+    <span class="part" style="left:5%;top:75%">public/</span>
+    <span class="part" style="left:32%;top:6%">lang/es.json</span>
+    <span class="part" style="left:34%;top:82%">src/</span>
+    <span class="binary">shop<small>one binary</small></span>
+    <span class="server"><span>server</span><b>/health 200</b></span>
+  </div>
+</div></section>
+
+<section class="s light" id="examples" aria-labelledby="examples-title"><div class="wrap">
+  <p class="tag"><b>007</b> Built with Renox</p>
+  <h2 id="examples-title">Not a hello world. <span class="dim">A whole business.</span></h2>
+  <p class="sub">The bike shop runs three stores that sell, rent and service bikes: checkout, rentals, a workshop, service plans, staff roles per store, reports. Every page explains which Renox feature it uses and why.</p>
+  <div class="show">
+    <a class="shot" href="{{ links.demo }}"><img src="/img/bikeshop.webp" width="1100" height="1289" loading="lazy" alt="The bike shop demo's home page: a hero with a bike photo, popular bikes and the categories"></a>
+    <ul class="ex" role="list">
+      {%- for e in examples %}
+      <li><a href="{{ links.github }}/tree/main/examples/{{ e.name }}" rel="noopener"><b>{{ e.name }}</b><span>{{ e.text }}</span></a></li>
+      {%- endfor %}
+      <li><a href="{{ links.demo }}/about/pages"><b>every page</b><span>which Renox feature each page uses, and why</span></a></li>
+    </ul>
+  </div>
+</div></section>
+
+<section class="s" id="compare" aria-labelledby="compare-title"><div class="wrap">
+  <p class="tag"><b>008</b> How it compares</p>
+  <h2 id="compare-title">The productivity of a full-stack framework, <span class="dim">the footprint of a library.</span></h2>
+  <div class="cmp-wrap"><table class="cmp">
+    <thead><tr><th scope="col"><span class="sr">Feature</span></th><th scope="col" class="me">Renox</th><th scope="col">Laravel</th><th scope="col">Loco</th><th scope="col">Axum + crates</th></tr></thead>
+    <tbody>
+      {%- for c in comparison %}
+      <tr><th scope="row">{{ c.what }}</th>{% for cell in c.cells %}<td class="{{ 'me ' if loop.first else '' }}{{ 'y' if cell == 'yes' else ('n' if cell == 'no' else 'h') }}">{{ cell }}</td>{% endfor %}</tr>
+      {%- endfor %}
+    </tbody>
+  </table></div>
+</div></section>
+
+{%- if posts %}
+<section class="s" id="news" aria-labelledby="news-title"><div class="wrap">
+  <p class="tag"><b>009</b> From the blog</p>
+  <h2 id="news-title">What's new in Renox.</h2>
+  <ul class="posts" role="list">
+    {%- for p in posts %}
+    <li><a href="/blog/{{ p.slug }}"><time datetime="{{ p.date }}">{{ p.date }}</time><b>{{ p.title }}</b><span>{{ p.description }}</span></a></li>
+    {%- endfor %}
+  </ul>
+  <p class="aside"><a href="/blog">All posts</a> · <a href="/blog/feed.xml">Atom feed</a></p>
+</div></section>
+{%- endif %}
+
+<section class="cta" aria-labelledby="cta-title"><div class="glow" aria-hidden="true"></div><div class="wrap">
+  <p class="tag"><b aria-hidden="true">●</b> Three lines</p>
+  <h2 id="cta-title">Start your next app in Rust <span class="dim">without giving up a thing.</span></h2>
+  <pre class="start"><span class="p">$</span> cargo install renox-cli
+<span class="p">$</span> rnx new shop &amp;&amp; cd shop
+<span class="p">$</span> rnx serve</pre>
+  <p class="cta__links"><a class="btn btn--primary" href="{{ links.docs }}/docs/tutorial">Read the tutorial →</a><a class="btn btn--ghost" href="{{ links.github }}" rel="noopener">Star Renox on GitHub</a></p>
+</div></section>
+{% endblock %}

@@ -1,0 +1,6 @@
+target
+dist
+storage
+.env
+.git
+.cargo

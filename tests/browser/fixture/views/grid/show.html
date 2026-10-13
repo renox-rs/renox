@@ -1,0 +1,19 @@
+{% extends "grid/layout.html" %}
+{% from "renox/ui.html" import card, link_button, infolist, entry %}
+
+{% block content %}
+<main class="rx-container" id="main">
+  {% call card(title=order.number, subtitle=order.customer) %}
+    {#- The kit's infolist: labels and values, formatted by kind. -#}
+    {% call infolist(columns=2) %}
+      {{ entry("Status", order.status, badge={"new": "info", "paid": "success", "cancelled": "error"}) }}
+      {{ entry("Total", order.total, format="money") }}
+      {{ entry("Ordered", order.ordered_on, format="date") }}
+      {{ entry("City", order.city) }}
+      {{ entry("Email", order.email, copyable=true) }}
+      {{ entry("Last changed", order.updated_at, format="since", tooltip=order.updated_by) }}
+    {% endcall %}
+  {% endcall %}
+  {{ link_button(route('orders.index'), "Back to orders") }}
+</main>
+{% endblock %}

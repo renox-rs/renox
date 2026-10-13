@@ -1,0 +1,60 @@
+{#- One stock level and its ledger (#240): every movement that made the number, newest first,
+    each linked to the document that caused it; what each store may do with these goods. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.ledger.title', name=label)">
+  <app-stock-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="label" :subtitle="variant.sku" :back="route('stock.index')" :back-label="t('stock.index.title')" :badge="t('stock.ledger.consigned') if consigned else none" badge-kind="info">
+      <rx-action-group rx-if="can_write_off" id="ledger-actions">
+        <rx-menu-open id="write-off" :label="t('stock.ledger.write_off')" icon="trash" danger/>
+      </rx-action-group>
+      <rx-action-sheet rx-if="can_write_off" id="write-off" :label="t('stock.ledger.write_off')" :action="route('stock.write_off', level.id)" :title="t('stock.ledger.write_off')" :description="t('stock.ledger.write_off_lead', owner=owner)" :button="false" danger>
+        <rx-input name="quantity" :label="t('stock.fields.quantity')" type="number" required min="1" :max="level.on_hand"/>
+        <rx-input name="reason" :label="t('stock.fields.reason')" required/>
+      </rx-action-sheet>
+    </rx-page-header>
+    <rx-alert rx-if="consigned" :message="t('stock.ledger.consigned_text', owner=owner, location=location)" kind="info"/>
+    <div class="bs-split">
+      <div>
+        <rx-card :title="t('stock.ledger.movements')">
+          <template rx-if="movements.items">
+          <rx-table :rows="movements.items" as="m" :caption="t('stock.ledger.movements')">
+            <rx-column :label="t('stock.fields.when')">{{ m.created_at | date("%Y-%m-%d %H:%M") }}</rx-column>
+            <rx-column :label="t('stock.fields.reason')">{{ t('stock.reason.' ~ m.reason) }}<template rx-if="m.note"><br><span class="rx-subtitle">{{ m.note }}</span></template></rx-column>
+            <rx-column :label="t('stock.fields.change')" align="num"><rx-let name="change" :value="('+' if m.quantity > 0 else '') ~ m.quantity"/><span rx-if="m.reason in ['reserved', 'released']" class="rx-subtitle">{{ change }}</span><template rx-else>{{ change }}</template></rx-column>
+            <rx-column :label="t('stock.fields.after')" align="num">{{ m.after }}</rx-column>
+            <rx-column :label="t('stock.fields.source')"><a rx-if="m.source" class="rx-link" href="{{ m.source[1] }}">{{ m.source[0] }}</a><template rx-else>—</template></rx-column>
+            <rx-column :label="t('stock.fields.by')">{{ m.by or "—" }}</rx-column>
+          </rx-table>
+          <rx-pagination :page="movements"/>
+          </template>
+          <rx-empty rx-else :title="t('stock.ledger.empty')" icon="history"/>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('stock.ledger.level')">
+          <rx-infolist>
+            <rx-entry :label="t('stock.fields.owner_store')" :value="(owner)" :hint="t('stock.ledger.owner_hint')"/>
+            <rx-entry :label="t('stock.fields.location_store')" :value="location" :hint="t('stock.ledger.location_hint')"/>
+            <rx-entry :label="t('stock.fields.on_hand')" :value="level.on_hand" format="number"/>
+            <rx-entry :label="t('stock.fields.reserved')" :value="level.reserved" format="number"/>
+            <rx-entry :label="t('stock.fields.available')" :value="available" format="number"/>
+            <rx-entry :label="t('stock.fields.reorder_level')" :value="variant.reorder_level" format="number"/>
+            <rx-entry :label="t('stock.fields.cost')" :value="variant.cost" format="money"/>
+            <rx-entry :label="t('stock.fields.value')" :value="value" format="money"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card :title="t('stock.abilities.title')" :subtitle="t('stock.abilities.lead')">
+          <rx-list id="abilities" :label="t('stock.abilities.title')">
+            <li rx-for="a in abilities">
+              <div class="rx-list__main">
+                <strong>{{ t(a.action) }}</strong>
+                <p class="rx-subtitle">{{ t('stock.abilities.checked_in', store=a.store, attribute=t('stock.fields.' ~ a.attribute)) }} · <code>{{ a.permission }}</code></p>
+              </div>
+              <rx-badge :kind="'success' if a.allowed else none">{{ t('stock.abilities.yes') if a.allowed else t('stock.abilities.no') }}</rx-badge>
+            </li>
+          </rx-list>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

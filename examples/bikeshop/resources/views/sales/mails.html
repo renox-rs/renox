@@ -1,0 +1,12 @@
+{#- Every mail the sales area sends, for a made-up order
+    (src/app/sales/mails.rs). Each is shown in a sandboxed frame, as a
+    mail client would. -#}
+<rx-page layout="layouts/app.html" :title="t('sales.mails.title') ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-page-header title="{{ t('sales.mails.title') }}" subtitle="{{ t('sales.mails.lead') }}"/>
+  <div class="bs-mails" data-bs-reveal>
+    <rx-card rx-for="p in previews" :title="t('sales.mails.' ~ p.key)" :subtitle="p.subject">
+      <iframe class="bs-mails__frame" sandbox title="{{ p.subject }}" srcdoc="{{ p.html }}" loading="lazy"></iframe>
+    </rx-card>
+  </div>
+</rx-page>

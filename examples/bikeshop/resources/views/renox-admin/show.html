@@ -1,0 +1,20 @@
+{#- A record's view page (renox-admin/show.html), replaced by the bike shop
+    for its translations: its entries in the kit's infolist, with Edit and
+    Delete (or Restore for a deleted record). -#}
+<rx-page layout="renox-admin/layout.html">
+<rx-slot name="title">{{ title }} · {{ tx(admin.title) }}</rx-slot>
+<rx-let name="label" :value="tx(resource.label) | lower"/>
+<rx-page-header :title="title" :back="resource.index_url" :back-label="tx(resource.plural_label)" :badge="t('admin_panel.deleted') if deleted else none" badge-kind="error">
+  <rx-link-button rx-if="allowed.update" :href="edit_url" :label="t('admin_panel.edit')" variant="primary" icon="edit" key="e"/>
+  <form rx-if="allowed.restore" method="post" action="{{ restore_url }}">{{ csrf_field() }}<rx-button :label="t('admin_panel.restore')" variant="secondary" icon="refresh"/></form>
+  <rx-confirm rx-if="allowed.delete" id="rx-admin-delete" :label="t('admin_panel.delete')" :action="url" :title="t('admin_panel.delete_question', label=label)" :message="t('admin_panel.to_trash') if soft else t('admin_panel.for_good_text')" icon="trash"/>
+  <rx-confirm rx-if="allowed.force_delete" id="rx-admin-force-delete" :label="t('admin_panel.delete_for_good')" :action="force_delete_url" :title="t('admin_panel.delete_for_good_question', label=label)" :message="t('admin_panel.for_good_text')" method="POST" icon="trash"/>
+</rx-page-header>
+<rx-alert rx-if="deleted" :message="t('admin_panel.in_trash', label=label)" kind="warning"/>
+<rx-card>
+  <rx-infolist :columns="2">
+    {#- Money stays in the smallest unit: `format="money"` divides it. -#}
+    <rx-entry rx-for="e in entries" :label="tx(e.label)" :value="record[e.key] if record[e.key] is defined else none" :format="e.format" :badge="true if e.badge else none" :labels="e.labels if e.labels else none" :copyable="e.copyable" :span="e.span"/>
+  </rx-infolist>
+</rx-card>
+</rx-page>

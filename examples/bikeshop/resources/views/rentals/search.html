@@ -1,0 +1,50 @@
+{#- Find a bike (#235): the filters are a GET form that htmx re-sends as they
+    change, swapping only #rent-results (the address follows, so it can be
+    shared); without JavaScript it is a plain form. -#}
+<rx-page layout="layouts/app.html" title="{{ t('rentals.search.title') }}" description="{{ t('rentals.search.lead') }}">
+  <app-rentals-styles/>
+  <div class="bs-rent">
+    <div class="bs-rent__header">
+      <app-hero :title="t('rentals.search.title')" :lead="t('rentals.search.lead')" :eyebrow="t('rentals.search.eyebrow')" photo="/images/site/rent-1.webp" compact>
+      <ul class="bs-perks" role="list">
+        <li><span class="bs-icon-circle"><rx-icon name="store"/></span>{{ t('rentals.search.perks.stores') }}</li>
+        <li><span class="bs-icon-circle"><rx-icon name="clock"/></span>{{ t('rentals.search.perks.hours') }}</li>
+        <li><span class="bs-icon-circle"><rx-icon name="banknote"/></span>{{ t('rentals.search.perks.deposit') }}</li>
+      </ul>
+      </app-hero>
+    </div>
+
+    {# [explain:rentals.create.filters] #}
+    <form class="rx-card bs-rent__filters" method="get" action="{{ route('rentals.create') }}"
+          hx-get="{{ route('rentals.create') }}" hx-trigger="change, submit" hx-target="#rent-results"
+          hx-select="#rent-results" hx-swap="outerHTML" hx-push-url="true" aria-label="{{ t('rentals.search.filters') }}">
+      <rx-select name="store" label="{{ t('rentals.fields.store') }}" :options="store_options" :selected="store_id" required/>
+      <rx-datetime-range name-start="starts_at" name-end="ends_at" label="{{ t('rentals.fields.period') }}" :value-start="starts_at" :value-end="ends_at"
+                         :min="min_day" :max="max_day" :step="60" :opens="8" :closes="20" required/>
+      <rx-select name="category" label="{{ t('rentals.fields.type') }}" :options="type_options" :selected="category or ''"/>
+      <rx-select name="size" label="{{ t('rentals.fields.size') }}" :options="size_options" :selected="size"/>
+      <rx-button variant="secondary" icon="search">{{ t('rentals.search.show') }}</rx-button>
+    </form>
+    {# [/explain:rentals.create.filters] #}
+
+    <section class="bs-rent__results" id="rent-results" aria-live="polite" aria-label="{{ t('rentals.search.results') }}" data-bs-reveal>
+      <rx-alert rx-if="problem" kind="warning" :message="problem"/>
+      <div rx-elif="not offers" class="rx-card"><rx-empty title="{{ t('rentals.search.none_title') }}" message="{{ t('rentals.search.none_text') }}" icon="calendar"/></div>
+      <form rx-else class="rx-card bs-rent__filters" method="post" action="{{ route('rentals.reserve') }}" id="reserve-form">
+        {{ csrf_field() }}
+        <input type="hidden" name="store" value="{{ store_id }}">
+        <input type="hidden" name="starts_at" value="{{ starts_at }}">
+        <input type="hidden" name="ends_at" value="{{ ends_at }}">
+        <rx-form-errors/>
+        <rx-radio name="bike" label="{{ t('rentals.search.pick', count=offers | length) }}" :options="bike_options" :selected="old('bike', offers[0].id)" required/>
+        <p class="rx-hint">{{ t('rentals.search.rule', grace=15) }}</p>
+        <rx-button rx-if="signed_in" icon="check">{{ t('rentals.search.reserve') }}</rx-button>
+        <rx-link-button rx-else route="login" label="{{ t('rentals.search.login') }}" variant="primary" icon="log-in"/>
+      </form>
+      <div rx-if="timeline.rows" class="rx-card">
+        <h2 class="rx-card__title">{{ t('rentals.search.day') }}</h2>
+        <rx-availability :columns="timeline.columns" :rows="timeline.rows" label="{{ t('rentals.search.day') }}" corner="{{ t('rentals.fields.bike') }}" id="rent-day"/>
+      </div>
+    </section>
+  </div>
+</rx-page>

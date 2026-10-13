@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A bike bag">
+<rect width="800" height="600" fill="#f1ebf3"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <rect x="240" y="220" width="320" height="260" rx="40" fill="#0b6e66" stroke="#1c1917" stroke-width="12"/>
+  <path d="M320 220 v-40 h160 v40 M240 300 h320" stroke="#1c1917" stroke-width="12"/>
+  <rect x="370" y="280" width="60" height="40" rx="8" fill="#f1ebf3" stroke="#1c1917" stroke-width="8"/>
+
+</g>
+</svg>

@@ -1,0 +1,9 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import period_filter %}
+{% block content %}
+{{ period_filter("7d") }}
+<div id="line">{{ chart("line", labels=["Mon", "Tue", "Wed", "Thu"], values=[1, 5, 3, 8], title="Visits") }}</div>
+<div id="bar">{{ chart("bar", labels=["Coffee", "Tea"], values=[4, 2], title="Cups") }}</div>
+<div id="scatter">{{ chart("scatter", points=[{"x": 1, "y": 2, "label": "Small"}, {"x": 9, "y": 9, "label": "Large"}], title="Orders") }}</div>
+<div id="bubble">{{ chart("bubble", points=[{"x": 2, "y": 3, "size": 4, "label": "Few"}, {"x": 8, "y": 7, "size": 40, "label": "Many"}], title="Sales") }}</div>
+{% endblock %}

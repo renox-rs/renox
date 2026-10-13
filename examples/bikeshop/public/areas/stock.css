@@ -1,0 +1,48 @@
+/* The stock, consignment and purchasing pages (#240) and the multi-store pages (#245):
+   CSS grids spaced with the kit's tokens (--rx-space-*), type from the kit's scale
+   (--rx-type-*); no sizes of our own. Loaded by those pages only (stock/_parts.html). */
+
+/* Two columns on wide screens: the main column and a side column. */
+.bs-split { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-split { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+.bs-split > * { display: grid; gap: var(--rx-space-4); min-width: 0; }
+
+/* A status stepper: one cell per step, a bar on top; done steps take the accent,
+   the current one is bold. Steps are an ordered list, read in order. */
+.bs-flow { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-flow li { display: grid; gap: var(--rx-space-1); font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-flow li::before { content: ""; height: var(--rx-space-1); border-radius: var(--rx-radius-s); background: var(--rx-fill-strong); transform-origin: left; }
+.bs-flow li[data-done]::before { background: var(--rx-accent); }
+.bs-flow li[data-done] { color: var(--rx-label); }
+.bs-flow li[aria-current] { font-weight: 600; }
+@media (max-width: 40rem) { .bs-flow { grid-auto-flow: row; grid-auto-columns: auto; } }
+
+/* Rows of a form laid out as a table: a name, figures, then an input. Each row is a grid with
+   the same columns, so they line up without a <table> (each row stays a group for the form).
+   `bs-rows--3` has one more figure column. On phones the extra figures hide. */
+.bs-rows { display: grid; gap: var(--rx-space-1); margin: 0; padding: 0; list-style: none; }
+.bs-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, max-content) 8rem; gap: var(--rx-space-3); align-items: center; padding: var(--rx-space-2) 0; border-bottom: 1px solid var(--rx-separator); }
+.bs-rows--3 .bs-row { grid-template-columns: minmax(0, 1fr) repeat(2, minmax(4rem, max-content)) 8rem; }
+.bs-row--head { font: var(--rx-type-note); color: var(--rx-secondary-label); border-bottom-width: 2px; }
+.bs-row__figure { font-variant-numeric: tabular-nums; text-align: right; }
+.bs-row__name { overflow-wrap: anywhere; }
+.bs-row__name small { display: block; font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-row .rx-field { margin: 0; }
+.bs-row input { width: 100%; }
+@media (max-width: 40rem) {
+  .bs-row, .bs-rows--3 .bs-row { grid-template-columns: minmax(0, 1fr) minmax(2.5rem, max-content) 5.5rem; }
+  .bs-rows--inputs .bs-row { grid-template-columns: minmax(0, 1fr) 5.5rem 5.5rem; }
+  .bs-row--head { display: none; }
+  .bs-row__figure--extra { display: none; }
+}
+
+/* A filter bar above a list: fields side by side, wrapping. */
+.bs-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, max-content)); align-items: end; gap: var(--rx-space-3); }
+
+/* Figures in a row of cards (balances, totals). */
+.bs-figures { display: grid; gap: var(--rx-space-4); grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+
+/* The supplier's printable order. */
+.bs-print { display: grid; gap: var(--rx-space-6); max-width: 60rem; margin: 0 auto; padding: var(--rx-space-6); }
+.bs-print__head { display: grid; grid-template-columns: 1fr auto; gap: var(--rx-space-4); align-items: start; }
+@media print { .bs-print__tools { display: none; } }

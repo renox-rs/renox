@@ -1,0 +1,42 @@
+/* The rental pages' layout (#235): CSS grids spaced with the kit's
+   tokens (--rx-space-*), type from the kit's scale (--rx-type-*); no sizes of our own.
+   Loaded by those pages only, through the layout's `head` stack. */
+
+/* /rent: the filters beside the results on a wide screen, above them on a phone. */
+.bs-rent { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-rent { grid-template-columns: minmax(18rem, 24rem) minmax(0, 1fr); } }
+.bs-rent__header { grid-column: 1 / -1; }
+.bs-rent__filters { display: grid; gap: var(--rx-space-4); }
+.bs-rent__results { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-rent__total { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: var(--rx-space-2); font: var(--rx-type-body); }
+.bs-rent__total strong { font: var(--rx-type-heading); }
+
+/* A rental in a list: the bike and its status on top, then the code, the
+   customer and the period, each on a line of its own, so three narrow
+   columns on the counter (beside the docked "About this page") never
+   squeeze a reservation code against a name. */
+.bs-rental { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: var(--rx-space-1) var(--rx-space-3); width: 100%; }
+.bs-rental__title { font: var(--rx-type-label); }
+.bs-rental__side { grid-column: 2; grid-row: 1; display: grid; justify-items: end; gap: var(--rx-space-1); }
+.bs-rental__code, .bs-rental__who, .bs-rental__meta { grid-column: 1 / -1; margin: 0; min-width: 0; }
+/* A ULID, 26 letters: small, monospaced, breaking anywhere if it must. */
+.bs-rental__code { font: 500 0.6875rem/1.4 var(--rx-mono); color: var(--rx-secondary-label); overflow-wrap: anywhere; }
+.bs-rental__who { display: flex; align-items: center; gap: var(--rx-space-2); margin-top: var(--rx-space-1); font: var(--rx-type-body); color: var(--rx-label); }
+.bs-rental__who > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-rental__meta { display: flex; flex-wrap: wrap; gap: var(--rx-space-1) var(--rx-space-3); font: var(--rx-type-note); color: var(--rx-secondary-label); }
+
+/* The counter's three columns sit closer than the kit's default, so each
+   keeps room for a card; their headings: an icon, the name, the count. */
+.bs-counter .rx-columns { gap: var(--rx-space-4); }
+.bs-counter .rx-empty { padding-block: var(--rx-space-5); }
+.bs-counter-heading { display: flex; align-items: center; gap: var(--rx-space-2); }
+
+/* The counter's desk: the rental's facts beside the form. */
+.bs-desk { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-desk { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+.bs-desk__side, .bs-desk__main { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-figures { display: grid; grid-template-columns: 1fr auto; gap: var(--rx-space-2) var(--rx-space-4); margin: 0; font: var(--rx-type-body); }
+.bs-figures dt { color: var(--rx-secondary-label); }
+.bs-figures dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.bs-figures .bs-figures__total { font: var(--rx-type-label); color: var(--rx-label); }
+.bs-photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(6rem, 1fr)); gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }

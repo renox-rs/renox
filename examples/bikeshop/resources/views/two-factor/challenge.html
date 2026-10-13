@@ -1,0 +1,14 @@
+{#- renox-2fa's code page after the password, replaced by the bike shop so its
+    texts come from resources/lang/<locale>.json (`plugins.two_factor.*`):
+    the plugin's own view is English only. Same form, same route. -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ t('plugins.two_factor.title') }} · {{ app.name }}</rx-slot>
+{# [explain:two-factor.challenge.template] #}
+<rx-form :action="route('two-factor.verify')" hx-post="{{ route('two-factor.verify') }}">
+  <rx-card title="{{ t('plugins.two_factor.title') }}" subtitle="{{ t('plugins.two_factor.challenge_lead', app=app.name) }}">
+    <rx-input name="code" :label="t('plugins.two_factor.code')" required autocomplete="one-time-code" :hint="t('plugins.two_factor.challenge_hint')" autofocus spellcheck="false"/>
+    <rx-button label="{{ t('plugins.two_factor.log_in') }}" block/>
+  </rx-card>
+</rx-form>
+{# [/explain:two-factor.challenge.template] #}
+</rx-page>

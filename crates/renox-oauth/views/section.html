@@ -1,0 +1,32 @@
+{#- renox-oauth: its card on the account page (`section.data`: providers
+    (name, label, link_url, linked, email, since), has_password, can_unlink,
+    set_password_url). Replace it with resources/views/oauth/section.html. -#}
+{% from "renox/ui.html" import card, list, link_button, confirm, badge %}
+{% if section.data.providers %}
+{% call card(title="Linked accounts", subtitle="Log in with these instead of typing your password.") %}
+  {% call list(label="Linked accounts") %}
+    {%- for provider in section.data.providers %}
+    <li id="oauth-{{ provider.name }}">
+      <span class="rx-list__main">
+        <strong>{{ provider.label }}</strong>
+        {%- if provider.linked %}
+        <span class="rx-subtitle">{{ provider.email or "Linked" }}{% if provider.since %} · since {{ provider.since | date }}{% endif %}</span>
+        {%- endif %}
+      </span>
+      {%- if provider.linked %}
+        {%- if section.data.can_unlink %}
+        {{ confirm("oauth-unlink-" ~ provider.name, "Unlink", route('oauth.unlink', provider.name), "Unlink " ~ provider.label ~ "?", "You won't be able to log in with " ~ provider.label ~ " until you link it again.", confirm_label="Unlink") }}
+        {%- else %}
+        {{ badge("Your only login") }}
+        {%- endif %}
+      {%- elif provider.link_url %}
+      {{ link_button(provider.link_url, "Link", attrs={"hx-boost": "false"}) }}
+      {%- endif %}
+    </li>
+    {%- endfor %}
+  {% endcall %}
+  {%- if not section.data.has_password %}
+  <p class="rx-subtitle">You don't have a password: you log in with a linked account.{% if section.data.set_password_url %} To have one too, <a class="rx-link" href="{{ section.data.set_password_url }}">set a password</a> (we email you a link).{% endif %}</p>
+  {%- endif %}
+{% endcall %}
+{% endif %}

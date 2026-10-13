@@ -1,0 +1,11 @@
+{#- The form for a new token: a name and its abilities (`abilities`: the
+    checkbox list's options, `[value, label, hint]`, from src/app/api/tokens.rs). -#}
+<rx-props action abilities name-hint>
+{# [explain:api.tokens.template] #}
+<rx-form :action="action" class="bs-token-form" novalidate>
+  <rx-form-errors/>
+  <rx-input name="name" label="{{ t('api.tokens.name') }}" required :hint="name_hint"/>
+  <rx-checkbox-list name="abilities" label="{{ t('api.tokens.abilities') }}" :options="abilities" required/>
+  <rx-button label="{{ t('api.tokens.make') }}" icon="plus"/>
+</rx-form>
+{# [/explain:api.tokens.template] #}

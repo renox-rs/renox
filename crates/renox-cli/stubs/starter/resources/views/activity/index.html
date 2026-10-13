@@ -1,0 +1,6 @@
+<rx-page layout="layouts/app.html" title="{{ t('activity.title') }}">
+  <app-page-title icon="history" title="{{ t('activity.title') }}" subtitle="{{ t('activity.subtitle') }}"/>
+  <rx-grid rx-if="recorded" :page="activity"/>
+  {#- Nothing recorded at all yet: the pattern's empty state rather than an empty grid. -#}
+  <div rx-else class="app-panel"><app-empty-state icon="history" :title="t('activity.empty')" :text="t('activity.empty_text')"/></div>
+</rx-page>

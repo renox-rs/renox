@@ -1,0 +1,120 @@
+/* The sales pages' layouts (#234): the cart, the checkout, the payment
+   page, the order pages and invoice, the staff's orders and the counter.
+   CSS grid for every arrangement; type, colours, radii and spacing are the
+   kit's tokens (--rx-*). `bs-` like the blocks; nothing styles bare elements. */
+
+/* ---------- the cart: lines | summary ---------- */
+
+.bs-cart { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 20rem); gap: var(--rx-space-5); align-items: start; }
+.bs-cart > .rx-alert, .bs-cart > .rx-card:only-child { grid-column: 1 / -1; }
+.bs-cart__list { display: grid; margin: 0; padding: 0; list-style: none; }
+.bs-cart__line {
+  display: grid; grid-template-columns: 48px minmax(0, 1fr) minmax(7.5rem, 9rem) minmax(6rem, auto) auto;
+  gap: var(--rx-space-3); align-items: center; padding-block: var(--rx-space-3);
+  border-bottom: 0.5px solid var(--rx-separator);
+}
+.bs-cart__line:last-child { border-bottom: 0; }
+.bs-cart__what { display: grid; gap: var(--rx-space-1); min-width: 0; }
+.bs-cart__what > p { margin: 0; }
+.bs-cart__name { font: var(--rx-type-label); }
+.bs-cart__lowered { color: var(--rx-warning); }
+.bs-cart__qty { display: grid; }
+.bs-cart__total { margin: 0; text-align: end; font: var(--rx-type-label); }
+.bs-cart__summary { display: grid; gap: var(--rx-space-3); position: sticky; top: var(--rx-space-4); }
+.bs-cart__summary > p { margin: 0; }
+
+/* Totals: label | amount rows, the last one stronger. */
+.bs-totals { display: grid; gap: var(--rx-space-2); margin: 0; }
+.bs-totals > div { display: grid; grid-template-columns: 1fr auto; gap: var(--rx-space-3); }
+.bs-totals dt { color: var(--rx-secondary-label); }
+.bs-totals dd { margin: 0; text-align: end; }
+.bs-totals__total { padding-top: var(--rx-space-2); border-top: 0.5px solid var(--rx-separator); font: var(--rx-type-heading); }
+.bs-totals__total dt { color: var(--rx-label); }
+
+/* A list of label | value rows. */
+.bs-plain-list { display: grid; gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-plain-list > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rx-space-3); }
+
+@media (max-width: 52rem) {
+  .bs-cart { grid-template-columns: minmax(0, 1fr); }
+  .bs-cart__summary { position: static; }
+  .bs-cart__line { grid-template-columns: 48px minmax(0, 1fr) auto; grid-template-areas: "photo what remove" "photo qty total"; }
+  .bs-cart__line > :nth-child(1) { grid-area: photo; align-self: start; }
+  .bs-cart__line > .bs-cart__what { grid-area: what; }
+  .bs-cart__line > .bs-cart__qty { grid-area: qty; justify-self: start; }
+  .bs-cart__line > .bs-cart__total { grid-area: total; }
+  .bs-cart__line > form:last-child { grid-area: remove; }
+}
+
+/* ---------- the checkout: wizard | summary ---------- */
+
+.bs-checkout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: var(--rx-space-5); align-items: start; }
+.bs-checkout__form { min-width: 0; }
+.bs-checkout__where { display: grid; gap: var(--rx-space-4); }
+.bs-checkout__summary { display: grid; gap: var(--rx-space-3); position: sticky; top: var(--rx-space-4); }
+.bs-checkout__summary > p, .bs-checkout__summary > h2 { margin: 0; }
+.bs-checkout__lines { display: grid; gap: var(--rx-space-2); margin: 0 0 var(--rx-space-4); padding: 0; list-style: none; }
+.bs-checkout__lines > li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rx-space-3); }
+@media (max-width: 52rem) {
+  .bs-checkout { grid-template-columns: minmax(0, 1fr); }
+  .bs-checkout__summary { position: static; }
+}
+
+/* ---------- the payment page and the demo gateway ---------- */
+
+.bs-pay { display: grid; justify-items: center; gap: var(--rx-space-3); text-align: center; padding-block: var(--rx-space-6); }
+.bs-pay > p, .bs-pay > h2 { margin: 0; }
+.bs-pay .rx-infolist, .bs-pay .rx-alert { justify-self: stretch; text-align: start; }
+.bs-pay__icon { display: grid; place-items: center; }
+.bs-pay__icon--paid { color: var(--rx-success); }
+.bs-pay__icon--failed { color: var(--rx-danger); }
+.bs-pay__icon--waiting { color: var(--rx-accent); }
+.bs-pay__icon--waiting svg { animation: bs-spin 1s linear infinite; }
+.bs-pay__actions { display: grid; grid-auto-flow: column; gap: var(--rx-space-2); justify-content: center; }
+@keyframes bs-spin { to { transform: rotate(360deg); } }
+.bs-demo-gateway { display: grid; gap: var(--rx-space-4); max-width: 32rem; margin-inline: auto; }
+.bs-demo-gateway__form { margin-top: var(--rx-space-4); }
+
+/* ---------- an order: main | side ---------- */
+
+.bs-order { display: grid; grid-template-columns: minmax(0, 1fr) minmax(16rem, 22rem); gap: var(--rx-space-5); align-items: start; }
+.bs-order__main, .bs-order__side { display: grid; gap: var(--rx-space-4); min-width: 0; }
+@media (max-width: 52rem) { .bs-order { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- the invoice, printable ---------- */
+
+.bs-print-actions { display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-2); }
+.bs-invoice { display: grid; gap: var(--rx-space-4); }
+.bs-invoice__head { display: grid; grid-template-columns: 1fr auto; gap: var(--rx-space-4); align-items: start; }
+.bs-invoice__head p, .bs-invoice__head h1 { margin: 0; }
+.bs-invoice__meta { display: grid; justify-items: end; gap: var(--rx-space-1); }
+.bs-invoice__shop { font: var(--rx-type-heading); }
+/* [explain:orders.invoice.print] */
+@media print {
+  .rx-navbar, .bs-footer, .bs-print-actions, .rx-toasts, .rx-skip, [data-rx-open="about-page"] { display: none !important; }
+  .bs-public { display: block; }
+  .bs-invoice { box-shadow: none; border: 0; }
+  .rx-container { max-width: none; padding: 0; }
+}
+/* [/explain:orders.invoice.print] */
+
+/* ---------- the counter: find + sale | customer + pay ---------- */
+
+.bs-counter { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: var(--rx-space-5); align-items: start; }
+.bs-counter__left, .bs-counter__right { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-counter__find { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7.5rem, 9rem) auto; gap: var(--rx-space-3); align-items: end; }
+.bs-counter__pay { display: grid; gap: var(--rx-space-3); margin-top: var(--rx-space-3); }
+.bs-cart__line--counter { grid-template-columns: 48px minmax(0, 1fr) minmax(7.5rem, 9rem) minmax(6rem, auto) auto; }
+@media (max-width: 64rem) {
+  .bs-counter { grid-template-columns: minmax(0, 1fr); }
+  .bs-counter__find { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bs-pay__icon--waiting svg { animation: none; }
+}
+
+/* ---------- the mails, previewed ---------- */
+
+.bs-mails { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(26rem, 100%), 1fr)); gap: var(--rx-space-4); }
+.bs-mails__frame { display: block; width: 100%; height: 34rem; border: var(--rx-surface-border); border-radius: var(--rx-radius-s); background: #fff; }

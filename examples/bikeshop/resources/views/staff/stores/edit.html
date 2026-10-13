@@ -1,0 +1,38 @@
+{#- `staff.stores.edit`: one store's form (src/app/staff/stores.rs). The
+    opening hours are the kit's `repeater`, a row per day (day, opens,
+    closes) laid out on a CSS grid; the fee rate shows only with
+    `settings.fees` in this store. -#}
+<rx-page layout="layouts/staff.html" :title="store.name">
+  <app-staff-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="store.name" :subtitle="t('staff.stores.edit_lead')" :back="route('staff.stores.index')" :back-label="t('staff.stores.title')"/>
+    <rx-form method="PUT" action="{{ route('staff.stores.update', store.id) }}" class="rx-stack" id="store-form" live>
+      <rx-form-errors/>
+      <rx-card :title="t('staff.stores.details')">
+        <rx-form-grid columns="2">
+          <rx-input name="name" :label="t('staff.stores.name')" :value="store.name" required/>
+          <rx-input name="phone" :label="t('staff.stores.phone')" type="tel" :value="store.phone" required/>
+          <rx-input name="email" :label="t('staff.stores.email')" type="email" :value="store.email" required span="full"/>
+          <rx-input name="line1" :label="t('accounts.contact.line1')" :value="address.line1" required span="full"/>
+          <rx-input name="line2" :label="t('accounts.contact.line2')" :value="address.line2"/>
+          <rx-input name="postal_code" :label="t('accounts.contact.postal_code')" :value="address.postal_code"/>
+          <rx-input name="workshop_minutes_per_day" :label="t('staff.stores.workshop')" type="number" :value="store.workshop_minutes_per_day" required min="0" max="1440" :suffix="t('staff.stores.minutes_unit')" :hint="t('staff.stores.workshop_hint')"/>
+          <rx-input rx-if="can_fees" name="fee_percent" :label="t('staff.stores.fee')" type="number" :value="fee_percent" min="0" max="100" step="0.01" suffix="%" :hint="t('staff.stores.fee_hint')"/>
+        </rx-form-grid>
+      </rx-card>
+      {# [explain:staff.stores.edit.template] #}
+      <rx-card :title="t('staff.stores.hours')" :subtitle="t('staff.stores.hours_lead')">
+        <rx-let name="days" :value="[['mon', t('staff.stores.days.mon')], ['tue', t('staff.stores.days.tue')], ['wed', t('staff.stores.days.wed')], ['thu', t('staff.stores.days.thu')], ['fri', t('staff.stores.days.fri')], ['sat', t('staff.stores.days.sat')], ['sun', t('staff.stores.days.sun')]]"/>
+        <rx-repeater name="hours" :label="t('staff.stores.hours')" :rows="hours" :item-label="t('staff.stores.day')" :add-label="t('staff.stores.add_day')" max="7">
+          <div class="bs-hours">
+            <rx-select name="{{ prefix }}[day]" :label="t('staff.stores.day')" :options="days" :selected="row.day" required/>
+            <rx-input name="{{ prefix }}[opens]" :label="t('staff.stores.opens')" type="time" :value="row.opens" required/>
+            <rx-input name="{{ prefix }}[closes]" :label="t('staff.stores.closes')" type="time" :value="row.closes" required/>
+          </div>
+        </rx-repeater>
+      </rx-card>
+      {# [/explain:staff.stores.edit.template] #}
+      <rx-row><rx-button>{{ t('accounts.save') }}</rx-button> <rx-link-button :href="route('staff.stores.index')" variant="plain">{{ t('staff.cancel') }}</rx-link-button></rx-row>
+    </rx-form>
+  </rx-stack>
+</rx-page>

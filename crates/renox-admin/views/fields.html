@@ -1,0 +1,22 @@
+{#- One field of a resource's form (renox-admin/fields.html), drawn with the
+    UI kit's macro for its kind. `f` is a field as the panel serializes it:
+    name, label, kind, value, options, required, hint, placeholder, prefix,
+    suffix, span, rows, attrs, searchable, autocomplete, locked. -#}
+{% from "renox/ui.html" import input, textarea, select, checkbox, date_picker %}
+
+{% macro field(f, currency=none) -%}
+{%- set types = {"email": "email", "password": "password", "url": "url", "tel": "tel", "number": "number", "money": "number", "date_time": "datetime-local"} %}
+{%- if f.kind == "textarea" %}
+{{ textarea(f.name, f.label, value=f.value, rows=f.rows, hint=f.hint, required=f.required, placeholder=f.placeholder, readonly=f.locked, span=f.span) }}
+{%- elif f.kind in ["select", "belongs_to"] %}
+{{ select(f.name, f.label, f.options, selected=f.value, hint=f.hint, required=f.required, placeholder=(f.placeholder or "Select…"), searchable=f.searchable, disabled=f.locked, span=f.span) }}
+{%- if f.locked %}<input type="hidden" name="{{ f.name }}" value="{{ f.value if f.value is not none else '' }}">{% endif %}
+{%- elif f.kind in ["checkbox", "toggle"] %}
+{{ checkbox(f.name, f.label, checked=(f.value is true), hint=f.hint, switch=(f.kind == "toggle"), disabled=f.locked, span=f.span) }}
+{%- if f.locked and f.value is true %}<input type="hidden" name="{{ f.name }}" value="on">{% endif %}
+{%- elif f.kind == "date" %}
+{{ date_picker(f.name, f.label, value=f.value, min=f.attrs.min, max=f.attrs.max, hint=f.hint, required=f.required, readonly=f.locked, span=f.span) }}
+{%- else %}
+{{ input(f.name, f.label, type=types[f.kind] if types[f.kind] is defined else "text", value=f.value, hint=f.hint, required=f.required, autocomplete=f.autocomplete, placeholder=f.placeholder, attrs=f.attrs, prefix=(f.prefix or (currency if f.kind == "money" else none)), suffix=f.suffix, readonly=f.locked, span=f.span, revealable=(f.kind == "password")) }}
+{%- endif %}
+{%- endmacro %}

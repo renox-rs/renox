@@ -1,0 +1,17 @@
+{#- The fleet board (#235): renox::grid with poll(30) and cards on phones; the
+    tabs narrow it by owner and location (#245). -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.fleet.title') }}">
+  <rx-stack>
+    <rx-page-header title="{{ t('rentals.fleet.title') }}" subtitle="{{ t('rentals.fleet.lead') }}"/>
+    <rx-link-tabs :items="tab_items" :current="current_tab" label="{{ t('rentals.fleet.views') }}"/>
+    {# [explain:rentals.fleet.template] #}
+    <rx-grid :page="fleet">
+      <template rx-if="column.key == 'model'">{{ row.model }}<template rx-if="row.size"> <span class="rx-subtitle">{{ row.size }}</span></template></template>
+      <template rx-elif="column.key == 'service'">
+        <span rx-if="row.service_due" class="rx-badge rx-badge--warning">{{ t('rentals.fleet.service_due') }}</span>
+        <template rx-else>{{ t('rentals.fleet.hours_left', hours=row.hours_to_service) }}</template>
+      </template>
+    </rx-grid>
+    {# [/explain:rentals.fleet.template] #}
+  </rx-stack>
+</rx-page>

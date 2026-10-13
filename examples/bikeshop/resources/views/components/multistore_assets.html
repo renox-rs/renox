@@ -1,0 +1,6 @@
+{#- The multi-store pages' stylesheet and script (the stock pages' own,
+    areas/stock.*), once, through the layout's head and scripts stacks:
+    `<app-multistore-assets/>`. -#}
+<rx-props>
+<rx-push stack="head" once="stock-css"><link rel="stylesheet" href="{{ asset('areas/stock.css') }}"></rx-push>
+<rx-push stack="scripts" once="stock-js"><rx-script :src="asset('areas/stock.js')"></rx-script></rx-push>

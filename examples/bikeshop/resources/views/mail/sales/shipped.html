@@ -1,0 +1,7 @@
+{#- Sent when a delivery leaves the store. -#}
+<rx-mail subject="{{ t('sales.mail.shipped.subject', number=order.number) }}">
+  <p>{{ t('sales.mail.hello', name=name) }}</p>
+  <rx-mail-panel>{{ t('sales.mail.shipped.text', address=order.address) }}</rx-mail-panel>
+  <rx-mail-table :rows="table.rows" :head="table.head" :total="table.total"/>
+  <rx-mail-button :url="url" :label="t('sales.mail.view_order')"/>
+</rx-mail>

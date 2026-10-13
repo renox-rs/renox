@@ -1,0 +1,32 @@
+{#- renox-oauth's provider buttons on Renox's login, register and
+    confirm-password pages (`page`: "login", "register" or "confirm";
+    `oauth_providers`: name, label, url), replaced by the bike shop for its
+    translations (`plugins.oauth.*`); on the login page of a seeded demo it
+    also lists the demo accounts (`demo_logins`, src/app/accounts/demo_logins.rs):
+    a tap fills the form (public/app.js), and without JavaScript the email
+    and the password are there to type. -#}
+{# [explain:accounts.oauth_buttons] #}
+<rx-let name="providers" :value="oauth_providers | default([])"/>
+<div rx-if="providers" class="rx-stack rx-oauth">
+  <p class="rx-auth__alt">{{ t('plugins.oauth.confirm_with') if page == "confirm" else t('plugins.oauth.continue_with') }}</p>
+  <a rx-for="provider in providers" class="rx-button rx-button--secondary rx-button--block" href="{{ provider.url }}" hx-boost="false" data-oauth-provider="{{ provider.name }}"><span class="rx-button__label">{{ provider.label }}</span></a>
+</div>
+{# [/explain:accounts.oauth_buttons] #}
+{# [explain:login.demo.template] #}
+<rx-let name="demo" :value="demo_logins | default(none)"/>
+<rx-let name="signs" :value="{'shopper': 'shopping-bag', 'shop_owner': 'shield-check', 'store_manager': 'store', 'till': 'scan-barcode', 'workshop': 'wrench', 'two_stores': 'handshake'}"/>
+<section rx-if="page == 'login' and demo" class="bs-demo-logins" aria-labelledby="demo-logins-title">
+  <h2 class="bs-demo-logins__title" id="demo-logins-title">{{ t('accounts.demo.title') }}</h2>
+  <p class="bs-demo-logins__lead">{{ t('accounts.demo.lead') }} <code>{{ demo.password }}</code></p>
+  <ul class="bs-demo-logins__list" role="list">
+    <li rx-for="account in demo.accounts">
+      <button class="bs-demo-logins__account" type="button" data-bs-demo-email="{{ account.email }}" data-bs-demo-password="{{ demo.password }}">
+        <span class="bs-icon-circle bs-icon-circle--small"><rx-icon :name="signs[account.who] or 'user'" :size="18"/></span>
+        <span class="bs-demo-logins__role">{{ t('accounts.demo.who.' ~ account.who) }}</span>
+        <span class="bs-demo-logins__email">{{ account.email }}</span>
+      </button>
+    </li>
+  </ul>
+  <p rx-if="demo.staff_2fa" class="bs-demo-logins__note">{{ t('accounts.demo.two_factor') }}</p>
+</section>
+{# [/explain:login.demo.template] #}

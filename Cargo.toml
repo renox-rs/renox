@@ -1,0 +1,42 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "examples/*", "site", "www", "learn", "tests/browser/fixture", "tests/chaos"]
+# The course app of learn.renox.rs is its own workspace, one app per stage (#525).
+exclude = ["learn/course"]
+
+[workspace.package]
+version = "1.1.0"
+edition = "2024"
+# The oldest Rust that builds Renox (sqlx 0.9 needs 1.94); checked in CI.
+rust-version = "1.94"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/renox-rs/renox"
+homepage = "https://renox.rs"
+keywords = ["web", "framework", "htmx", "sqlite", "postgres"]
+categories = ["web-programming::http-server"]
+
+[workspace.dependencies]
+# Released together, in lockstep: the macros write code against renox-core's
+# items of the same release, so each crate pins the others exactly (`=`).
+renox = { path = "crates/renox", version = "=1.1.0" }
+renox-core = { path = "crates/renox-core", version = "=1.1.0", default-features = false }
+renox-macros = { path = "crates/renox-macros", version = "=1.1.0" }
+# The plugin crates, released with renox at the same version.
+renox-2fa = { path = "crates/renox-2fa", version = "=1.1.0" }
+renox-editors = { path = "crates/renox-editors", version = "=1.1.0" }
+renox-blocks = { path = "crates/renox-blocks", version = "=1.1.0" }
+renox-admin = { path = "crates/renox-admin", version = "=1.1.0" }
+renox-oauth = { path = "crates/renox-oauth", version = "=1.1.0" }
+renox-billing = { path = "crates/renox-billing", version = "=1.1.0" }
+
+# Password hashing (Argon2) is deliberately slow, and far slower unoptimised:
+# every login, registration and auth test paid for it. Optimise just these
+# crates in dev and test builds; the rest stays quick to compile.
+# Line numbers in backtraces, without full debug info (as in apps made by
+# `rnx new`): much smaller test binaries and lighter, faster links. Full debug
+# info let a workspace build with 8 link jobs run a 15 GB machine out of memory.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package.argon2]
+opt-level = 3

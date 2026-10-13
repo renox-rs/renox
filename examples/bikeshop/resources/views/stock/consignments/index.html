@@ -1,0 +1,28 @@
+{#- Consignment shipments of the active store, both ways (#240, #245). -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.consignments.title')">
+  <app-stock-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('stock.consignments.title')" :subtitle="t('stock.consignments.lead')">
+      <rx-link-button rx-if="can('consignment.manage')" :href="route('stock.consignments.create', direction='ask')" :label="t('stock.consignments.ask')" icon="download"/>
+      <rx-link-button rx-if="can('consignment.manage')" :href="route('stock.consignments.create', direction='send')" :label="t('stock.consignments.send')" variant="primary" icon="box"/>
+    </rx-page-header>
+    {# [explain:stock.consignments.template] #}
+    <app-stock-tabs target="stock.consignments" :views="views" :current="tab" prefix="stock.consignments.view." :label="t('stock.consignments.views')"/>
+    {# [/explain:stock.consignments.template] #}
+    <template rx-if="shipments.items">
+    {# [explain:stock.consignments.template] #}
+    <rx-table :rows="shipments.items" as="s" card :caption="t('stock.consignments.title')">
+      <rx-column :label="t('stock.consignments.number')"><a class="rx-link" href="{{ route('stock.consignments.show', s.id) }}">CS-{{ s.id }}</a></rx-column>
+      <rx-column :label="t('stock.fields.owner_store')">{{ s.owner }}<template rx-if="s.ours"> <span class="rx-subtitle">({{ t('stock.consignments.ours') }})</span></template></rx-column>
+      <rx-column :label="t('stock.fields.location_store')">{{ s.location }}</rx-column>
+      <rx-column :label="t('stock.fields.status')"><app-stock-shipment-status :status="s.status"/></rx-column>
+      <rx-column :label="t('stock.consignments.units')" align="num">{{ s.units }}</rx-column>
+      <rx-column :label="t('stock.consignments.in_transit')" align="num">{{ s.in_transit or "—" }}</rx-column>
+      <rx-column :label="t('stock.consignments.updated')">{{ s.updated_at | since }}</rx-column>
+    </rx-table>
+    {# [/explain:stock.consignments.template] #}
+    <rx-pagination :page="shipments"/>
+    </template>
+    <rx-card rx-else><rx-empty :title="t('stock.consignments.empty')" icon="truck"/></rx-card>
+  </rx-stack>
+</rx-page>

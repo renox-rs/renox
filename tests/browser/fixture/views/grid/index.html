@@ -1,0 +1,21 @@
+{% extends "grid/layout.html" %}
+{% from "renox/grid.html" import grid %}
+{% from "renox/ui.html" import link_button, progress, action_sheet, input %}
+
+{% block content %}
+<main class="rx-grid-fill" id="main">
+  {#- The `custom` columns: drawn here, with the row and the column. -#}
+  {% call(row, column) grid(orders) %}
+    {%- if column.key == "trend" -%}
+      <span class="{{ 'rx-up' if row.up else 'rx-down' }}">{{ sparkline(row.trend, label="Units, last 7 days") }}</span>
+    {%- elif column.key == "fulfilled" -%}
+      {{ progress(row.fulfilled, label="Shipped") }}
+    {%- elif column.key == "actions" -%}
+      {{ link_button(route('orders.show', row.id), "Open", size="small") }}
+    {%- endif -%}
+  {% endcall %}
+  {% call action_sheet("orders-note", "Add note", "/grid/orders/bulk/note", "Add a note", description="Written on every selected order.", submit_label="Save note", button=false) %}
+    {{ input("note", "Note", required=true) }}
+  {% endcall %}
+</main>
+{% endblock %}

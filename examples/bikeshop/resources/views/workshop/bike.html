@@ -1,0 +1,33 @@
+{#- A bike's service history (#236): the bike as an infolist, its work orders as a timeline. -#}
+<rx-page layout="layouts/app.html" :title="bike.name">
+  <app-workshop-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="bike.name" :subtitle="model" :back="route('workshop.bikes')" back-label="{{ t('workshop.bikes.title') }}"/>
+    <rx-columns count="2">
+      <rx-card title="{{ t('workshop.bikes.details') }}">
+        <rx-infolist>
+          <rx-entry label="{{ t('workshop.bikes.model') }}" :value="model"/>
+          <rx-entry label="{{ t('workshop.bikes.brand') }}" :value="bike.brand"/>
+          <rx-entry label="{{ t('workshop.bikes.frame') }}" :value="bike.frame_number" :copyable="bike.frame_number is not none"/>
+          <rx-entry label="{{ t('workshop.bikes.size') }}" :value="bike.size"/>
+          <rx-entry label="{{ t('workshop.bikes.bought') }}" :value="bike.bought_on" format="date"/>
+          <rx-entry label="{{ t('workshop.bikes.spent') }}" :value="spent" format="money"/>
+          <rx-entry rx-if="has_photo" label="{{ t('workshop.bikes.photo') }}"><a class="rx-link" href="{{ route('workshop.bikes.photo', bike.id) }}" target="_blank" rel="noopener">{{ t('workshop.bikes.open_photo') }}</a></rx-entry>
+        </rx-infolist>
+        <p><rx-link-button :href="route('workshop.book', bike=bike.id)" label="{{ t('workshop.book.title') }}" variant="primary"/></p>
+      </rx-card>
+      {# [explain:workshop.bikes.show.template] #}
+      <rx-card title="{{ t('workshop.bikes.open') }}">
+        <rx-list rx-if="open" id="open-orders" label="{{ t('workshop.bikes.open') }}">
+          <li rx-for="o in open"><a class="rx-link rx-list__main" href="{{ route('workshop.service.show', o.id) }}">#{{ o.id }} · {{ o.scheduled_for | date('%d %b %Y') }}</a><app-workshop-status :status="o.status"/></li>
+        </rx-list>
+        <rx-empty rx-else title="{{ t('workshop.bikes.nothing_open') }}" icon="circle-check"/>
+      </rx-card>
+    </rx-columns>
+    <rx-card title="{{ t('workshop.bikes.history') }}">
+      <rx-history rx-if="events" :items="events" :label="t('workshop.bikes.history')" date-format="%d %b %Y"/>
+      <rx-empty rx-else title="{{ t('workshop.bikes.never') }}" icon="wrench"/>
+    </rx-card>
+    {# [/explain:workshop.bikes.show.template] #}
+  </rx-stack>
+</rx-page>

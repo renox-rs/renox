@@ -1,0 +1,19 @@
+{# [explain:stock.take.template] #}
+{#- The rows of the stock take's count sheet: `start` is the index of the first
+    row in the whole form, so the nested names (`lines[3][counted]`) keep
+    counting across the two lists. -#}
+<rx-props items start>
+<ul class="bs-rows bs-rows--3" role="list">
+  <li class="bs-row bs-row--head" aria-hidden="true"><span>{{ t('stock.fields.product') }}</span><span class="bs-row__figure">{{ t('stock.fields.on_hand') }}</span><span class="bs-row__figure bs-row__figure--extra">{{ t('stock.fields.reserved') }}</span><span>{{ t('stock.take.counted') }}</span></li>
+  <li rx-for="r in items" class="bs-row">
+    <rx-let name="i" :value="start + loop.index0"/>
+    <span class="bs-row__name">{{ r.product }}<template rx-if="r.size"> ({{ r.size }})</template><small>{{ r.sku }}<template rx-if="r.owner_store_id != r.location_store_id"> · {{ t('stock.take.owned_by', store=r.owner) }}</template></small></span>
+    <span class="bs-row__figure">{{ r.on_hand }}</span>
+    <span class="bs-row__figure bs-row__figure--extra">{{ r.reserved }}</span>
+    <span>
+      <input type="hidden" name="lines[{{ i }}][level]" value="{{ r.id }}">
+      <rx-input name="lines[{{ i }}][counted]" :label="t('stock.take.counted_of', name=r.product ~ ' ' ~ r.sku)" type="number" hide-label min="0" inputmode="numeric" :placeholder="r.on_hand"/>
+    </span>
+  </li>
+</ul>
+{# [/explain:stock.take.template] #}

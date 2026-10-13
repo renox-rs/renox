@@ -1,0 +1,19 @@
+{#- renox-2fa's page that turns two-factor authentication on, replaced by the
+    bike shop for its translations (`plugins.two_factor.*`). -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ t('plugins.two_factor.setup_title') }} · {{ app.name }}</rx-slot>
+{# [explain:two-factor.setup.template] #}
+<rx-form :action="route('two-factor.confirm')" hx-post="{{ route('two-factor.confirm') }}">
+  <rx-card title="{{ t('plugins.two_factor.setup_title') }}" subtitle="{{ t('plugins.two_factor.setup_lead') }}">
+    <p class="rx-2fa__qr">{{ qr | safe }}</p>
+    <p class="rx-subtitle">{{ t('plugins.two_factor.no_scan') }}</p>
+    <p><code class="rx-2fa__key">{{ key }}</code></p>
+    <rx-input name="code" label="{{ t('plugins.two_factor.app_code') }}" required autocomplete="one-time-code" inputmode="numeric" autofocus/>
+    <div class="rx-card__footer">
+      <rx-link-button :href="account" label="{{ t('plugins.two_factor.cancel') }}" variant="plain"/>
+      <rx-button label="{{ t('plugins.two_factor.turn_on') }}"/>
+    </div>
+  </rx-card>
+</rx-form>
+{# [/explain:two-factor.setup.template] #}
+</rx-page>

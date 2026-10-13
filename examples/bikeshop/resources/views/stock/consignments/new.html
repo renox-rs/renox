@@ -1,0 +1,40 @@
+{#- A new consignment shipment (#240): send our goods to another store (approved at once: we
+    own them), or ask another store for its goods (waits for its approval). The rows are the
+    owner store's own goods on its shelf. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.consignments.new')">
+  <app-stock-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('stock.consignments.new')" :subtitle="t('stock.consignments.new_lead')" :back="route('stock.consignments')" :back-label="t('stock.consignments.title')"/>
+    <rx-form method="GET" :action="route('stock.consignments.create')" class="bs-filters" id="consignment-pick">
+      <rx-toggle-buttons name="direction" :label="t('stock.consignments.direction')" :options="[['send', t('stock.consignments.send')], ['ask', t('stock.consignments.ask')]]" :selected="direction"/>
+      <rx-select name="store" :label="t('stock.consignments.other_store')" :options="stores" :selected="other"/>
+      <rx-input name="q" :label="t('stock.consignments.search')" :value="q" type="search"/>
+      <rx-button :label="t('stock.consignments.show_goods')" variant="secondary" icon="search"/>
+    </rx-form>
+    {# [explain:stock.consignments.create.template] #}
+    <rx-form :action="route('stock.consignments.store')" id="consignment-form" novalidate>
+      <input type="hidden" name="direction" value="{{ direction }}">
+      <input type="hidden" name="store" value="{{ other }}">
+      <rx-form-errors/>
+      <rx-card :title="t('stock.consignments.goods_' ~ direction)" :subtitle="t('stock.consignments.goods_lead')">
+        <ul rx-if="rows" class="bs-rows" role="list" data-bs-reveal>
+          <li class="bs-row bs-row--head" aria-hidden="true"><span>{{ t('stock.fields.product') }}</span><span class="bs-row__figure">{{ t('stock.fields.available') }}</span><span>{{ t('stock.fields.quantity') }}</span></li>
+          <li rx-for="r in rows" class="bs-row">
+            <span class="bs-row__name">{{ r.product }}<template rx-if="r.size"> ({{ r.size }})</template><small>{{ r.sku }} · {{ r.category }}</small></span>
+            <span class="bs-row__figure">{{ r.available }}</span>
+            <span>
+              <input type="hidden" name="lines[{{ loop.index0 }}][variant]" value="{{ r.variant_id }}">
+              <rx-input name="lines[{{ loop.index0 }}][quantity]" :label="t('stock.consignments.quantity_of', name=r.product ~ ' ' ~ r.sku)" type="number" hide-label :value="1 if variant == r.variant_id else none" min="0" :max="r.available" inputmode="numeric"/>
+            </span>
+          </li>
+        </ul>
+        <rx-empty rx-else :title="t('stock.consignments.no_goods')" icon="package"/>
+    {# [/explain:stock.consignments.create.template] #}
+      </rx-card>
+      <rx-card>
+        <rx-input name="note" :label="t('stock.consignments.note')"/>
+        <rx-button :label="t('stock.consignments.submit_' ~ direction)" :icon="'box' if direction == 'send' else 'download'"/>
+      </rx-card>
+    </rx-form>
+  </rx-stack>
+</rx-page>

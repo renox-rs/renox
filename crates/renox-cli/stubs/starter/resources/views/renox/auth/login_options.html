@@ -1,0 +1,29 @@
+{#- Under Renox's login, register and confirm-password forms (`page` says
+    which). Here: the seeded accounts on the login page of a local database
+    (`demo_logins`, src/app/demo.rs: only with APP_ENV=local, and only once
+    `db:seed` made them). A tap fills the form (public/demo-logins.js);
+    without JavaScript the email and the password are there to type.
+    A login plugin (renox-oauth) has its own file of this name: keep both
+    parts if you add one. -#}
+<rx-let name="demo" :value="demo_logins | default(none)"/>
+<template rx-if="page == 'login' and demo">
+<section class="app-demo" aria-labelledby="demo-logins-title">
+  <div class="app-demo__head">
+    <span class="app-icon"><rx-icon name="key-round"/></span>
+    <div>
+      <h2 class="app-demo__title" id="demo-logins-title">{{ t('sign_in.demo.title') }}</h2>
+      <p class="app-demo__lead">{{ t('sign_in.demo.lead') }} <code>{{ demo.password }}</code></p>
+    </div>
+  </div>
+  <ul class="app-demo__list" role="list">
+    <li rx-for="account in demo.accounts">
+      <button class="app-demo__account" type="button" data-demo-email="{{ account.email }}" data-demo-password="{{ demo.password }}">
+        <span class="app-avatar{{ ' app-avatar--clay' if loop.index is even }}" aria-hidden="true">{{ account.name[:1] | upper }}</span>
+        <span class="app-demo__who"><span class="app-demo__role">{{ t('sign_in.demo.as', name=account.name) }}</span><span class="app-demo__email">{{ account.email }}</span></span>
+        <rx-icon name="arrow-right" :size="18"/>
+      </button>
+    </li>
+  </ul>
+</section>
+<rx-script :src="asset('demo-logins.js')" defer></rx-script>
+</template>

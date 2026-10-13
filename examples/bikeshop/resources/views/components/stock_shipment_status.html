@@ -1,0 +1,3 @@
+{#- A consignment shipment's status as a badge: `<app-stock-shipment-status :status="s.status"/>`. -#}
+<rx-props status>
+<rx-badge :kind="{'requested': 'info', 'approved': 'info', 'refused': none, 'sent': 'warning', 'partly_received': 'warning', 'received': 'success', 'recall_requested': 'warning', 'recall_sent': 'warning', 'recalled': none, 'draft': none}[status]">{{ t('stock.consignments.status.' ~ status) }}</rx-badge>

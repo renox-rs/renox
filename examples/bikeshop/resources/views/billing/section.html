@@ -1,0 +1,8 @@
+{#- renox-billing's card on the account page, replaced by the shop: plans
+    are per bike (src/app/plans), so the card points to them. -#}
+<rx-card title="{{ t('plans.account.title') }}" subtitle="{{ t('plans.account.lead') }}">
+  <div class="rx-card__footer">
+    <rx-link-button route="plans.mine" label="{{ t('plans.mine.title') }}"/>
+    <rx-link-button route="plans.index" label="{{ t('plans.index.title') }}" variant="plain"/>
+  </div>
+</rx-card>

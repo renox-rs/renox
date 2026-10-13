@@ -1,0 +1,25 @@
+<rx-page layout="layouts/staff.html" :title="t('reports.monthly.title')">
+{#- The monthly report (src/app/reports/monthly.rs): start a run for a month, follow the runs.
+    The runs' list is a kit `widget` that reloads itself from `reports.monthly.runs` every
+    three seconds while a run is going. -#}
+<app-reports-assets/>
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="t('reports.monthly.title')" :subtitle="t('reports.monthly.lead')"/>
+  <app-reports-tabs/>
+  <div class="bs-monthly">
+    {# [explain:reports.monthly.template] #}
+    <rx-card :title="t('reports.monthly.run_title')" :subtitle="t('reports.monthly.run_lead', stores=(reach.stores | map(attribute='name') | join(', ')))">
+      <rx-form route="reports.monthly.run" class="rx-stack">
+        <rx-input name="month" :label="t('reports.monthly.month')" type="month" :value="old('month', month)" required :max="max" :hint="t('reports.monthly.month_hint')"/>
+        <rx-button :label="t('reports.monthly.run')"/>
+      </rx-form>
+    </rx-card>
+    <rx-dashboard columns="1">
+      <rx-widget :title="t('reports.monthly.runs')" :description="t('reports.monthly.runs_hint')" :url="route('reports.monthly.runs') if running else none" :poll="3 if running else none" id="monthly-runs">
+        <app-reports-runs :runs="runs"/>
+      </rx-widget>
+    </rx-dashboard>
+    {# [/explain:reports.monthly.template] #}
+  </div>
+</div>
+</rx-page>

@@ -1,0 +1,23 @@
+{#- renox-billing's plans page (`billing.plans`), replaced by the shop: it
+    sells plans per bike, so instead of subscribing the user's `default`
+    subscription it lists the plans and sends people to subscribe a bike
+    (src/app/plans). renox-billing's guard and links lead here. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.index.title') }}">
+<app-plans-assets/>
+<rx-stack data-bs-reveal>
+  <rx-page-header title="{{ t('plans.index.title') }}" subtitle="{{ t('plans.billing_page.lead') }}"/>
+  {# [explain:billing.plans.template] #}
+  <div class="rx-card">
+    <rx-list label="{{ t('plans.index.title') }}">
+      <template rx-for="plan in plans">
+      <li rx-if="plan.key[-7:] != '-xendit'" class="bs-billing-plan">
+        <span><strong>{{ plan.label }}</strong> <span class="rx-subtitle">{{ plan.price }}</span></span>
+        <rx-link-button href="{{ route('plans.subscribe') ~ '?plan=' ~ plan.key }}" label="{{ t('plans.index.choose') }}" size="small"/>
+      </li>
+      </template>
+    </rx-list>
+  </div>
+  {# [/explain:billing.plans.template] #}
+  <p><rx-link-button route="plans.mine" label="{{ t('plans.mine.title') }}" variant="plain"/></p>
+</rx-stack>
+</rx-page>

@@ -1,0 +1,24 @@
+{
+  "summary": "A real page: 20 rows from SQLite rendered through a template, with every Renox default on (CSP, session, CSRF, auth, locale, error pages). Renox serves 9× Laravel Octane and 16× PHP-FPM, at a tenth of the latency and a tenth of the memory, and keeps about two thirds of bare Axum's throughput.",
+  "note": "Measured 2026-10-07 on an Intel i7-6700: each server pinned to 2 cores and 1 GB in Docker, oha with 64 connections for 15 s after a 5 s warm-up. The raw numbers and the bare-route results are in benchmarks/RESULTS.md.",
+  "charts": [
+    { "title": "Requests per second", "unit": "/page · higher is better", "rows": [
+      { "name": "Axum (bare)", "value": 15137, "label": "15,137" },
+      { "name": "Renox", "value": 9630, "label": "9,630" },
+      { "name": "Laravel Octane", "value": 1066, "label": "1,066" },
+      { "name": "Laravel FPM", "value": 581, "label": "581" }
+    ] },
+    { "title": "Median latency", "unit": "/page · lower is better", "rows": [
+      { "name": "Axum (bare)", "value": 4.17, "label": "4.2 ms" },
+      { "name": "Renox", "value": 6.67, "label": "6.7 ms" },
+      { "name": "Laravel Octane", "value": 59.72, "label": "59.7 ms" },
+      { "name": "Laravel FPM", "value": 111.99, "label": "112 ms" }
+    ] },
+    { "title": "Peak memory under load", "unit": "lower is better", "rows": [
+      { "name": "Axum (bare)", "value": 11, "label": "11 MiB" },
+      { "name": "Renox", "value": 12, "label": "12 MiB" },
+      { "name": "Laravel FPM", "value": 106, "label": "106 MiB" },
+      { "name": "Laravel Octane", "value": 128, "label": "128 MiB" }
+    ] }
+  ]
+}

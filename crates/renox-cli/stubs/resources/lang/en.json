@@ -1,0 +1,6 @@
+{
+  "home": {
+    "running": "Your Renox app is running.",
+    "edit": "Edit resources/views/home/index.html and refresh: templates reload without a rebuild."
+  }
+}

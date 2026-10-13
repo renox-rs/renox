@@ -1,0 +1,22 @@
+{#- ID checks waiting (#235): each photo opens through a signed link that works for five minutes. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.identities.title') }}">
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('rentals.identities.title') }}" subtitle="{{ t('rentals.identities.lead') }}"/>
+    {# [explain:rentals.identities.template] #}
+    <rx-list rx-if="waiting" id="identities" label="{{ t('rentals.identities.title') }}">
+      <li rx-for="w in waiting">
+        <div class="rx-list__main">
+          <strong>{{ w.customer.name if w.customer else "?" }}</strong>
+          <p class="rx-subtitle">{{ w.masked or "" }} · {{ w.store or "" }} · {{ w.document.submitted_at | since }}</p>
+        </div>
+        <rx-link-button :href="route('rentals.identities.photo', w.document.id)" label="{{ t('rentals.identities.open_photo') }}" size="small" new-tab/>
+        <form method="post" action="{{ route('rentals.identities.approve', w.document.id) }}">{{ csrf_field() }}<rx-button size="small" icon="check">{{ t('rentals.identities.approve') }}</rx-button></form>
+        <rx-action-sheet id="refuse-{{ w.document.id }}" label="{{ t('rentals.identities.refuse') }}" :action="route('rentals.identities.refuse', w.document.id)" title="{{ t('rentals.identities.refuse_title') }}" size="small" danger>
+          <rx-textarea name="note" label="{{ t('rentals.identities.note') }}" rows="3" required id="refuse-note-{{ w.document.id }}"/>
+        </rx-action-sheet>
+      </li>
+    </rx-list>
+    {# [/explain:rentals.identities.template] #}
+    <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.identities.none') }}" message="{{ t('rentals.identities.none_text') }}" icon="id-card"/></div>
+  </rx-stack>
+</rx-page>

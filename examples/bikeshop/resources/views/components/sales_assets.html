@@ -1,0 +1,5 @@
+{#- The sales pages' own styles and behaviour (public/sales/), pushed into
+    the layout's head and scripts stacks once: `<app-sales-assets/>`. -#}
+<rx-props>
+<rx-push stack="head" once="sales-css"><link rel="stylesheet" href="{{ asset('sales/sales.css') }}"></rx-push>
+<rx-push stack="scripts" once="sales-js"><rx-script :src="asset('sales/sales.js')"></rx-script></rx-push>

@@ -1,0 +1,131 @@
+{#- /about/blocks: every block working, with its macro's signature
+    (src/app/about/blocks.rs builds the demo data). The blocks come from the
+    renox-blocks crate (renox-blocks/blocks.html, docs/blocks.md). -#}
+<rx-page layout="layouts/app.html" :title="t('blocks.page.title')" :description="t('blocks.page.lead')">
+<div class="rx-stack bs-showcase" data-bs-reveal>
+  <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
+
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['history', 'history'], ['plans', 'compare_plans']]"/>
+  <nav aria-label="{{ t('blocks.page.contents') }}">
+    <ul class="bs-showcase__toc" role="list">
+      <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
+    </ul>
+  </nav>
+
+  <div id="gallery">
+  <rx-card title="gallery" :subtitle="t('blocks.page.gallery')">
+    <div class="bs-showcase__demo">
+      <rx-gallery :photos="photos" id="demo-gallery" label="City 3"/>
+      <app-about-signature>gallery(photos, id="rx-gallery", label=none, enlarge=true)
+  photos: [{src, alt, thumb?, large?, caption?}]</app-about-signature>
+    </div>
+  </rx-card>
+  </div>
+
+  {# [explain:about.blocks.template] #}
+  <div id="form">
+  <rx-card :title="t('blocks.page.form_title')" :subtitle="t('blocks.page.form_lead')">
+    <rx-form class="rx-stack" route="about.blocks.submit" id="blocks-form">
+      <rx-form-errors/>
+      <div class="bs-showcase__pair">
+        <div class="bs-showcase__demo">
+          <rx-quantity name="quantity" value="1" min="1" max="5" label="Bikes"/>
+          <p class="rx-hint">{{ t('blocks.page.quantity') }}</p>
+          <app-about-signature>quantity(name, value=1, min=0, max=none, step=1, label=none,
+         hide_label=false, attrs={}, hint=none, id=none, bag=none)</app-about-signature>
+        </div>
+        <div class="bs-showcase__demo">
+          <rx-input name="paid" :label="t('blocks.page.paid')" inputmode="numeric" maxlength="9" autocomplete="off" required/>
+          <rx-keypad target="rx-paid" :enter-label="t('blocks.page.send')"/>
+          <p class="rx-hint">{{ t('blocks.page.keypad') }}</p>
+          <app-about-signature>keypad(target, label=none, decimal=false, zeros=true, enter_label=none)</app-about-signature>
+        </div>
+      </div>
+  {# [/explain:about.blocks.template] #}
+      <div class="bs-showcase__demo">
+        <rx-datetime-range name-start="starts_at" name-end="ends_at" label="Rental" :min="today" :max="max_day" step="30" opens="9" closes="19" required/>
+        <p class="rx-hint">{{ t('blocks.page.datetime') }}</p>
+        <app-about-signature>datetime_range(name_start, name_end, label=none, value_start=none, value_end=none,
+               min=none, max=none, step=60, opens=8, closes=20, required=false,
+               hint=none, id=none, bag=none)</app-about-signature>
+      </div>
+      <div class="bs-showcase__pair">
+        <div class="bs-showcase__demo">
+          <rx-let name="chips" :value="{'hx-get': route('about.blocks.variant'), 'hx-trigger': 'change', 'hx-target': '#variant', 'hx-swap': 'outerHTML', 'hx-include': 'closest form'}"/>
+          <rx-swatches name="size" label="Frame size" :options="sizes" selected="M" :attrs="chips" required/>
+          <rx-swatches name="colour" label="Colour" :options="colours" selected="teal" kind="colour" :attrs="chips" required/>
+          <app-about-variant :price="price" :stock="stock"/>
+          <p class="rx-hint">{{ t('blocks.page.swatches') }}</p>
+          <app-about-signature>swatches(name, label, options, selected=none, kind="size", attrs={},
+         required=false, hint=none, id=none, bag=none)
+  options: [{value, label, note?, color?, disabled?}]</app-about-signature>
+        </div>
+      </div>
+      <div><rx-button :label="t('blocks.page.send')"/></div>
+    </rx-form>
+  </rx-card>
+  </div>
+
+  <div id="filter">
+  <rx-card :title="t('blocks.page.filter_title')" :subtitle="t('blocks.page.filter_lead')">
+    <rx-form class="rx-stack" method="GET" :action="route('about.blocks') ~ '#filter'">
+      <rx-range-slider name-min="price_min" name-max="price_max" :min="price_min" :max="price_max" step="25000"
+                       :value-min="price_filter.low if price_filter else 100000" :value-max="price_filter.high if price_filter else 500000"
+                       label="Price" format="money"/>
+      <div><rx-button :label="t('blocks.page.filter')" variant="secondary"/></div>
+    </rx-form>
+    <p rx-if="price_filter" class="rx-subtitle" data-bs-filtering>{{ t('blocks.page.filtering', low=price_filter.low | money, high=price_filter.high | money) }}</p>
+    <p class="rx-hint">{{ t('blocks.page.range') }}</p>
+    <app-about-signature>range_slider(name_min, name_max, min, max, step=1, value_min=none, value_max=none,
+             label=none, format=none, prefix=none, suffix=none, hint=none, id=none, bag=none)</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="kanban">
+  <rx-card title="kanban" :subtitle="t('blocks.page.kanban')">
+    <rx-kanban id="workshop-board" :columns="columns" :url="route('about.blocks.move')" label="Workshop jobs"/>
+    <app-about-signature>kanban(id, columns, url, label=none, values={})
+  columns: [{key, title, cards: [{id, title, subtitle?, badge?, badge_kind?, url?}]}]
+kanban_card(card)</app-about-signature>
+  </rx-card>
+  </div>
+
+  {#- The calendar's arrows load the next month into this section only
+      (hx-boost with hx-select), keeping the address in step. -#}
+  <div id="calendar" hx-boost="true" hx-select="#calendar" hx-target="#calendar" hx-swap="outerHTML">
+  <rx-card title="month_calendar" :subtitle="t('blocks.page.calendar')">
+    <rx-month-calendar :month="month" :events="events" :url="route('about.blocks')" :today="today" label="Service visits" heading="h3"/>
+    <app-about-signature>month_calendar(month, events=[], url=none, param="month", today=none,
+               first_day=1, label=none, heading="h2", id=none)
+  events: [{date, title, time?, url?, kind?}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="availability">
+  <rx-card title="availability" :subtitle="t('blocks.page.availability')">
+    <rx-alert rx-if="slot" :message="t('blocks.page.booked', slot=slot)" kind="info"/>
+    <rx-availability :columns="hours" :rows="rows" label="Bikes free today" corner="Bike"/>
+    <app-about-signature>availability(columns, rows, label=none, corner=none, id="rx-availability")
+  rows: [{label, note?, slots: [{state, span?, title?, url?, action?, fields?}]}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="history">
+  <rx-card title="history" :subtitle="t('blocks.page.history')">
+    <rx-history :items="timeline" label="Service history of City 3" date-format="%H:%M"/>
+    <app-about-signature>history(items, label=none, date_format="%Y-%m-%d %H:%M", id=none)
+  items: [{time, title, body?, kind?, by?, when?}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="plans">
+  <rx-card title="compare_plans" :subtitle="t('blocks.page.plans')">
+    <rx-compare-plans :plans="plans" :features="features" highlight="rider" label="Service plans"/>
+    <app-about-signature>compare_plans(plans, features=[], highlight=none, highlight_label=none,
+              label=none, table=true, id="rx-plans")
+  plans: [{key, name, price, interval?, description?, perks?, url?, cta?, price_label?}]
+  features: [{label, values: {plan key: true | false | text}}]</app-about-signature>
+  </rx-card>
+  </div>
+</div>
+</rx-page>

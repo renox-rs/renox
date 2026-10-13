@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A city bike">
+<rect width="800" height="600" fill="#f3efe6"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="260" cy="400" r="110" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="540" cy="400" r="110" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="260" cy="400" r="10" fill="#1c1917"/>
+  <circle cx="540" cy="400" r="10" fill="#1c1917"/>
+  <path d="M260 400 L360 260 L520 260 L540 400 M360 260 L400 400 L520 260 M400 400 L260 400" stroke="#0b6e66" stroke-width="18"/>
+  <circle cx="400" cy="400" r="22" stroke="#1c1917" stroke-width="10"/>
+  <path d="M340 230 h60 M360 260 L345 228" stroke="#1c1917" stroke-width="14"/>
+  <path d="M520 260 L530 200 q10 -10 40 0 l20 10" stroke="#1c1917" stroke-width="12"/>
+  <path d="M170 360 a110 110 0 0 1 150 -60 M600 330 a110 110 0 0 1 50 70" stroke="#1c1917" stroke-width="8"/>
+  <rect x="215" y="230" width="90" height="12" rx="6" fill="#1c1917"/>
+
+</g>
+</svg>

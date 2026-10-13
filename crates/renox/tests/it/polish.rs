@@ -1,0 +1,467 @@
+//! M21a: the rough edges the examples ran into.
+
+use std::time::Duration;
+
+use renox::auth::permissions::{self, Permissions};
+use renox::context::Current;
+use renox::db::relations::Morph;
+use renox::prelude::*;
+use renox::testing::TestApp;
+
+#[derive(Model, serde::Serialize, Default, Clone, Debug)]
+#[model(table = "notes", hooks)]
+struct Note {
+    id: i64,
+    user_id: i64,
+    title: String,
+}
+
+impl renox::db::ModelHooks for Note {
+    fn saving(&mut self, _: bool) -> Result {
+        if self.title.contains("forbidden") {
+            let mut errors = renox::validation::Errors::new();
+            errors.add("title", "That word isn't allowed.");
+            return Err(renox::validation::ValidationError::new(errors).into());
+        }
+        Ok(())
+    }
+}
+
+impl Policy for Note {
+    fn allows(&self, user: &User, _: &str) -> bool {
+        // Admins may do anything; others only their own notes.
+        user.has_role("admin") || self.user_id == user.id
+    }
+}
+
+#[derive(Clone)]
+struct Team(&'static str);
+
+#[derive(serde::Deserialize)]
+struct NoteForm {
+    title: String,
+}
+
+impl Validate for NoteForm {
+    fn rules(&self, v: &mut Validator) {
+        v.field("title", &self.title).required();
+    }
+}
+
+struct Notes;
+
+impl Module for Notes {
+    fn name(&self) -> &'static str {
+        "notes"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/notes/new", || async { view("new.html", context! {}) })
+            .post("/notes", |State(state): State<AppState>, user: AuthUser, Valid(form): Valid<NoteForm>| async move {
+                Note::create(&state.db, Note { user_id: user.id, title: form.title, ..Default::default() }).await?;
+                Ok::<_, Error>(Redirect::to("/notes/new"))
+            })
+            .get("/notes/{id}/edit", |State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>| async move {
+                let note = Note::find_or_404(&state.db, id).await?;
+                user.authorize("update", &note)?;
+                Ok::<_, Error>("editing")
+            })
+            .get("/notes/{id}/audit", |user: AuthUser| async move {
+                Ok::<_, Error>(if user.has_role("admin") { "admin" } else { "user" })
+            })
+            .require_auth()
+            .merge(
+                Routes::new()
+                    .delete("/notes/{id}", |Path(id): Path<i64>| async move { format!("deleted {id}") })
+                    .require_password_confirmed()
+                    .require_auth(),
+            )
+            .merge(
+                Routes::new()
+                    .get("/publish", || async { "published" })
+                    .require_gate("publish"),
+            )
+            .merge(
+                Routes::new()
+                    .get("/team", |Current(team): Current<Team>| async move { team.0 })
+                    .get("/maybe-team", |team: Option<Current<Team>>| async move {
+                        team.map_or("none", |Current(t)| t.0)
+                    })
+                    .get("/untouched", |Current(team): Current<Team>| async move { team.0 }),
+            )
+    }
+}
+
+async fn pick_team(
+    req: renox::axum::extract::Request,
+    next: renox::axum::middleware::Next,
+) -> Response {
+    if req.uri().path() == "/team"
+        || req.uri().path() == "/maybe-team" && req.uri().query() == Some("set")
+    {
+        renox::context::set(Team("red"));
+    }
+    next.run(req).await
+}
+
+async fn app() -> (TestApp, tempfile::TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("new.html"),
+        r#"<input name="title" value="{{ old('title') }}"><p>{{ error('title') }}</p>"#,
+    )
+    .unwrap();
+    let views = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Auth::new().account())
+            .module(Permissions)
+            .module(Notes)
+            .layer(renox::axum::middleware::from_fn(pick_team))
+            .gate("publish", |_| false)
+            .gate_before(|user, ability| {
+                (ability == "publish" && user.has_role("editor")).then_some(true)
+            })
+            .seeder(|state| async move {
+                let db = state.db.clone();
+                // Seeders see the app now.
+                let state = renox::context::app().expect("seeders run in the app's context");
+                let sealed = state.encrypt("seeded");
+                renox::db::sql("CREATE TABLE seeded (value TEXT NOT NULL)")
+                    .execute(&db)
+                    .await?;
+                renox::db::sql("INSERT INTO seeded (value) VALUES (?)")
+                    .bind(sealed)
+                    .execute(&db)
+                    .await?;
+                Ok(())
+            }),
+        |c| c.views_path = views,
+    )
+    .await;
+    let id = match app.db().dialect() {
+        renox::db::Dialect::Postgres => "BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY",
+        _ => "INTEGER PRIMARY KEY",
+    };
+    for statement in [
+        format!("CREATE TABLE notes (id {id}, user_id BIGINT NOT NULL, title TEXT NOT NULL)"),
+        format!(
+            "CREATE TABLE likes (id {id}, likeable_type TEXT NOT NULL, likeable_id BIGINT NOT NULL)"
+        ),
+    ] {
+        renox::db::sql(statement).execute(app.db()).await.unwrap();
+    }
+    (app, dir)
+}
+
+async fn user(app: &TestApp, email: &str) -> User {
+    User::register(app.db(), "U", email, "password-123")
+        .await
+        .unwrap()
+}
+
+#[renox::test]
+async fn roles_reach_policies_and_gate_before() {
+    let (app, _dir) = app().await;
+    let db = app.db();
+    permissions::define_role(db, "admin", &[]).await.unwrap();
+    permissions::define_role(db, "editor", &[]).await.unwrap();
+    let (ana, bo, cy) = (
+        user(&app, "ana@t.test").await,
+        user(&app, "bo@t.test").await,
+        user(&app, "cy@t.test").await,
+    );
+    ana.assign_role(db, "admin").await.unwrap();
+    cy.assign_role(db, "editor").await.unwrap();
+    let note = Note::create(
+        db,
+        Note {
+            user_id: bo.id,
+            title: "b".into(),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+
+    app.acting_as(&ana);
+    app.get(&format!("/notes/{}/edit", note.id))
+        .await
+        .assert_ok();
+    app.acting_as(&cy);
+    app.get(&format!("/notes/{}/edit", note.id))
+        .await
+        .assert_status(403);
+    app.acting_as(&bo);
+    app.get(&format!("/notes/{}/edit", note.id))
+        .await
+        .assert_ok();
+
+    // Outside a request there are no loaded roles: use user.roles(&db).
+    assert!(!ana.has_role("admin"));
+    assert_eq!(ana.roles(db).await.unwrap(), ["admin"]);
+
+    let admins = permissions::users_with_role(db, "admin").await.unwrap();
+    assert_eq!(admins.iter().map(|u| u.id).collect::<Vec<_>>(), [ana.id]);
+    assert!(
+        permissions::users_with_role(db, "nobody")
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    // gate_before with a role: `publish` is closed to all but editors.
+    app.acting_as(&cy);
+    app.get("/publish").await.assert_ok();
+    app.acting_as(&bo);
+    app.get("/publish").await.assert_status(403);
+}
+
+#[renox::test]
+async fn path_values_that_dont_fit_are_404() {
+    let (app, _dir) = app().await;
+    let me = user(&app, "me@t.test").await;
+    app.acting_as(&me);
+    app.get("/notes/abc/edit").await.assert_status(404);
+    app.get("/notes/99999999999999999999/edit")
+        .await
+        .assert_status(404);
+    app.get("/notes/12/edit").await.assert_status(404); // no such note
+    app.request()
+        .header("accept", "application/json")
+        .get("/notes/abc/edit")
+        .await
+        .assert_status(404);
+}
+
+#[renox::test]
+async fn confirming_the_password_returns_to_the_form_page() {
+    let (app, _dir) = app().await;
+    let me = user(&app, "me@t.test").await;
+    app.acting_as(&me);
+    // A DELETE from a form on /notes/new: after confirming, back to /notes/new.
+    app.request()
+        .header("host", "localhost")
+        .header("referer", "http://localhost/notes/new?tab=2")
+        .delete("/notes/7")
+        .await
+        .assert_redirect("/confirm-password");
+    app.post("/confirm-password", &[("password", "password-123")])
+        .await
+        .assert_redirect("/notes/new?tab=2");
+    app.delete("/notes/7")
+        .await
+        .assert_ok()
+        .assert_see("deleted 7");
+
+    // Another site's referer is ignored.
+    app.logout();
+    app.acting_as(&me);
+    app.request()
+        .header("host", "localhost")
+        .header("referer", "https://evil.example/x")
+        .delete("/notes/7")
+        .await
+        .assert_redirect("/confirm-password");
+    app.post("/confirm-password", &[("password", "password-123")])
+        .await
+        .assert_redirect("/");
+
+    // In tests, skip the page.
+    app.logout();
+    app.acting_as(&me).confirm_password();
+    app.delete("/notes/8").await.assert_ok();
+}
+
+#[renox::test]
+async fn a_hook_error_keeps_the_old_input() {
+    let (app, _dir) = app().await;
+    let me = user(&app, "me@t.test").await;
+    app.acting_as(&me);
+    app.request()
+        .header("referer", "/notes/new")
+        .post("/notes", &[("title", "a forbidden word")])
+        .await
+        .assert_redirect("/notes/new");
+    app.get("/notes/new")
+        .await
+        .assert_see(r#"value="a forbidden word""#)
+        .assert_see("That word isn");
+    assert_eq!(Note::query().count(app.db()).await.unwrap(), 0);
+}
+
+#[renox::test]
+async fn context_values_as_handler_arguments() {
+    let (app, _dir) = app().await;
+    app.get("/team").await.assert_ok().assert_see("red");
+    app.get("/maybe-team?set").await.assert_see("red");
+    app.get("/maybe-team").await.assert_see("none");
+    app.get("/untouched").await.assert_status(500);
+}
+
+#[renox::test]
+async fn retrying_borrows_and_rolls_back_with_a_value() {
+    let (app, _dir) = app().await;
+    let db = app.db();
+    let title = String::from("kept");
+    let mut attempts = 0;
+    let outcome: &str = db
+        .retrying(3, || {
+            attempts += 1;
+            let title = &title; // borrowed from the caller
+            async move {
+                let mut tx = db.begin().await?;
+                Note::create(
+                    &mut tx,
+                    Note {
+                        user_id: 1,
+                        title: title.clone(),
+                        ..Default::default()
+                    },
+                )
+                .await?;
+                tx.rollback().await?;
+                Ok("rolled back")
+            }
+        })
+        .await
+        .unwrap();
+    assert_eq!((outcome, attempts), ("rolled back", 1));
+    assert_eq!(Note::query().count(db).await.unwrap(), 0);
+    let failed: Result<()> = db
+        .retrying(3, || async {
+            Err(Error::permanent_message("not a conflict"))
+        })
+        .await;
+    assert!(failed.unwrap_err().is_permanent());
+}
+
+#[renox::test]
+async fn queries_are_counted() {
+    let (app, _dir) = app().await;
+    let me = user(&app, "me@t.test").await;
+    app.acting_as(&me);
+    let (res, queries) = renox::db::capture_queries(app.get("/notes/1/audit")).await;
+    res.assert_ok();
+    assert!(!queries.is_empty(), "the user and roles are loaded");
+    let (count, queries) =
+        renox::db::capture_queries(async { Note::query().count(app.db()).await.unwrap() }).await;
+    assert_eq!((count, queries.len()), (0, 1));
+    assert!(queries[0].contains("COUNT"), "{queries:?}");
+    // Outside a capture nothing is recorded, and nothing breaks.
+    Note::query().count(app.db()).await.unwrap();
+}
+
+#[renox::test]
+async fn morph_counts_and_small_helpers() {
+    let (app, _dir) = app().await;
+    let db = app.db();
+    #[derive(Model, serde::Serialize, Default, Clone)]
+    #[model(table = "likes")]
+    struct Like {
+        id: i64,
+        likeable_type: String,
+        likeable_id: i64,
+    }
+    let notes: Vec<Note> = [1, 2]
+        .into_iter()
+        .map(|id| Note {
+            id,
+            ..Default::default()
+        })
+        .collect();
+    for (kind, id) in [("notes", 1), ("notes", 1), ("videos", 1), ("notes", 2)] {
+        Like::create(
+            db,
+            Like {
+                likeable_type: kind.into(),
+                likeable_id: id,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    }
+    let likes = Morph::new("likeable_type", "likeable_id")
+        .count_many(db, &notes, Like::query())
+        .await
+        .unwrap();
+    assert_eq!((likes[&1], likes[&2]), (2, 1));
+
+    let token = renox::random_token();
+    assert_eq!(token.len(), 43);
+    assert_ne!(token, renox::random_token());
+    let _: renox::anyhow::Error = renox::anyhow::anyhow!("re-exported");
+
+    app.kernel().seed().await.unwrap();
+    let sealed: String = renox::db::sql("SELECT value FROM seeded")
+        .scalar(db)
+        .await
+        .unwrap();
+    assert_eq!(app.state().decrypt(&sealed).unwrap(), "seeded");
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Part(i64);
+
+impl Job for Part {
+    const NAME: &'static str = "part";
+    const MAX_ATTEMPTS: u32 = 2;
+
+    fn backoff(_: u32) -> Duration {
+        Duration::from_secs(3600)
+    }
+
+    async fn handle(self, ctx: JobContext) -> Result {
+        if self.0 == 2 && ctx.attempt == 1 {
+            return Err(abort(StatusCode::BAD_GATEWAY, "try later"));
+        }
+        Ok(())
+    }
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Report;
+
+impl Job for Report {
+    const NAME: &'static str = "report";
+
+    async fn handle(self, ctx: JobContext) -> Result {
+        let batch = ctx.batch_id.expect("a finally job knows its batch");
+        let status = ctx.state.queue.batch_status(batch).await?.unwrap();
+        ctx.state
+            .cache
+            .put(
+                "report",
+                &(status.total, status.failed, status.finished),
+                None,
+            )
+            .await
+    }
+}
+
+#[renox::test]
+async fn batch_callbacks_know_their_batch_and_backoffs_can_be_skipped() {
+    let app = TestApp::new(App::new().job::<Part>().job::<Report>()).await;
+    let queue = &app.state().queue;
+    let batch = queue
+        .batch("parts")
+        .push(Part(1))
+        .push(Part(2))
+        .finally(Report)
+        .dispatch()
+        .await
+        .unwrap();
+    app.run_jobs().await;
+    assert_eq!(
+        queue.pending().await.unwrap(),
+        1,
+        "part 2 waits an hour to retry"
+    );
+    assert!(app.run_all_jobs().await >= 2);
+    assert_eq!(queue.pending().await.unwrap(), 0);
+    let report: (i64, i64, bool) = app.state().cache.get("report").await.unwrap().unwrap();
+    assert_eq!(report, (2, 0, true));
+    assert!(queue.batch_status(batch).await.unwrap().unwrap().finished);
+}

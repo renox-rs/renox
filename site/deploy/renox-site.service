@@ -1,0 +1,17 @@
+# /etc/systemd/system/renox-site.service
+[Unit]
+Description=Renox documentation site
+After=network.target
+
+[Service]
+User=renox-site
+WorkingDirectory=/opt/renox-site
+EnvironmentFile=/opt/renox-site/.env
+ExecStartPre=/opt/renox-site/renox-site migrate
+ExecStart=/opt/renox-site/renox-site
+Restart=on-failure
+KillSignal=SIGTERM
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target

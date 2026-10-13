@@ -1,0 +1,18 @@
+{#- The rows an import left out (renox::import::ImportReport), shown in the
+    kit's import sheet: data-rx-keep-open keeps the sheet open, and when
+    some rows went in, closing it reloads the page. -#}
+{%- from "renox/ui.html" import alert %}
+<div class="rx-import-report" data-rx-keep-open{% if imported %} data-rx-refresh-on-close{% endif %}>
+  {{ alert(summary, kind="warning" if imported else "error") }}
+  <div class="rx-table-wrap rx-import-report__table" tabindex="0" role="region" aria-label="{{ summary }}">
+    <table class="rx-table">
+      <thead><tr><th scope="col" class="rx-num">{{ t('ui.import.row') }}</th><th scope="col">{{ t('ui.import.problem') }}</th></tr></thead>
+      <tbody>
+        {%- for failure in failed %}
+        <tr><td class="rx-num">{{ failure.row }}</td><td>{% for message in failure.messages %}{{ message }}{% if not loop.last %}<br>{% endif %}{% endfor %}</td></tr>
+        {%- endfor %}
+      </tbody>
+    </table>
+  </div>
+  {%- if more %}<p class="rx-hint">{{ t('ui.import.more', count=more) }}</p>{% endif %}
+</div>

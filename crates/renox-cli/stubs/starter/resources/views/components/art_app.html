@@ -1,0 +1,13 @@
+<rx-props>
+{#- The home page's art: a small "window" of the app over the theme's colours.
+    Decoration only (hidden from screen readers); its words are in
+    resources/lang/en.json (`patterns.art`). -#}
+<div class="app-art" aria-hidden="true">
+  <div class="app-art__window">
+    <div class="app-art__row"><app-icon-circle icon="chart-column"/><span><b>{{ t('patterns.art.chart') }}</b><span>{{ t('patterns.art.chart_note') }}</span></span></div>
+    <div class="app-art__bars"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+    <div class="app-art__row"><span class="app-art__people"><span>A</span><span>M</span><span>J</span></span><span><span>{{ t('patterns.art.people') }}</span></span></div>
+  </div>
+  <p class="app-art__chip app-art__chip--top"><app-icon-circle icon="shield-check"/><span><b>{{ t('patterns.art.roles') }}</b>{{ t('patterns.art.roles_note') }}</span></p>
+  <p class="app-art__chip app-art__chip--bottom"><app-icon-circle icon="mail" tone="clay"/><span><b>{{ t('patterns.art.verified') }}</b>{{ t('patterns.art.verified_note') }}</span></p>
+</div>

@@ -1,0 +1,39 @@
+{#- The printable invoice, or the counter's receipt (`?receipt=1`): print
+    styles in public/sales/sales.css hide the navigation and the buttons. -#}
+<rx-page layout="layouts/app.html" :title="t('sales.invoice.title', number=page.number) ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-let name="o" :value="page"/>
+  {# [explain:orders.invoice.template] #}
+  <div class="bs-print-actions">
+    <button class="rx-button rx-button--primary" type="button" data-bs-print data-rx-key="r"><span class="rx-button__label">{{ t('sales.invoice.print') }}</span></button>
+    <rx-link-button :href="route('orders.show', o.id)" label="{{ t('sales.invoice.back') }}"/>
+    <rx-link-button rx-if="o.channel == 'counter' and can('orders.sell')" route="sales.counter" label="{{ t('sales.counter.new_sale') }}" data-rx-key="n"/>
+  </div>
+  {# [/explain:orders.invoice.template] #}
+  <rx-alert rx-if="flash.change" kind="success" message="{{ t('sales.counter.change_due', amount=(flash.change | int | money)) }}"/>
+  <article class="rx-card bs-invoice">
+    <header class="bs-invoice__head">
+      <div>
+        <p class="bs-invoice__shop">{{ t('shop.name') }}<template rx-if="o.store"> · {{ o.store.name }}</template></p>
+        <p rx-if="o.store" class="rx-subtitle">{{ o.store.phone }} · {{ o.store.email }}</p>
+      </div>
+      <div class="bs-invoice__meta">
+        <h1 class="rx-title">{{ t('sales.invoice.receipt' if o.channel == "counter" else 'sales.invoice.title', number=o.number) }}</h1>
+        <p class="rx-subtitle">{{ (o.paid_at or o.placed_at) | date("%Y-%m-%d %H:%M") }}</p>
+        <p class="rx-subtitle">{{ t('sales.status.' ~ o.status) }}</p>
+      </div>
+    </header>
+    <p rx-if="o.customer"><strong>{{ t('sales.invoice.billed_to') }}</strong> {{ o.customer.name }}<template rx-if="o.customer.email"> · {{ o.customer.email }}</template><template rx-if="o.address"><br>{{ o.address }}</template></p>
+    {# [explain:orders.invoice.template] #}
+    <rx-table :rows="o.lines" as="line" caption="{{ t('sales.orders.lines') }}">
+      <rx-column label="{{ t('sales.orders.product') }}">{{ line.name }}<br><span class="rx-subtitle">{{ line.sku }}<template rx-if="line.variant"> · {{ line.variant }}</template></span></rx-column>
+      <rx-column label="{{ t('sales.orders.quantity') }}" align="num">{{ line.quantity }}</rx-column>
+      <rx-column label="{{ t('sales.orders.price') }}" align="num">{{ line.unit_price | money }}</rx-column>
+      <rx-column label="{{ t('sales.orders.line_total') }}" align="num">{{ line.total | money }}</rx-column>
+    </rx-table>
+    <app-sales-totals :o="o"/>
+    {# [/explain:orders.invoice.template] #}
+    <p rx-if="page.payments" class="rx-subtitle"><template rx-for="p in page.payments">{{ t('sales.method.' ~ p.method) }} · {{ t('sales.payment_status.' ~ p.status) }} · {{ p.amount | money }}<template rx-if="not loop.last">; </template></template></p>
+    <p class="rx-subtitle">{{ t('sales.invoice.footer', days=14) }}</p>
+  </article>
+</rx-page>

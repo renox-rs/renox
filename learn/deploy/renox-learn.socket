@@ -1,0 +1,13 @@
+# /etc/systemd/system/renox-learn.socket
+# systemd holds the port and hands it to renox-learn.service, so a restart (a
+# new stage, a new release of the site) makes visitors wait a moment instead
+# of failing.
+[Unit]
+Description=learn.renox.rs (listening socket)
+
+[Socket]
+ListenStream=127.0.0.1:3100
+Backlog=4096
+
+[Install]
+WantedBy=sockets.target

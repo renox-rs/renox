@@ -1,0 +1,40 @@
+{#- Bikes between sale stock and the rental fleet (#240): a new bike joins the fleet (a
+    to_fleet movement and a rental_bikes row, one transaction); a fleet bike is retired to be
+    sold as used (a from_fleet movement on its own used variant). The owner store decides. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.fleet.title')">
+  <app-stock-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('stock.fleet.title')" :subtitle="t('stock.fleet.lead')" :back="route('stock.index')" :back-label="t('stock.index.title')"/>
+    <div class="bs-split" data-bs-reveal>
+      <div>
+        <rx-card :title="t('stock.fleet.to_fleet')" :subtitle="t('stock.fleet.to_fleet_lead')">
+          {# [explain:stock.fleet.template] #}
+          <rx-form rx-if="options" :action="route('stock.fleet.store')" id="to-fleet-form" novalidate>
+            <rx-form-errors/>
+            <rx-select name="level" :label="t('stock.fleet.bike')" :options="options" required searchable/>
+            <rx-form-grid columns="2">
+              <rx-input name="frame_number" :label="t('stock.fleet.frame')" required/>
+              <rx-input name="deposit" :label="t('stock.fleet.deposit')" type="number" required min="0" :step="money_step" :prefix="money_symbol"/>
+              <rx-input name="hourly_rate" :label="t('stock.fleet.hourly')" type="number" required min="0" :step="money_step" :prefix="money_symbol"/>
+              <rx-input name="daily_rate" :label="t('stock.fleet.daily')" type="number" required min="0" :step="money_step" :prefix="money_symbol"/>
+            </rx-form-grid>
+            <rx-button :label="t('stock.fleet.add')" icon="plus"/>
+          </rx-form>
+          <rx-empty rx-else :title="t('stock.fleet.no_bikes_in_stock')" icon="bike"/>
+          {# [/explain:stock.fleet.template] #}
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('stock.fleet.retire')" :subtitle="t('stock.fleet.retire_lead')">
+          <rx-list rx-if="bikes" id="fleet-bikes" :label="t('stock.fleet.retire')">
+            <li rx-for="b in bikes">
+              <div class="rx-list__main"><strong>{{ b.name }}</strong><p class="rx-subtitle">{{ b.bike.frame_number }} · {{ t('stock.fleet.book_value', value=(b.bike.asset_value | money)) }}</p></div>
+              <rx-confirm :id="'retire-' ~ b.bike.id" :label="t('stock.fleet.retire_one')" :action="route('stock.fleet.retire', b.bike.id)" :title="t('stock.fleet.retire_title', frame=b.bike.frame_number)" :message="t('stock.fleet.retire_text')" method="POST" size="small"/>
+            </li>
+          </rx-list>
+          <rx-empty rx-else :title="t('stock.fleet.no_fleet')" icon="bike"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,8 @@
+{#- A purchase order mailed to the supplier (src/app/stock/purchasing.rs `send`): the lines and a
+    signed link to the printable page. -#}
+<rx-mail>
+  <p><strong>{{ t('stock.mail.purchase_order.hello', supplier=supplier.name) }}</strong></p>
+  <p>{{ t('stock.mail.purchase_order.body', number=order.id, store=store.name) }}</p>
+  <rx-mail-table :rows="table"/>
+  <rx-mail-button :url="url" :label="t('stock.mail.purchase_order.open')"/>
+</rx-mail>

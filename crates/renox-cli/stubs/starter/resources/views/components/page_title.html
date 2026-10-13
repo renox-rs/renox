@@ -1,0 +1,7 @@
+<rx-props icon title :subtitle="none">
+{#- <app-page-title icon="users" title="…" subtitle="…"/>: the kit's page header with an
+    icon in a tinted square before it (<app-icon-circle>). -#}
+<div class="app-page-title">
+  <app-icon-circle :icon="icon" :size="24"/>
+  <rx-page-header :title="title" :subtitle="subtitle"/>
+</div>

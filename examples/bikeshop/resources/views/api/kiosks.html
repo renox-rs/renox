@@ -1,0 +1,28 @@
+{#- The active store's kiosk tokens (#241, managers): make one for a kiosk,
+    see it once, revoke it when a kiosk is lost. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('api.kiosks.title') }}">
+<app-api-assets/>
+<rx-stack>
+  <rx-page-header title="{{ t('api.kiosks.title') }}" subtitle="{{ t('api.kiosks.lead', store=store.name) }}"/>
+  <app-api-fresh-token rx-if="fresh" :token="fresh" :base="base"/>
+  <div class="bs-tokens">
+    <rx-card title="{{ t('api.kiosks.list', store=store.name) }}">
+      <rx-table :rows="kiosks" caption="{{ t('api.kiosks.list', store=store.name) }}">
+        <rx-column label="{{ t('api.tokens.name') }}">{{ row.kiosk.name }}</rx-column>
+        <rx-column label="{{ t('api.tokens.abilities') }}">{{ row.kiosk.abilities | join(", ") }}</rx-column>
+        <rx-column label="{{ t('api.tokens.last_used') }}">{{ (row.last_used_at | since) if row.last_used_at else t('api.tokens.never') }}</rx-column>
+        <rx-column label="{{ t('api.kiosks.state') }}">
+          <rx-badge rx-if="row.kiosk.revoked_at" text="{{ t('api.kiosks.revoked') }}" :kind="none"/>
+          <rx-badge rx-else text="{{ t('api.kiosks.active') }}" kind="success"/>
+        </rx-column>
+        <rx-column label=""><rx-confirm rx-if="not row.kiosk.revoked_at" :id="'revoke-kiosk-' ~ row.kiosk.id" label="{{ t('api.tokens.revoke') }}" :action="route('api.kiosks.destroy', row.kiosk.id)" title="{{ t('api.kiosks.revoke_title') }}" message="{{ t('api.kiosks.revoke_text') }}" method="POST" size="small"/></rx-column>
+        <rx-slot name="empty"><rx-empty title="{{ t('api.kiosks.none') }}" message="{{ t('api.kiosks.none_text') }}" icon="tablet-smartphone"/></rx-slot>
+      </rx-table>
+    </rx-card>
+    <rx-card title="{{ t('api.kiosks.new') }}">
+      <app-api-token-form :action="route('api.kiosks.store')" :abilities="abilities" :name-hint="t('api.kiosks.name_hint')"/>
+      <p class="rx-hint"><rx-link-button route="api.about" label="{{ t('api.about.link') }}" variant="plain" size="small"/></p>
+    </rx-card>
+  </div>
+</rx-stack>
+</rx-page>

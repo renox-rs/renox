@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shell</title>
+  {{ renox_head() }}
+  {{ renox_ui() }}
+</head>
+{% from "renox/ui.html" import sidebar, sidebar_link, navbar %}
+<body class="rx-page rx-shell">
+  {% call sidebar("Fixture", href="/") %}
+    {{ sidebar_link("/shell", "Dashboard", active=true) }}
+    {{ sidebar_link("/widgets", "Widgets") }}
+    {{ sidebar_link("/overlays", "Overlays") }}
+    {{ sidebar_link("/charts", "Charts") }}
+    {{ sidebar_link("/errors", "Errors") }}
+    {{ sidebar_link("/form", "Forms") }}
+  {% endcall %}
+  <div class="rx-shell__main">
+    {{ navbar(none, width="full", skip=false) }}
+    <main class="rx-shell__content" id="main"><h1>Shell</h1></main>
+  </div>
+</body>
+</html>

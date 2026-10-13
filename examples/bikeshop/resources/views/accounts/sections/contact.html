@@ -1,0 +1,20 @@
+{#- Account section (src/app/accounts/mod.rs, order 10): the customer's
+    phone and home address, sent to `accounts.contact`. `section.data`:
+    customer, address (line1, line2, district, postal_code, city, country),
+    country_id, countries. A login without a customer record (staff) shows
+    nothing. -#}
+<rx-form rx-if="section.data.customer" :action="route('accounts.contact')" method="PUT" id="account-contact" live>
+  <rx-let name="a" :value="section.data.address"/>
+  <rx-card title="{{ t('accounts.contact.title') }}" subtitle="{{ t('accounts.contact.lead') }}">
+    <rx-form-grid columns="2">
+      <rx-input name="phone" label="{{ t('accounts.contact.phone') }}" type="tel" :value="section.data.customer.phone" autocomplete="tel" span="full"/>
+      <rx-input name="line1" label="{{ t('accounts.contact.line1') }}" :value="a.line1 if a else none" required autocomplete="address-line1" span="full"/>
+      <rx-input name="line2" label="{{ t('accounts.contact.line2') }}" :value="a.line2 if a else none" autocomplete="address-line2" span="full"/>
+      <rx-input name="district" label="{{ t('accounts.contact.district') }}" :value="a.district if a else none"/>
+      <rx-input name="postal_code" label="{{ t('accounts.contact.postal_code') }}" :value="a.postal_code if a else none" autocomplete="postal-code"/>
+      <rx-input name="city" label="{{ t('accounts.contact.city') }}" :value="a.city if a else none" required autocomplete="address-level2"/>
+      <rx-select name="country_id" label="{{ t('accounts.contact.country') }}" :options="section.data.countries" :selected="section.data.country_id" required searchable placeholder="{{ t('accounts.contact.choose_country') }}"/>
+    </rx-form-grid>
+    <div class="rx-card__footer"><rx-button label="{{ t('accounts.save') }}"/></div>
+  </rx-card>
+</rx-form>

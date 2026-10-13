@@ -1,0 +1,6 @@
+# renox.rs: everything here is public and meant to be read, by search
+# engines and by language models alike.
+User-agent: *
+Allow: /
+
+Sitemap: https://renox.rs/sitemap.xml

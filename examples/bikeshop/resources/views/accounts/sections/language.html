@@ -1,0 +1,10 @@
+{#- Account section (order 120): the language of the pages and the mails,
+    sent to `accounts.language`, which saves it on the account and in the
+    session. The kit's `toggle_buttons` (a segmented control) with one
+    option per language the shop is written in (`home::LOCALES`). -#}
+<rx-form :action="route('accounts.language')" method="PUT" id="account-language">
+  <rx-card title="{{ t('accounts.language.title') }}" subtitle="{{ t('accounts.language.lead') }}">
+    <rx-toggle-buttons name="locale" label="{{ t('accounts.language.label') }}" :options="section.data.locales" :selected="section.data.current" required/>
+    <div class="rx-card__footer"><rx-button label="{{ t('accounts.save') }}" variant="secondary"/></div>
+  </rx-card>
+</rx-form>

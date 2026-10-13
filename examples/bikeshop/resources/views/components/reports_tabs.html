@@ -1,0 +1,13 @@
+{#- The report pages' tabs (src/app/reports/grids.rs `REPORTS`, in this order): the
+    dashboard and the six grids, as the kit's `link_tabs` (it scrolls sideways on
+    phones). The current one is the page's own route: `<app-reports-tabs/>`. -#}
+<rx-props>
+<rx-link-tabs :items="[
+  [route('reports.dashboard'), t('reports.tab.dashboard')],
+  [route('reports.orders'), t('reports.tab.orders')],
+  [route('reports.rentals'), t('reports.tab.rentals')],
+  [route('reports.work_orders'), t('reports.tab.work_orders')],
+  [route('reports.payments'), t('reports.tab.payments')],
+  [route('reports.customers'), t('reports.tab.customers')],
+  [route('reports.entries'), t('reports.tab.entries')],
+]" :current="route(request.route)" :label="t('reports.tabs')"/>

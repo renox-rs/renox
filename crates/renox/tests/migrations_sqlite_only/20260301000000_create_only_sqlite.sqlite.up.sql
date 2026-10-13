@@ -1,0 +1,1 @@
+CREATE TABLE only_sqlite (id INTEGER PRIMARY KEY);

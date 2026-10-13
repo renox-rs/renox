@@ -1,0 +1,8 @@
+{#- A staff invitation (src/app/staff/team.rs): `store`, `role` (its label),
+    `inviter`, `link` (signed), `days`. -#}
+<rx-mail>
+  <p>{{ t('staff.invitations.mail.text', inviter=inviter, role=tx(role), store=store.name) }}</p>
+  <rx-mail-button :url="link" :label="t('staff.invitations.mail.button')"/>
+  <p>{{ t('staff.invitations.mail.expires', days=days) }}</p>
+  <p>{{ t('staff.invitations.mail.two_factor') }}</p>
+</rx-mail>

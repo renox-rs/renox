@@ -1,0 +1,7 @@
+{#- A token just made, shown once with the kit's copy button, and how to use it. -#}
+<rx-props token base>
+<div class="bs-token-once" data-bs-reveal>
+  <rx-alert kind="warning" title="{{ t('api.tokens.once_title') }}" message="{{ t('api.tokens.once') }}"/>
+  <rx-input name="token" label="{{ t('api.tokens.token') }}" :value="token" readonly copyable id="fresh-token"/>
+  <pre class="bs-code"><code>curl -H "Authorization: Bearer {{ token }}" {{ base }}/api/v1/me</code></pre>
+</div>

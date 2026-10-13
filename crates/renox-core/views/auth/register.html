@@ -1,0 +1,17 @@
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, input, button %}
+{% block title %}{{ text.register_title }} · {{ app.name }}{% endblock %}
+{% block content %}
+<form method="post" action="{{ route('register') }}" hx-post="{{ route('register') }}">
+  {{ csrf_field() }}
+  {% call card(title=text.register_title) %}
+    {{ input("name", text.name, required=true, autocomplete="name", attrs={"autofocus": true}) }}
+    {{ input("email", text.email, type="email", required=true, autocomplete="username") }}
+    {{ input("password", text.password, type="password", revealable=true, required=true, autocomplete="new-password") }}
+    {{ input("password_confirmation", text.password_confirmation, type="password", revealable=true, required=true, autocomplete="new-password") }}
+    {{ button(text.register_button, block=true) }}
+  {% endcall %}
+</form>
+{% with page="register" %}{% include "renox/auth/login_options.html" ignore missing %}{% endwith %}
+<p class="rx-auth__alt">{{ text.have_account }} <a class="rx-link" href="{{ route('login') }}">{{ text.login_button }}</a></p>
+{% endblock %}

@@ -1,0 +1,27 @@
+{#- `staff.stores.index`: the stores the person manages (`stores.manage` in
+    each), as cards on a grid (src/app/staff/stores.rs). `cards`: store,
+    address (one line), fee_percent; `can_fees`. -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.stores.title')">
+  <app-staff-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.stores.title')" :subtitle="t('staff.stores.lead')"/>
+    <div rx-if="cards" class="bs-tiles" id="stores">
+      {# [explain:staff.stores.index.template] #}
+      <template rx-for="c in cards">
+      <rx-card :title="c.store.name" :subtitle="c.address">
+        <rx-infolist columns="2">
+          <rx-entry :label="t('staff.stores.phone')" :value="c.store.phone"/>
+          <rx-entry :label="t('staff.stores.email')" :value="c.store.email"/>
+          <rx-entry :label="t('staff.stores.workshop')" :value="t('staff.stores.minutes', minutes=c.store.workshop_minutes_per_day)"/>
+          <rx-entry :label="t('staff.stores.fee')" :value="c.fee_percent" suffix=" %" decimals="2"/>
+          <rx-entry :label="t('staff.stores.hours')" :value="c.store.opening_hours | map(attribute='day') | list" list="comma" span="full"
+                    :labels="{'mon': t('staff.stores.days.mon'), 'tue': t('staff.stores.days.tue'), 'wed': t('staff.stores.days.wed'), 'thu': t('staff.stores.days.thu'), 'fri': t('staff.stores.days.fri'), 'sat': t('staff.stores.days.sat'), 'sun': t('staff.stores.days.sun')}"/>
+        </rx-infolist>
+        <div class="rx-card__footer"><rx-link-button :href="route('staff.stores.edit', c.store.id)" :label="t('staff.stores.edit')" icon="edit"/></div>
+      </rx-card>
+      {# [/explain:staff.stores.index.template] #}
+      </template>
+    </div>
+    <rx-card rx-else><rx-empty :title="t('staff.stores.none')" icon="store"/></rx-card>
+  </rx-stack>
+</rx-page>

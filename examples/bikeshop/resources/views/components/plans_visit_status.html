@@ -1,0 +1,4 @@
+{#- A visit's state as a badge: `<app-plans-visit-status :key="row.status"/>`. -#}
+<rx-props key>
+<rx-let name="tones" :value="{'scheduled': 'info', 'done': 'success', 'skipped': none, 'missed': 'warning', 'held': 'error', 'cancelled': none}"/>
+<rx-badge text="{{ t('plans.visit_status.' ~ key) }}" :kind="tones[key]"/>

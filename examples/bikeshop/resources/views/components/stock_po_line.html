@@ -1,0 +1,17 @@
+{# [explain:stock.purchasing.create.template] #}
+{#- One line of a new purchase order: the product, its reorder level, a unit
+    cost and a quantity. `need`: a line from the needs list (its reasons are
+    shown and its quantity is filled in); `i`: the line's number in the form;
+    `money-scale` and `money-step`: the page's shared values (components
+    don't see the app's shares). -#}
+<rx-props row i need money-scale money-step>
+<li class="bs-row">
+  <span class="bs-row__name">{{ row.name }}<small>{{ row.sku }}
+    <template rx-if="need and row.work_orders"> · <template rx-for="wo in row.work_orders"><a class="rx-link" href="{{ route('workshop.order', wo) }}">WO-{{ wo }}</a><template rx-if="not loop.last">, </template></template> {{ t('stock.purchasing.waiting') }}</template>
+    <template rx-if="need and row.available < row.reorder_level"> · {{ t('stock.purchasing.low', available=row.available, level=row.reorder_level) }}</template>
+    <template rx-if="need and not row.sold_by_supplier"> · {{ t('stock.purchasing.not_listed') }}</template></small></span>
+  <span class="bs-row__figure bs-row__figure--extra">{{ row.reorder_level or "—" }}</span>
+  <span><rx-input name="lines[{{ i }}][unit_cost]" :label="t('stock.purchasing.unit_cost_of', name=row.name)" type="number" :value="row.unit_cost / money_scale" hide-label min="0" :step="money_step"/></span>
+  <span><input type="hidden" name="lines[{{ i }}][variant]" value="{{ row.variant_id }}"><rx-input name="lines[{{ i }}][quantity]" :label="t('stock.purchasing.quantity_of', name=row.name)" type="number" :value="row.quantity if need else none" hide-label min="0" inputmode="numeric"/></span>
+</li>
+{# [/explain:stock.purchasing.create.template] #}

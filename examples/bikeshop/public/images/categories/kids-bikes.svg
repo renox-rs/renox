@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A kids' bike">
+<rect width="800" height="600" fill="#fdf0e1"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <circle cx="300" cy="430" r="80" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="500" cy="430" r="80" stroke="#1c1917" stroke-width="14"/>
+  <circle cx="300" cy="430" r="10" fill="#1c1917"/>
+  <circle cx="500" cy="430" r="10" fill="#1c1917"/>
+  <path d="M300 430 L360 290 L520 290 L500 430 M360 290 L400 430 L520 290 M400 430 L300 430" stroke="#ea580c" stroke-width="18"/>
+  <circle cx="400" cy="430" r="22" stroke="#1c1917" stroke-width="10"/>
+  <path d="M340 260 h60 M360 290 L345 258" stroke="#1c1917" stroke-width="14"/>
+  <path d="M520 290 L530 230 q10 -10 40 0 l20 10" stroke="#1c1917" stroke-width="12"/>
+
+</g>
+</svg>

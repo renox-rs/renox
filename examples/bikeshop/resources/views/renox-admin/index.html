@@ -1,0 +1,19 @@
+{#- A resource's list (renox-admin/index.html), replaced by the bike shop for
+    its translations: its named filters as tabs, then the grid with its
+    search, column filters, actions and exports. `custom` columns are drawn
+    by renox-admin/{slug}/cells.html. -#}
+<rx-page layout="renox-admin/layout.html">
+<rx-slot name="title">{{ tx(resource.plural_label) }} · {{ tx(admin.title) }}</rx-slot>
+<rx-page-header :title="tx(resource.plural_label)">
+  <rx-link-button rx-if="allowed.create" :href="resource.create_url" :label="t('admin_panel.new', label=(tx(resource.label) | lower))" variant="primary" icon="plus" key="n"/>
+</rx-page-header>
+<rx-link-tabs rx-if="tabs" :items="tabs" :current="current_tab" :label="t('admin_panel.filters', label=tx(resource.plural_label))"/>
+<rx-grid :page="rows">
+  {#- The one statement left: a dynamic include of the app's own cells, which no tag covers. -#}
+  <rx-include :template="'renox-admin/' ~ resource.slug ~ '/cells.html'" optional/>
+</rx-grid>
+{#- Actions that ask for input (AdminAction::form): the grid opens the sheet. -#}
+<rx-action-sheet rx-for="sheet in sheets" :id="sheet.id" :label="sheet.title" :action="sheet.url" :title="sheet.title" :description="sheet.description" :submit-label="sheet.submit_label" :danger="sheet.danger" :button="false">
+  <app-admin-field rx-for="f in sheet.fields" :f="f" :currency="admin.currency"/>
+</rx-action-sheet>
+</rx-page>

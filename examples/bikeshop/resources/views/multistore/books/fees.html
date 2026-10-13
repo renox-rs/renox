@@ -1,0 +1,32 @@
+{#- The stores' fee rates (#245): what a store earns for work done for another; only the owner
+    changes them (`settings.fees`), every change audited; entries keep the rate they were
+    booked with. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.fees.title')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.fees.title')" :subtitle="t('multistore.fees.lead')" :back="route('multistore.books')" :back-label="t('multistore.books.title')"/>
+    <div class="bs-split" data-bs-reveal>
+      <div>
+        <rx-card :title="t('multistore.fees.rates')">
+          {# [explain:multistore.fees.template] #}
+          <rx-list id="fee-rates" :label="t('multistore.fees.rates')">
+            <li rx-for="r in rates">
+              <div class="rx-list__main"><strong>{{ r.store.name }}</strong><p class="rx-subtitle">{{ t('multistore.fees.earns', rate=r.percent) }}</p></div>
+              <rx-action-sheet rx-if="can_change" :id="'fee-' ~ r.store.id" :label="t('multistore.fees.change')" :action="route('multistore.fees.update', r.store.id)" :title="t('multistore.fees.change_title', store=r.store.name)" :description="t('multistore.fees.change_lead')" size="small" icon="edit">
+                <rx-input name="percent" :label="t('multistore.fees.percent')" type="number" :value="r.value" required suffix="%" min="0" max="50" step="0.01"/>
+              </rx-action-sheet>
+            </li>
+          </rx-list>
+          {# [/explain:multistore.fees.template] #}
+          <p rx-if="not can_change" class="rx-subtitle">{{ t('multistore.fees.owner_only') }}</p>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('multistore.fees.history')">
+          <rx-history rx-if="timeline" :items="timeline" :label="t('multistore.fees.history')" date-format="%d %b %Y %H:%M"/>
+          <rx-empty rx-else :title="t('multistore.fees.no_history')" icon="hand-coins"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

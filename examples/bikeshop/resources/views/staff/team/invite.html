@@ -1,0 +1,17 @@
+{#- `staff.invitations.create`: invite someone to the active store's team
+    with a role there (src/app/staff/team.rs). `store`, `roles` (the roles
+    the viewer may give here). -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.invitations.title')">
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.invitations.title')" :subtitle="t('staff.invitations.lead', store=store.name)" :back="route('staff.team.index')" :back-label="t('staff.team.title', store=store.name)"/>
+    {# [explain:staff.invitations.create.template] #}
+    <rx-form :action="route('staff.invitations.store')" live>
+      <rx-card>
+        <rx-input name="email" :label="t('staff.invitations.email')" type="email" required autocomplete="off"/>
+        <rx-select name="role" :label="t('staff.team.role')" :options="role_options" required :placeholder="t('staff.team.choose_role')" :hint="t('staff.invitations.role_hint')"/>
+        <div class="rx-card__footer"><rx-button :label="t('staff.invitations.send')"/></div>
+      </rx-card>
+    </rx-form>
+    {# [/explain:staff.invitations.create.template] #}
+  </rx-stack>
+</rx-page>

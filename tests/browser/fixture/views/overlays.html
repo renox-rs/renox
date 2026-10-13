@@ -1,0 +1,71 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import button, input, action_sheet, menu, menu_link, tabs, tab_panel, sheet, open_button, wizard, wizard_step %}
+{% block content %}
+<button id="toast-me" class="rx-button rx-button--secondary" hx-post="/toast" hx-swap="none">Toast</button>
+
+{% call action_sheet("trip-sheet", "Plan a trip", "/sheet", "Plan a trip") %}
+  {{ input("from", "From", required=true) }}
+  {{ input("to", "To", required=true) }}
+{% endcall %}
+
+{% call menu("More", id="more-menu") %}
+  {{ menu_link("/stock", "Stock") }}
+  {{ menu_link("/", "Home") }}
+{% endcall %}
+
+{{ tabs("t", [["one", "One"], ["two", "Two"], ["three", "Three"]], selected="one") }}
+{% call tab_panel("t", "one", selected=true) %}<p>First panel</p>{% endcall %}
+{% call tab_panel("t", "two") %}<p>Second panel</p>{% endcall %}
+{% call tab_panel("t", "three") %}<p>Third panel</p>{% endcall %}
+
+<button id="tipped" type="button" class="rx-button rx-button--plain" data-rx-tip="More about this">Info</button>
+<button id="shortcut" type="button" class="rx-button rx-button--plain" data-rx-key="k">Shortcut</button>
+<input id="typing" aria-label="Typing">
+
+<button id="toast-redirect" type="button" class="rx-button rx-button--plain" hx-post="/toast-redirect" hx-swap="none">Go</button>
+<button id="toast-refresh" type="button" class="rx-button rx-button--plain" hx-post="/toast-refresh" hx-swap="none">Refresh</button>
+
+{#- Disabled with a reason: focusable, says why, does nothing; a shortcut
+    on it is ignored too. -#}
+{{ button("Publish", type="button", key="j", disabled_reason="Add a title first", attrs={"id": "publish"}) }}
+
+{#- A sheet at the side, wide, with a few things to tab through. -#}
+{{ open_button("side-sheet", "Filters") }}
+{% call sheet("side-sheet", "Filters", slide_over=true, width="lg") %}
+  <input id="side-a" aria-label="First">
+  <button id="side-b" type="button" class="rx-button rx-button--plain">Second</button>
+  <button id="side-close" type="button" class="rx-button rx-button--secondary" data-rx-close>Close</button>
+{% endcall %}
+
+{#- A sheet written as tags. -#}
+<rx-open-button id="tag-sheet" label="Tag sheet" />
+<rx-sheet id="tag-sheet" title="From tags" message="Written as tags." width="sm">
+  <p id="tag-sheet-body">Inside the tag sheet</p>
+  <rx-button type="button" variant="secondary" data-rx-close>Close it</rx-button>
+</rx-sheet>
+
+{#- A wizard in an action sheet: a 422 on the first step's field, sent from
+    the last step, goes back to that step. -#}
+{% call action_sheet("wizard-sheet", "Book a trip", "/sheet", "Book a trip") %}
+  {% call wizard("ws", [["start", "Start"], ["end", "End"]], submit_label="Book") %}
+    {% call wizard_step("ws", "start") %}{{ input("from", "From", id="ws-from") }}{% endcall %}
+    {% call wizard_step("ws", "end") %}{{ input("to", "To", id="ws-to") }}{% endcall %}
+  {% endcall %}
+{% endcall %}
+
+{#- A table on a phone: a tooltip in it mustn't make the page wider. -#}
+<div class="rx-table-wrap"><table class="rx-table"><tbody><tr>
+  <td><button id="cell-tip" type="button" class="rx-button rx-button--plain" data-rx-tip="A long explanation of this cell that is wider than a phone screen would allow">?</button></td>
+  <td>Value</td>
+</tr></tbody></table></div>
+{#- The two buttons count their presses from a script with a nonce: an
+    inline `onclick` is refused under CSP=strict (#355). -#}
+<script nonce="{{ csp_nonce() }}">
+  document.querySelector('#shortcut').addEventListener('click', (e) => {
+    e.currentTarget.dataset.pressed = Number(e.currentTarget.dataset.pressed || 0) + 1;
+  });
+  document.querySelector('#publish').addEventListener('click', (e) => {
+    e.currentTarget.dataset.pressed = 1;
+  });
+</script>
+{% endblock %}

@@ -1,0 +1,114 @@
+{
+  "guestbook": {
+    "title": "Libro de visitas",
+    "name": "Nombre",
+    "message": "Mensaje",
+    "photo": "Foto",
+    "send": "Enviar",
+    "empty": "Todavía no hay mensajes.",
+    "thanks": "¡Gracias, :name! Tu mensaje se ha guardado."
+  },
+  "nav": { "login": "Iniciar sesión", "register": "Registrarse", "logout": "Cerrar sesión" },
+  "renox": {
+    "validation": {
+      "attributes": {
+        "name": "nombre",
+        "message": "mensaje",
+        "photo": "foto",
+        "email": "correo electrónico",
+        "password": "contraseña",
+        "current_password": "contraseña actual"
+      },
+      "required": "El campo :attribute es obligatorio.",
+      "min": {
+        "string": "El campo :attribute debe tener al menos :min caracteres."
+      },
+      "max": {
+        "string": "El campo :attribute no puede tener más de :max caracteres.",
+        "file": "El archivo :attribute no puede pesar más de :max kilobytes."
+      },
+      "between": {
+        "string": "El campo :attribute debe tener entre :min y :max caracteres."
+      },
+      "image": "El archivo :attribute debe ser una imagen.",
+      "email": "El campo :attribute debe ser un correo electrónico válido.",
+      "confirmed": "La confirmación de :attribute no coincide.",
+      "unique": "Ese :attribute ya está en uso.",
+      "current_password": "La :attribute no es correcta.",
+      "auth": {
+        "failed": "El correo o la contraseña no son correctos.",
+        "throttle": "Demasiados intentos. Vuelve a intentarlo dentro de :seconds segundos."
+      }
+    },
+    "auth": {
+      "login_title": "Iniciar sesión",
+      "register_title": "Crear una cuenta",
+      "name": "Nombre",
+      "email": "Correo electrónico",
+      "password": "Contraseña",
+      "password_confirmation": "Repite la contraseña",
+      "remember": "Recordarme",
+      "login_button": "Entrar",
+      "register_button": "Registrarse",
+      "no_account": "¿Todavía no tienes cuenta?",
+      "have_account": "¿Ya tienes cuenta?",
+      "forgot_link": "¿Olvidaste tu contraseña?",
+      "forgot_title": "¿Olvidaste tu contraseña?",
+      "forgot_intro": "Escribe tu correo y te enviaremos un enlace para elegir una contraseña nueva.",
+      "send_link": "Enviarme un enlace",
+      "back_to_login": "Volver a iniciar sesión",
+      "reset_title": "Elige una contraseña nueva",
+      "reset_button": "Guardar la contraseña",
+      "reset_link_sent": "Si ese correo tiene una cuenta, el enlace ya va de camino.",
+      "reset_invalid": "Este enlace no es válido o ha caducado.",
+      "password_reset_done": "Tu contraseña ha cambiado. Ya puedes iniciar sesión.",
+      "verify_title": "Verifica tu correo",
+      "verify_intro": "Te hemos enviado un enlace para verificar tu dirección. ¿No te ha llegado?",
+      "resend_button": "Enviar otro enlace",
+      "logout": "Cerrar sesión",
+      "verification_sent": "Te hemos enviado un enlace de verificación nuevo.",
+      "verified": "Tu correo está verificado.",
+      "mail_reset_subject": "Restablece tu contraseña",
+      "mail_reset_intro": "Has pedido restablecer tu contraseña. Elige una nueva con el botón de abajo.",
+      "mail_reset_outro": "El enlace vale durante 60 minutos. Si no lo has pedido tú, ignora este correo.",
+      "mail_verify_subject": "Verifica tu dirección de correo",
+      "mail_verify_intro": "Confirma que esta es tu dirección de correo.",
+      "mail_verify_outro": "El enlace vale durante 60 minutos.",
+      "account_title": "Tu cuenta",
+      "profile_title": "Perfil",
+      "profile_saved": "Tu perfil se ha guardado.",
+      "email_unverified": "Tu correo nuevo aún no está verificado: revisa tu bandeja de entrada.",
+      "save": "Guardar",
+      "password_title": "Cambiar la contraseña",
+      "current_password": "Contraseña actual",
+      "new_password": "Contraseña nueva",
+      "password_changed": "Tu contraseña ha cambiado. Se ha cerrado la sesión en tus otros dispositivos.",
+      "other_devices_title": "Otros dispositivos",
+      "other_devices_intro": "Cierra la sesión en todos los demás sitios, por ejemplo en un móvil perdido.",
+      "other_devices_button": "Cerrar sesión en otros dispositivos",
+      "other_devices_logged_out": "Se ha cerrado la sesión en tus otros dispositivos.",
+      "delete_title": "Eliminar la cuenta",
+      "delete_intro": "Tu cuenta y sus datos se eliminan para siempre.",
+      "delete_button": "Eliminar mi cuenta",
+      "delete_confirm": "¿Eliminar tu cuenta para siempre?",
+      "confirm_title": "Confirma tu contraseña",
+      "confirm_intro": "Esta es una zona protegida. Confirma tu contraseña para continuar.",
+      "confirm_button": "Confirmar"
+    }
+  },
+  "ui": {
+    "optional": "opcional",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "dismiss": "Descartar",
+    "more": "Más",
+    "skip": "Saltar al contenido",
+    "main_navigation": "Principal",
+    "errors_title": "Revisa los campos marcados.",
+    "show_password": "Mostrar la contraseña",
+    "hide_password": "Ocultar la contraseña",
+    "choose_file": "Elige un archivo o suéltalo aquí",
+    "current_file": "Archivo actual",
+    "remove": "Quitar"
+  }
+}

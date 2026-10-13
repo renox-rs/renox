@@ -1,0 +1,12 @@
+{#- A category's line icon, from its link (`/shop/road-bikes`): the kit's
+    `icon` with the closest Lucide drawing, as Lucide has no bike types
+    (docs/ui.md). A category without one gets the tag.
+    `<app-category-icon :href="child.href"/>` -#}
+<rx-props href :size="18">
+<rx-let name="icons" :value="{
+  'bikes': 'bike', 'road-bikes': 'bike', 'mountain-bikes': 'mountain', 'city-bikes': 'building-2',
+  'folding-bikes': 'train-front', 'e-bikes': 'zap', 'kids-bikes': 'baby',
+  'gear': 'hard-hat', 'helmets': 'hard-hat', 'lights': 'flashlight', 'locks': 'lock', 'clothing': 'shirt', 'bags': 'backpack',
+  'parts': 'cog', 'chains': 'link', 'tyres': 'circle-dot', 'brakes': 'disc-3', 'drivetrain': 'cog', 'saddles': 'armchair',
+}"/>
+<rx-icon :name="icons[href | string | split('/') | last] or 'tag'" :size="size"/>

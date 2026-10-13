@@ -1,0 +1,103 @@
+{#- /about/htmx (src/app/about/htmx.rs): htmx and Alpine recipes, live, on a
+    pre-ride checklist kept in the session and the catalogue's bikes. Each is
+    a few htmx attributes on the kit's components and a handler answering
+    with a fragment (about/htmx/_*.html); the table at the end names the
+    recipe, what to try, the answer and where the shop uses it. -#}
+<rx-page layout="layouts/app.html" :title="t('htmx.title')" :description="t('htmx.lead')">
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="t('htmx.title')" :subtitle="t('htmx.lead')"/>
+  <div class="rx-row"><rx-link-button route="about.htmx_live" :label="t('htmx.live.see_live')" variant="secondary"/></div>
+
+  {#- One Alpine component for the checklist: the active tab. Its logic is in
+      `Alpine.data` below, so the page also works under CSP=strict. -#}
+  <div x-data="checklist">
+  <rx-card :title="t('htmx.checklist.title')" :subtitle="t('htmx.checklist.lead')">
+    <div class="bs-checklist__bar">
+      <span class="rx-badge rx-badge--info" id="open-count">{{ t('htmx.open', count=open) }}</span>
+      {#- Tabs: filtering happens in the browser (each row's x-show), no request. -#}
+      <div class="rx-segmented" role="tablist" aria-label="{{ t('htmx.show') }}">
+        <button class="rx-segmented__item" type="button" role="tab" :aria-selected="ariaAll" @click="showAll">{{ t('htmx.tabs.all') }}</button>
+        <button class="rx-segmented__item" type="button" role="tab" :aria-selected="ariaOpen" @click="showOpen">{{ t('htmx.tabs.open') }}</button>
+        <button class="rx-segmented__item" type="button" role="tab" :aria-selected="ariaDone" @click="showDone">{{ t('htmx.tabs.done') }}</button>
+      </div>
+      <span class="rx-spacer"></span>
+      {#- Modal form: the kit's `action_sheet` sends it with htmx, and the new
+          row goes to the top of the list (`target`, `swap="afterbegin"`). A
+          422 keeps the sheet open with the error under the field; a success
+          closes it and clears the form. -#}
+      <rx-action-sheet id="new-item" :label="t('htmx.new')" route="about.htmx.store" :title="t('htmx.new')"
+                       :submit-label="t('htmx.add')" variant="primary" icon="plus" key="n"
+                       target="#checklist" swap="afterbegin">
+        <rx-input name="title" :label="t('htmx.item')" :placeholder="t('htmx.placeholder')" required autocomplete="off" id="new-title" maxlength="60"/>
+      </rx-action-sheet>
+    </div>
+    <rx-list id="checklist" :label="t('htmx.checklist.title')">
+      <app-about-htmx-row rx-for="item in items" :item="item"/>
+    </rx-list>
+    <app-about-htmx-empty :total="total"/>
+    <div class="rx-row">
+      {#- Plain forms htmx takes over: HX-Refresh reloads this page,
+          HX-Redirect goes to another one. -#}
+      <form method="post" action="{{ route('about.htmx.clear_done') }}" hx-post="{{ route('about.htmx.clear_done') }}">
+        {{ csrf_field() }}<rx-button :label="t('htmx.clear')" variant="secondary"/>
+      </form>
+      <form method="post" action="{{ route('about.htmx.ready') }}" hx-post="{{ route('about.htmx.ready') }}">
+        {{ csrf_field() }}<rx-button :label="t('htmx.ready_button')" variant="secondary"/>
+      </form>
+    </div>
+  </rx-card>
+  </div>
+
+  <rx-card :title="t('htmx.scroll.title')" :subtitle="t('htmx.scroll.lead')">
+    <rx-list id="bikes" :label="t('htmx.scroll.title')"><app-about-htmx-bikes :bikes="bikes" :next="next"/></rx-list>
+  </rx-card>
+
+  <rx-card :title="t('htmx.recipes.title')" :subtitle="t('htmx.recipes.lead')">
+    <rx-let name="recipes" :value='[
+      ["modal", "action_sheet(…, target=\"#checklist\", swap=\"afterbegin\")", none],
+      ["oob", "view(…).fragment(\"row\").also(\"count\")", route("cart.show")],
+      ["retarget", "HxRetarget + HxReswap + HxTrigger", none],
+      ["inline", "hx-trigger=\"dblclick\", hx-trigger=\"bs-cancel\"", none],
+      ["toggle", "checkbox(…, attrs={\"hx-patch\": …})", route("staff.roles.index")],
+      ["menu", "menu_button(…, attrs={\"hx-delete\": …, \"hx-confirm\": …})", none],
+      ["tabs", "Alpine.data(\"checklist\") + x-show", none],
+      ["refresh", "(Toast, HxRefresh)", route("sales.orders.index")],
+      ["redirect", "(Toast, htmx.redirect(…))", route("plans.mine")],
+      ["scroll", "hx-trigger=\"revealed\" hx-swap=\"outerHTML\"", none],
+    ]'/>
+    <rx-table :rows="recipes" as="r" :caption="t('htmx.recipes.title')">
+      <rx-column :label="t('htmx.recipes.recipe')">{{ t('htmx.recipes.' ~ r[0] ~ '.name') }}</rx-column>
+      <rx-column :label="t('htmx.recipes.try')">{{ t('htmx.recipes.' ~ r[0] ~ '.try') }}</rx-column>
+      <rx-column :label="t('htmx.recipes.answer')"><code>{{ r[1] }}</code></rx-column>
+      <rx-column :label="t('htmx.recipes.shop')"><a rx-if="r[2]" class="rx-link" href="{{ r[2] }}">{{ t('htmx.recipes.' ~ r[0] ~ '.shop') }}</a><template rx-else>—</template></rx-column>
+    </rx-table>
+  </rx-card>
+</div>
+
+<rx-push stack="scripts" once="about-htmx-checklist">
+<rx-script>
+  // Escape in an inline edit asks for the row as it was: the input listens
+  // for `bs-cancel` (a trigger filter would need eval, refused by CSP=strict).
+  document.addEventListener("keyup", function (event) {
+    if (event.key === "Escape" && event.target.matches("[data-bs-cancel]")) {
+      htmx.trigger(event.target, "bs-cancel");
+    }
+  });
+  document.addEventListener("alpine:init", function () {
+    Alpine.data("checklist", function () {
+      return {
+        tab: "all",
+        get showsOpen() { return this.tab !== "done"; },
+        get showsDone() { return this.tab !== "open"; },
+        get ariaAll() { return String(this.tab === "all"); },
+        get ariaOpen() { return String(this.tab === "open"); },
+        get ariaDone() { return String(this.tab === "done"); },
+        showAll: function () { this.tab = "all"; },
+        showOpen: function () { this.tab = "open"; },
+        showDone: function () { this.tab = "done"; }
+      };
+    });
+  });
+</rx-script>
+</rx-push>
+</rx-page>

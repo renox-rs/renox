@@ -1,0 +1,40 @@
+{#- The rental counter (#235): the active store's day, and a search by code or customer. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.counter.title') }}">
+  <app-rentals-styles/>
+  <rx-stack class="bs-counter" data-bs-reveal>
+    {#- The page's title over a photo of the fleet (public/app.css, `bs-banner`). -#}
+    <header class="bs-banner">
+      <img src="/images/site/fleet.webp" alt="" width="1200" height="900">
+      <p class="bs-banner__eyebrow"><rx-icon name="key-round" :size="16"/><span>{{ t('rentals.nav.counter') }}</span></p>
+      <h1 class="bs-banner__title">{{ t('rentals.counter.title') }}</h1>
+      <p class="bs-banner__lead">{{ t('rentals.counter.lead') }}</p>
+    </header>
+    <rx-toolbar>
+      <form method="get" action="{{ route('rentals.counter') }}" class="bs-board__search" role="search">
+        <rx-input name="q" label="{{ t('rentals.counter.search') }}" :value="q" placeholder="{{ t('rentals.counter.search_hint') }}" hide-label/>
+      </form>
+      <span class="rx-spacer"></span>
+      <rx-link-button rx-if="can('rentals.checkout')" route="rentals.walkin" label="{{ t('rentals.walkin.title') }}" variant="primary" icon="plus"/>
+      <rx-link-button rx-if="can('rentals.verify_id')" route="rentals.identities" label="{{ t('rentals.identities.title') }}"/>
+      <rx-link-button rx-if="can('fleet.view')" route="rentals.fleet" label="{{ t('rentals.fleet.title') }}"/>
+    </rx-toolbar>
+    <section rx-if="searched" class="rx-stack" aria-labelledby="found-title">
+      <h2 class="rx-card__title" id="found-title">{{ t('rentals.counter.found', count=found | length) }}</h2>
+      <rx-list rx-if="found" id="found-rentals" label="{{ t('rentals.counter.found', count=found | length) }}">
+        <app-rentals-item rx-for="row in found" :row="row" :href="route('rentals.desk', row.id)"/>
+      </rx-list>
+      <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.counter.nothing') }}" message="{{ t('rentals.counter.nothing_text') }}" icon="search"/></div>
+    </section>
+    {# [explain:rentals.counter.template] #}
+    <rx-columns count="3">
+      <section rx-for="key, rows, sign in [['pickups', pickups, 'calendar-check'], ['out', out, 'bike'], ['overdue', overdue, 'clock']]" class="rx-stack" aria-labelledby="{{ key }}-title">
+        <h2 class="rx-card__title bs-counter-heading" id="{{ key }}-title"><span class="bs-icon-circle bs-icon-circle--small{{ ' bs-icon-circle--clay' if key == 'overdue' and rows }}"><rx-icon :name="sign" :size="18"/></span>{{ t('rentals.counter.' ~ key) }} <span class="rx-badge">{{ rows | length }}</span></h2>
+        <rx-list rx-if="rows" :id="key ~ '-rentals'" :label="t('rentals.counter.' ~ key)">
+          <app-rentals-item rx-for="row in rows" :row="row" :href="route('rentals.desk', row.id)"/>
+        </rx-list>
+        <div rx-else class="rx-card"><rx-empty :title="t('rentals.counter.empty_' ~ key)" :icon="'circle-check' if key == 'overdue' else sign"/></div>
+      </section>
+    </rx-columns>
+    {# [/explain:rentals.counter.template] #}
+  </rx-stack>
+</rx-page>

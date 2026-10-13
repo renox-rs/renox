@@ -1,0 +1,41 @@
+{#- Renox's sign-in pages (login, register, password reset, verification,
+    account) in this app's look: the built-in renox/auth/layout.html,
+    overridden by this file of the same name. On wide screens the form sits
+    beside the theme's art (public/patterns.css, `app-auth`), except on the
+    account pages. Every sign-in page extends it. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title><rx-outlet name="title">{{ app.name }}</rx-outlet></title>
+  <rx-head/>
+  <rx-ui/>
+  <link rel="stylesheet" href="{{ asset('app.css') }}">
+  <link rel="stylesheet" href="{{ asset('patterns.css') }}">
+  <rx-outlet stack="head"/>
+</head>
+<rx-let name="art" :value="not route_is('account.*')"/>
+<body class="rx-page{{ ' app-auth' if art }}">
+  {#- The account pages are the wide ones (the built-in layout's `main_class` block). -#}
+  <main class="rx-auth{{ ' rx-auth--wide' if not art }}" id="main">
+    <div class="rx-auth__inner">
+      <p class="rx-auth__brand"><a href="{{ route('home') }}"><span class="rx-brand-mark" aria-hidden="true">{{ (app.name | string)[:1] | upper }}</span> {{ app.name }}</a></p>
+      <rx-outlet name="content"/>
+    </div>
+  </main>
+  <aside rx-if="art" class="app-auth__art" aria-hidden="true">
+    <div class="app-art">
+      <p class="app-auth__quote">{{ t('sign_in.art.title') }} <em>{{ t('sign_in.art.accent') }}</em></p>
+      <ul class="app-auth__points" role="list">
+        <li><rx-icon name="shield-check"/><span>{{ t('sign_in.art.secure') }}</span></li>
+        <li><rx-icon name="mail"/><span>{{ t('sign_in.art.verified') }}</span></li>
+        <li><rx-icon name="history"/><span>{{ t('sign_in.art.recorded') }}</span></li>
+      </ul>
+    </div>
+  </aside>
+  <rx-toasts/>
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

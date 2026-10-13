@@ -1,0 +1,9 @@
+{#- Maintenance mode (`bikeshop down`, back with `bikeshop up`): the shop's own
+    words instead of errors/default.html's "Sorry, that didn't work.". Renox sends
+    it with a 503 and `Retry-After`; /health keeps answering. -#}
+<rx-page layout="layouts/app.html">
+<rx-slot name="seo"><title>{{ status }} {{ reason }} · {{ app.name }}</title></rx-slot>
+<div class="rx-card">
+  <rx-empty :title="t('errors.maintenance.title')" :message="t('errors.maintenance.body')" icon="wrench"/>
+</div>
+</rx-page>

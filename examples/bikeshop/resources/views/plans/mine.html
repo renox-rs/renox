@@ -1,0 +1,32 @@
+{#- The customer's plans (#237): each bike's plan with its state, next
+    visit, visits done and last invoice, on a CSS grid of cards. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.mine.title') }}">
+<app-plans-assets/>
+<rx-stack>
+  <rx-page-header title="{{ t('plans.mine.title') }}" subtitle="{{ t('plans.mine.lead') }}"/>
+  {# [explain:plans.mine.template] #}
+  <div rx-if="current" class="bs-my-plans" id="my-plans" data-bs-reveal>
+    <article rx-for="line in current" class="rx-card bs-my-plan" data-bs-plan="{{ line.subscription.id }}">
+      <header class="bs-my-plan__header">
+        <h2 class="rx-card__title"><a class="rx-link" href="{{ route('plans.show', line.subscription.id) }}">{{ line.bike }}</a></h2>
+        <app-plans-status :key="line.status"/>
+      </header>
+      <p class="rx-subtitle">{{ line.plan.name if line.plan else "" }} · {{ line.store }}</p>
+      <rx-infolist columns="2">
+        <rx-entry label="{{ t('plans.fields.next_visit') }}" :value="line.subscription.next_visit_on if line.status in ['active', 'ending'] else none" format="date"/>
+        <rx-entry label="{{ t('plans.fields.visits_done') }}" :value="line.done" format="number"/>
+        <rx-entry rx-if="line.last_invoice" label="{{ t('plans.fields.last_invoice') }}">{{ line.last_invoice.amount | money(currency=line.last_invoice.currency) }} · {{ t('plans.invoice.paid' if line.last_invoice.paid else 'plans.invoice.failed') }}</rx-entry>
+        <rx-entry rx-else label="{{ t('plans.fields.last_invoice') }}" :value="none" placeholder="{{ t('plans.mine.counter') }}"/>
+      </rx-infolist>
+      <rx-link-button :href="route('plans.show', line.subscription.id)" label="{{ t('plans.mine.open') }}" size="small"/>
+    </article>
+  </div>
+  {# [/explain:plans.mine.template] #}
+  <div rx-else class="rx-card"><rx-empty title="{{ t('plans.mine.none') }}" message="{{ t('plans.mine.none_text') }}" route="plans.index" action-label="{{ t('plans.index.title') }}" icon="calendar-check"/></div>
+  <rx-card rx-if="past" title="{{ t('plans.mine.past') }}">
+    <ul class="rx-list">
+      <li rx-for="line in past"><a class="rx-link" href="{{ route('plans.show', line.subscription.id) }}">{{ line.bike }} · {{ line.plan.name if line.plan else "" }}</a> <app-plans-status :key="line.status"/></li>
+    </ul>
+  </rx-card>
+</rx-stack>
+</rx-page>

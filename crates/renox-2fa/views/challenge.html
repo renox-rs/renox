@@ -1,0 +1,14 @@
+{#- renox-2fa: the code after the password. Replace it with
+    resources/views/two-factor/challenge.html in your app. -#}
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, input, button %}
+{% block title %}Two-factor authentication · {{ app.name }}{% endblock %}
+{% block content %}
+<form method="post" action="{{ route('two-factor.verify') }}" hx-post="{{ route('two-factor.verify') }}">
+  {{ csrf_field() }}
+  {% call card(title="Two-factor authentication", subtitle="Type the code your authenticator app shows for " ~ app.name ~ ".") %}
+    {{ input("code", "Code", required=true, autocomplete="one-time-code", hint="Lost your phone? Type one of your recovery codes instead.", attrs={"autofocus": true, "spellcheck": "false"}) }}
+    {{ button("Log in", block=true) }}
+  {% endcall %}
+</form>
+{% endblock %}

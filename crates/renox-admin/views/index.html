@@ -1,0 +1,32 @@
+{#- A resource's list (renox-admin/index.html): its named filters as tabs,
+    then the grid with its search, column filters, actions and exports.
+    `custom` columns are drawn by renox-admin/{slug}/cells.html when the
+    app has one (it sees `row` and `column`). Actions that ask for input
+    have their sheet after the grid; the grid opens it. -#}
+{% extends "renox-admin/layout.html" %}
+{% from "renox/grid.html" import grid %}
+{% from "renox/ui.html" import page_header, link_button, link_tabs, action_sheet %}
+{% from "renox-admin/fields.html" import field %}
+
+{% block title %}{{ resource.plural_label }} · {{ admin.title }}{% endblock %}
+
+{% block content %}
+{% call page_header(resource.plural_label) %}
+  {%- if allowed.create %}
+  {{ link_button(resource.create_url, new_label, variant="primary", icon="plus", key="n") }}
+  {%- endif %}
+{% endcall %}
+{%- if tabs %}
+{{ link_tabs(tabs, current=current_tab, label=tabs_label) }}
+{%- endif %}
+{% call(row, column) grid(rows) %}
+  {%- include "renox-admin/" ~ resource.slug ~ "/cells.html" ignore missing %}
+{% endcall %}
+{%- for sheet in sheets %}
+{% call action_sheet(sheet.id, sheet.title, sheet.url, sheet.title, description=sheet.description, submit_label=sheet.submit_label, danger=sheet.danger, button=false) %}
+  {%- for f in sheet.fields %}
+  {{ field(f, currency=admin.currency) }}
+  {%- endfor %}
+{% endcall %}
+{%- endfor %}
+{% endblock %}

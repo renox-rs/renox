@@ -1,0 +1,10 @@
+{% extends "layouts/app.html" %}
+{% block seo %}{{ seo(title="Page not found · Renox", description="This page doesn't exist.") }}<meta name="robots" content="noindex">{% endblock %}
+{% block content %}
+<div class="wrap page notfound">
+  <p class="tag"><b aria-hidden="true">●</b> 404</p>
+  <h1>This page doesn't exist.</h1>
+  <p class="sub">It may have moved. The docs live at <a href="{{ links.docs }}">docs.renox.rs</a>; the posts are on <a href="/blog">the blog</a>.</p>
+  <p class="cta__links"><a class="btn btn--primary" href="/">Renox's home page</a></p>
+</div>
+{% endblock %}

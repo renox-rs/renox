@@ -1,0 +1,7 @@
+{% extends "layout.html" %}
+{% block content %}
+{#- A page with none of the kit's parts loaded on demand (#349): they come
+    with what htmx swaps in, once however often it's swapped. -#}
+<button id="more" type="button" hx-get="/parts/more" hx-target="#more-box">Show more</button>
+<div id="more-box"></div>
+{% endblock %}

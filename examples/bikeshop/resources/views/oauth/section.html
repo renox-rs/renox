@@ -1,0 +1,20 @@
+{#- renox-oauth's card on the account page (`section.data`: providers (name,
+    label, link_url, linked, email, since), has_password, can_unlink,
+    set_password_url), replaced by the bike shop for its translations
+    (`plugins.oauth.*`). -#}
+<rx-card rx-if="section.data.providers" title="{{ t('plugins.oauth.title') }}" subtitle="{{ t('plugins.oauth.lead') }}">
+  <rx-list label="{{ t('plugins.oauth.title') }}">
+    <li rx-for="provider in section.data.providers" id="oauth-{{ provider.name }}">
+      <span class="rx-list__main">
+        <strong>{{ provider.label }}</strong>
+        <span rx-if="provider.linked" class="rx-subtitle">{{ provider.email or t('plugins.oauth.linked') }}<template rx-if="provider.since"> · {{ t('plugins.oauth.since', date=(provider.since | date)) }}</template></span>
+      </span>
+      <template rx-if="provider.linked">
+        <rx-confirm rx-if="section.data.can_unlink" :id="'oauth-unlink-' ~ provider.name" label="{{ t('plugins.oauth.unlink') }}" :action="route('oauth.unlink', provider.name)" :title="t('plugins.oauth.unlink_question', provider=provider.label)" :message="t('plugins.oauth.unlink_text', provider=provider.label)" confirm-label="{{ t('plugins.oauth.unlink') }}"/>
+        <rx-badge rx-else text="{{ t('plugins.oauth.only_login') }}"/>
+      </template>
+      <rx-link-button rx-elif="provider.link_url" :href="provider.link_url" label="{{ t('plugins.oauth.link') }}" hx-boost="false"/>
+    </li>
+  </rx-list>
+  <p rx-if="not section.data.has_password" class="rx-subtitle">{{ t('plugins.oauth.no_password') }}<template rx-if="section.data.set_password_url"> {{ t('plugins.oauth.set_password_before') }}<a class="rx-link" href="{{ section.data.set_password_url }}">{{ t('plugins.oauth.set_password') }}</a>{{ t('plugins.oauth.set_password_after') }}</template></p>
+</rx-card>

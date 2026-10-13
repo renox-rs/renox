@@ -1,0 +1,16 @@
+{#- The staff home page's short dashboard (src/app/reports/dashboard.rs `overview`): the active
+    store's last 7 days, by the work it did, and a way into the reports:
+    `<app-reports-overview :overview="overview"/>`. -#}
+<rx-props overview>
+<section class="rx-stack" aria-labelledby="overview-title">
+  <h2 class="rx-card__title" id="overview-title">{{ t('reports.overview.title', store=overview.store) }}</h2>
+  {# [explain:staff.dashboard.template] #}
+  <rx-stats columns="4">
+    <rx-stat :label="t('reports.stat.revenue')" :value="overview.numbers.revenue | money" :delta="overview.numbers.revenue_change" :trend="overview.numbers.revenue_trend" :url="route('reports.dashboard', period='7d')" icon="banknote"/>
+    <rx-stat :label="t('reports.stat.orders')" :value="overview.numbers.orders | number" :delta="overview.numbers.orders_change" icon="receipt"/>
+    <rx-stat :label="t('reports.stat.rentals')" :value="overview.numbers.rentals | number" :hint="t('reports.stat.overdue_now', n=overview.numbers.overdue)" icon="key-round"/>
+    <rx-stat :label="t('reports.stat.work_done')" :value="overview.numbers.work_done | number" :hint="t('reports.stat.plans_active', n=overview.numbers.active_plans)" icon="wrench"/>
+  </rx-stats>
+  {# [/explain:staff.dashboard.template] #}
+  <div><rx-link-button route="reports.dashboard" :label="t('reports.overview.open')" variant="primary" icon="next"/></div>
+</section>

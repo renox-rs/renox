@@ -1,0 +1,15 @@
+{#- Every mail the plans send (#237), for a made-up subscriber
+    (src/app/plans/mails.rs), each with the event that sends it, shown in a
+    sandboxed frame as a mail client would. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.mails.title') }}">
+<app-plans-assets/>
+<rx-page-header title="{{ t('plans.mails.title') }}" subtitle="{{ t('plans.mails.lead') }}" :back="route('plans.index')" back-label="{{ t('plans.index.title') }}"/>
+{# [explain:plans.mails.template] #}
+<div class="bs-plan-mails" data-bs-reveal>
+  <rx-card rx-for="p in previews" :title="t('plans.mails.' ~ p.key)" :subtitle="p.subject">
+    <p class="rx-hint">{{ t('plans.mails.sent_by') }} <code>{{ p.event }}</code></p>
+    <iframe class="bs-plan-mails__frame" sandbox title="{{ p.subject }}" srcdoc="{{ p.html }}" loading="lazy"></iframe>
+  </rx-card>
+</div>
+{# [/explain:plans.mails.template] #}
+</rx-page>

@@ -1,0 +1,23 @@
+{#- Hours helped per person and store (#245), for reports: never charged between stores. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.help.hours_title')">
+  <app-multistore-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('multistore.help.hours_title')" :subtitle="t('multistore.help.hours_lead')" :back="route('multistore.help')" :back-label="t('multistore.help.title')"/>
+    {# [explain:multistore.help.hours.template] #}
+    <rx-stats columns="2">
+      <rx-stat :label="t('multistore.help.total_hours')" :value="total_hours | round(1)"/>
+      <rx-stat :label="t('multistore.help.people')" :value="rows | length"/>
+    </rx-stats>
+    <rx-card>
+      <rx-table rx-if="rows" :rows="rows" as="r" :caption="t('multistore.help.hours_title')">
+        <rx-column :label="t('multistore.help.person')">{{ r.name }}</rx-column>
+        <rx-column :label="t('multistore.help.home')">{{ r.home }}</rx-column>
+        <rx-column :label="t('multistore.help.helped')">{{ r.store }}</rx-column>
+        <rx-column :label="t('multistore.help.days')" align="num">{{ r.days }}</rx-column>
+        <rx-column :label="t('multistore.help.hours')" align="num">{{ r.hours | round(1) }}</rx-column>
+      </rx-table>
+      <rx-empty rx-else :title="t('multistore.help.no_hours')" icon="clock"/>
+    {# [/explain:multistore.help.hours.template] #}
+    </rx-card>
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,7 @@
+{#- Sent when an order wasn't paid within 30 minutes (or the payment failed). -#}
+<rx-mail subject="{{ t('sales.mail.expired.subject', number=order.number) }}">
+  <p>{{ t('sales.mail.hello', name=name) }}</p>
+  <rx-mail-panel>{{ t('sales.mail.expired.text', minutes=30) }}</rx-mail-panel>
+  <rx-mail-table :rows="table.rows" :head="table.head" :total="table.total"/>
+  <rx-mail-button :url="app.url ~ '/shop'" :label="t('sales.mail.expired.again')"/>
+</rx-mail>

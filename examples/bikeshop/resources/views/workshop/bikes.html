@@ -1,0 +1,34 @@
+{#- The customer's bikes (#236): each with its last service, and the form to add one. -#}
+<rx-page layout="layouts/app.html" title="{{ t('workshop.bikes.title') }}">
+  <app-workshop-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('workshop.bikes.title') }}" subtitle="{{ t('workshop.bikes.lead') }}"/>
+    <div rx-if="rows" class="bs-bikes" id="my-bikes">
+      <article rx-for="row in rows" class="rx-card rx-stack">
+        <h2 class="rx-card__title"><a class="rx-link" href="{{ route('workshop.bikes.show', row.bike.id) }}">{{ row.bike.name }}</a></h2>
+        <p class="rx-subtitle">{{ row.bike.frame_number or t('workshop.bikes.no_frame') }}<template rx-if="row.bike.size"> · {{ row.bike.size }}</template></p>
+        <p rx-if="row.last">{{ t('workshop.bikes.last', date=(row.last.at | date('%d %b %Y'))) }} <app-workshop-status :status="row.last.status"/></p>
+        <p rx-else class="rx-subtitle">{{ t('workshop.bikes.never') }}</p>
+        <rx-link-button :href="route('workshop.book', bike=row.bike.id)" label="{{ t('workshop.book.title') }}" size="small"/>
+      </article>
+    </div>
+    <div rx-else class="rx-card"><rx-empty title="{{ t('workshop.bikes.none') }}" message="{{ t('workshop.bikes.none_text') }}" icon="bike"/></div>
+    {# [explain:workshop.bikes.template] #}
+    <form method="post" action="{{ route('workshop.bikes.store') }}" enctype="multipart/form-data" id="add-bike" novalidate>
+      {{ csrf_field() }}
+      <rx-card title="{{ t('workshop.bikes.add') }}">
+        <rx-form-errors/>
+        <rx-form-grid columns="2">
+          <rx-select name="product" label="{{ t('workshop.bikes.model') }}" :options="[['', t('workshop.bikes.other_model')]] + models" searchable hint="{{ t('workshop.bikes.model_hint') }}"/>
+          <rx-input name="name" label="{{ t('workshop.bikes.name') }}" required placeholder="{{ t('workshop.bikes.name_hint') }}"/>
+          <rx-input name="brand" label="{{ t('workshop.bikes.brand') }}"/>
+          <rx-input name="frame_number" label="{{ t('workshop.bikes.frame') }}"/>
+          <rx-input name="size" label="{{ t('workshop.bikes.size') }}"/>
+          <rx-file name="photo" label="{{ t('workshop.bikes.photo') }}" accept="image/*" preview/>
+        </rx-form-grid>
+        <rx-button icon="plus">{{ t('workshop.bikes.save') }}</rx-button>
+      </rx-card>
+    </form>
+    {# [/explain:workshop.bikes.template] #}
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,66 @@
+{#- The checkout (src/app/sales/checkout.rs): the kit's wizard in a form
+    checked live, beside the order's summary. A change of pickup / delivery
+    or of the city asks for the `summary` block again (the delivery fee). -#}
+<rx-page layout="layouts/app.html" :title="t('sales.checkout.title') ~ ' · ' ~ t('shop.name')">
+  <app-sales-assets/>
+  <rx-page-header title="{{ t('sales.checkout.title') }}" subtitle="{{ t('sales.checkout.lead', minutes=30) }}" :back="route('cart.show')" back-label="{{ t('sales.cart.title') }}"/>
+
+  <div class="bs-checkout">
+    {# [explain:checkout.show.template] #}
+    <rx-form class="bs-checkout__form" action="{{ route('checkout.place') }}" live>
+      <rx-form-errors/>
+      <rx-wizard id="checkout" submit-label="{{ t('sales.checkout.place') }}">
+        <rx-wizard-step key="contact" title="{{ t('sales.checkout.step.contact') }}">
+          <rx-form-grid columns="2">
+            <rx-input name="name" label="{{ t('sales.checkout.name') }}" :value="prefill.name" required autocomplete="name" span="full"/>
+            <rx-input name="email" label="{{ t('sales.checkout.email') }}" type="email" :value="prefill.email" required autocomplete="email" hint="{{ t('sales.checkout.email_hint') }}"/>
+            <rx-input name="phone" label="{{ t('sales.checkout.phone') }}" type="tel" :value="prefill.phone" required autocomplete="tel" placeholder="+62 812 3456 7890"/>
+          </rx-form-grid>
+        </rx-wizard-step>
+
+        <rx-wizard-step key="delivery" title="{{ t('sales.checkout.step.delivery') }}">
+    {# [/explain:checkout.show.template] #}
+          {#- These fields ask for the summary again when they change (the fee).
+              `queue last` waits for a request in flight and then sends only the
+              latest change: `replace` would abort it, which htmx reports as an
+              error in the console (htmx:sendAbort) on every quick double change. -#}
+          {# [explain:checkout.show.template] #}
+          <div class="bs-checkout__where" hx-get="{{ route('checkout.show') }}" hx-trigger="change" hx-include="[name=fulfilment],[name=city_id]" hx-target="#summary" hx-swap="outerHTML" hx-sync="this:queue last">
+            <rx-toggle-buttons name="fulfilment" label="{{ t('sales.checkout.fulfilment') }}" :options="[['pickup', t('sales.checkout.pickup')], ['delivery', t('sales.checkout.delivery')]]" :selected="prefill.fulfilment" required/>
+            <rx-select name="store_id" label="{{ t('sales.checkout.store') }}" :options="stores" :selected="prefill.store_id | string if prefill.store_id else none" required hint="{{ t('sales.checkout.store_hint') }}"/>
+            <rx-show-when field="fulfilment" values="delivery">
+              <rx-form-grid columns="2">
+                <rx-select name="city_id" label="{{ t('sales.checkout.city') }}" :options="cities" :selected="prefill.city_id | string if prefill.city_id else none" required searchable placeholder="{{ t('sales.checkout.city_pick') }}" span="full"
+                           hint="{{ t('sales.checkout.fees', local=(fees[0] | money), country=(fees[1] | money), abroad=(fees[2] | money)) }}"/>
+                <rx-input name="line1" label="{{ t('sales.checkout.line1') }}" :value="prefill.line1" required autocomplete="street-address" span="full"/>
+                <rx-input name="postal_code" label="{{ t('sales.checkout.postal_code') }}" :value="prefill.postal_code" autocomplete="postal-code"/>
+              </rx-form-grid>
+            </rx-show-when>
+          </div>
+          {# [/explain:checkout.show.template] #}
+        </rx-wizard-step>
+
+        <rx-wizard-step key="review" title="{{ t('sales.checkout.step.review') }}">
+          <ul class="bs-checkout__lines" role="list">
+            <li rx-for="line in cart.lines"><span>{{ line.quantity }} × {{ line.product.name }}<template rx-if="line.variant.size"> · {{ line.variant.size }}</template><template rx-if="line.variant.colour"> · {{ line.variant.colour }}</template></span><span class="rx-num">{{ line.total | money }}</span></li>
+          </ul>
+          <rx-alert kind="info" message="{{ t('sales.checkout.next', minutes=30) }}"/>
+        </rx-wizard-step>
+      </rx-wizard>
+    </rx-form>
+
+    <rx-block name="summary">
+    <aside id="summary" class="rx-card bs-checkout__summary" aria-labelledby="summary-title" aria-live="polite">
+      <h2 class="rx-card__title" id="summary-title">{{ t('sales.checkout.summary') }}</h2>
+      <dl class="bs-totals">
+        <div><dt>{{ t('sales.cart.items', count=cart.count) }}</dt><dd class="rx-num">{{ totals.subtotal | money }}</dd></div>
+        <div rx-if="totals.discount > 0"><dt>{{ t('sales.checkout.plan_discount', percent=discount_percent) }}</dt><dd class="rx-num">− {{ totals.discount | money }}</dd></div>
+        <div><dt>{{ t('sales.checkout.delivery_fee') }}</dt><dd class="rx-num"><template rx-if="delivery">{{ totals.delivery_fee | money }}</template><template rx-else>{{ t('sales.checkout.free_pickup') }}</template></dd></div>
+        <div class="bs-totals__total"><dt>{{ t('sales.checkout.total') }}</dt><dd class="rx-num">{{ totals.total | money }}</dd></div>
+      </dl>
+      <p rx-if="plan and totals.discount == 0" class="rx-hint">{{ t('sales.checkout.plan_note', percent=discount_percent) }}</p>
+      <p rx-if="cart.store" class="rx-hint">{{ t('sales.checkout.from_store', store=cart.store.name) }}</p>
+    </aside>
+    </rx-block>
+  </div>
+</rx-page>

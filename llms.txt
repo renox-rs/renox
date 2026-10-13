@@ -1,0 +1,372 @@
+# Renox
+
+> Renox is a batteries-included Rust web framework inspired by Laravel: Axum + HTMX + Alpine.js,
+> with SQLite by default or PostgreSQL (the `postgres` feature). Apps depend on the `renox` crate
+> and are managed with the `rnx` CLI. To do something the idiomatic way, open the one file listed
+> for it below rather than reading the framework's source.
+
+## Start here
+
+- https://docs.renox.rs: these files as a website with search (the latest `main`).
+
+- The 1.1 way (Renox 1.1: `cargo install renox-cli`, `renox = "1.1"`),
+  and where each part is taught: pages as `<rx-*>` / `<app-*>` tags with `rx-if` / `rx-elif` / `rx-else` /
+  `rx-for` (also on `<template>`), `<rx-let>`, `<rx-include>`, `?attr="expr"` (an attribute that may be absent), `<rx-simple-table>`, `<rx-link-tab>`, `<rx-mail-text>`, `<rx-script>` / `<rx-style>` ([docs/ui.md](docs/ui.md#components-as-tags), and "No raw MiniJinja" at its end); your own components with `<rx-props>`
+  ([docs/ui.md](docs/ui.md#your-own-components)); parts of a page with state as live components,
+  `<live-NAME :component="x"/>` ([docs/live.md](docs/live.md), the bike shop's `/about/htmx/live`);
+  typed columns (`Product::PRICE.lt(1)`) and `#[model(form)]` ([CHEATSHEET.md](CHEATSHEET.md));
+  typed view contexts (`#[derive(ViewData)]`, `View::typed`); mistakes found before a page opens
+  (`rnx db:check`, `rnx view:check`, `rnx make:migration --auto`, `rnx doctor`, `rnx view:data`);
+  moving a 1.0 template over: [docs/ui.md](docs/ui.md#upgrading-from-10). Copy from
+  `examples/hello` (the guestbook) and `examples/bikeshop` first.
+- [CHEATSHEET.md](CHEATSHEET.md): the common patterns, 5–20 lines each and compiled as doctests:
+  `rnx` commands; modules, routes, path parameters, route groups and guards (auth, verified,
+  guest, throttle); views, template globals and overriding built-in pages; `App::share` and
+  `App::templates`; `App::provide` and `App::layer`; forms and validation (`unique`/`exists`);
+  models, migrations and queries (prefer typed columns: `Product::PRICE.lt(1)`, `order_by(Product::NAME)`; raw fragments, grouping, locks, update_or_create, simple and
+  cursor pagination, transactions with retries); model keys other than integers (`Ulid`,
+  `Uuid`, `String`, `rnx make:model --key`); every field type; pagination; data grids; seeders and factories; auth,
+  policies, gates, API tokens and your own login; tenants (`renox::context`, default scopes),
+  roles and permissions (also per store/team with dates: `assign_role_in`, `Scope`,
+  `permissions::set_scope`, `has_permission_in`, `scopes_with`), route guards for
+  gates/roles/permissions/token abilities; the account
+  page, password rules and confirmation, per-device logout; auth events and the audit log;
+  model hooks, partial saves (`save_only`, `save_changes`) and encrypted fields
+  (`Encrypted<T>`); HTMX; raw SQL and transactions (savepoints); jobs (priority, unique, encrypted, middleware, chains, batches), events and
+  the schedule (cron, weekly/monthly, weekdays, IANA time
+  zones, `on_failure`, `schedule:run`); mail and notifications (with the in-app inbox); cookies
+  and downloads; cache (`add`, `pull`, `increment`) and atomic locks; session, uploads and
+  translations (plurals and ranges, the browser's language); session `push`/`increment`;
+  factory states and sequences; domain and fallback routes, `Redirect::route`/`intended`,
+  `route_is`, `class_names`, `{% break %}`; route model binding (`Found`), view and redirect
+  routes, ETags; `has_many_through`; named error bags; session `keep`/`flash_now`; signed URLs, private files and named disks; CSP, `Permissions-Policy` (`App::permissions_policy`), CORS, `xsrf_cookie`,
+  `TRUSTED_HOSTS` and webhooks; SEO and analytics; tests; form requests (`prepare`, `authorize`, `after`),
+  `#[derive(Validate)]` and the full rule list; typed app commands
+  (clap) and prompts; stacks (`push`/`stack`);
+  Tailwind; errors, logs and debugging (request ids, JSON logs,
+  `App::report`, named rate limiters, `/_renox/debug`); configuration (`.env` and your own
+  settings).
+- [README.md](README.md): install `rnx`, create and run an app, the generator commands.
+- [docs/tutorial.md](docs/tutorial.md): one app (Stash, a bookmarks app) built step by step, from
+  `rnx new` to a server: model and migration, list page, htmx form, policy, a scheduled mail job,
+  tests and a factory, deploying with systemd. Compiled as doctests (`TutorialGuide`).
+- [docs/laravel.md](docs/laravel.md): Laravel → Renox, concept by concept (artisan, Eloquent,
+  Blade, form requests, middleware, queues…) with the Renox way side by side and what is
+  different. Compiled as doctests (`LaravelGuide`).
+- [site/](site): the documentation site, a Renox app that serves these files.
+- [www/](www): renox.rs, the landing page and blog (a Renox app: Markdown posts in
+  www/content/blog, JSON-LD, Atom feed, sitemap, llms.txt).
+- [learn/](learn): learn.renox.rs, the course that builds one app stage by stage (a Renox
+  app; so far the outline of the stages, epic #538).
+- `rnx new <name> --starter` (files in crates/renox-cli/stubs/starter/): a whole app to start
+  from: sidebar layout with the notification bell, email verification, roles (`Permissions`),
+  a dashboard, a users page that changes roles, the activity log (`Audit`), `users:admin`,
+  a seeder and tests; its pages use page patterns the app owns (the bike shop's: hero,
+  section heading, feature cards, figures, summary, steps, empty states, as components in
+  stubs/starter/resources/views/components/ + public/patterns.css), and the login page
+  lists the seeded accounts in local only (stubs/starter/src/app/demo.rs). `rnx new <name> --notifications`: the plain app with the bell
+  (`Auth::new().notifications()` and `notification_bell` in its layout).
+
+- [tests/browser](tests/browser): Renox's own JavaScript tested in headless Chrome over the
+  DevTools protocol with Node's test runner (no npm packages): `lib/cdp.mjs` and `lib/app.mjs`
+  are a harness an app can copy (docs/testing.md "Browser tests"); tests for renox.js, the UI
+  kit's forms and overlays and the data grid on `tests/browser/fixture` (its `/grid` pages),
+  the editors, the guestbook (under `CSP=strict` too), the bike shop's areas and blocks
+  (`bikeshop-*.test.mjs`; `run.sh 'bikeshop-*'`) and an accessibility smoke.
+  [tests/process](tests/process): the app binary and `rnx` as real processes (signals,
+  workers, the scheduler, systemd's socket, logs, prompts, the commands' output, `rnx
+  serve`/`build`/forwarding) and both examples served, as a guest and logged in, on SQLite and
+  (the bike shop) PostgreSQL.
+
+## Examples (complete apps, tested in CI)
+
+Two examples: the bike shop, a whole business, and hello, the smallest app. Each has a
+README.md that walks through it. What the guides show that neither app does is compiled in
+the guides themselves (doctests) and tested in `crates/renox/tests/it`.
+
+- [examples/bikeshop](examples/bikeshop) ([README](examples/bikeshop/README.md)): **the
+  flagship example**, the one to read for how a whole business fits together on Renox, at
+  Pagila's data volume (`demo:seed --size large`: ~15,000 rentals, 5,000 orders, 3,000 work
+  orders). A bike shop with three stores where customers buy, rent by the hour or the day,
+  and have bikes serviced once or on a plan; the stores lend staff, place bikes and goods at
+  each other and settle monthly. **Every page explains itself** ("About this page": purpose,
+  the Renox features used and why, under the hood, guide and source links; `/about/pages`
+  lists every page by feature and role; src/explain.rs + each area's explain.rs, and a test
+  that fails when a GET route has none). Shows: RBAC + ABAC (permissions, never role names;
+  roles per store with dates via `assign_role_in`/`Scope`/`permissions::set_scope`/
+  `scopes_with`; owner / location / operating store attributes checked by
+  src/app/access/policy.rs); `renox::grid` everywhere (fleet board with `poll`, report grids
+  with groups, sums and exports); relations without N+1 (`Pivot` for what fits, `Morph` for
+  the stock ledger and payments, `has_many_through`; tests/queries.rs walks the main pages on
+  the large seed); full-text search (`#[model(search)]`); two overlap checks for bookings
+  (form hook + `Db::begin_immediate` + `lock_for_update`); the queue (batches for the monthly
+  report and the settlements' statements, queued mails), nine scheduled tasks (`every_minutes`, `daily_at`,
+  `monthly_on`), events and listeners keeping cached dashboards fresh; renox-billing service
+  plans (named subscriptions per bike, Stripe/Xendit/a demo gateway), renox-admin (the
+  catalogue by permission), renox-oauth, renox-2fa (required for staff), renox-editors;
+  webhooks (Midtrans); signed single-use links; `Encrypted<String>` ID numbers; a JSON API
+  for kiosks and a mobile app (device tokens for kiosks, token abilities, `throttle_by`, CORS, `Ulid` codes); the
+  kit's dashboard, charts, wizard, action sheets, repeater, infolists; renox-blocks for what the
+  kit lacks (gallery, range slider, quantity, keypad, kanban, month calendar, availability,
+  date-time range, swatches, history, plan comparison; the closed-days date picker is still
+  the shop's own in resources/views/blocks/), Motion (motion.dev, vendored) on `transform`; English and Spanish;
+  `CSP=strict`; `App::report`; `make:deploy` files; tests in Rust (SQLite and PostgreSQL),
+  in headless Chrome (tests/browser/bikeshop-*.test.mjs) and as a process.
+  - The app and its modules: [src/lib.rs](examples/bikeshop/src/lib.rs); areas in
+    [src/app/](examples/bikeshop/src/app) (one folder each: `mod.rs` routes, `model.rs`,
+    `factories.rs`, `explain.rs`); access:
+    [catalogue.rs](examples/bikeshop/src/app/access/catalogue.rs),
+    [policy.rs](examples/bikeshop/src/app/access/policy.rs),
+    [active_store.rs](examples/bikeshop/src/app/access/active_store.rs); rentals:
+    [booking.rs](examples/bikeshop/src/app/rentals/booking.rs); stock ledger:
+    [stock/ledger.rs](examples/bikeshop/src/app/stock/ledger.rs); books between stores:
+    [multistore/books.rs](examples/bikeshop/src/app/multistore/books.rs); reports:
+    [reports/dashboard.rs](examples/bikeshop/src/app/reports/dashboard.rs),
+    [reports/monthly.rs](examples/bikeshop/src/app/reports/monthly.rs); seeds:
+    [src/seed/](examples/bikeshop/src/seed); tests: [tests/](examples/bikeshop/tests)
+  - The storefront's look (#328): brand tokens over the kit and the public pages' parts in
+    [public/theme.css](examples/bikeshop/public/theme.css), the hero macro
+    [layouts/_hero.html](examples/bikeshop/resources/views/layouts/_hero.html), Unsplash
+    photos credited in [public/images/CREDITS.md](examples/bikeshop/public/images/CREDITS.md);
+    the login page's demo accounts:
+    [accounts/demo_logins.rs](examples/bikeshop/src/app/accounts/demo_logins.rs)
+  - Each store's own page on its own host, `{store}.localhost` in development
+    (`Routes::domain`, `DomainParams`, a domain `fallback`, links made absolute from
+    `APP_URL`): [home/stores.rs](examples/bikeshop/src/app/home/stores.rs),
+    [layouts/store.html](examples/bikeshop/resources/views/layouts/store.html)
+  - `/about/fields`, the reference for form fields (docs/types.md points here): every HTML
+    input ↔ form type ↔ model type ↔ SQLite ↔ PostgreSQL column (`REFERENCE`), a form that
+    tries them all (text with a `datalist`, Markdown, number, `f64`, money in cents, switch,
+    radio → `DbEnum`, checkbox list → `Json<Vec<String>>` with `each`/`distinct`, `tags_input`,
+    `key_value` → `Json<KeyValues>` (a nested form), `rich_editor` → `RichText`, `code_editor`
+    → `.json()`, time, datetime-local, `date_picker`, an image checked by content and
+    `dimensions` stored with `store_public`, a PDF (`mimes`) stored privately and sent with
+    `Download::from_storage(…).inline()`), samples keyed by `Uuid`, checked live, read back on
+    an infolist (money, bool, color, badges, key_value, Markdown, `rich_text`, `code_entry`,
+    `suffix_actions`); tests on SQLite, PostgreSQL and S3 (the `s3` feature):
+    [about/fields.rs](examples/bikeshop/src/app/about/fields.rs),
+    [about/_fields_form.html](examples/bikeshop/resources/views/about/_fields_form.html),
+    [about/fields_show.html](examples/bikeshop/resources/views/about/fields_show.html),
+    [tests/fields.rs](examples/bikeshop/tests/fields.rs)
+  - `/about/htmx`, htmx and Alpine recipes live on a pre-ride checklist and the catalogue: a
+    modal form (`action_sheet` with `target`/`swap`), the row and the count out of band
+    (`.fragment("row").also("count")`), `HxRetarget`/`HxReswap`/`HxTrigger` for an item
+    already listed, inline edit (double-click, Escape cancels), a toggle, a menu with
+    `hx-confirm`, tabs in `Alpine.data` (works under `CSP=strict`), `HxRefresh`,
+    `htmx.redirect`, toasts, infinite scroll (`revealed`):
+    [about/htmx.rs](examples/bikeshop/src/app/about/htmx.rs),
+    [about/htmx.html](examples/bikeshop/resources/views/about/htmx.html),
+    [tests/htmx.rs](examples/bikeshop/tests/htmx.rs)
+  - The admin panel (renox-admin, a custom column):
+    [staff/admin.rs](examples/bikeshop/src/app/staff/admin.rs); service plans billed with
+    renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); the
+    Midtrans webhook: [sales/gateway.rs](examples/bikeshop/src/app/sales/gateway.rs); report
+    grids grouped, summed and exported: [reports/grids.rs](examples/bikeshop/src/app/reports/grids.rs);
+    a CSV import with `renox::import`: [stock/import.rs](examples/bikeshop/src/app/stock/import.rs);
+    the JSON API with token abilities and CORS: [api/mod.rs](examples/bikeshop/src/app/api/mod.rs)
+
+- [examples/hello](examples/hello) ([README](examples/hello/README.md)): a guestbook in one file: HTMX form posts that return
+  fragments, a photo upload, an event whose listener queues a mail job, a scheduled task,
+  English and Spanish (`es.json`) with a language switch and the browser's language (`detect_locale`), a
+  `#[derive(Validate)]` form, login with the account page, a seeder, and a typed
+  `entries:prune` command that confirms (tested with time travel and `prompt::answering`).
+  - [examples/hello/src/lib.rs](examples/hello/src/lib.rs),
+    [lang/es.json](examples/hello/resources/lang/es.json),
+    [tests](examples/hello/tests/guestbook.rs)
+
+## Guides
+
+- [docs/postgresql.md](docs/postgresql.md): PostgreSQL apps, migrations per database, SQL that runs
+  on both, tests with `TEST_DATABASE_URL`, moving data from SQLite.
+- [docs/operations.md](docs/operations.md): running in production: logs (JSON, files, request
+  ids), error reports (`App::report`), error pages, the debug inspector, deploys without refused
+  connections (systemd socket activation), database sessions, timeouts, `TRUSTED_PROXIES`,
+  `/health`, what happens when the database or SMTP fails, recovering failed jobs and webhook
+  calls, backups (and what `APP_KEY` protects), migrations at deploy, the scheduler's time zone,
+  tables to prune, maintenance mode.
+- [docs/development.md](docs/development.md): faster builds, and `rnx doctor` (profiles, linker, features to drop,
+  sccache, the cargo-chef Dockerfile).
+- [docs/types.md](docs/types.md): every Rust field type with its form input and its SQLite and
+  PostgreSQL column (`DbEnum`, `Json<T>`, dates and times, money, UUID).
+- Check models against the schema (`App::model`, `rnx db:check`, `assert_models_match_schema`):
+  [docs/types.md](docs/types.md#checking-models-against-the-tables); shown in
+  `examples/bikeshop`'s catalog (`src/app/catalog/mod.rs`, `tests/catalog.rs`).
+- Migrations written from the models (`rnx make:migration --auto`, `db:diff`, `#[model(index(..))]`):
+  [docs/types.md](docs/types.md#migrations-from-models); shown in `examples/bikeshop`'s catalog
+  (`index_brands_name` migration).
+- Check templates (`rnx view:check`, `TestApp::assert_views_compile`: syntax errors and unknown
+  `route('name')`s): [docs/testing.md](docs/testing.md#templates).
+- Typed view contexts (`#[derive(ViewData)]` + `#[view(template = "…")]`, `View::typed(page)`,
+  `App::view_data::<T>()` / `Registry::view_data`; `view:check` reports a template variable the
+  struct lacks): [docs/ui.md](docs/ui.md#typed-view-contexts); shown in `examples/bikeshop`'s
+  supplier list (`SupplierList` in `src/app/stock/purchasing.rs`, registered in
+  `src/app/stock/mod.rs`).
+- Editor autocomplete for templates (`rnx view:data` writes `.vscode/renox-components.json`, VS Code
+  `html.customData`; JetBrains not covered): [docs/ui.md](docs/ui.md#editor-autocomplete).
+- [docs/authorization.md](docs/authorization.md): which tool answers which question (gates,
+  policies, the `Permissions` module, roles per branch (a role in one store, with dates),
+  `gate_before`, token abilities, tenants with default scopes and `renox::context`, password
+  confirmation, the audit log), mapped to Laravel's.
+- [docs/live.md](docs/live.md): live components (`LiveComponent`, `#[renox::live_component]`,
+  `<live-NAME>`, `rx-click`/`rx-submit`/`rx-model`, the signed snapshot, `TestApp::live`); example: the bike
+  shop's `/about/htmx/live` ([live.rs](examples/bikeshop/src/app/about/live.rs)).
+- [docs/testing.md](docs/testing.md): `TestApp` requests and assertions (JSON paths, views,
+  session, login), the database, jobs, event and notification fakes, HTTP fakes, time travel,
+  counting queries, a browser-test recipe.
+- Pages are written with `rx-*` tags (`<rx-input>`, `<rx-table>`, `<rx-card>`…); a kit macro is used
+  only where no tag exists. Every tag, its props, slots and events are in
+  `crates/renox-core/src/components/contracts.rs`; `<app> view:check` (or `rnx view:check`) reports a
+  wrong tag or prop with its file and line. Converted pages to copy from: the bike shop's
+  [supplier pages](examples/bikeshop/resources/views/stock/suppliers/),
+  [reports/dashboard.html](examples/bikeshop/resources/views/reports/dashboard.html) and
+  [about/fields.html](examples/bikeshop/resources/views/about/fields.html).
+- [docs/ui.md](docs/ui.md): components that see the request, components as tags (`<rx-card>`,
+  `<app-price-tag>`, `rx-if`/`rx-for`, `rx-page`, `rx-table`, form tags such as `rx-repeater` and `rx-wizard`; navigation, menu, tab and sheet tags (`rx-navbar`, `rx-sidebar`, `rx-shell`, `rx-menu`, `rx-tabs`, `rx-sheet`); dashboard tags (`rx-stats`, `rx-chart`), `rx-grid`, mail tags (`rx-mail`, `rx-mail-button`, `rx-mail-panel`, `rx-mail-table`, `rx-mail-divider`), `rx-icon`, `rx-action-group`, `rx-wizard-action`, `rx-import-action`, and plugin tags (`Registry::component`, `view::add_template`); compiled in
+  `crates/renox-core/src/components/`; bikeshop's supplier pages show them), the UI kit (`renox/ui.html`: fields,
+  buttons, cards, sheets, menus, tabs, tables, infolists: `infolist`/`entry`/`repeatable`,
+  buttons beside an entry's value with `prefix_actions`/`suffix_actions`;
+  component events (`rx:<component>:<event>`, `@saved`, `attrs`) in "Components and the page: three directions",
+  actions: `action_sheet`, `confirm`, `action_group` + `menu_open`, `wizard_action`,
+  `import_action` with `renox::import`, duplicating with `Model::replicate`, exports with
+  `Grid::export_as`;
+  `date_picker` with `disabled_dates`/`closed_weekdays`; `icon(name)` (Lucide line icons);
+  the page's frame: `navbar`/`nav_links`/`nav_link` (`tabs=[…]`: a bottom tab bar on phones,
+  `nav_search`: the search behind a button there), `sidebar` + `rx-shell` for back
+  offices, `page_header`, `toolbar`, `row_actions`, `list`, `card_grid`/`media_card`,
+  `link_tabs`, `thumbnail`, `progress`, `rx-page--fill`: build pages from these, not app CSS;
+  themes and the type scale: the warm default, `data-rx-theme="classic"`, `--rx-type-*`),
+  the filters `number`, `money` (`APP_CURRENCY`), `date`, `since`, `words`, `markdown`,
+  dashboards (`renox::chart`: `Period` with presets, weeks and custom ranges, `Trend` per
+  day/week/month, `Series`; `chart(…)` line/area/bar/pie/doughnut/scatter/bubble/heatmap, `stat`,
+  `stats`, `dashboard`, `widget`, `period_filter` with its custom range, `query_fields`), and its
+  design rules, toasts (a body, links, a duration, an id, a position, `Renox.toast`), out-of-band
+  fragments, htmx headers, live validation.
+- [docs/admin.md](docs/admin.md): the renox-admin crate: `Admin` (path, title, `authorize`),
+  `impl AdminResource` (columns, fields, `fill`, `rules`, `entries`, `filters`, `actions`,
+  `query`, `grid`, `allows`, `creatable`/`deletable`, `saved` (the after-save hook),
+  `relations` with `RelationManager::has_many`/`belongs_to_many`), actions that take input
+  (`AdminAction::form`, `cx.input`), the abilities the model's `Policy` is asked, soft deletes
+  and the trash, exports, the routes `admin.{slug}.*`, the `renox.admin.*` translation keys,
+  `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates.
+- [docs/billing.md](docs/billing.md): the renox-billing crate: `Billing` (plans, `stripe()`,
+  `xendit()`, `generic_trials`, `without_proration`), `Plan` (price in the smallest unit,
+  `trial_days`, `via`, `price_id` / `STRIPE_PRICE_<KEY>`), setting up Stripe and Xendit,
+  `Billing::of(&state, &user)` (`subscribed`, `on_trial`, `checkout`, `swap`, `cancel`,
+  `resume`, `pause`/`unpause`…), `require_subscription`/`require_plan` (and the `_named` ones), the webhooks (verified, once per event,
+  out-of-order safe), its events, billing a team (`Billable`), another gateway (`Gateway`),
+  replacing the pages, testing with `fake_http` and signed webhooks.
+- [docs/editors.md](docs/editors.md): the renox-editors crate: `rich_editor` (Trix; read as
+  `RichText`, cleaned with ammonia; shown with `| rich_text`), `markdown_editor` (toolbar and
+  a server-rendered preview), `code_editor` (CodeJar + Prism), `code_entry`; how the files load.
+- [docs/blocks.md](docs/blocks.md): the renox-blocks crate (`Blocks::new()`, macros from
+  `renox-blocks/blocks.html`): `quantity`, `range_slider`, `keypad`, `swatches`,
+  `datetime_range` (plain fields for `Valid<T>`), `gallery`, `history`, `compare_plans`,
+  `month_calendar`, `availability`, `kanban` (+ `kanban_card`, htmx POST per move,
+  `rx:kanban-moved`); each block's options, keyboard use, translations (`renox_blocks::TEXTS`,
+  `blocks.*` keys), how the files load.
+- [docs/grid.md](docs/grid.md): data grids (`renox::grid` + `renox/grid.html`): columns and their
+  kinds, filters per heading, search, filter chips, the advanced filter, preferences (per user
+  or in the session), details under a row, editing in place, reordering rows, merged cells,
+  bulk and row actions, summaries and groups, cards on phones, columns from related tables,
+  exports (CSV, Excel with `xlsx`, print; `export_as` for any query outside the page), polling.
+- [docs/validation.md](docs/validation.md): forms and validation: `Valid<T>` (form, JSON,
+  query), `impl Validate` and `#[derive(Validate)]`, every rule, `unique`/`exists`, password
+  policy, forms made by the model (`#[model(form)]`), hooks (`prepare`/`authorize`/`after`), messages and translations, uploads as fields.
+- [docs/routing.md](docs/routing.md): routes, groups, resources, domains, extractors and
+  responses, middleware and guards, rate limits, sessions, CSRF, cookies, signed URLs,
+  maintenance mode.
+- [docs/mail.md](docs/mail.md): mail (drivers, views, attachments, queued mail, the preview) and
+  notifications (mail, database, custom channels, `DatabaseMessage`, the in-app inbox and the
+  kit's live notification bell (`Auth::new().notifications()`, Server-Sent Events), pruning,
+  testing), and the app's own live events over that stream (`state.broadcast`,
+  `broadcast_to`, `event_stream()`, and their limits).
+- [docs/scheduling.md](docs/scheduling.md): the scheduler (cron, time zones, several servers,
+  housekeeping tasks), events and listeners, the cache and locks, app commands and prompts.
+- [docs/queue.md](docs/queue.md): jobs, retries and `failed`, `dispatch_in`, priority, unique
+  jobs, middleware (overlap, rate limits), encrypted payloads, chains and batches with
+  progress, the dashboard, testing jobs; mapped to Laravel's.
+- [docs/relations.md](docs/relations.md): relations without N+1 (`belongs_to`, `has_many`, `Pivot`
+  with pivot columns, polymorphic `Morph`), keys other than integers (`Pivot<Ulid, i64>`), joins
+  with `fetch_as` and `#[derive(FromRow)]`, the query builder mapped to Laravel's.
+- [docs/search.md](docs/search.md): full-text search with one API on SQLite FTS5 and
+  PostgreSQL `tsvector`: `#[model(search = "title, body", search_language = "…")]`,
+  `renox::db::search::migration::<M>(name)` (the index: FTS5 table + triggers, or a generated
+  column + GIN index), `Model::search`, `Query::search`/`where_search`/`order_by_relevance`,
+  what matches (every word, prefixes, stemming; user input safe), ranking, `rebuild`, the
+  grid's search box on a searchable model; mapped to Laravel Scout.
+- [docs/stability.md](docs/stability.md): what semver covers, which types may grow
+  (`#[non_exhaustive]`), public dependencies (axum yes, sqlx only through escape hatches).
+- `rnx make:deploy` writes `deploy/README.md` (Docker, systemd, Litestream backups).
+
+## Where things are (for changing Renox itself)
+
+- [CLAUDE.md](CLAUDE.md): the short contributor and agent guide (the rules that always apply).
+  The details are in [docs/contributing/](docs/contributing/): `layout.md` (every crate and file),
+  `architecture.md` (request pipeline, decisions, the database layer), `conventions.md`,
+  `workflow.md` (issues, PRs, CI), `config.md` (env vars), `traps.md` (problems already solved)
+  and `status.md` (what each milestone added).
+- [ROADMAP.md](ROADMAP.md): milestones and design decisions.
+- [docs/audit/2026-09-pre-1.0.md](docs/audit/2026-09-pre-1.0.md): known issues (IDs W*, D*, A*) from
+  the pre-1.0 audit, with repro tests and fix directions; ROADMAP M13/M14 track them.
+- [docs/audit/2026-10-laravel-parity.md](docs/audit/2026-10-laravel-parity.md): the Laravel
+  parity review, current as of M32, and an English summary of the gaps
+  ([PDF](docs/audit/2026-10-laravel-gap-report.pdf)).
+- [CONTRIBUTING.md](CONTRIBUTING.md): the checks every change needs;
+  [SECURITY.md](SECURITY.md): how to report a vulnerability;
+  [RELEASING.md](RELEASING.md): how a release goes to crates.io.
+- `crates/renox-core/src`: the runtime. `db/` (Db, models, queries, relations, migrations),
+  `validation/`, `auth/` (incl. `permissions.rs`, `account.rs`, `events.rs`, `tokens.rs`, `device.rs`: tokens for a kiosk or till without a user),
+  `audit.rs`, `context.rs`, `queue/`, `schedule.rs` + `timezone.rs`, `cache.rs`, `view.rs`,
+  `grid/` (the data grid and its exports), `import.rs` (CSV imports), `testing.rs`.
+- `crates/renox-cli`: `rnx`; `stubs/` holds the files `rnx new` writes.
+- `crates/renox-2fa`: the optional two-factor plugin crate (same version as `renox`): the
+  module (`lib.rs`: the second login step, the account card, events to the audit log), its
+  pages (`handlers.rs`, `views/`), TOTP (`totp.rs`), recovery codes (`recovery.rs`), the QR
+  code (`qr.rs`). Guide: [docs/two-factor.md](docs/two-factor.md); used in
+  examples/bikeshop (required for staff, optional for customers).
+- `crates/renox-editors`: the optional editors plugin crate (same version as `renox`): the
+  `Editors` module (`lib.rs`: its views, the `rich_text` filter, the Markdown preview route,
+  its files served with `Registry::asset`), `RichText` and `sanitize` (`rich_text.rs`, ammonia),
+  `assets.rs` (URLs and the tags), `views/editors.html` (`rich_editor`, `markdown_editor`,
+  `code_editor`, `code_entry`), `assets/editors.js|css` and the vendored Trix, Prism and CodeJar
+  (`assets/vendor/NOTICE`). Guide: [docs/editors.md](docs/editors.md); used in
+  examples/bikeshop (`/about/fields` and the admin panel's forms).
+- `crates/renox-blocks`: the optional blocks plugin crate (same version as `renox`): the
+  `Blocks` module (`lib.rs`: its views registered unless the app has the file, `renox_blocks()`
+  for the tags, `renox_blocks_t()` for texts), `texts.rs` (`TEXTS`, the English), `assets.rs`
+  (hashed URLs, `Registry::asset`), `views/blocks.html` (the eleven macros),
+  `assets/blocks.css`, `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
+  code, imported only when a page has it; Web Animations, no library). Guide:
+  [docs/blocks.md](docs/blocks.md); used in examples/bikeshop (every page with a block, and
+  `/about/blocks`); browser tests tests/browser/blocks.test.mjs.
+- `crates/renox-oauth`: the optional social login plugin crate (same version as `renox`): the
+  `OAuth` module (`lib.rs`: the buttons' `oauth_providers`, the account card, events to the
+  audit log), the routes (`handlers.rs`: redirect with `state` + PKCE, callback, unlink;
+  linking by verified email), the `Provider` trait with `Profile`, `Token`, `Credentials`
+  (`provider.rs`), `google.rs`, `github.rs`, `OAuthAccount` (`model.rs`, `oauth_accounts`).
+  Logs in through `renox::auth::sign_in` / `register_verified` / `confirm_identity`
+  (renox-core `auth/external.rs`). Guide: [docs/oauth.md](docs/oauth.md); used in
+  examples/bikeshop.
+- `crates/renox-admin`: the optional admin panel plugin crate (same version as `renox`),
+  Filament's resources: the `Admin` module (`lib.rs`: path, title, `authorize`/`gate`, the
+  views registered unless the app has a file of the name), the `AdminResource` trait with
+  `AdminAction`, `ActionContext`, `ActionInput`, `SaveContext`, `Filter` (`resource.rs`),
+  `Field`/`FieldKind` (`field.rs`), `Entry` (`entry.rs`), `RelationManager` (`relation.rs`: child
+  rows as tabs of a record), `texts.rs` (the panel's words and their `renox.admin.*` keys), the
+  routes and pages (`panel.rs`: dashboard, list with exports and
+  bulk/row actions, create/store, show, edit/update, destroy, the trash; every page asks the
+  model's `Policy`), `views/` (`renox-admin/layout.html`, `dashboard.html`, `index.html`,
+  `form.html`, `fields.html`, `show.html`, `relation.html`). Guide: [docs/admin.md](docs/admin.md); used in
+  examples/bikeshop (resources authorized by permission).
+- `crates/renox-billing`: the optional subscriptions plugin crate (same version as `renox`),
+  Laravel's Cashier: the `Billing` module (`lib.rs`: plans, gateways, the provided settings,
+  the account section, the listeners: a deleted account's subscriptions end, audit entries),
+  `Plan`/`Interval` (`plan.rs`), `Customer`/`Billable`/`Owner` (`customer.rs`), the
+  `Gateway` trait with `Remote`, `Notice`, `Payment`, `Checkout`, `CheckoutRequest`
+  (`gateway.rs`), `stripe.rs`, `xendit.rs`, `Subscription`/`BillingCustomer`/
+  `SubscriptionStatus` (`model.rs`, tables `subscriptions` and `billing_customers`), how a
+  `Remote` becomes a row and events (`sync.rs`), the webhook (`webhook.rs`: one route,
+  `/billing/webhooks/{gateway}`, through `renox::webhook`), the pages (`handlers.rs`,
+  `views/plans.html`, `views/section.html`), the guards (`guard.rs`). Guide:
+  [docs/billing.md](docs/billing.md); used in examples/bikeshop (a
+  named subscription per bike).

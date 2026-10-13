@@ -1,0 +1,36 @@
+{% extends "layouts/app.html" %}
+{% block seo %}{{ seo(title=post.title ~ " · The Renox blog", description=post.description, type="article", image=app.url ~ "/img/og.png") }}
+  <meta property="article:published_time" content="{{ post.date }}T00:00:00Z">
+  <meta property="article:modified_time" content="{{ post.updated or post.date }}T00:00:00Z">
+  <meta name="author" content="{{ post.author }}">
+  {%- for t in post.tags %}
+  <meta property="article:tag" content="{{ t }}">
+  {%- endfor %}
+  <link rel="alternate" type="text/markdown" title="This post as Markdown" href="/blog/{{ post.slug }}.md">{% endblock %}
+{% block body_class %}blog{% endblock %}
+{% block content %}
+<div class="wrap page post">
+  <nav class="crumbs" aria-label="Breadcrumb"><a href="/">Renox</a> / <a href="/blog">Blog</a> / <span aria-current="page">{{ post.title }}</span></nav>
+  <article>
+    <header class="page__head">
+      <p class="meta"><time datetime="{{ post.date }}">{{ post.date }}</time>{% if post.updated %} · updated <time datetime="{{ post.updated }}">{{ post.updated }}</time>{% endif %} · {{ post.minutes }} min read · {{ post.author }}</p>
+      <h1>{{ post.title }}</h1>
+      <p class="sub">{{ post.description }}</p>
+      {%- if post.tags %}<ul class="tags" role="list" aria-label="Tags">{% for t in post.tags %}<li><a href="/blog/tags/{{ t }}">{{ t }}</a></li>{% endfor %}</ul>{% endif %}
+    </header>
+    <div class="post__grid">
+      {%- if post.toc | length > 1 %}
+      <nav class="toc" aria-label="On this page"><p>On this page</p><ol>{% for id, text in post.toc %}<li><a href="#{{ id }}">{{ text }}</a></li>{% endfor %}</ol></nav>
+      {%- endif %}
+      <div class="prose">{{ post.html | safe }}</div>
+    </div>
+    <footer class="post__foot">
+      <p>Read the docs at <a href="{{ links.docs }}">docs.renox.rs</a>, try the <a href="{{ links.demo }}">live demo</a>, or star <a href="{{ links.github }}" rel="noopener">Renox on GitHub</a>. This post is also <a href="/blog/{{ post.slug }}.md">plain Markdown</a>.</p>
+      <nav class="pager" aria-label="More posts">
+        {%- if older %}<a rel="prev" href="/blog/{{ older.slug }}"><span>Older</span>{{ older.title }}</a>{% endif %}
+        {%- if newer %}<a rel="next" href="/blog/{{ newer.slug }}"><span>Newer</span>{{ newer.title }}</a>{% endif %}
+      </nav>
+    </footer>
+  </article>
+</div>
+{% endblock %}

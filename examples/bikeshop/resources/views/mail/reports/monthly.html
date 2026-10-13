@@ -1,0 +1,10 @@
+{#- The monthly report (src/app/reports/monthly.rs `SendMonthlyReport`): one workbook per store
+    the recipient holds `reports.view` in, attached. -#}
+<rx-mail>
+  <p><strong>{{ t('reports.mail.title', month=month) }}</strong></p>
+  <p>{{ t('reports.mail.hello', name=name) }}</p>
+  <p>{{ t('reports.mail.body', month=month) }}</p>
+  <rx-mail-panel>{{ stores | join(", ") }}</rx-mail-panel>
+  <p>{{ t('reports.mail.sheets') }}</p>
+  <rx-mail-button :url="url" :label="t('reports.mail.open')"/>
+</rx-mail>

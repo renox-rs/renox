@@ -1,0 +1,33 @@
+{#- Mail building blocks, styled inline for mail clients:
+    {% from "renox/mail/components.html" import button, panel, table, divider %}
+    {{ button(url, "Pay now") }}
+    {% call panel() %}Your order ships tomorrow.{% endcall %}
+    {{ table([["Coffee", "$4.50"], ["Tea", "$3.00"]], head=["Item", "Price"], total=["Total", "$7.50"]) }}
+    {{ divider() }} -#}
+{% macro button(url, label) -%}
+<p style="margin:24px 0;text-align:center;">
+  <a href="{{ url }}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-weight:600;">{{ label }}</a>
+</p>
+<p style="font-size:13px;color:#78716c;word-break:break-all;">{{ url }}</p>
+{%- endmacro %}
+{% macro panel() -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;">
+  <tr><td style="background:#f5f5f4;border-left:4px solid #1c1917;border-radius:6px;padding:14px 16px;">{{ caller() }}</td></tr>
+</table>
+{%- endmacro %}
+{% macro table(rows, head=none, total=none) -%}
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="margin:20px 0;border-collapse:collapse;font-size:14px;">
+  {%- if head %}
+  <tr>{% for cell in head %}<th style="text-align:{{ 'right' if loop.last and not loop.first else 'left' }};padding:8px 0;border-bottom:2px solid #e7e5e4;">{{ cell }}</th>{% endfor %}</tr>
+  {%- endif %}
+  {%- for row in rows %}
+  <tr>{% for cell in row %}<td style="text-align:{{ 'right' if loop.last and not loop.first else 'left' }};padding:8px 0;border-bottom:1px solid #e7e5e4;">{{ cell }}</td>{% endfor %}</tr>
+  {%- endfor %}
+  {%- if total %}
+  <tr>{% for cell in total %}<td style="text-align:{{ 'right' if loop.last and not loop.first else 'left' }};padding:10px 0;font-weight:700;">{{ cell }}</td>{% endfor %}</tr>
+  {%- endif %}
+</table>
+{%- endmacro %}
+{% macro divider() -%}
+<hr style="border:none;border-top:1px solid #e7e5e4;margin:24px 0;">
+{%- endmacro %}

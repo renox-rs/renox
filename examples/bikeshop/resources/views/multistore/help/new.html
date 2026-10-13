@@ -1,0 +1,30 @@
+{#- Ask another store for someone (#245): the person, the role they'll have here, the days. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.help.new')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.help.new')" :subtitle="t('multistore.help.new_lead')" :back="route('multistore.help')" :back-label="t('multistore.help.title')"/>
+    <rx-form method="GET" :action="route('multistore.help.create')" class="bs-filters" id="help-store">
+      <rx-select name="store" :label="t('multistore.help.lending_store')" :options="store_options" :selected="lending"/>
+      <rx-button :label="t('multistore.help.show_people')" variant="secondary"/>
+    </rx-form>
+    <rx-form :action="route('multistore.help.store')" id="help-form" novalidate>
+      <input type="hidden" name="store" value="{{ lending }}">
+      <rx-card>
+        <rx-form-errors/>
+        <template rx-if="people">
+        {# [explain:multistore.help.create.template] #}
+        <rx-form-grid columns="2">
+          <rx-select name="staff" :label="t('multistore.help.person')" :options="people" required searchable/>
+          <rx-select name="role" :label="t('multistore.help.role')" :options="role_options" required :hint="t('multistore.help.role_hint')"/>
+          <rx-date-picker name="starts_on" :label="t('multistore.help.starts_on')" :min="today" required/>
+          <rx-date-picker name="ends_on" :label="t('multistore.help.ends_on')" :min="today" required :hint="t('multistore.help.ends_hint')"/>
+        </rx-form-grid>
+        {# [/explain:multistore.help.create.template] #}
+        <rx-textarea name="reason" :label="t('multistore.help.reason')" rows="2" required/>
+        <rx-button :label="t('multistore.help.send')" icon="check"/>
+        </template>
+        <rx-empty rx-else :title="t('multistore.help.no_people')" icon="users"/>
+      </rx-card>
+    </rx-form>
+  </rx-stack>
+</rx-page>

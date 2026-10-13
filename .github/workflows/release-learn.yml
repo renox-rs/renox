@@ -1,0 +1,50 @@
+name: Release build (learn)
+
+# Builds learn.renox.rs (renox-learn: the course) on the same
+# Ubuntu (glibc) as the production server. The server pulls the artifact with
+# `gh run download`; CI holds no server keys. A new stage is a new build.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "learn/**"
+      - "site/src/**"
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/release-learn.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-learn-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build renox-learn (x86_64-linux, ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked -p renox-learn
+      - run: cargo build --release --locked -p renox-learn
+      - name: Package
+        run: |
+          mkdir dist
+          cp target/release/renox-learn dist/
+          strip dist/renox-learn
+          echo "${GITHUB_SHA}" > dist/REVISION
+          (cd dist && sha256sum renox-learn > renox-learn.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: renox-learn-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

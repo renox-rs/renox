@@ -1,0 +1,23 @@
+{#- A two-party statement (#245): each store's side by kind, the net, each store's
+    confirmation, the entries. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.statement.title', month=(statement.period_start | date('%B %Y')))">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.statement.title', month=(statement.period_start | date('%B %Y')))" :subtitle="statement.debtor ~ ' ⇄ ' ~ statement.creditor" :back="route('multistore.settlements')" :back-label="t('multistore.settlements.title')" :badge="t('multistore.settlements.status_' ~ statement.status)" :badge-kind="'success' if statement.status == 'settled' else 'warning'"/>
+    <rx-alert :message="t('multistore.statement.net', debtor=statement.debtor, creditor=statement.creditor, amount=(statement.amount | money))" :kind="'success' if statement.status == 'settled' else 'info'"/>
+    <div class="bs-split" data-bs-reveal>
+      <div><app-multistore-side :name="statement.debtor" :side="debtor_side" :confirmed="statement.debtor_confirmed" :allowed="can_debtor" which="debtor" :statement-id="statement.id"/></div>
+      <div><app-multistore-side :name="statement.creditor" :side="creditor_side" :confirmed="statement.creditor_confirmed" :allowed="can_creditor" which="creditor" :statement-id="statement.id"/></div>
+    </div>
+    <rx-card :title="t('multistore.statement.entries')">
+      <rx-table :rows="entries" :caption="t('multistore.statement.entries')">
+        <rx-column :label="t('multistore.books.fields.booked_at')">{{ row.entry.booked_at | date("%Y-%m-%d") }}</rx-column>
+        <rx-column :label="t('multistore.books.fields.kind')">{{ t('multistore.books.kind.' ~ row.entry.kind) }}</rx-column>
+        <rx-column :label="t('multistore.books.fields.debtor')">{{ statement.debtor if row.entry.debtor_store_id == statement.debtor_store_id else statement.creditor }}</rx-column>
+        <rx-column :label="t('multistore.books.fields.amount')" align="num">{{ row.entry.amount | money }}</rx-column>
+        <rx-column :label="t('multistore.fees.percent')" align="num"><template rx-if="row.entry.fee_rate_bp is not none">{{ (row.entry.fee_rate_bp / 100) | round(2) }} %</template><template rx-else>—</template></rx-column>
+        <rx-column :label="t('multistore.books.fields.source')"><a rx-if="row.url" class="rx-link" href="{{ row.url }}">{{ row.entry.source_type }} #{{ row.entry.source_id }}</a><template rx-else>{{ row.entry.source_type }} #{{ row.entry.source_id }}</template></rx-column>
+      </rx-table>
+    </rx-card>
+  </rx-stack>
+</rx-page>

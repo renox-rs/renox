@@ -1,0 +1,29 @@
+{#- A relation manager's list (renox-admin/relation.html): the rows that
+    belong to a record, under the record's tabs. `new` (a has-many) and
+    `attach` (a pivot, with the rows not attached yet) are set when the
+    user may. Custom columns are drawn by renox-admin/{child_slug}/cells.html
+    like in the list. -#}
+{% extends "renox-admin/layout.html" %}
+{% from "renox/grid.html" import grid %}
+{% from "renox/ui.html" import page_header, link_button, link_tabs, action_sheet, select, empty %}
+
+{% block title %}{{ relation.label }} · {{ parent.title }} · {{ admin.title }}{% endblock %}
+
+{% block content %}
+{% call page_header(parent.title, back=parent.index_url, back_label=parent.plural_label) %}
+  {%- if new %}
+  {{ link_button(new.url, new.label, variant="primary", icon="plus") }}
+  {%- endif %}
+  {%- if attach %}
+  {%- if attach.options %}
+  {% call action_sheet("rx-admin-attach", attach.label, relation.url, attach.label, submit_label=attach.label, variant="primary", icon="plus") %}
+    {{ select("attach", attach.field, attach.options, required=true, searchable=true) }}
+  {% endcall %}
+  {%- endif %}
+  {%- endif %}
+{% endcall %}
+{{ link_tabs(tabs, current=current_tab, label=parent.title) }}
+{% call(row, column) grid(rows) %}
+  {%- include "renox-admin/" ~ relation.child_slug ~ "/cells.html" ignore missing %}
+{% endcall %}
+{% endblock %}

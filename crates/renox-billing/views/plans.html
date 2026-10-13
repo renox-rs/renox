@@ -1,0 +1,53 @@
+{#- renox-billing: the plans page (`plans`: key, label, description, price,
+    trial_days, features, current; `current`: the subscription as the
+    account card shows it, or none; `subscribed`, `trial_available`,
+    `generic_trials`, `account`). Replace it with
+    resources/views/billing/plans.html in your app. -#}
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, button, link_button, badge, alert %}
+{% block title %}Plans · {{ app.name }}{% endblock %}
+{% block main_class %} rx-auth--wide{% endblock %}
+{% block content %}
+{% call card(title="Choose a plan", subtitle=("You're on " ~ current.plan_label ~ ". Switch at any time." if subscribed and not current.canceled else "Pick the plan that fits. You can change or cancel it at any time.")) %}
+  {%- if current and current.canceled and current.on_grace_period %}
+  {{ alert("Your subscription is canceled: it ends on " ~ (current.ends_at | date) ~ ".", kind="warning") }}
+  {%- endif %}
+  {%- if current and current.past_due %}
+  {{ alert("Your last payment failed. The payment provider will try again; check your payment method there.", kind="error") }}
+  {%- endif %}
+{% endcall %}
+  {%- for plan in plans %}
+  <div id="plan-{{ plan.key }}">
+  {% call card(title=plan.label, subtitle=plan.description) %}
+    <p class="rx-title">{{ plan.price }}</p>
+    {%- if plan.trial_days and trial_available %}
+    <p class="rx-subtitle">{{ plan.trial_days }}-day free trial</p>
+    {%- endif %}
+    {%- if plan.features %}
+    <ul>
+      {%- for feature in plan.features %}<li>{{ feature }}</li>{% endfor %}
+    </ul>
+    {%- endif %}
+    <div class="rx-card__footer">
+      {%- if plan.current %}
+      {{ badge("Your plan", kind="success") }}
+      {%- elif subscribed and not current.canceled %}
+      <form method="post" action="{{ route('billing.swap', plan.key) }}">
+        {{ csrf_field() }}{{ button("Switch to " ~ plan.label, variant="secondary") }}
+      </form>
+      {%- else %}
+      {%- if generic_trials and plan.trial_days and trial_available %}
+      <form method="post" action="{{ route('billing.trial', plan.key) }}">
+        {{ csrf_field() }}{{ button("Start free trial", variant="secondary") }}
+      </form>
+      {%- endif %}
+      <form method="post" action="{{ route('billing.checkout', plan.key) }}">
+        {{ csrf_field() }}{{ button("Subscribe") }}
+      </form>
+      {%- endif %}
+    </div>
+  {% endcall %}
+  </div>
+  {%- endfor %}
+<p>{{ link_button(account, "Back", variant="plain") }}</p>
+{% endblock %}

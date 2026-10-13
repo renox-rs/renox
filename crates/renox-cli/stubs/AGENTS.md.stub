@@ -1,0 +1,287 @@
+# {{title}}: notes for coding agents
+
+A [Renox](https://github.com/renox-rs/renox) app: Rust + Axum + HTMX + Alpine.js, like Laravel.
+The framework is the `renox` dependency; don't copy its code into this app. This app is pinned to
+one Renox version (the `renox` line in `Cargo.toml`); the links below are for that version.
+
+## Where to look
+
+- **Cheat-sheet**, one short compiled example per task (routes, views, forms and validation,
+  models and queries, auth and account pages, roles and permissions, tenants, audit log, HTMX,
+  jobs, schedules, cache and locks, mail, notifications, uploads, config, tests):
+  {{renox_docs}}/CHEATSHEET.md
+- **llms.txt**, a map from every topic to a guide or an example file: {{renox_docs}}/llms.txt
+- **Whole apps:** `examples/bikeshop` shows how everything fits in a real business: a shop
+  (catalogue, cart, checkout in a transaction, payment webhooks), rentals, a workshop,
+  service plans billed as subscriptions, staff with roles per store, data grids, reports,
+  jobs, mail, an admin panel and a JSON API. Every page explains the Renox features it uses:
+  its README maps each feature to a page and a file, `/about/pages` lists them, and
+  `/about/fields` and `/about/htmx` are references for form fields and htmx recipes.
+  `examples/hello` is the smallest app.
+- **Guides:** `docs/routing.md` (routes, groups, middleware, sessions, cookies, signed URLs),
+  `docs/validation.md` (forms, rules, `#[derive(Validate)]`, hooks), `docs/mail.md` (mail and
+  notifications), `docs/scheduling.md` (schedules, events, cache and locks, commands),
+  `docs/relations.md` (relations are explicit: load a page's relations with
+  `relations::belongs_to` / `has_many` / `Pivot`, one query each (two for a pivot), never one
+  per row),
+  `docs/types.md` (form field → Rust type → column), `docs/ui.md` (the UI kit, toasts,
+  fragments, live validation), `docs/grid.md` (data grids with `renox::grid`: columns,
+  filters, search, editing, actions, summaries, exports), `docs/testing.md` (TestApp, fakes, time travel),
+  `docs/authorization.md` (gates, policies, roles, token abilities, tenants), `docs/queue.md`
+  (jobs, retries, chains, batches), `docs/postgresql.md`, `docs/operations.md` (production).
+- {{renox_offline}} After moving the app to another Renox version, use that version's
+  files. To read the docs as a website (with search), https://docs.renox.rs shows the
+  latest version.
+
+## Generators
+
+Prefer them over writing boilerplate by hand:
+
+```bash
+rnx doctor   # what's missing on this machine or in this app, with the fix
+rnx make:module products                               # src/app/products + view + registration
+rnx make:module products --resource --fields "name:string price:money"  # a whole CRUD, with tests; runs migrate (asks outside APP_ENV=local; --no-migrate), prints the URL; --open opens it
+rnx make:model Product --module products --migration   # model + migrations/*.sql
+rnx make:model Invoice --module billing --key ulid -m  # id: Ulid (also uuid, string)
+rnx make:policy Product --module products
+rnx make:job SendReceipt --module products             # registered in the module's register()
+rnx make:command products:import --module products     # typed (clap); rnx products:import --help
+rnx make:mail order_shipped
+rnx make:migration --auto add_stock           # SQL from the models' changes (db:diff); review it, `--yes` never drops
+rnx make:migration add_stock_to_products               # in migrations/ (--path DIR: elsewhere)
+rnx make:factory Product --module products             # also make:seeder, make:test
+rnx make:notification OrderShipped --module orders     # also make:event, make:rule
+rnx make:middleware StampRequests                      # also make:component (an <app-…> tag)
+rnx make:component --ui                                # copy the UI kit in to change it (same as rnx ui:publish)
+rnx make:deploy                                        # Dockerfile, systemd unit + socket, Litestream
+rnx build                                              # release binary in dist/ (Tailwind CSS minified first)
+rnx tailwind --watch                                   # rebuild public/css/app.css (rnx serve does it for you)
+```
+
+## Layout
+
+- `src/lib.rs`: `app()` builds the App (modules, migrations, seeders); `src/main.rs` only runs it.
+- `src/app/<module>/mod.rs`: one module per feature (routes + handlers), with `model.rs`,
+  `policy.rs` and jobs next to it.
+- `resources/views/`: MiniJinja templates (`layouts/app.html` is the layout).
+  `resources/lang/*.json`: translations. `public/`: static files.
+- `migrations/`: `TIMESTAMP_name.up.sql` / `.down.sql`, written for the database in
+  `DATABASE_URL` (`.env`). Never edit a migration that has run; add a new one.
+- `tests/`: integration tests; `tests/home.rs` is the pattern.
+- After changing a model or a migration, run `rnx db:check` (it compares every `app.model::<…>()`
+  with the tables the migrations build). After editing templates, run `rnx view:check` (it
+  compiles every template and checks each `route('name')`); `tests/home.rs` runs it too.
+- `rnx view:data` writes `.vscode/renox-components.json` (VS Code autocomplete for the kit's tags;
+  git-ignored, refreshed by `rnx serve`). Don't edit it by hand.
+
+## Things that trip agents up
+
+- **Write pages with `rx-*` tags** (`<rx-input>`, `<rx-card>`, `<rx-table>`…; every tag and prop is
+  in docs/ui.md and the framework's `components/contracts.rs`). Don't write
+  template statements (`if`, `for`, `set`, `extends`, `block`, `call`, `from … import`): the tags
+  have a way for each (`rx-if`/`rx-elif`/`rx-else`/`rx-for` on an element or on `<template>`,
+  `<rx-let>`, `<rx-page layout=…>`, `<rx-outlet name=…/>`, `<rx-push>`, `<app-…>` components;
+  docs/ui.md "No raw MiniJinja"). Run `rnx view:check` after editing templates.
+- Component tags (`<rx-card>`, `<app-price-tag>`, `rx-if`/`rx-for`, docs/ui.md "Components as
+  tags") are rewritten when a template loads. In an attribute, `title="{{ x }}"` is the value of
+  `x` and `:title="x"` is an expression (no `{{ }}` after the colon); a statement there is an error.
+  `rx-else` goes on the very next sibling of its `rx-if` element, and never follows `rx-for`.
+  `class` is not allowed on kit tags (only on `rx-stack`, `rx-row`, `rx-form`).  An `<app-…>` file needs `<rx-props>` first.
+  Form tags: `<rx-repeater>` gives its content `row` and `prefix` (`name="{{ prefix }}[qty]"`);
+  `<rx-wizard id=…>` takes its steps from `<rx-wizard-step key=… title=…>` children.
+  Navigation: `<rx-navbar>`, `<rx-sidebar>`, `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
+  `<rx-tabs id=…>` takes its tabs from `<rx-tab key=… label=…>` children; `<rx-shell>` is a `div.rx-shell`.
+  `<rx-chart kind=…>` calls the `chart(...)` function; `<rx-grid :page=…>` has `row` and `column` in its content.
+  Plugin templates are compiled when added with `renox::view::add_template`; a plugin's tags come from `Registry::component`.
+- Live components (`#[renox::live_component]`, `rx-click`/`rx-model`, docs/live.md): action names
+  starting with `_` are reserved (`_refresh` is built in), and the state is signed, not
+  encrypted, so keep secrets out of the component's fields. Check the policy in each action.
+- Route parameters are `{id}` (axum 0.8), not `:id`: `.get("/products/{id}", show)`.
+- `.require_auth()` guards only the routes added before it in that `Routes`; so do
+  `.require_gate`, `.require_role`, `.require_permission`, `.require_ability` and
+  `.require_password_confirmed`.
+- `auth::logout` ends this device only (`logout_other_devices` for the rest).
+  `User::set_password` ends every session, this one too: in a handler use
+  `auth::change_password`, which keeps the user logged in.
+- Prefer typed columns in queries (`.where_(Product::PRICE.lt(20_000)).order_by(Product::NAME)`):
+  a misspelt field then fails to compile instead of when the query runs.
+- For a page with many variables, a typed view context beats a `context!` map: `#[derive(Serialize,
+  ViewData)] #[view(template = "x/index.html")]`, `View::typed(page)`, registered with
+  `app.view_data::<T>()` in `register`; `rnx view:check` then reports a template variable the
+  struct lacks (docs/ui.md "typed view context"; it doesn't follow `extends`/`include`).
+- A model with `#[model(default_scope = "…")]` (e.g. the current team) filters every query,
+  including `find`; use `Model::unscoped()` in admin code and commands that must see all rows.
+- A model's key is its `id` field's type: `i64`, `renox::db::Ulid`, `renox::uuid::Uuid` (the
+  `uuid` feature) or `String`. ULIDs and UUIDs are made on insert; a `String` key must be set,
+  and a new row goes in with `Model::insert`/`create` (`save` on a set key updates, or 404s).
+  Generic helpers over models that need a number write `M: Model<Key = i64>`.
+- Secrets in a table (API keys, id numbers): a field of type `renox::db::Encrypted<String>`
+  (sealed with `APP_KEY`, read as plain), not `state.encrypt` by hand. It can't be searched;
+  changing `APP_KEY` makes it unreadable. `tx.savepoint(|tx| Box::pin(async move { … }))`
+  undoes only its own part of a transaction on `Err`.
+- Model hooks (`#[model(hooks)]`) run on `save`, `create`/`insert`, `save_only`, `save_changes`,
+  `delete` and `force_delete`, never
+  on bulk `Query::update` / `delete`, `insert_many` or `upsert`.
+- Scheduled task names must be unique (a duplicate is a boot error); `rnx schedule:list` shows
+  the next runs, `rnx schedule:run NAME` runs one now.
+- A handler that won't compile as a route ("the trait `Handler` is not implemented", or
+  "`Send` is not general enough"): don't keep a closure or iterator that borrows a local across
+  an `.await`; collect into a `Vec` first.
+- Money is `i64` in the smallest unit (cents for USD, the default `APP_CURRENCY`), never `f64`.
+- Read forms with `Valid<T>`, even a form with no rules (`#[derive(Deserialize, Validate)]`,
+  no `#[validate]` attributes): it turns a ticked checkbox's `on` into `true`, an unticked one
+  into `false`, and empty inputs into `None`. The prelude's `Form<T>` is axum's and doesn't: a
+  `bool` field answers 422 to `on`.
+- UI: prefer the kit (`<rx-input>`, `<rx-button>`, … docs/ui.md) over
+  hand-written form markup: it refills fields, shows errors and handles accessibility. Keep one
+  primary button per form; put destructive actions behind `<rx-confirm>`. Give feedback with
+  `Toast::success(…)` returned next to the `Redirect`, and put `{{ toasts() }}` in the layout.
+  Fields inside `show_when`/`hide_when` are disabled while hidden, so they aren't sent: use
+  `required_if` (not `required`) for them, and `#[serde(default)]` on `Vec` fields of
+  `<rx-checkbox-list>` or `<rx-toggle-buttons multiple>`. Rows of fields (the kit's `<rx-repeater>`,
+  `<rx-key-value>`) are named `lines[0][name]`: the form struct takes `lines: Vec<Line>` (or
+  `KeyValues`) with `#[serde(default)]`, rows are checked with `v.nested("lines", &self.lines)`,
+  and errors are keyed `lines.0.name`.
+  A select over a long list asks the server: `<rx-select options-url="{{ route(…) }}" editable>`
+  with one route answering `GET ?q=`/`?values=` (`renox::select::OptionQuery` →
+  `Json<Vec<SelectOption>>`), `POST label` (add) and `PUT value+label` (rename), each checking
+  who may do it; parse lookup ids with `query.values_as::<i64>()` (PostgreSQL won't compare
+  a `BIGINT` with text).
+  A record's page (show) is an infolist, not hand-written markup: `<rx-infolist columns="2">`
+  with `<rx-entry label value format="money"|"date"|"since"|"bool"|…>`; prices go
+  through `| money` (`APP_CURRENCY`, USD by default), never a hand-made "$" filter. `money`,
+  `<rx-entry format="money">`, `<rx-chart format="money">` and the grid's `Column::money` all
+  take the stored smallest unit (`1299` → `$12.99`): never divide by 100 in a template.
+  Dashboards: `renox::chart::Trend::of(query, "created_at").over(period).sum(&state, "total")`
+  with the `Period` extractor, then `<rx-stat>`, `<rx-chart kind="line" :data="series" format="money">`,
+  `<rx-widget>` and `<rx-period-filter :selected="period">` in the template (presets, `12w` per week, and a
+  custom date range it reads as `?period=custom&from=…&to=…`); no chart library.
+  `<rx-chart kind="scatter"|"bubble" :points="[{x, y, size, label}]" x-title=… y-title=…>` for
+  points; never parse `?from=`/`?to=` by hand for the period.
+  An action that asks for a few values is `<rx-action-sheet id label action title
+  method="PUT">…fields…</rx-action-sheet>`, not a page of its own: the handler returns
+  `(Toast, HxRefresh)`, and a 422 stays in the sheet. With one per row, give each sheet and
+  its fields their own `id`. Icon-only buttons are `<rx-icon-button icon label>` (the label
+  is the accessible name); shortcuts are `key="mod+s"`; a button that can't be used yet
+  takes `disabled-reason="…"`.
+  In-app notifications: `to_database` returns `Ok(DatabaseMessage…into())` (title, body, url), and
+  `Auth::new().notifications()` + `<rx-notification-bell :count="unread_notifications"/>` in the
+  layout gives the list, the badge and live updates (SSE: behind nginx, `proxy_buffering off`).
+  Toasts can carry `.body(…)`, `.link(label, url)`, `.seconds(n)`/`.persistent()`, and a
+  button that sends a request (`ToastAction::post(label, "/own/path")`, `put`, `patch`,
+  `delete`): it goes through htmx, so answer with a `Toast` or `(Toast, HxRefresh)`, not a
+  `Redirect` (its toast would be lost).
+  Live updates without JavaScript of your own: `state.broadcast("order-updated", json!(…))`
+  (or `broadcast_to(user_id, …)`) reaches the open pages of logged-in users as a DOM event
+  (`hx-trigger="order-updated from:document"`); `"renox:toast"` with `{"toasts": [toast]}`
+  shows toasts. It needs the bell or `{{ event_stream() }}` on the page. Fire-and-forget,
+  this process only (not a separate `queue:work`, not other servers): use a database
+  notification for anything that must arrive. Tests: `app.fake_broadcasts()` +
+  `app.assert_broadcast(event, |b| …)`.
+- `user.has_role("admin")` on a plain `User` (policies, `gate_before`) only knows the current
+  request's user; in jobs and commands use `user.roles(&db).await`.
+- For a transaction that must be retried on conflicts and borrow locals, use
+  `db.retrying(3, || async { let mut tx = db.begin().await?; …; tx.commit().await?; Ok(v) })`.
+- Tests: count queries with `renox::db::capture_queries(future)`; `app.run_all_jobs()` also
+  runs retries waiting for their backoff; `app.confirm_password()` passes
+  `require_password_confirmed`.
+- Call other services with `state.http` (timeouts, retries), not a client of your own: tests
+  then fake it with `app.fake_http().on("https://api.example.com/*", FakeResponse::json(…))`.
+  While faking, a request without a matching fake is an error, never a real call.
+- Messages to a user go in their language inside a notification (`Recipient::locale()`: a
+  `locale` column on `users`); elsewhere use `state.lang("es")` or `state.mail_view_in(…)`.
+- The queue dashboard (`renox::queue::Dashboard`) is invisible until the app defines the
+  `view-queue-dashboard` gate.
+- Debugging a request while developing: `/_renox/debug` lists the last requests with their SQL
+  (and flags N+1 queries); mail is at `/_renox/mail`. Logs carry a request id, also in the
+  response's `X-Request-Id`.
+- Error pages are `resources/views/errors/default.html` (and `errors/404.html`…), in the
+  layout. Send errors to a tracker with `App::report(|report, state| async move { … })`.
+- Per-user or per-key API limits: `App::rate_limiter("api", |req| Limit::per_minute(…))` and
+  `.throttle_by("api")` on the routes; a missing limiter is a boot error.
+- `route('products.index', q=q, page=2)` adds named arguments as the query string.
+  `Redirect::route("products.show", &[&id])?` does the same from Rust; `route_is('admin.*')`
+  marks the current section in a nav.
+- `Routes::domain("admin.example.com", …)`: that host gets only those routes (plus Renox's
+  own and public files), not the routes without a domain; the proxy must pass `Host` on.
+- Load the row a route names with `Found(product): Found<Product>` (route model binding:
+  `{product}`, `{id}`, or a column's name like `{slug}`) instead of `Path(id)` +
+  `find_or_404`; a missing row is a 404, and default scopes apply. Authorize after it.
+- A second mail provider or a newsletter account: `App::mailer("news", |c|
+  MailConfig::from_env(c, "NEWS"))`, then `state.mailer_named("news")?` or
+  `state.queue_mail_via("news", mail)`; `MAIL_FAILOVER=news` hands mail on when the default
+  mailer fails.
+- Two plain forms on one page sharing field names: `#[validate(bag = "login")]` on one, and
+  `error('email', bag='login')` / the kit's `bag="login"` on its fields.
+- A second place for files (backups, exports): `App::disk("exports", |c|
+  StorageConfig::from_env(c, "EXPORTS"))` and `state.disk_named("exports")?`, not a second
+  `Storage` built by hand.
+- Layers such as `.etag()`, `.throttle(…)` and `.require_auth()` cover only the routes added
+  before them: give such routes a `Routes` group of their own and `merge` it.
+- Commands: `rnx make:command orders:close --module orders` writes a typed one (a clap struct with
+  `impl AppCommand`, registered with `app.typed_command::<T>()`); ask for missing values with
+  `renox::prompt::ask/confirm/secret/choice`, and answer them in tests with
+  `renox::prompt::answering([...], app.kernel().call(...))`.
+- Sessions are an encrypted cookie (~4 KB) unless `.env` says `SESSION_DRIVER=database`; don't
+  put large data in a cookie session.
+- Forms: `#[derive(Validate)]` with `#[validate(required, max = 100, …)]` on the fields for
+  plain rules (each item is a rule method; `each(…)`, `distinct`, `rename`), `impl Validate`
+  by hand when rules depend on each other. `App::detect_locale()` follows the browser's
+  language.
+- Forms that mirror a model: `#[model(table = "…", form)]` generates `<Model>Form` with
+  `#[form(validate(…))]` rules and `fill(&mut record)`; hand-write the form when it needs hooks.
+- Forms: prefer `impl Validate` hooks to code in the handler: `prepare` (tidy input),
+  `authorize` (403 before the rules), `after` (database checks, errors shown on the field).
+  Rules include `alpha_dash`, `uuid`, `ip`, `size`, `starts_with`, `required_without`,
+  `prohibited_if`, and `v.distinct(…)` for lists.
+- Pages are built from the UI kit (`renox/ui.html`, docs/ui.md), not from your own markup and
+  CSS, as tags: `<rx-navbar>`/`<rx-nav-link>` (or `<rx-sidebar>` + `rx-shell` for a back office),
+  `<rx-page-header>`, `<rx-card>`, the fields (`<rx-input>`, `<rx-select>`, `<rx-toolbar>` for
+  filters), `<rx-button>`/`<rx-link-button>`, `<rx-table>` + `<rx-row-actions>`, `<rx-list>`,
+  `<rx-card-grid>` + `<rx-media-card>`, `<rx-link-tabs>`, `<rx-sheet>`/`<rx-action-sheet>`/
+  `<rx-confirm>`, `<rx-menu>`, `<rx-badge>`, `<rx-alert>`, `<rx-empty>`, `<rx-progress>`, and
+  `toasts()`.
+  `public/app.css` is for brand tokens (`--rx-accent`) and what is truly the app's own; if
+  the kit lacks something, use its `rx-*` classes and tokens, never a parallel style. Text
+  in the app's own CSS takes the kit's type scale (`font: var(--rx-type-heading)`, `-body`,
+  `-label`, `-caption`…), not sizes of its own. `data-rx-theme="classic"` on `<html>` is the
+  kit's older look.
+- Lists of records with filters, sorting, search or exports: build a `renox::grid::Grid`
+  (docs/grid.md) and render it with `renox/grid.html` rather than a hand-made table. Excel
+  exports need the `xlsx` feature (`renox = { …, features = ["xlsx"] }`); CSV and the print
+  page work without it.
+- A script or `<meta>` a page or component needs goes through the layout's stacks:
+  `<rx-push stack="scripts" once="chart">…</rx-push>`, drawn by `<rx-outlet stack="scripts"/>`
+  (and `<rx-outlet stack="head"/>`) in the layout.
+- If `resources/css/app.css` exists, the app uses Tailwind: `rnx serve` rebuilds
+  `public/css/app.css`; commit that file. Use utilities for layout and the kit for controls.
+- Tests: `#[renox::test] async fn …() { let app = TestApp::new({{crate_name}}::app()).await; … }`,
+  with `app.acting_as(&user)`, `app.htmx()`, `assert_see`, `assert_view("products/index.html")`,
+  `assert_invalid("field")`, and for JSON `assert_json_path("data.0.name", "Coffee")`.
+- Read the time with `renox::db::now()` (or `DateTime` fields the framework fills), never
+  `SystemTime::now()` / `chrono::Utc::now()`: only then does `app.travel(Duration)` reach it.
+  Don't wait in tests or rewrite `created_at` with SQL: travel. Requests and `app.run_jobs()`
+  see the moved clock; code called directly (a task, a model method, `app.kernel().call`)
+  needs `app.at_travelled_time(future)`.
+- Faking in tests: `app.fake_events()` records events without running listeners
+  (`assert_emitted::<OrderPlaced>(|e| …)`); `app.fake_broadcasts()` records `state.broadcast`;
+  `app.fake_notifications()` records notifications
+  without mail, jobs or rows (`assert_notified(&user, "kind")`); `app.fake_http()` answers
+  `state.http`.
+- `v.each("tags", &self.tags, |t| t.required().max(20))` keys errors `tags.0`, `tags.1`…:
+  `assert_invalid("tags.1")` in tests; `error('tags')` in a template shows the first.
+- Every response carries a `Permissions-Policy` that switches off camera, microphone, geolocation,
+  payment, USB and similar features. If the app uses one, allow it with
+  `app.permissions_policy(|p| { p.allow("geolocation", "self"); })`; `PERMISSIONS_POLICY=off`
+  removes the header (`CSP=off` does not).
+
+## Checks before you finish
+
+```bash
+cargo fmt
+cargo clippy --all-targets -- -D warnings
+cargo test            # boots the app on a fresh test database
+rnx route:list        # confirm routes and their names
+```
+
+Run the app with `rnx serve` (it rebuilds on changes) and try pages at http://127.0.0.1:3000.

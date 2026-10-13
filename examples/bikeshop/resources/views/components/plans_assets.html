@@ -1,0 +1,5 @@
+{#- The plans pages' own styles and behaviour (public/plans/), once, through the
+    layout's head and scripts stacks: `<app-plans-assets/>`. -#}
+<rx-props>
+<rx-push stack="head" once="plans-css"><link rel="stylesheet" href="{{ asset('plans/plans.css') }}"></rx-push>
+<rx-push stack="scripts" once="plans-js"><rx-script :src="asset('plans/plans.js')"></rx-script></rx-push>

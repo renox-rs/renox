@@ -1,0 +1,34 @@
+{#- A record's view page (renox-admin/show.html): its entries in the kit's
+    infolist, with Edit and Delete (or Restore for a deleted record), and
+    a tab for each relation manager the resource has. -#}
+{% extends "renox-admin/layout.html" %}
+{% from "renox/ui.html" import page_header, card, infolist, entry, link_button, link_tabs, confirm, button, alert %}
+
+{% block title %}{{ title }} · {{ admin.title }}{% endblock %}
+
+{% block content %}
+{% call page_header(title, back=resource.index_url, back_label=resource.plural_label, badge=(admin.text.deleted_badge if deleted else none), badge_kind="error") %}
+  {%- if allowed.update %}{{ link_button(edit_url, admin.text.edit, variant="primary", icon="edit", key="e") }}{% endif %}
+  {%- if allowed.restore %}
+  <form method="post" action="{{ restore_url }}">{{ csrf_field() }}{{ button(admin.text.restore, variant="secondary", icon="refresh") }}</form>
+  {%- endif %}
+  {%- if allowed.delete %}
+  {{ confirm("rx-admin-delete", admin.text.delete, url, admin.text.delete_question | replace(":label", label_lower), (admin.text.delete_hint_soft if soft else admin.text.delete_hint_hard), icon="trash") }}
+  {%- endif %}
+  {%- if allowed.force_delete %}
+  {{ confirm("rx-admin-force-delete", admin.text.delete_for_good, force_delete_url, admin.text.delete_question_for_good | replace(":label", label_lower), admin.text.delete_hint_hard, method="POST", icon="trash") }}
+  {%- endif %}
+{% endcall %}
+{%- if relations %}
+{{ link_tabs(relations, current=current_tab, label=title) }}
+{%- endif %}
+{%- if deleted %}{{ alert(admin.text.in_trash | replace(":label", label_lower), kind="warning") }}{% endif %}
+{% call card() %}
+  {% call infolist(columns=2) %}
+    {%- for e in entries %}
+    {%- set value = record[e.key] if record[e.key] is defined else none %}
+    {{ entry(e.label, value, format=e.format, badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span) }}
+    {%- endfor %}
+  {% endcall %}
+{% endcall %}
+{% endblock %}

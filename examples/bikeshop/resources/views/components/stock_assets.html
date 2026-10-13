@@ -1,0 +1,6 @@
+{#- The stock pages' stylesheet (public/areas/stock.css) and small script
+    (public/areas/stock.js), each once, through the layout's head and
+    scripts stacks: `<app-stock-assets/>`. -#}
+<rx-props>
+<rx-push stack="head" once="stock-css"><link rel="stylesheet" href="{{ asset('areas/stock.css') }}"></rx-push>
+<rx-push stack="scripts" once="stock-js"><rx-script :src="asset('areas/stock.js')"></rx-script></rx-push>

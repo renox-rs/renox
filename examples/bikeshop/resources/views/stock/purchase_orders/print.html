@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  {{ seo(title="PO-" ~ order.id ~ " · " ~ store.name) }}
+  <app-head/>
+  <app-stock-assets/>
+  <rx-outlet stack="head"/>
+</head>
+{#- The supplier's printable order (#240): reached through a signed link mailed to the
+    supplier (ValidSignature), no login and no shop chrome; the kit's table and buttons. -#}
+{# [explain:stock.purchasing.print.template] #}
+<body class="rx-page">
+<main class="bs-print" id="main">
+  <div class="bs-print__head">
+    <div>
+      <h1 class="rx-title">{{ t('stock.print.title', number=order.id) }}</h1>
+      <p class="rx-subtitle">{{ t('shop.name') }} · {{ store.name }} · {{ store.phone }} · {{ store.email }}</p>
+    </div>
+    <div class="bs-print__tools"><button class="rx-button rx-button--secondary" type="button" data-bs-print>{{ t('stock.print.print') }}</button></div>
+  </div>
+{# [/explain:stock.purchasing.print.template] #}
+  <rx-infolist columns="2">
+    <rx-entry :label="t('stock.print.supplier')" :value="supplier.name"/>
+    <rx-entry :label="t('stock.print.deliver_to')" :value="store.name"/>
+    <rx-entry :label="t('stock.print.ordered')" :value="order.ordered_at" format="date"/>
+    <rx-entry :label="t('stock.print.expected')" :value="order.expected_on" format="date"/>
+  </rx-infolist>
+  <rx-simple-table :head="[t('stock.fields.sku'), t('stock.fields.product'), [t('stock.purchasing.ordered'), 'num'], [t('stock.purchasing.unit_cost'), 'num'], [t('stock.purchasing.total'), 'num']]" :caption="t('stock.print.title', number=order.id)">
+    <tr rx-for="l in lines"><td>{{ l.sku }}</td><td>{{ l.name }}</td><td class="rx-num">{{ l.quantity }}</td><td class="rx-num">{{ l.unit_cost | money }}</td><td class="rx-num">{{ l.total | money }}</td></tr>
+    <rx-slot name="footer"><tr><th scope="row" colspan="4">{{ t('stock.purchasing.total') }}</th><td class="rx-num"><strong>{{ order.total | money }}</strong></td></tr></rx-slot>
+  </rx-simple-table>
+  <p rx-if="order.note">{{ order.note }}</p>
+</main>
+<app-scripts/>
+<rx-outlet stack="scripts"/>
+</body>
+</html>

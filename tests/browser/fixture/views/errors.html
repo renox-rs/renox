@@ -1,0 +1,13 @@
+{% extends "layout.html" %}
+{% block content %}
+{#- Fields with no error slot, and a list (`tags`) with two inputs. -#}
+<form id="notes" hx-post="/notes" hx-target="#notes-result" novalidate>
+  {{ csrf_field() }}
+  <label>Note <input id="note" name="note"></label>
+  <label>First tag <input id="tag-1" name="tags"></label>
+  <label>Second tag <input id="tag-2" name="tags"></label>
+  <button type="submit">Save</button>
+</form>
+<p id="notes-result"></p>
+<button id="track" type="button" hx-post="/track" hx-swap="none">Track</button>
+{% endblock %}

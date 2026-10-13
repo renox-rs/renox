@@ -1,0 +1,19 @@
+<rx-props title text icon tone="teal" :href="none">
+{#- <app-feature-card :title="…" :text="…" icon="users"/>: a card with a coloured picture (an
+    icon on the theme's colours, no photo needed), a title and a text; a link when it has
+    `href`. Put them in a `<ul class="app-showcase">`, one `<li>` each: three columns, the
+    first card two wide. -#}
+<a rx-if="href" class="app-card app-card--{{ tone }}" href="{{ href }}">
+  <span class="app-card__media"><span class="app-card__icon"><rx-icon :name="icon" :size="32"/></span></span>
+  <span class="app-card__body">
+    <span class="app-card__title">{{ title }}</span>
+    <span class="app-card__text">{{ text }}</span>
+  </span>
+</a>
+<article rx-else class="app-card app-card--{{ tone }}">
+  <span class="app-card__media"><span class="app-card__icon"><rx-icon :name="icon" :size="32"/></span></span>
+  <span class="app-card__body">
+    <span class="app-card__title">{{ title }}</span>
+    <span class="app-card__text">{{ text }}</span>
+  </span>
+</article>

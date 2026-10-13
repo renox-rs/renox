@@ -1,0 +1,24 @@
+{#- Account section (order 110): how each kind of notification reaches the
+    customer, sent to `accounts.preferences`. One row per kind (a CSS grid:
+    its name, then the kit's `toggle_buttons` with the four choices), so the
+    "matrix" is the kit's own segmented control, once per kind.
+    `section.data`: rows (kind, choice), choices. Every notification in the
+    app reads these through `accounts::preferences::channels_for`. -#}
+<rx-form :action="route('accounts.preferences')" method="PUT" id="account-notifications">
+  <rx-card title="{{ t('accounts.notifications.title') }}" subtitle="{{ t('accounts.notifications.lead') }}">
+    {#- The four choices, in `Choice::ALL`'s order. -#}
+    <rx-let name="options" :value="[['both', t('accounts.notifications.choice.both')], ['mail', t('accounts.notifications.choice.mail')], ['in_app', t('accounts.notifications.choice.in_app')], ['none', t('accounts.notifications.choice.none')]]"/>
+    {# [explain:notifications.template] #}
+    <div class="bs-prefs" role="group" aria-label="{{ t('accounts.notifications.title') }}">
+      <div rx-for="row in section.data.rows" class="bs-prefs__row" data-bs-pref="{{ row.kind }}">
+        <div class="bs-prefs__kind">
+          <strong id="pref-{{ row.kind }}-label">{{ t('accounts.notifications.kind.' ~ row.kind) }}</strong>
+          <span>{{ t('accounts.notifications.hint.' ~ row.kind) }}</span>
+        </div>
+        <rx-toggle-buttons :name="row.kind" :label="t('accounts.notifications.kind.' ~ row.kind)" :options="options" :selected="row.choice" required :id="'pref-' ~ row.kind"/>
+      </div>
+    </div>
+    {# [/explain:notifications.template] #}
+    <div class="rx-card__footer"><rx-button label="{{ t('accounts.save') }}"/></div>
+  </rx-card>
+</rx-form>

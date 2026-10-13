@@ -1,0 +1,23 @@
+{#- The stock grid (#240): renox::grid over the `stock_overview` view, the tabs by owner and
+    location store (#245), sums under the quantities and the value, grouping by category,
+    exports. -#}
+<rx-page layout="layouts/staff.html" :title="t('stock.index.title')">
+  <app-stock-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('stock.index.title')" :subtitle="t('stock.index.lead')">
+      <rx-link-button rx-if="can('stock.adjust')" route="stock.take" :label="t('stock.take.title')" icon="check"/>
+      <rx-link-button rx-if="can('consignment.manage')" route="stock.consignments.create" :label="t('stock.consignments.new')" icon="box"/>
+      <rx-link-button rx-if="can('purchasing.manage')" route="stock.purchasing.create" :label="t('stock.purchasing.new')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    {#- The four views at a glance, each a link to its tab. -#}
+    <rx-let name="signs" :value="{'own': 'boxes', 'held': 'handshake', 'away': 'truck', 'low': 'triangle-alert'}"/>
+    <rx-stats columns="4">
+      <rx-stat rx-for="key in views" :label="t('stock.index.view.' ~ key)" :value="counts[key] | number" :url="route('stock.index', view=key)" :icon="signs[key] or 'package'"/>
+    </rx-stats>
+    {# [explain:stock.index.template] #}
+    <app-stock-tabs target="stock.index" :views="views" :current="tab" prefix="stock.index.view." :label="t('stock.index.views')" :counts="counts"/>
+    <p class="rx-subtitle">{{ t('stock.index.view_hint.' ~ tab) }}</p>
+    <rx-grid :page="stock"/>
+    {# [/explain:stock.index.template] #}
+  </rx-stack>
+</rx-page>

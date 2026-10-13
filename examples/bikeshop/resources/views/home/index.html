@@ -1,0 +1,72 @@
+{#- The storefront (#328, "warm editorial"): a hero, the category chips, the
+    popular bikes, the categories as photo tiles, the three services and
+    the stores. Each part is a CSS grid (public/theme.css); the cards are the
+    kit's media_card. `storefront` comes from the catalog area (only on `/`). -#}
+<rx-page layout="layouts/app.html" title="{{ t('shop.name') }}" description="{{ t('home.lead') }}">
+<rx-stack class="bs-home" data-bs-reveal>
+  {# [explain:home.template] #}
+  <app-hero :title="t('home.hero.title')" :accent="t('home.hero.accent')" :lead="t('home.lead')" :eyebrow="t('home.hero.eyebrow')"
+            photo="/images/site/hero.webp" inset="/images/site/workshop-2.webp"
+            :badge="{'icon': 'wrench', 'title': t('home.hero.badge_title'), 'text': t('home.hero.badge_text')}">
+    <p class="bs-hero__actions">
+      <rx-link-button route="catalog.index" label="{{ t('catalog.home.shop') }}" variant="primary" icon="shopping-bag"/>
+      <rx-link-button rx-if="storefront and storefront.rent_url" :href="storefront.rent_url" label="{{ t('catalog.home.rent') }}" icon="key-round"/>
+    </p>
+    <ul rx-if="storefront" class="bs-hero__figures" role="list">
+      <li><b>{{ storefront.bikes | number }}</b>{{ t('home.hero.bikes') }}</li>
+      <li><b>{{ storefront.stores | length }}</b>{{ t('home.hero.stores') }}</li>
+      <li><b>{{ t('home.hero.hours_figure') }}</b>{{ t('home.hero.hours') }}</li>
+    </ul>
+  </app-hero>
+  {# [/explain:home.template] #}
+
+  {#- The categories as chips: a quick way in. -#}
+  <nav rx-if="storefront" aria-label="{{ t('catalog.home.categories') }}">
+    <ul class="bs-pills" role="list">
+      <li><a class="bs-pill bs-pill--on" href="{{ route('catalog.index') }}"><rx-icon name="sparkles" :size="18"/>{{ t('home.all') }}</a></li>
+      <template rx-for="root in storefront.categories"><li rx-for="child in root.children"><a class="bs-pill" href="{{ child[1] }}"><app-category-icon :href="child[1]"/>{{ child[0] }}</a></li></template>
+    </ul>
+  </nav>
+
+  {#- The catalogue's featured bikes and categories (#233). -#}
+  <app-catalog-home :storefront="storefront"/>
+
+  {#- The three services. -#}
+  <section class="bs-services" aria-label="{{ t('home.services.label') }}">
+    <article class="bs-service bs-service--photo">
+      <img src="/images/site/workshop-1.webp" alt="" width="1200" height="800" loading="lazy">
+      <div><span class="bs-service__icon"><rx-icon name="wrench" :size="22"/></span><h2 class="bs-service__title">{{ t('home.services.workshop.title') }}</h2><p class="bs-service__text">{{ t('home.service.text') }}</p></div>
+      <rx-link-button rx-if="storefront and storefront.service_url" :href="storefront.service_url" label="{{ t('catalog.home.service') }}" icon="calendar-check"/>
+    </article>
+    <article class="bs-service bs-service--teal">
+      <div><span class="bs-service__icon"><rx-icon name="key-round" :size="22"/></span><h2 class="bs-service__title">{{ t('home.services.rent.title') }}</h2><p class="bs-service__text">{{ t('home.rent.text') }}</p></div>
+      <rx-link-button rx-if="storefront and storefront.rent_url" :href="storefront.rent_url" label="{{ t('home.services.rent.button') }}" icon="bike"/>
+    </article>
+    <article class="bs-service bs-service--clay">
+      <div><span class="bs-service__icon"><rx-icon name="calendar-check" :size="22"/></span><h2 class="bs-service__title">{{ t('home.services.plans.title') }}</h2><p class="bs-service__text">{{ t('home.services.plans.text') }}</p></div>
+      <rx-link-button route="plans.index" label="{{ t('home.services.plans.button') }}" icon="arrow-right"/>
+    </article>
+  </section>
+
+  <section rx-if="storefront and storefront.stores" class="bs-section" aria-labelledby="stores-title">
+    <div class="bs-section__head">
+      <div><h2 class="bs-section__title" id="stores-title">{{ t('home.stores.title') }}</h2>
+      <p class="bs-store__text">{{ t('home.stores.text') }}</p></div>
+    </div>
+    <ul class="bs-stores" role="list">
+      <li rx-for="name, slug, site in storefront.stores" class="bs-store">
+        {#- Each store's own page lives on its own host (src/app/home/stores.rs). -#}
+        <div class="bs-store__photo"><img src="/images/site/store-{{ slug }}.webp" alt="" width="1200" height="800" loading="lazy"></div>
+        <div class="bs-store__body">
+          <h3 class="bs-store__name"><span class="bs-icon-circle bs-icon-circle--small"><rx-icon name="map-pin" :size="18"/></span><a class="bs-store__link" href="{{ site }}">{{ t('home.stores.store', name=name) }}</a></h3>
+          <ul class="bs-store__does" role="list">
+            <li><rx-icon name="shopping-bag" :size="16"/>{{ t('home.stores.buy') }}</li>
+            <li><rx-icon name="key-round" :size="16"/>{{ t('home.stores.rent') }}</li>
+            <li><rx-icon name="wrench" :size="16"/>{{ t('home.stores.service') }}</li>
+          </ul>
+        </div>
+      </li>
+    </ul>
+  </section>
+</rx-stack>
+</rx-page>

@@ -1,0 +1,15 @@
+{#- /about/htmx/live (src/app/about/live.rs): the checklist of /about/htmx as
+    a live component. The page only mounts it; everything inside is
+    about/live/_checklist.html. -#}
+<rx-page layout="layouts/app.html" :title="t('htmx.live.title')" :description="t('htmx.live.lead')">
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="t('htmx.live.title')" :subtitle="t('htmx.live.lead')"/>
+  <rx-card :title="t('htmx.checklist.title')" :subtitle="t('htmx.live.card')">
+    <live-checklist :component="checklist"/>
+  </rx-card>
+  <rx-card :title="t('htmx.live.left_out.title')">
+    <p class="rx-subtitle">{{ t('htmx.live.left_out.body') }}</p>
+    <div class="rx-row"><rx-link-button route="about.htmx" :label="t('htmx.live.see_htmx')" variant="secondary"/></div>
+  </rx-card>
+</div>
+</rx-page>

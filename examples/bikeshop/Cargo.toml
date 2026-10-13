@@ -1,0 +1,32 @@
+[package]
+name = "bikeshop"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+# `uuid`: /about/fields keys its samples by a UUID (src/app/about/fields.rs).
+renox = { workspace = true, features = ["xlsx", "uuid"] }
+renox-2fa.workspace = true
+renox-admin.workspace = true
+# Service plans billed as subscriptions (#237): Stripe in USD, and Xendit
+# (which only charges rupiah) at its own IDR price.
+renox-billing.workspace = true
+# The interactive blocks (gallery, swatches, stepper, keypad, kanban, calendars…):
+# macros from renox-blocks/blocks.html, their script loaded only where used (#347).
+renox-blocks.workspace = true
+renox-editors.workspace = true
+renox-oauth.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+# Logs a gateway that didn't answer, and a plan visit that found no room (#237).
+tracing = "0.1.44"
+# The monthly report's workbooks (src/app/reports/monthly.rs): several sheets in one file,
+# which renox::grid's one-sheet exports don't make. The same version and features Renox's
+# `xlsx` feature already builds, so no new crate is compiled.
+rust_xlsxwriter = { version = "0.99.1", default-features = false, features = ["chrono"] }
+
+[features]
+# Files on S3 (or any S3-compatible store) instead of the local disk:
+# `cargo run --features s3` with STORAGE_DISK=s3 and the S3_* settings in
+# .env. CI's `s3` job runs tests/fields.rs on SeaweedFS with it.
+s3 = ["renox/s3"]

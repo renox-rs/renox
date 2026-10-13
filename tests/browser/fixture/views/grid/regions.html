@@ -1,0 +1,13 @@
+{% extends "grid/layout.html" %}
+{% from "renox/grid.html" import grid %}
+
+{% block content %}
+<main class="rx-grid-fill" id="main">
+  {#- `details()`: what opens under a row after the audit fields. -#}
+  {% call(row, column) grid(orders) %}
+    {%- if column.key == "_details" -%}
+      <a href="{{ route('orders.show', row.id) }}">{{ row.number }}</a> · {{ row.email }} · {{ row.items }} items
+    {%- endif -%}
+  {% endcall %}
+</main>
+{% endblock %}

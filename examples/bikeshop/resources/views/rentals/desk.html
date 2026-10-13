@@ -1,0 +1,98 @@
+{#- One rental at the counter (#235): the facts on one side, the pick-up or return form on the other. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('rentals.desk.title', code=row.reservation_code) }}">
+  <app-rentals-styles/>
+  <rx-let name="methods" :value="[['cash', t('rentals.methods.cash')], ['card', t('rentals.methods.card')]]"/>
+  <rx-stack>
+    <rx-page-header :title="row.model or t('rentals.fields.bike')" :subtitle="row.reservation_code" :back="route('rentals.counter')" back-label="{{ t('rentals.counter.title') }}"/>
+    <div class="bs-desk" data-bs-reveal>
+      <div class="bs-desk__side">
+        <rx-card title="{{ t('rentals.desk.rental') }}">
+          <rx-infolist>
+            <rx-entry label="{{ t('rentals.fields.status') }}"><app-rentals-status :rental="row" :overdue="row.overdue"/></rx-entry>
+            <rx-entry label="{{ t('rentals.fields.code') }}" :value="row.reservation_code" copyable/>
+            <rx-entry label="{{ t('rentals.fields.frame') }}" :value="row.bike.frame_number if row.bike else none" :url="route('rentals.fleet.show', row.rental_bike_id) if can('fleet.view') else none"/>
+            <rx-entry label="{{ t('rentals.fields.starts') }}" :value="row.starts_at" format="datetime"/>
+            <rx-entry label="{{ t('rentals.fields.ends') }}" :value="row.due_at" format="datetime"/>
+            <rx-entry label="{{ t('rentals.fields.operating') }}" :value="row.operating_store.name if row.operating_store else none"/>
+            <rx-entry label="{{ t('rentals.fields.owner') }}" :value="row.owner_store.name if row.owner_store else none"/>
+            <rx-entry label="{{ t('rentals.fields.price') }}" :value="row.price" format="money"/>
+            <rx-entry label="{{ t('rentals.fields.deposit') }}" :value="row.deposit" format="money" hint="{{ t('rentals.deposit.' ~ row.deposit_status) }}"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card title="{{ t('rentals.desk.customer') }}">
+          <rx-infolist>
+            <rx-entry label="{{ t('rentals.fields.customer') }}" :value="customer.name if customer else none"/>
+            <rx-entry label="{{ t('rentals.identity.number') }}" :value="masked"/>
+            <rx-entry label="{{ t('rentals.desk.id_check') }}">
+              <span rx-if="verified" class="rx-badge rx-badge--success">{{ t('rentals.desk.verified') }}</span>
+              <span rx-else class="rx-badge rx-badge--warning">{{ t('rentals.desk.not_verified') }}</span>
+            </rx-entry>
+          </rx-infolist>
+          <p rx-if="customer and customer.user_id is none and can('customers.manage')"><rx-link-button :href="route('accounts.invite', customer.id)" label="{{ t('accounts.invite.title') }}" variant="plain" size="small"/></p>
+          <div rx-if="not verified and document and can('rentals.verify_id')" class="rx-stack">
+            <rx-link-button :href="route('rentals.identities.photo', document.id)" label="{{ t('rentals.identities.open_photo') }}" new-tab/>
+            <form method="post" action="{{ route('rentals.identities.approve', document.id) }}">{{ csrf_field() }}<rx-button variant="secondary" icon="check">{{ t('rentals.identities.approve') }}</rx-button></form>
+          </div>
+        </rx-card>
+        <rx-card rx-if="photos" title="{{ t('rentals.desk.photos') }}">
+          <ul class="bs-photos">
+            <li rx-for="photo in photos"><a class="rx-link" href="{{ route('rentals.photo', row.id, photo.id) }}" target="_blank" rel="noopener">{{ t('rentals.photos.' ~ photo.kind) }} {{ loop.index }}</a></li>
+          </ul>
+        </rx-card>
+      </div>
+
+      <div class="bs-desk__main">
+        <rx-alert rx-if="wrong_store" kind="info" message="{{ t('rentals.desk.other_store', store=(row.operating_store.name if row.operating_store else '')) }}"/>
+
+        <form rx-if="can_pickup" method="post" action="{{ route('rentals.pickup', row.id) }}" id="pickup-form" novalidate>
+          {{ csrf_field() }}
+          <rx-card title="{{ t('rentals.desk.pickup') }}" subtitle="{{ t('rentals.desk.pickup_lead') }}">
+            <rx-form-errors/>
+            <rx-alert rx-if="not verified" kind="warning" message="{{ t('rentals.errors.unverified') }}"/>
+            <rx-checkbox-list name="checklist" label="{{ t('rentals.desk.checklist') }}" :options="checklist_options" :selected="old('checklist', checklist | list)" columns="2"/>
+            <dl class="bs-figures">
+              <dt>{{ t('rentals.fields.price') }}</dt><dd>{{ row.price | money }}</dd>
+              <dt>{{ t('rentals.fields.deposit') }}</dt><dd>{{ (row.deposit | money) if row.deposit_status == "unpaid" else t('rentals.deposit.paid_online') }}</dd>
+              <dt class="bs-figures__total">{{ t('rentals.desk.due_now') }}</dt><dd class="bs-figures__total">{{ due_at_pickup | money }}</dd>
+            </dl>
+            <rx-toggle-buttons name="method" label="{{ t('rentals.desk.method') }}" :options="methods" :selected="old('method', 'card')"/>
+            <rx-button icon="check" :disabled="not verified" :disabled-reason="t('rentals.errors.unverified') if not verified else none">{{ t('rentals.desk.hand_over') }}</rx-button>
+          </rx-card>
+        </form>
+
+        <form rx-if="can_return" method="post" action="{{ route('rentals.return', row.id) }}" enctype="multipart/form-data" id="return-form" novalidate>
+          {{ csrf_field() }}
+          <rx-card title="{{ t('rentals.desk.return') }}" subtitle="{{ t('rentals.desk.return_lead') }}">
+            <rx-form-errors/>
+            <rx-alert rx-if="preview.late_fee" kind="warning" message="{{ t('rentals.desk.late', minutes=preview.late_minutes, fee=(preview.late_fee | money)) }}"/>
+            <rx-checkbox-list name="checklist" label="{{ t('rentals.desk.checklist') }}" :options="checklist_options" :selected="old('checklist', checklist | list)" columns="2"/>
+            <rx-checkbox name="damaged" label="{{ t('rentals.desk.damaged') }}" :checked="old('damaged', '') == 'on'" switch/>
+            <rx-show-when field="damaged" :values="['on', 'true', '1']">
+              <rx-input name="damage_fee" label="{{ t('rentals.fields.damage_fee') }}" type="number" min="0" :step="money_step" :prefix="money_symbol"/>
+              <rx-textarea name="damage_note" label="{{ t('rentals.desk.damage_note') }}" rows="3"/>
+              <rx-file name="photos" label="{{ t('rentals.desk.damage_photos') }}" accept="image/*" multiple preview hint="{{ t('rentals.desk.photos_hint') }}"/>
+            </rx-show-when>
+            <rx-hide-when field="damaged" :values="['on', 'true', '1']">
+              <p class="rx-hint">{{ t('rentals.desk.undamaged_hint') }}</p>
+            </rx-hide-when>
+            <dl class="bs-figures">
+              <dt>{{ t('rentals.fields.late_fee') }}</dt><dd>{{ preview.late_fee | money }}</dd>
+              <dt>{{ t('rentals.desk.deposit_held') }}</dt><dd>{{ preview.held | money }}</dd>
+              <dt>{{ t('rentals.fields.refund') }}</dt><dd>{{ preview.settlement.refund | money }}</dd>
+              <dt class="bs-figures__total">{{ t('rentals.desk.to_pay') }}</dt><dd class="bs-figures__total">{{ preview.settlement.due | money }}</dd>
+            </dl>
+            <p class="rx-hint">{{ t('rentals.desk.settle_hint') }}</p>
+            <rx-toggle-buttons name="method" label="{{ t('rentals.desk.method') }}" :options="methods" :selected="old('method', 'card')"/>
+            <rx-button icon="check">{{ t('rentals.desk.take_back') }}</rx-button>
+          </rx-card>
+        </form>
+
+        <rx-card rx-if="row.status == 'returned'">
+          <p>{{ t('rentals.desk.closed') }}</p>
+          <rx-link-button :href="route('rentals.receipt', row.id)" label="{{ t('rentals.receipt.title') }}" variant="primary"/>
+        </rx-card>
+        <rx-card rx-elif="not can_pickup and not can_return and not wrong_store"><p>{{ t('rentals.desk.nothing') }}</p></rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

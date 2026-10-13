@@ -1,0 +1,33 @@
+{#- The staff home: a welcome card with the active store's photo, the ways
+    into the day's work (each behind its permission), then the store's last
+    7 days (components/reports_overview.html) for those who may see reports. -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.dashboard.title')">
+<rx-stack data-bs-reveal>
+  <rx-let name="store" :value="store_switcher.current if store_switcher else none"/>
+  <section class="bs-welcome" aria-labelledby="page-title">
+    <div class="bs-welcome__text">
+      <p class="bs-welcome__eyebrow"><rx-icon name="store" size="16"/><span>{{ t('staff.dashboard.title') }}<template rx-if="store"> · {{ store.name }}</template></span></p>
+      <h1 class="bs-welcome__title" id="page-title">{{ t('staff.dashboard.welcome', name=(auth.user.name | split | first)) }}</h1>
+      <p class="bs-welcome__lead">{{ t('staff.dashboard.lead') }}</p>
+      <p class="bs-welcome__who"><app-avatar :name="auth.user.name" size="s"/><span>{{ auth.user.name }}</span></p>
+    </div>
+    <img rx-if="store" class="bs-welcome__photo" src="/images/site/store-{{ store.slug }}.webp" alt="" width="1200" height="800">
+  </section>
+
+  <rx-let name="ways" :value="[['rentals.view', route('rentals.counter'), t('rentals.nav.counter'), t('staff.dashboard.ways.rentals'), 'key-round'], ['workorders.view', route('workshop.board'), t('workshop.nav.board'), t('staff.dashboard.ways.workshop'), 'wrench'], ['orders.sell', route('sales.counter'), t('sales.counter.title'), t('staff.dashboard.ways.counter'), 'scan-barcode'], ['stock.view', route('stock.index'), t('stock.index.title'), t('staff.dashboard.ways.stock'), 'boxes']]"/>
+  <nav aria-label="{{ t('staff.dashboard.ways.label') }}">
+    <ul class="bs-ways" role="list">
+      <li rx-for="permission, href, title, text, name in ways" rx-if="can(permission)"><a class="bs-way" href="{{ href }}">
+        <span class="bs-icon-circle"><rx-icon :name="name"/></span>
+        <span class="bs-way__text"><b>{{ title }}</b><span>{{ text }}</span></span>
+        <span class="bs-way__go"><rx-icon name="chevron-right" size="18"/></span>
+      </a></li>
+    </ul>
+  </nav>
+
+  <app-reports-overview rx-if="overview" :overview="overview"/>
+  <rx-card rx-else>
+    <rx-empty :title="t('staff.dashboard.empty_title')" :message="t('staff.dashboard.empty_text')" route="about.pages" :action-label="t('about.index_link')" icon="chart-column"/>
+  </rx-card>
+</rx-stack>
+</rx-page>

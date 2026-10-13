@@ -1,0 +1,27 @@
+{
+  "renox": {
+    "admin": {
+      "new": "Nuevo :label",
+      "create": "Crear :label",
+      "edit_title": "Editar :title",
+      "save_changes": "Guardar cambios",
+      "edit": "Editar",
+      "delete": "Eliminar",
+      "view": "Ver",
+      "all": "Todos",
+      "dashboard": "Panel",
+      "record_title": ":label n.º :id",
+      "saved": ":label guardado.",
+      "created": ":label creado.",
+      "n_deleted": ":what eliminados.",
+      "Product": "Producto",
+      "Products": "Productos",
+      "products": {
+        "Name": "Nombre",
+        "Price": "Precio",
+        "Publish": "Publicar",
+        "Live": "Activo"
+      }
+    }
+  }
+}

@@ -1,0 +1,4 @@
+<rx-props icon label value :tone="none" :delta="none" :trend="none" :url="none" :hint="none">
+{#- <app-stat-card icon="user" :label="…" :value="…"/>: the kit's `rx-stat` with an icon in its
+    corner (inside `rx-stats`): the same attributes, plus `icon` and `tone`. -#}
+<div class="app-stat"><rx-stat :label="label" :value="value" :delta="delta" :trend="trend" :url="url" :hint="hint"/><app-icon-circle :icon="icon" :tone="tone" :size="18"/></div>

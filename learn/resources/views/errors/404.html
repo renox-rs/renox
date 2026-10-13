@@ -1,0 +1,7 @@
+<rx-page layout="layouts/app.html">
+<rx-slot name="seo">{{ seo(title="Page not found · Learn Renox", description="This page doesn't exist.") }}<meta name="robots" content="noindex"></rx-slot>
+<div class="wrap notfound">
+  <h1>This page doesn't exist.</h1>
+  <p class="sub">It may have moved. The stages are listed on <a href="/">the course's home page</a>; the guides live at <a href="{{ links.docs }}">docs.renox.rs</a>.</p>
+</div>
+</rx-page>

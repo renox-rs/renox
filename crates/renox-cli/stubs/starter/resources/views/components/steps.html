@@ -1,0 +1,11 @@
+<rx-props items label>
+{#- <app-steps :items="[…]" label="…"/>: numbered steps. `items` are
+    `{"title": …, "text": …, "code": …}` (`code` optional: a command to type). `label` names
+    the list. -#}
+<ol class="app-steps" aria-label="{{ label }}">
+  <li rx-for="item in items" class="app-steps__step">
+    <p class="app-steps__title">{{ item.title }}</p>
+    <p class="app-steps__text">{{ item.text }}</p>
+    <code rx-if="item.code">{{ item.code }}</code>
+  </li>
+</ol>

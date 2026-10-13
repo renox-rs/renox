@@ -1,0 +1,41 @@
+# cargo-deny: checked in CI (`cargo deny check`). Renox is MIT OR Apache-2.0,
+# so every dependency must allow use in both.
+
+[graph]
+all-features = true
+
+[advisories]
+# RustSec advisories fail the build; ignore one only with a reason.
+ignore = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "CC0-1.0",
+    "Unicode-3.0",
+    "CDLA-Permissive-2.0",
+    "0BSD",
+]
+confidence-threshold = 0.9
+
+[licenses.private]
+# The examples and test apps aren't published.
+ignore = true
+
+[bans]
+multiple-versions = "allow"
+wildcards = "deny"
+allow-wildcard-paths = true
+# TLS is rustls everywhere. aws-lc comes in only with the `s3` feature
+# (object_store); the lint job checks a default build has none.
+deny = [{ crate = "openssl-sys" }, { crate = "native-tls" }]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

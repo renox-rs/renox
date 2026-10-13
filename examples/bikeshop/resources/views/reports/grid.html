@@ -1,0 +1,18 @@
+<rx-page layout="layouts/staff.html" :title="t('reports.' ~ tab ~ '.title')">
+{#- One report grid (src/app/reports/grids.rs): `rows` is the grid's page (renox::grid), `tab`
+    which report it is. The grid draws its toolbar (search, columns, groups, the advanced
+    filter, exports), the heading filters, the sums and the cards on phones itself; only the
+    books' "source" column is drawn here. -#}
+<app-reports-assets/>
+<div class="rx-stack">
+  <rx-page-header :title="t('reports.' ~ tab ~ '.title')" :subtitle="t('reports.' ~ tab ~ '.lead')">
+    <rx-link-button route="reports.monthly" :label="t('reports.monthly.title')" icon="calendar"/>
+  </rx-page-header>
+  <app-reports-tabs/>
+  {# [explain:reports.grid.template] #}
+  <rx-grid :page="rows">
+    <template rx-if="column.key == 'source'"><a rx-if="row.source_url" class="rx-link" href="{{ row.source_url }}">{{ row.source_label }}</a><template rx-else>{{ row.source_label }}</template></template>
+  </rx-grid>
+  {# [/explain:reports.grid.template] #}
+</div>
+</rx-page>

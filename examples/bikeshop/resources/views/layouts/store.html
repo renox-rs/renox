@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <rx-block name="seo">{{ seo() }}</rx-block>
+  <app-head/>
+  <rx-outlet stack="head"/>
+</head>
+{#- The layout of a store's own page, on the store's host
+    (`{store}.BIKESHOP_STORE_DOMAIN`, src/app/home/stores.rs). That host has
+    only the store's page (Routes::domain), so every link to the shop is
+    absolute: `shop_url` and the others come from the handler, made from
+    APP_URL. Renox's own files (`renox_head()`, the kit) and `public/` are
+    served on every host, so the page looks like the shop. -#}
+<rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
+<body class="rx-page bs-public{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+  {#- The panel's link to the index of every page goes to the shop's host. -#}
+  <rx-let name="about_base" :value="shop_url | trim('/')"/>
+  <rx-navbar :brand="t('shop.name')" :href="shop_url" mark width="full">
+    <rx-nav-links>
+      <rx-nav-link :href="catalog_url" :label="t('nav.shop')"/>
+      <rx-nav-link :href="rent_url" :label="t('rentals.nav.rent')"/>
+      <rx-nav-link :href="service_url" :label="t('workshop.nav.book')"/>
+    </rx-nav-links>
+    <span class="rx-spacer"></span>
+    <rx-icon-button rx-if="about" icon="info" :label="t('about.button')" data-rx-open="about-page" aria-haspopup="dialog"/>
+  </rx-navbar>
+  <main class="rx-container rx-container--wide" id="main">
+    <div class="rx-stack"><rx-block name="content"/></div>
+  </main>
+  <footer class="rx-container rx-container--wide bs-footer">
+    <p class="rx-subtitle">{{ t('shop.footer') }}</p>
+    <a class="rx-link" href="{{ stores_url }}">{{ t('stores.site.all') }}</a>
+  </footer>
+  <template rx-if="about">
+    <app-about-dock :about="about" :about-base="about_base"/>
+    <app-about-panel :about="about" :about-base="about_base"/>
+  </template>
+  <app-scripts/>
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

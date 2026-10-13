@@ -1,0 +1,27 @@
+{#- A list of help requests (multistore/help/index.html), with the buttons each
+    person may press: `<app-multistore-help-rows :items="requests" id="help-of-us" :label="…"/>`. -#}
+<rx-props items id label>
+<rx-list :id="id" :label="label">
+  <li rx-for="r in items">
+    <div class="rx-list__main">
+      <strong>{{ r.helper }}</strong> · {{ tx(r.role_label) }} <app-multistore-help-status :row="r"/>
+      <p class="rx-subtitle">{{ t('multistore.help.from_to', from=r.from, to=r.to) }} · {{ r.starts_at | date("%d %b") }} – {{ (r.ends_at) | date("%d %b %Y") }}<template rx-if="r.minutes"> · {{ t('multistore.help.hours_done', hours=(r.minutes / 60) | round(1)) }}</template></p>
+      <p class="rx-subtitle">{{ r.reason }}</p>
+    </div>
+    {# [explain:multistore.help.template] #}
+    <rx-row-actions>
+      <template rx-if="r.can_decide">
+        <rx-form :action="route('multistore.help.refuse', r.id)"><rx-button :label="t('multistore.help.refuse')" variant="secondary" size="small"/></rx-form>
+        <rx-form :action="route('multistore.help.approve', r.id)" :id="'approve-' ~ r.id"><rx-button :label="t('multistore.help.approve')" variant="primary" size="small" icon="check"/></rx-form>
+      </template>
+      <rx-form rx-if="r.can_withdraw" :action="route('multistore.help.withdraw', r.id)"><rx-button :label="t('multistore.help.withdraw')" variant="secondary" size="small"/></rx-form>
+      <rx-action-sheet rx-if="r.can_log" :id="'hours-' ~ r.id" :label="t('multistore.help.log')" :action="route('multistore.help.log', r.id)" :title="t('multistore.help.log_title', name=r.helper)" :description="t('multistore.help.log_lead')" size="small" icon="calendar">
+        <rx-date-picker name="worked_on" :label="t('multistore.help.worked_on')" required/>
+        <rx-input name="hours" :label="t('multistore.help.hours')" type="number" required min="0.5" max="16" step="0.5"/>
+        <rx-input name="note" :label="t('multistore.help.note')"/>
+      </rx-action-sheet>
+      <rx-confirm rx-if="r.can_end" :id="'end-' ~ r.id" :label="t('multistore.help.end')" :action="route('multistore.help.end', r.id)" :title="t('multistore.help.end_title', name=r.helper)" :message="t('multistore.help.end_text', store=r.to)" method="POST" size="small"/>
+    </rx-row-actions>
+    {# [/explain:multistore.help.template] #}
+  </li>
+</rx-list>

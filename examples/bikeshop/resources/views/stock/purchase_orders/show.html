@@ -1,0 +1,65 @@
+{#- A purchase order (#240): its steps, lines, what work orders wait for, and the actions:
+    send (mailed to the supplier with the signed printable page), receive (also partly),
+    cancel. -#}
+<rx-page layout="layouts/staff.html" :title="'PO-' ~ order.id">
+  <app-stock-assets/>
+  <rx-stack>
+    {# [explain:stock.purchasing.show.template] #}
+    <rx-page-header :title="'PO-' ~ order.id" :subtitle="supplier.name ~ ' · ' ~ store" :back="route('stock.purchasing')" :back-label="t('stock.purchasing.title')">
+      <rx-link-button :href="print_url" :label="t('stock.purchasing.print')" icon="external" new-tab/>
+      <rx-confirm rx-if="actions.cancel" id="cancel-po" :label="t('stock.purchasing.cancel')" :action="route('stock.purchasing.cancel', order.id)" :title="t('stock.purchasing.cancel')" :message="t('stock.purchasing.cancel_text')" method="POST"/>
+      <rx-form rx-if="actions.send" :action="route('stock.purchasing.send', order.id)" id="send-po-form"><rx-button :label="t('stock.purchasing.send')" icon="external" title="{{ t('stock.purchasing.send_text', supplier=supplier.name, email=(supplier.email or '—')) }}"/></rx-form>
+    </rx-page-header>
+    {# [/explain:stock.purchasing.show.template] #}
+    <rx-alert rx-if="status == 'cancelled'" :message="t('stock.purchasing.cancelled_text')" kind="warning"/>
+    <rx-alert rx-if="order.suggested and status == 'draft'" :message="t('stock.purchasing.suggested_text')" kind="info"/>
+    <app-stock-steps :items="steps" prefix="stock.purchasing.status." :label="t('stock.purchasing.steps')"/>
+    <div class="bs-split">
+      <div>
+        {# [explain:stock.purchasing.show.template] #}
+        <rx-form rx-if="actions.receive" :action="route('stock.purchasing.receive', order.id)" id="receive-po" novalidate>
+          <rx-form-errors/>
+          <rx-card :title="t('stock.purchasing.receive')" :subtitle="t('stock.purchasing.receive_lead', store=store)">
+            <ul class="bs-rows" role="list">
+              <li class="bs-row bs-row--head" aria-hidden="true"><span>{{ t('stock.fields.product') }}</span><span class="bs-row__figure">{{ t('stock.purchasing.open') }}</span><span>{{ t('stock.purchasing.arrived') }}</span></li>
+              <li rx-for="l in lines | selectattr('open', 'gt', 0)" class="bs-row">
+                <span class="bs-row__name">{{ l.name }}<small>{{ l.sku }} · {{ l.unit_cost | money }}</small></span>
+                <span class="bs-row__figure">{{ l.open }}</span>
+                <span><input type="hidden" name="lines[{{ loop.index0 }}][line]" value="{{ l.id }}"><rx-input name="lines[{{ loop.index0 }}][received]" :label="t('stock.purchasing.arrived_of', name=l.name)" type="number" :value="l.open" hide-label min="0" :max="l.open"/></span>
+              </li>
+            </ul>
+            <rx-button :label="t('stock.purchasing.receive')" icon="check"/>
+          </rx-card>
+        </rx-form>
+        {# [/explain:stock.purchasing.show.template] #}
+        <rx-card :title="t('stock.purchasing.lines')">
+          {#- Rows written by hand under rx-for, and the total as the table's footer. -#}
+          <rx-simple-table :head="[t('stock.fields.product'), [t('stock.purchasing.ordered'), 'num'], [t('stock.purchasing.arrived'), 'num'], [t('stock.purchasing.unit_cost'), 'num'], [t('stock.purchasing.total'), 'num']]" :caption="t('stock.purchasing.lines')">
+            <tr rx-for="l in lines"><td>{{ l.name }}<br><span class="rx-subtitle">{{ l.sku }}</span></td><td class="rx-num">{{ l.quantity }}</td><td class="rx-num">{{ l.received_quantity }}</td><td class="rx-num">{{ l.unit_cost | money }}</td><td class="rx-num">{{ l.total | money }}</td></tr>
+            <rx-slot name="footer"><tr><th scope="row" colspan="4">{{ t('stock.purchasing.total') }}</th><td class="rx-num"><strong>{{ order.total | money }}</strong></td></tr></rx-slot>
+          </rx-simple-table>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('stock.purchasing.details')">
+          <rx-infolist>
+            <rx-entry :label="t('stock.fields.status')"><app-stock-order-status :status="status"/></rx-entry>
+            <rx-entry :label="t('stock.purchasing.supplier')" :value="supplier.name" :url="route('stock.suppliers.show', supplier.id)"/>
+            <rx-entry :label="t('stock.purchasing.store')" :value="store" :hint="t('stock.purchasing.store_hint')"/>
+            <rx-entry :label="t('stock.purchasing.ordered_at')" :value="order.ordered_at" format="datetime"/>
+            <rx-entry :label="t('stock.purchasing.expected')" :value="order.expected_on" format="date"/>
+            <rx-entry :label="t('stock.purchasing.note')" :value="order.note"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card rx-if="waiting" :title="t('stock.purchasing.waiting_title')" :subtitle="t('stock.purchasing.waiting_lead')">
+          <rx-infolist>
+            <rx-repeatable :label="t('stock.purchasing.waiting_title')" :items="waiting" hide-label>
+              <rx-entry :label="t('stock.fields.product')" :value="item.name"/>
+              <rx-entry :label="t('stock.purchasing.waiting_title')"><template rx-for="wo in item.work_orders"><a class="rx-link" href="{{ route('workshop.order', wo) }}">WO-{{ wo }}</a><template rx-if="not loop.last">, </template></template></rx-entry>
+            </rx-repeatable>
+          </rx-infolist>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

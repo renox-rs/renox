@@ -1,0 +1,5 @@
+{{ text.mail_verify_intro }}
+
+{{ link }}
+
+{{ text.mail_verify_outro }}

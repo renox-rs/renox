@@ -1,0 +1,32 @@
+{#- The demo gateway's hosted page (src/app/sales/gateway.rs): stands in for
+    Midtrans' page when MIDTRANS_SERVER_KEY isn't set. Paying here queues the
+    notification Midtrans would send, signed the same way, to this app's
+    webhook. -#}
+<rx-page layout="layouts/app.html" title="{{ t('sales.demo.title') }}">
+  <app-sales-assets/>
+  <div class="bs-demo-gateway">
+    <rx-alert kind="warning" title="{{ t('sales.demo.notice_title') }}" message="{{ t('sales.demo.notice') }}"/>
+    <rx-card title="{{ t('sales.demo.title') }}" subtitle="{{ t('sales.demo.merchant', shop=t('shop.name')) }}">
+      <rx-infolist columns="2">
+        <rx-entry label="{{ t('sales.demo.amount') }}" :value="paying.payment.amount" format="money"/>
+        <rx-entry label="{{ t('sales.demo.reference') }}" :value="'BS-' ~ paying.payment.id"/>
+        <rx-entry rx-if="paying.order" label="{{ t('sales.orders.number') }}" :value="paying.order.number"/>
+        <rx-entry label="{{ t('sales.demo.status') }}" :value="t('sales.payment_status.' ~ paying.payment.status)"/>
+      </rx-infolist>
+      {# [explain:pay.demo.template] #}
+      <template rx-if="paying.payment.status == 'pending'">
+      <form class="bs-demo-gateway__form" method="post" action="{{ action }}">
+        {{ csrf_field() }}
+        <input type="hidden" name="outcome" value="settlement">
+        <rx-button variant="primary" block key="p">{{ t('sales.demo.pay', amount=(paying.payment.amount | money)) }}</rx-button>
+      </form>
+      <form method="post" action="{{ action }}">
+        {{ csrf_field() }}
+        <input type="hidden" name="outcome" value="cancel">
+        <rx-button variant="plain" block>{{ t('sales.demo.cancel') }}</rx-button>
+      </form>
+      </template>
+      {# [/explain:pay.demo.template] #}
+    </rx-card>
+  </div>
+</rx-page>

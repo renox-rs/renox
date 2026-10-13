@@ -1,0 +1,10 @@
+{#- Every error page (404, 403, 500…), in the app's layout. Add errors/404.html
+    and friends for one status; `status`, `reason` and `detail` are set (with APP_DEBUG
+    also `request_line` and `template`). -#}
+<rx-page layout="layouts/app.html">
+  <rx-slot name="seo"><title>{{ status }} {{ reason }} · {{ app.name }}</title></rx-slot>
+  <rx-let name="fallback" :value="'That page isn\'t here. The link may be old or mistyped.' if status == 404 else 'Sorry, that didn\'t work.'"/>
+  <rx-card>
+    <rx-empty :title="reason" :message="detail or fallback" route="home" action-label="Go to the home page"/>
+  </rx-card>
+</rx-page>

@@ -1,0 +1,14 @@
+{#- renox-2fa: the recovery codes, shown once. Replace it with
+    resources/views/two-factor/recovery-codes.html in your app. -#}
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, alert, link_button %}
+{% block title %}Recovery codes · {{ app.name }}{% endblock %}
+{% block content %}
+{% call card(title="Your recovery codes", subtitle="If you lose your phone, each of these codes logs you in once. Keep them somewhere safe: this is the only time they're shown.") %}
+  <pre class="rx-2fa__codes">{{ text }}</pre>
+  <div class="rx-card__footer">
+    <a class="rx-button rx-button--secondary" href="data:text/plain;charset=utf-8,{{ text | urlencode }}" download="{{ app.name | lower | replace(' ', '-') }}-recovery-codes.txt"><span class="rx-button__label">Download</span></a>
+    {{ link_button(account, "Done", variant="primary") }}
+  </div>
+{% endcall %}
+{% endblock %}

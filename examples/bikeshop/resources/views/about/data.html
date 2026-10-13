@@ -1,0 +1,95 @@
+{#- /about/data: the data model explained (src/app/about/data.rs). Only the
+    kit: page header, infolist + entry, card, columns, table, badge. The
+    texts are Markdown in resources/lang/<locale>.json under `data_page`; the
+    tables' and roles' descriptions, written in Rust, through `tx`. -#}
+<rx-page layout="layouts/app.html" :title="t('data_page.title')" :description="t('data_page.lead')">
+<div class="rx-stack" data-bs-reveal>
+  <rx-page-header :title="t('data_page.title')" :subtitle="t('data_page.lead')"/>
+
+  <rx-infolist columns="3">
+    <rx-entry :label="t('data_page.glance.tables')" :value="counts | length"/>
+    <rx-entry :label="t('data_page.glance.rows')" :value="total" format="number"/>
+    <rx-entry :label="t('data_page.glance.volume')"><code>cargo run -- demo:seed --size large</code></rx-entry>
+  </rx-infolist>
+
+  {# [explain:about.data.template] #}
+  <rx-card :title="t('data_page.tables.title')" :subtitle="t('data_page.tables.lead')">
+    <template rx-for="area in areas">
+    <div class="rx-prose"><h3>{{ tx(area.title) }} · <a class="rx-link" href="{{ repository }}{{ area.file }}" target="_blank" rel="noopener"><code>{{ area.file | replace("examples/bikeshop/", "") }}</code></a></h3></div>
+    <rx-table :rows="area.tables" as="table" :caption="tx(area.title)">
+      <rx-column :label="t('data_page.tables.table')"><code>{{ table.name }}</code></rx-column>
+      <rx-column :label="t('data_page.tables.model')"><code>{{ table.model }}</code></rx-column>
+      <rx-column :label="t('data_page.tables.holds')">{{ tx(table.holds) }}</rx-column>
+      <rx-column :label="t('data_page.tables.rows')" align="num">{{ counts[table.name] | default(0) | number }}</rx-column>
+    </rx-table>
+    </template>
+  </rx-card>
+  {# [/explain:about.data.template] #}
+
+  <rx-card :title="t('data_page.relations.title')" :subtitle="t('data_page.relations.lead')">
+    <rx-table :rows="relations" as="rel" :caption="t('data_page.relations.title')">
+      <rx-column :label="t('data_page.relations.from')"><code>{{ rel.from }}</code></rx-column>
+      <rx-column :label="t('data_page.relations.kind')">{{ tx(rel.kind) }}</rx-column>
+      <rx-column :label="t('data_page.relations.to')"><code>{{ rel.to }}</code></rx-column>
+      <rx-column :label="t('data_page.relations.how')">{{ tx(rel.how) | markdown }}</rx-column>
+    </rx-table>
+  </rx-card>
+
+  <rx-card :title="t('data_page.pagila.title')" :subtitle="t('data_page.pagila.lead')">
+    <rx-table :rows="pagila" as="row" :caption="t('data_page.pagila.title')">
+      <rx-column :label="t('data_page.pagila.pagila')"><code>{{ row[0] }}</code></rx-column>
+      <rx-column :label="t('data_page.pagila.here')">{{ tx(row[1]) }}</rx-column>
+    </rx-table>
+  </rx-card>
+
+  <rx-card :title="t('data_page.stores.title')">
+    <div class="rx-prose">{{ t('data_page.stores.text') | markdown }}</div>
+    <rx-table :rows="attributes" as="a" :caption="t('data_page.stores.title')">
+      <rx-column :label="t('data_page.stores.record')"><code>{{ a.record }}</code></rx-column>
+      <rx-column :label="t('data_page.stores.owner')"><code>{{ a.owner }}</code></rx-column>
+      <rx-column :label="t('data_page.stores.location')"><code>{{ a.location }}</code></rx-column>
+      <rx-column :label="t('data_page.stores.operating')"><code>{{ a.operating }}</code></rx-column>
+    </rx-table>
+  </rx-card>
+
+  <rx-columns count="2">
+    <rx-card :title="t('data_page.money.title')">
+      <div class="rx-prose">{{ t('data_page.money.text') | markdown }}</div>
+      <rx-infolist inline>
+        <rx-entry :label="t('data_page.money.stored')" :value="'125050'"/>
+        <rx-entry :label="t('data_page.money.shown')" :value="125050" format="money"/>
+      </rx-infolist>
+    </rx-card>
+    <rx-card :title="t('data_page.encrypted.title')">
+      <div class="rx-prose">{{ t('data_page.encrypted.text') | markdown }}</div>
+    </rx-card>
+    <rx-card :title="t('data_page.enums.title')">
+      <div class="rx-prose">{{ t('data_page.enums.text') | markdown }}</div>
+      <rx-infolist>
+        <rx-entry rx-for="e in enums" :label="e.name"><span class="rx-subtitle"><code>{{ e.column }}</code></span> <span class="bs-badges"><rx-badge rx-for="v in e.values" :text="v"/></span></rx-entry>
+      </rx-infolist>
+    </rx-card>
+    <rx-card :title="t('data_page.soft_deletes.title')">
+      <div class="rx-prose">{{ t('data_page.soft_deletes.text') | markdown }}</div>
+    </rx-card>
+  </rx-columns>
+
+  <rx-card :title="t('data_page.seed.title')">
+    <div class="rx-prose">{{ t('data_page.seed.text') | markdown }}</div>
+  </rx-card>
+
+  <rx-card :title="t('data_page.access.title')" :subtitle="t('data_page.access.lead')">
+    <div class="rx-prose">{{ t('data_page.access.text') | markdown }}</div>
+    <rx-table :rows="roles" as="role" :caption="t('data_page.access.title')">
+      <rx-column :label="t('data_page.access.role')"><strong>{{ tx(role.label) }}</strong> <code>{{ role.name }}</code><br><span class="rx-subtitle">{{ tx(role.description) }}</span></rx-column>
+      <rx-column :label="t('data_page.access.where')"><rx-badge rx-if="role.global" :text="t('data_page.access.everywhere')" kind="info"/><rx-badge rx-else :text="t('data_page.access.in_a_store')"/></rx-column>
+      <rx-column :label="t('data_page.access.grants')"><span class="bs-badges"><rx-badge rx-for="p in role.permissions" :text="p"/></span></rx-column>
+    </rx-table>
+    <rx-infolist columns="2">
+      <rx-entry rx-for="p in permissions" :label="p.name" :value="tx(p.description)"/>
+    </rx-infolist>
+  </rx-card>
+
+  <p><rx-link-button route="about.pages" :label="t('about.index_link')" variant="secondary"/></p>
+</div>
+</rx-page>

@@ -1,0 +1,1 @@
+CREATE TABLE log (id INTEGER PRIMARY KEY, message TEXT);

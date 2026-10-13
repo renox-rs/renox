@@ -1,0 +1,12 @@
+{% from "renox/ui.html" import input, tags_input, repeater, wizard, wizard_step %}
+<div id="parts-chart">{{ chart("line", labels=["Mon", "Tue", "Wed"], values=[1, 5, 3], title="Visits") }}</div>
+<form id="parts-form" onsubmit="return false" novalidate>
+  {% call wizard("pw", [["start", "Start"], ["end", "End"]], submit_label="Book") %}
+    {% call wizard_step("pw", "start") %}{{ tags_input("labels", "Labels") }}{% endcall %}
+    {% call wizard_step("pw", "end") %}
+      {% call(row, prefix) repeater("lines", "Lines", rows=[{"name": "Coffee"}], item_label="Line", max=5) %}
+        {{ input(prefix ~ "[name]", "Name", value=row.name) }}
+      {% endcall %}
+    {% endcall %}
+  {% endcall %}
+</form>

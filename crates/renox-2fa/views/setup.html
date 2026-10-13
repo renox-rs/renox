@@ -1,0 +1,20 @@
+{#- renox-2fa: turning two-factor authentication on. Replace it with
+    resources/views/two-factor/setup.html in your app. -#}
+{% extends "renox/auth/layout.html" %}
+{% from "renox/ui.html" import card, input, button, link_button %}
+{% block title %}Turn on two-factor authentication · {{ app.name }}{% endblock %}
+{% block content %}
+<form method="post" action="{{ route('two-factor.confirm') }}" hx-post="{{ route('two-factor.confirm') }}">
+  {{ csrf_field() }}
+  {% call card(title="Turn on two-factor authentication", subtitle="Scan this code with an authenticator app (Google Authenticator, 1Password, Authy…), then type the code it shows.") %}
+    <p class="rx-2fa__qr">{{ qr | safe }}</p>
+    <p class="rx-subtitle">Can't scan it? Type this key into the app instead:</p>
+    <p><code class="rx-2fa__key">{{ key }}</code></p>
+    {{ input("code", "Code from the app", required=true, autocomplete="one-time-code", attrs={"inputmode": "numeric", "autofocus": true}) }}
+    <div class="rx-card__footer">
+      {{ link_button(account, "Cancel", variant="plain") }}
+      {{ button("Turn on") }}
+    </div>
+  {% endcall %}
+</form>
+{% endblock %}

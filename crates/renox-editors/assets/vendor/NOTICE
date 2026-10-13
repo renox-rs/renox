@@ -1,0 +1,31 @@
+Third-party files in this directory, compiled into renox-editors and served
+by the apps that use it. Each is kept as published (no build step); the
+licences are in licenses/.
+
+trix-2.1.19.min.js, trix-2.1.19.css
+  Trix 2.1.19, the rich text editor, by 37signals. MIT licence
+  (licenses/trix-LICENSE).
+  Source: https://registry.npmjs.org/trix/-/trix-2.1.19.tgz
+  (dist/trix.umd.min.js and dist/trix.css). Change: the last line,
+  "//# sourceMappingURL=trix.umd.min.js.map", is removed (the map isn't
+  shipped).
+  Trix bundles DOMPurify 3.4.2 (Cure53), "Apache-2.0 OR MPL-2.0"; used here
+  under Apache-2.0 (licenses/dompurify-LICENSE).
+
+prism-1.30.0.min.js
+  Prism 1.30.0, syntax highlighting, by Lea Verou and contributors. MIT
+  licence (licenses/prism-LICENSE).
+  Source: https://registry.npmjs.org/prismjs/-/prismjs-1.30.0.tgz,
+  components/prism-{core,markup,css,clike,javascript,typescript,json,rust,
+  sql,bash,python,yaml,toml,markdown,diff,go}.min.js joined in that order,
+  after a first line that sets Prism's manual mode (renox-editors starts the
+  highlighting itself).
+
+codejar-4.3.0.js
+  CodeJar 4.3.0, the code editor, by Anton Medvedev. MIT licence
+  (licenses/codejar-LICENSE).
+  Source: https://registry.npmjs.org/codejar/-/codejar-4.3.0.tgz
+  (dist/codejar.js), unchanged.
+
+The toolbar icons in views/editors.html are drawn after Lucide's
+(https://lucide.dev, ISC licence).

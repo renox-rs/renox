@@ -1,0 +1,21 @@
+{#- The monthly report's runs (src/app/reports/monthly.rs `runs`): each batch's progress from
+    `job_batches` (the kit's `progress`), and its workbooks once it finished. Used in the
+    page and by `reports/_runs.html`, which `reports.monthly.runs` renders alone and the
+    widget polls: `<app-reports-runs :runs="runs"/>`. -#}
+<rx-props runs>
+<rx-list rx-if="runs" id="report-runs" :label="t('reports.monthly.runs')">
+  <li rx-for="run in runs">
+    <div class="rx-list__main bs-run">
+      <strong>{{ run.month_name }}</strong>
+      <span class="rx-subtitle">{{ t('reports.monthly.started_at', at=(run.started_at | date('%Y-%m-%d %H:%M'))) }}</span>
+      <rx-progress :value="run.done" :max="run.total" :label="t('reports.monthly.progress', month=run.month_name)"/>
+      <div rx-if="run.finished and run.failed == 0 and not run.cancelled" class="bs-run__files">
+        <rx-link-button rx-for="store in run.stores" :href="route('reports.monthly.file', run.month, store.id)" :label="store.name" size="small" icon="download"/>
+      </div>
+    </div>
+    <rx-badge rx-if="run.cancelled or run.failed > 0" :text="t('reports.monthly.failed')" kind="error"/>
+    <rx-badge rx-elif="run.finished" :text="t('reports.monthly.done')" kind="success"/>
+    <rx-badge rx-else :text="t('reports.monthly.running')" kind="info"/>
+  </li>
+</rx-list>
+<rx-empty rx-else :title="t('reports.monthly.empty')" :message="t('reports.monthly.empty_text')" icon="file-text"/>

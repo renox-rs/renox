@@ -1,0 +1,15 @@
+{#- Sent from the queue when an order is paid (src/app/sales/notify.rs). -#}
+{# [explain:sales.mails.template] #}
+<rx-mail subject="{{ t('sales.mail.confirmation.subject', number=order.number) }}">
+  <p>{{ t('sales.mail.hello', name=name) }}</p>
+  <p>{{ t('sales.mail.confirmation.thanks', number=order.number) }}</p>
+  <rx-mail-table :rows="table.rows" :head="table.head" :total="table.total"/>
+  <rx-mail-panel>
+    <template rx-if="order.delivery">{{ t('sales.mail.confirmation.delivery', address=order.address) }}</template>
+    <template rx-else>{{ t('sales.mail.confirmation.pickup', store=order.store.name) }}</template>
+  </rx-mail-panel>
+  <p>{{ t('sales.mail.confirmation.returns', days=14) }}</p>
+  <rx-mail-divider/>
+  <rx-mail-button :url="url" :label="t('sales.mail.view_order')"/>
+</rx-mail>
+{# [/explain:sales.mails.template] #}

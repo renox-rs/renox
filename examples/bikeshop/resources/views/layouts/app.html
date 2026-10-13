@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  {#- Title, description, canonical URL and social cards; a page fills the
+      "seo" block with seo(title="…", description="…") -#}
+  <rx-block name="seo">{{ seo() }}</rx-block>
+  <app-head/>
+  {#- What pages and components push: <rx-push stack="head">…</rx-push> -#}
+  <rx-outlet stack="head"/>
+</head>
+{#- The public layout: the kit's navbar, the page, a footer, stacked by a CSS
+    grid (.bs-public in public/app.css). Pages fill `content`. -#}
+{#- This page's "About this page" entry (src/explain.rs), unless
+    BIKESHOP_EXPLAIN=false hides the panels; set before <body>, whose class
+    says whether it is docked (components/about_dock.html). -#}
+<rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
+<body class="rx-page bs-public{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+  {#- The public navigation, once, for the bar (desktop) and the menu panel
+      (phones). One line per area; append yours. -#}
+  <rx-let name="nav" :value="[
+    {'href': route('home'), 'label': t('nav.home'), 'active': route_is('home')},
+    {'href': route('catalog.index'), 'label': t('nav.shop'), 'active': route_is('catalog.*')},
+    {'href': route('rentals.create'), 'label': t('rentals.nav.rent'), 'active': route_is('rentals.create', 'rentals.show', 'rentals.mine', 'rentals.identity')},
+    {'href': route('workshop.book'), 'label': t('workshop.nav.book'), 'active': route_is('workshop.book', 'workshop.bikes', 'workshop.bikes.show', 'workshop.service.show')},
+    {'href': route('plans.index'), 'label': t('plans.nav'), 'active': route_is('plans.*')},
+  ]"/>
+  {#- Phones: the kit's tab bar (`navbar(…, tabs=…)`), at the bottom of the
+      screen: the first four areas, and a last tab that opens the panel with
+      the rest (layouts/_nav_menu.html: plans, the language, the account). -#}
+  <rx-let name="tabs" :value="[
+    {'href': route('home'), 'label': t('nav.tabs.home'), 'icon': 'house', 'active': route_is('home')},
+    {'href': route('catalog.index'), 'label': t('nav.tabs.shop'), 'icon': 'shopping-bag', 'active': route_is('catalog.*')},
+    {'href': route('rentals.create'), 'label': t('nav.tabs.rent'), 'icon': 'bike', 'active': route_is('rentals.*')},
+    {'href': route('workshop.book'), 'label': t('nav.tabs.workshop'), 'icon': 'wrench', 'active': route_is('workshop.*')},
+    {'open': 'site-menu', 'label': t('nav.menu'), 'icon': 'menu'},
+  ]"/>
+  {#- `width="full"`: logged in, the bar holds the links, the search, the cart,
+      the language, the bell and the account menu; the wide container's
+      72rem put the account menu on a second line at 1280 px.
+      Phones keep one row on top: the brand, the search button (the kit's
+      `nav_search` opens the box under the row), the cart, "About this
+      page" and the bell; the language and the account menu are
+      `rx-hide-narrow`, in the panel there. -#}
+  <rx-navbar :brand="t('shop.name')" :href="route('home')" mark width="full" :tabs="tabs" :tabs-label="t('nav.tabs.label')">
+    <rx-nav-links>
+      <rx-nav-link rx-for="link in nav" :href="link.href" :label="link.label" :active="link.active"/>
+    </rx-nav-links>
+    <span class="rx-spacer"></span>
+    {#- Slots the areas fill with a file of their own: the search box
+        (catalogue, #233) and the cart (#234). -#}
+    <rx-nav-search :label="t('catalog.search.label')" id="nav-search-box"><app-nav-search/></rx-nav-search>
+    <app-nav-cart/>
+    {#- "About this page" as the kit's icon button (its label is the tooltip
+        and what screen readers say), so the bar keeps to one line; phones
+        keep it too, as it is what the demo is for. -#}
+    <rx-icon-button rx-if="about" icon="info" :label="t('about.button')" data-rx-open="about-page" aria-haspopup="dialog"/>
+    {#- The language: a kit menu; each item posts to `locale.update`. -#}
+    <span class="rx-hide-narrow">
+    <rx-menu :label="app.locale | upper" id="language-menu" variant="plain">
+      <rx-menu-action :action="route('locale.update', 'en')" label="English"/>
+      <rx-menu-action :action="route('locale.update', 'es')" label="Español"/>
+    </rx-menu>
+    </span>
+    <template rx-if="auth.check">
+      {#- The bell: unread notifications, new ones live (Auth::notifications, #238). -#}
+      <rx-notification-bell :count="unread_notifications"/>
+      <span class="rx-hide-narrow">
+      <rx-menu :label="auth.user.name" id="account-menu" variant="plain">
+        <rx-menu-link :href="route('account.show')" :label="t('nav.account')"/>
+        <rx-menu-link :href="route('plans.mine')" :label="t('plans.mine.title')"/>
+        <rx-menu-link :href="route('api.tokens')" :label="t('api.tokens.title')"/>
+        {#- Everyone sees it until the access foundations put it behind a permission. -#}
+        <rx-menu-link :href="route('staff.dashboard')" :label="t('nav.staff')"/>
+        <rx-menu-separator/>
+        <rx-menu-action :action="route('logout')" :label="t('nav.logout')"/>
+      </rx-menu>
+      </span>
+    </template>
+    <template rx-else>
+      <span class="rx-hide-narrow bs-nav-guest">
+      <rx-link-button :href="route('login')" :label="t('nav.login')" variant="plain" size="small"/>
+      <rx-link-button :href="route('register')" :label="t('nav.register')" variant="primary" size="small"/>
+      </span>
+    </template>
+  </rx-navbar>
+  <app-nav-menu :nav="nav"/>
+  <main class="rx-container rx-container--wide" id="main">
+    <div class="rx-stack">
+      <rx-alert rx-if="flash.status" :message="flash.status" kind="success"/>
+      <rx-block name="content"/>
+    </div>
+  </main>
+  <footer class="rx-container rx-container--wide bs-footer">
+    {#- What the shop does, a row of icons and a line each. -#}
+    <ul class="bs-footer__services" role="list" aria-label="{{ t('home.services.label') }}">
+      <li rx-for="href, key, sign in [[route('catalog.index'), 'buy', 'shopping-bag'], [route('rentals.create'), 'rent', 'key-round'], [route('workshop.book'), 'repair', 'wrench'], [route('plans.index'), 'plans', 'calendar-check']]"><a class="bs-footer__service" href="{{ href }}"><span class="bs-icon-circle"><rx-icon :name="sign"/></span><span><b>{{ t('shop.services.' ~ key ~ '.title') }}</b><span>{{ t('shop.services.' ~ key ~ '.text') }}</span></span></a></li>
+    </ul>
+    <div class="bs-footer__end">
+      <p class="rx-subtitle">{{ t('shop.footer') }}</p>
+      <a class="rx-link" href="{{ route('about.pages') }}">{{ t('about.index_link') }}</a>
+    </div>
+  </footer>
+  {#- "About this page": docked beside the page on wide screens, a sheet on
+      narrower ones (components/about_dock.html, components/about_panel.html). -#}
+  <template rx-if="about">
+    <app-about-dock :about="about"/>
+    <app-about-panel :about="about"/>
+  </template>
+  {#- Toasts from `Toast::success(…)`, after a redirect or an htmx request. -#}
+  <rx-toasts/>
+  <app-scripts/>
+  {#- Scripts pushed by pages and components, e.g. a chart library, once. -#}
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

@@ -1,0 +1,210 @@
+/* renox-editors: the editors and the code entry, on the UI kit's tokens
+   (renox-ui.css). Trix's own stylesheet comes first in this file; the rules
+   below restyle it like the kit's fields. */
+
+/* Syntax colours keep 4.5:1 on the code background (WCAG AA). */
+:root {
+  --rx-code-bg: var(--rx-fill, rgba(120, 113, 108, 0.1));
+  --rx-code-comment: #67625d;
+  --rx-code-keyword: #8a2bb8;
+  --rx-code-string: #1d7533;
+  --rx-code-number: #ad3a00;
+  --rx-code-function: #1d4ed8;
+  --rx-code-tag: #b4231b;
+  --rx-code-attr: #8a5300;
+  --rx-code-punctuation: var(--rx-secondary-label, #57534e);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --rx-code-comment: #a8a29e;
+    --rx-code-keyword: #d8b4fe;
+    --rx-code-string: #86efac;
+    --rx-code-number: #fdba74;
+    --rx-code-function: #93c5fd;
+    --rx-code-tag: #fca5a5;
+    --rx-code-attr: #fcd34d;
+  }
+}
+:root[data-theme="dark"] {
+  --rx-code-comment: #a8a29e;
+  --rx-code-keyword: #d8b4fe;
+  --rx-code-string: #86efac;
+  --rx-code-number: #fdba74;
+  --rx-code-function: #93c5fd;
+  --rx-code-tag: #fca5a5;
+  --rx-code-attr: #fcd34d;
+}
+
+/* ---------- The frame: a toolbar above the writing area ---------- */
+
+.rx-editor__frame {
+  display: grid;
+  background: var(--rx-surface);
+  border: 1px solid var(--rx-border);
+  border-radius: var(--rx-radius-s);
+  box-shadow: var(--rx-input-shadow);
+  min-width: 0;
+  overflow: hidden;
+  color-scheme: var(--rx-scheme, light);
+  transition: border-color var(--rx-duration) var(--rx-ease), box-shadow var(--rx-duration) var(--rx-ease);
+}
+.rx-editor__frame:hover { border-color: var(--rx-tertiary-label); }
+.rx-editor__frame:focus-within { border-color: var(--rx-accent); box-shadow: 0 0 0 4px var(--rx-focus); }
+.rx-editor--invalid .rx-editor__frame,
+.rx-editor__frame:has([aria-invalid="true"]) { border-color: var(--rx-danger-text); }
+.rx-editor--invalid .rx-editor__frame:focus-within,
+.rx-editor__frame:has([aria-invalid="true"]):focus-within { box-shadow: 0 0 0 4px color-mix(in srgb, var(--rx-danger) 30%, transparent); }
+.rx-editor--disabled .rx-editor__frame { background: var(--rx-fill); color: var(--rx-tertiary-label); }
+.rx-editor--disabled .rx-editor__toolbar { display: none; }
+
+.rx-editor__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--rx-space-2);
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--rx-separator);
+  background: var(--rx-bg);
+}
+.rx-editor__group { display: inline-flex; align-items: center; gap: 2px; }
+.rx-editor__group--end { margin-inline-start: auto; }
+.rx-editor__tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--rx-secondary-label);
+  font: 500 var(--rx-text-footnote, 0.8125rem) / 1 var(--rx-font);
+  cursor: pointer;
+}
+.rx-editor__tool--text { padding: 0 10px; }
+.rx-editor__tool svg { width: 18px; height: 18px; flex: none; }
+.rx-editor__tool:hover:not(:disabled) { background: var(--rx-fill); color: var(--rx-label); }
+.rx-editor__tool:focus-visible { outline: 3px solid var(--rx-focus); outline-offset: 0; }
+.rx-editor__tool[data-trix-active],
+.rx-editor__tool[aria-pressed="true"] { background: var(--rx-fill-strong); color: var(--rx-accent-text); }
+.rx-editor__tool:disabled { opacity: 0.45; cursor: default; }
+@media (pointer: coarse) { .rx-editor__tool { min-width: 40px; height: 40px; } }
+
+/* Trix's link dialog, inside the toolbar. */
+.rx-editor__dialog { display: none; flex-basis: 100%; gap: var(--rx-space-2); align-items: center; padding: 4px 0; }
+.rx-editor__dialog[data-trix-active] { display: flex; }
+.rx-editor__dialog .rx-input { flex: 1; min-height: 36px; padding: 6px 10px; }
+
+/* ---------- The writing area ---------- */
+
+.rx-editor__area {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--rx-label);
+  font: inherit;
+  font-size: var(--rx-text-body);
+  line-height: 1.5;
+  padding: 10px 12px;
+}
+.rx-editor__area:focus, .rx-editor__area:focus-visible { outline: none; box-shadow: none; }
+
+/* The rich editor: Trix's frame and focus give way to the field's. */
+trix-editor.rx-editor__area {
+  border: 0;
+  border-radius: 0;
+  min-height: calc(var(--rx-editor-rows, 8) * 1.5em + 20px);
+  max-height: 70vh;
+  overflow-y: auto;
+  padding: 10px 12px;
+}
+trix-editor.rx-editor__area:empty:not(:focus)::before { color: var(--rx-tertiary-label); }
+trix-editor.rx-editor__area h1 { font-size: 1.25em; line-height: 1.3; margin: 0 0 var(--rx-space-2); }
+trix-editor.rx-editor__area blockquote { border-inline-start: 3px solid var(--rx-border); margin: 0 0 var(--rx-space-2); padding-inline-start: var(--rx-space-3); color: var(--rx-secondary-label); }
+trix-editor.rx-editor__area pre { font-family: var(--rx-mono); font-size: 0.9em; background: var(--rx-code-bg); border-radius: 6px; padding: var(--rx-space-2) var(--rx-space-3); white-space: pre-wrap; }
+trix-editor.rx-editor__area a { color: var(--rx-accent-text); }
+trix-editor.rx-editor__area ul, trix-editor.rx-editor__area ol { padding-inline-start: 1.5em; margin: 0 0 var(--rx-space-2); }
+trix-editor.rx-editor__area[disabled] { cursor: not-allowed; }
+
+/* The Markdown editor and the code editor's textarea (without JavaScript). */
+.rx-editor__textarea { resize: vertical; min-height: 7rem; }
+.rx-editor__textarea::placeholder { color: var(--rx-tertiary-label); }
+.rx-editor--markdown .rx-editor__textarea { font-family: var(--rx-mono); font-size: 0.9375rem; }
+.rx-editor__preview { overflow-y: auto; max-height: 70vh; }
+.rx-editor__preview[aria-busy="true"] { opacity: 0.6; }
+.rx-editor__placeholder { color: var(--rx-tertiary-label); margin: 0; }
+
+/* The code editor (CodeJar) and its textarea before it starts. */
+.rx-editor--code .rx-editor__textarea,
+.rx-editor__code {
+  font-family: var(--rx-mono);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre-wrap;
+  background: var(--rx-code-bg);
+}
+.rx-editor__code { max-height: 70vh; caret-color: var(--rx-label); }
+.rx-editor__code:empty::before { content: attr(data-placeholder); color: var(--rx-tertiary-label); pointer-events: none; }
+.rx-editor__code[aria-readonly="true"] { cursor: default; }
+
+/* ---------- The code entry ---------- */
+
+.rx-entry--code .rx-entry__value { display: block; }
+.rx-code-entry { position: relative; min-width: 0; }
+.rx-code-entry__pre {
+  margin: 0;
+  padding: 10px 44px 10px 12px;
+  background: var(--rx-code-bg);
+  border-radius: var(--rx-radius-s);
+  font: 400 0.875rem / 1.55 var(--rx-mono);
+  color: var(--rx-label);
+  overflow: auto;
+  tab-size: 2;
+  white-space: pre;
+}
+.rx-code-entry__pre:focus-visible { outline: 3px solid var(--rx-focus); outline-offset: 2px; }
+.rx-code-entry__pre code { font: inherit; background: none; padding: 0; }
+.rx-code-entry__copy { position: absolute; top: 6px; right: 6px; margin: 0; background: var(--rx-surface); }
+
+/* ---------- Highlighting (Prism's token classes) ---------- */
+
+.rx-code-entry .token.comment, .rx-editor__code .token.comment,
+.rx-code-entry .token.prolog, .rx-editor__code .token.prolog,
+.rx-code-entry .token.doctype, .rx-editor__code .token.doctype,
+.rx-code-entry .token.cdata, .rx-editor__code .token.cdata { color: var(--rx-code-comment); font-style: italic; }
+.rx-code-entry .token.punctuation, .rx-editor__code .token.punctuation,
+.rx-code-entry .token.operator, .rx-editor__code .token.operator { color: var(--rx-code-punctuation); }
+.rx-code-entry .token.keyword, .rx-editor__code .token.keyword,
+.rx-code-entry .token.important, .rx-editor__code .token.important,
+.rx-code-entry .token.atrule, .rx-editor__code .token.atrule,
+.rx-code-entry .token.rule, .rx-editor__code .token.rule { color: var(--rx-code-keyword); }
+.rx-code-entry .token.string, .rx-editor__code .token.string,
+.rx-code-entry .token.char, .rx-editor__code .token.char,
+.rx-code-entry .token.inserted, .rx-editor__code .token.inserted,
+.rx-code-entry .token.url, .rx-editor__code .token.url,
+.rx-code-entry .token.regex, .rx-editor__code .token.regex { color: var(--rx-code-string); }
+.rx-code-entry .token.number, .rx-editor__code .token.number,
+.rx-code-entry .token.boolean, .rx-editor__code .token.boolean,
+.rx-code-entry .token.constant, .rx-editor__code .token.constant,
+.rx-code-entry .token.symbol, .rx-editor__code .token.symbol { color: var(--rx-code-number); }
+.rx-code-entry .token.function, .rx-editor__code .token.function,
+.rx-code-entry .token.class-name, .rx-editor__code .token.class-name,
+.rx-code-entry .token.builtin, .rx-editor__code .token.builtin,
+.rx-code-entry .token.macro, .rx-editor__code .token.macro { color: var(--rx-code-function); }
+.rx-code-entry .token.tag, .rx-editor__code .token.tag,
+.rx-code-entry .token.deleted, .rx-editor__code .token.deleted,
+.rx-code-entry .token.selector, .rx-editor__code .token.selector,
+.rx-code-entry .token.title, .rx-editor__code .token.title { color: var(--rx-code-tag); }
+.rx-code-entry .token.attr-name, .rx-editor__code .token.attr-name,
+.rx-code-entry .token.property, .rx-editor__code .token.property,
+.rx-code-entry .token.key, .rx-editor__code .token.key,
+.rx-code-entry .token.variable, .rx-editor__code .token.variable { color: var(--rx-code-attr); }
+.rx-code-entry .token.bold, .rx-editor__code .token.bold { font-weight: 700; }
+.rx-code-entry .token.italic, .rx-editor__code .token.italic { font-style: italic; }

@@ -1,0 +1,9 @@
+<rx-props icon title :text="none" :action-href="none" :action-label="none" :action-icon="none">
+{#- <app-empty-state icon="history" :title="…" :text="…"/>: what an empty list says, with an icon
+    in a tinted circle, and a way on (`action-href`, `action-label`, `action-icon`). -#}
+<div class="app-empty">
+  <app-icon-circle :icon="icon" :large="true" :size="26"/>
+  <p class="app-empty__title">{{ title }}</p>
+  <p rx-if="text" class="app-empty__text">{{ text }}</p>
+  <rx-link-button rx-if="action_href" :href="action_href" :label="action_label" variant="primary" :icon="action_icon"/>
+</div>

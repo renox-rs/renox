@@ -1,0 +1,29 @@
+{#- A public page's hero (#328): the headline with its coloured phrase, a lead,
+    the call block's buttons and figures, and a photo with a rounded corner
+    (styles: public/theme.css, `bs-hero`).
+
+    <app-hero :title="t('x.title')" :accent="t('x.accent')" :lead="t('x.lead')"
+              photo="/images/site/rent-1.webp" compact>
+      <rx-link-button …/>
+    </app-hero>
+
+    `accent`: the words after the title, in the brand colour. `eyebrow`: a
+    small line above the title. `inset`: a second, smaller photo over the
+    first's corner; `badge` ({icon: an icon's name, title, text}): a card over the photo.
+    `compact`: a smaller headline and a wide photo, for pages other than the
+    home page. The photos are decoration: the text says it all, so their
+    `alt` is empty. -#}
+<rx-props title accent="" lead="" eyebrow="" photo="" inset="" :badge="none" :compact="false" id="page-title">
+<section class="bs-hero{{ ' bs-hero--compact' if compact }}" aria-labelledby="{{ id }}">
+  <div class="bs-hero__text">
+    <p rx-if="eyebrow" class="bs-hero__eyebrow">{{ eyebrow }}</p>
+    <h1 class="bs-hero__title" id="{{ id }}">{{ title }}<template rx-if="accent"> <em>{{ accent }}</em></template></h1>
+    <p rx-if="lead" class="bs-hero__lead">{{ lead }}</p>
+    <rx-slot />
+  </div>
+  <div rx-if="photo" class="bs-hero__art">
+    <img class="bs-hero__photo" src="{{ photo }}" alt="" width="960" height="1200" fetchpriority="high">
+    <img rx-if="inset" class="bs-hero__inset" src="{{ inset }}" alt="" width="440" height="550" loading="lazy">
+    <p rx-if="badge" class="bs-hero__badge"><span class="bs-hero__badge-icon" aria-hidden="true"><rx-icon :name="badge.icon"/></span><span><b>{{ badge.title }}</b>{{ badge.text }}</span></p>
+  </div>
+</section>

@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import input, button, form_errors %}
+{% block content %}
+{#- An htmx form: a 422 places its errors without a reload. Fields are in
+    an order where page order and alphabetical order differ. -#}
+<form id="signup" method="post" action="/signup" hx-post="/signup" hx-swap="none" data-live-validate novalidate>
+  {{ csrf_field() }}
+  {{ input("name", "Name", required=true) }}
+  {{ input("email", "Email", type="email", required=true) }}
+  <label>First tag <input name="tags" value=""></label>
+  <p data-error-for="tags.0" id="tag-slot"></p>
+  {{ button("Sign up") }}
+</form>
+{% endblock %}

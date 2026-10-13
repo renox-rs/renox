@@ -1,0 +1,56 @@
+{#- The panel's frame (renox-admin/layout.html): the kit's back-office
+    shell, a sidebar with the resources the user may see, a bar with the
+    account menu, then the page. Replace it with a file of the same name
+    under the app's views to brand the panel. To add to it without
+    replacing it, put a file under renox-admin/slots/ (head, sidebar_start,
+    sidebar_end, navbar_end, before_content, after_content): it is drawn
+    in that place on every page, with the page's values. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{{ admin.title }}{% endblock %}</title>
+  {{ renox_head() }}
+  {{ renox_ui() }}
+  {{ stack('head') }}
+  {% include "renox-admin/slots/head.html" ignore missing %}
+</head>
+<body class="rx-page rx-shell">
+  {% from "renox/ui.html" import sidebar, sidebar_link, sidebar_section, navbar, menu, menu_link, menu_action, menu_separator %}
+  {% call sidebar(admin.title, href=admin.home, label=admin.text.admin_navigation) %}
+    {% include "renox-admin/slots/sidebar_start.html" ignore missing %}
+    {{ sidebar_link(admin.home, admin.text.dashboard, active=admin.dashboard) }}
+    {%- for group in admin.nav %}
+    {%- if group.title %}{{ sidebar_section(group.title) }}{% endif %}
+    {%- for item in group.items %}
+    {{ sidebar_link(item.url, item.label, active=item.active) }}
+    {%- endfor %}
+    {%- endfor %}
+    {% include "renox-admin/slots/sidebar_end.html" ignore missing %}
+  {% endcall %}
+  <div class="rx-shell__main">
+    {% call navbar(none, width="full", skip=false, label=admin.text.account_label) %}
+      <span class="rx-spacer"></span>
+      {% include "renox-admin/slots/navbar_end.html" ignore missing %}
+      {%- if auth.check %}
+      {% call menu(auth.user.name, id="rx-admin-account", variant="plain") %}
+        {%- if admin.account_url %}
+        {{ menu_link(admin.account_url, admin.text.account) }}
+        {{ menu_separator() }}
+        {%- endif %}
+        {%- if admin.logout_url %}{{ menu_action(admin.logout_url, admin.text.log_out) }}{% endif %}
+      {% endcall %}
+      {%- endif %}
+    {% endcall %}
+    <main class="rx-shell__content" id="main">
+      {% include "renox-admin/slots/before_content.html" ignore missing %}
+      {% block content %}{% endblock %}
+      {% include "renox-admin/slots/after_content.html" ignore missing %}
+    </main>
+  </div>
+  {{ toasts() }}
+  {{ stack('scripts') }}
+</body>
+</html>

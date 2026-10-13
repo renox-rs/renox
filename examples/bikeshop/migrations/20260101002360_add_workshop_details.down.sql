@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS extra_work_requests;
+DROP TABLE IF EXISTS work_order_notes;
+DROP TABLE IF EXISTS work_order_parts;
+ALTER TABLE work_orders DROP COLUMN paid_at;
+ALTER TABLE work_orders DROP COLUMN cancelled_at;
+ALTER TABLE work_orders DROP COLUMN reminded_at;
+ALTER TABLE work_orders DROP COLUMN package;
+ALTER TABLE work_orders DROP COLUMN minutes;
+ALTER TABLE customer_bikes DROP COLUMN photo_path;
+ALTER TABLE customer_bikes DROP COLUMN size;
+ALTER TABLE customer_bikes DROP COLUMN brand;

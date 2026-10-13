@@ -1,0 +1,21 @@
+{#- renox-2fa: its card on the account page (`section.data`: enabled, since,
+    recovery_codes_left). Replace it with resources/views/two-factor/section.html. -#}
+{% from "renox/ui.html" import card, button, confirm %}
+{% if section.data.enabled %}
+{% call card(title="Two-factor authentication", subtitle="On since " ~ (section.data.since | date) ~ ". Logging in asks for a code from your authenticator app.") %}
+  <p class="rx-subtitle">{{ section.data.recovery_codes_left }} recovery code{{ "" if section.data.recovery_codes_left == 1 else "s" }} left.</p>
+  <div class="rx-card__footer">
+    <form method="post" action="{{ route('two-factor.recovery-codes.regenerate') }}">
+      {{ csrf_field() }}{{ button("New recovery codes", variant="secondary") }}
+    </form>
+    {{ confirm("two-factor-off", "Turn off", route('two-factor.disable'), "Turn off two-factor authentication?", "Logging in will only ask for your password.", confirm_label="Turn off") }}
+  </div>
+{% endcall %}
+{% else %}
+{% call card(title="Two-factor authentication", subtitle="Off. Add a second step to logging in: a code from an authenticator app on your phone.") %}
+  <form method="post" action="{{ route('two-factor.enable') }}">
+    {{ csrf_field() }}
+    <div class="rx-card__footer">{{ button("Turn on", variant="secondary") }}</div>
+  </form>
+{% endcall %}
+{% endif %}

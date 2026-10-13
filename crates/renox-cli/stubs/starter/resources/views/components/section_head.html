@@ -1,0 +1,14 @@
+<rx-props title id :accent="none" :lead="none" :more-href="none" :more-label="none" :compact="false">
+{#- <app-section-head :title="…" id="…">content</app-section-head>: a section's heading (`accent`
+    in italics), a `lead`, and a "see all" link (`more-href`, `more-label`) at the end of the
+    row; the content is the section's. `compact`: a card's heading size, for back-office pages. -#}
+<section class="app-section{{ ' app-section--compact' if compact }}" aria-labelledby="{{ id }}">
+  <div class="app-section__head">
+    <div>
+      <h2 class="app-section__title" id="{{ id }}">{{ title }}<template rx-if="accent"> <em>{{ accent }}</em></template></h2>
+      <p rx-if="lead" class="app-section__lead">{{ lead }}</p>
+    </div>
+    <a rx-if="more_href" class="app-section__more" href="{{ more_href }}">{{ more_label }}<rx-icon name="arrow-right" :size="16"/></a>
+  </div>
+  <rx-slot />
+</section>

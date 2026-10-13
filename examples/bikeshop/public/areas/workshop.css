@@ -1,0 +1,23 @@
+/* The workshop pages' layout (#236): CSS grids spaced with the kit's tokens (--rx-space-*),
+   type from the kit's scale (--rx-type-*); no sizes of our own. Loaded by those pages only. */
+
+/* The workshop's board: the filters above the kanban, the order's page in two columns. */
+.bs-board { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-board__body { min-width: 0; }
+.bs-board__filters { display: grid; grid-auto-flow: column; justify-content: start; align-items: end; gap: var(--rx-space-3); }
+@media (max-width: 40rem) { .bs-board__filters { grid-auto-flow: row; } }
+.bs-order { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-order { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+.bs-order__main, .bs-order__side { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-bikes { display: grid; gap: var(--rx-space-4); grid-template-columns: repeat(auto-fill, minmax(16rem, 1fr)); }
+.bs-booking { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-booking { grid-template-columns: minmax(0, 3fr) minmax(16rem, 2fr); } }
+.bs-booking__summary { position: sticky; top: var(--rx-space-6); }
+.bs-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-steps li { display: grid; gap: var(--rx-space-1); font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-steps li::before { content: ""; height: var(--rx-space-1); border-radius: var(--rx-radius-s); background: var(--rx-fill-strong); }
+.bs-steps li[data-done]::before { background: var(--rx-accent); }
+.bs-steps li[data-done] { color: var(--rx-label); }
+.bs-lines { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rx-space-2) var(--rx-space-4); margin: 0; font: var(--rx-type-body); }
+.bs-lines dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.bs-lines dt small { display: block; font: var(--rx-type-note); color: var(--rx-secondary-label); }

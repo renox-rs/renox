@@ -1,0 +1,8 @@
+{#- Account section (order 130): download my data. The button queues a job
+    (`accounts.export` → `ExportMyData`) that mails a link to a JSON file;
+    deleting the account is the card at the end of the page. -#}
+<rx-form :action="route('accounts.export')" id="account-export">
+  <rx-card title="{{ t('accounts.privacy.title') }}" subtitle="{{ t('accounts.privacy.lead', days=section.data.days) }}">
+    <div class="rx-card__footer"><rx-button label="{{ t('accounts.privacy.export') }}" variant="secondary" icon="download"/></div>
+  </rx-card>
+</rx-form>

@@ -1,0 +1,5 @@
+# learn.renox.rs: everything here is public and meant to be read.
+User-agent: *
+Allow: /
+
+Sitemap: https://learn.renox.rs/sitemap.xml

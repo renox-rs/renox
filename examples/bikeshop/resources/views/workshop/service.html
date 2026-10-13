@@ -1,0 +1,50 @@
+{#- A work order for its customer (#236): where it stands, what is done, what it costs. -#}
+<rx-page layout="layouts/app.html" title="{{ t('workshop.service.title', number=order.id) }}">
+  <app-workshop-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('workshop.service.title', number=order.id) }}" :subtitle="bike.name if bike else none" :back="route('workshop.bikes')" back-label="{{ t('workshop.bikes.title') }}"/>
+    <ol rx-if="status != 'cancelled'" class="bs-steps" aria-label="{{ t('workshop.service.progress') }}">
+      <li rx-for="step in steps" ?data-done="step[1]">{{ t('workshop.status.' ~ step[0]) }}</li>
+    </ol>
+    <rx-alert rx-if="order.customer_note" kind="info" title="{{ t('workshop.order.customer_note') }}" :message="order.customer_note"/>
+    <rx-alert rx-if="pending_extra" kind="warning" message="{{ t('workshop.service.extra_waiting') }}"/>
+    <rx-alert rx-if="status == 'ready'" kind="success" message="{{ t('workshop.service.ready', store=(store.name if store else '')) }}"/>
+    <div class="bs-order">
+      <div class="bs-order__main">
+        <rx-card title="{{ t('workshop.service.work') }}">
+          <dl class="bs-lines">
+            <template rx-for="line in lines"><dt>{{ '✓ ' if line.done }}{{ line.name }} <small>{{ line.detail }}</small></dt><dd>{{ line.amount | money }}</dd></template>
+            <dt><strong>{{ t('workshop.fields.total') }}</strong></dt><dd><strong>{{ order.total | money }}</strong></dd>
+          </dl>
+        </rx-card>
+        <rx-card rx-if="notes" title="{{ t('workshop.service.notes') }}">
+          <p rx-for="n in notes">{{ n.body }} <span class="rx-subtitle">· {{ n.created_at | since }}</span></p>
+        </rx-card>
+        <rx-card rx-if="extras" title="{{ t('workshop.service.extras') }}">
+          <p rx-for="e in extras">{{ e.description }} · {{ e.total | money }} · {{ t('workshop.extra_status.' ~ e.status) }}</p>
+        </rx-card>
+      </div>
+      <div class="bs-order__side">
+        <rx-card title="{{ t('workshop.service.details') }}">
+          <rx-infolist>
+            <rx-entry label="{{ t('workshop.fields.status') }}"><app-workshop-status :status="status"/></rx-entry>
+            <rx-entry label="{{ t('workshop.fields.store') }}" :value="store.name if store else none"/>
+            <rx-entry label="{{ t('workshop.fields.day') }}" :value="order.scheduled_for" format="date"/>
+            <rx-entry label="{{ t('workshop.fields.minutes') }}" :value="order.minutes" format="number"/>
+            <rx-entry label="{{ t('workshop.fields.paid') }}" :value="order.paid_at" format="datetime" placeholder="{{ t('workshop.service.not_paid') }}"/>
+          </rx-infolist>
+          {# [explain:workshop.service.show.template] #}
+          <form rx-if="payable" method="post" action="{{ route('workshop.service.pay', order.id) }}">{{ csrf_field() }}<rx-button icon="check" block>{{ t('workshop.service.pay', amount=(order.total | money)) }}</rx-button></form>
+          <template rx-if="changeable">
+          <rx-action-sheet id="reschedule" label="{{ t('workshop.service.reschedule') }}" :action="route('workshop.service.reschedule', order.id)" title="{{ t('workshop.service.reschedule') }}">
+            <rx-date-picker name="day" label="{{ t('workshop.fields.day') }}" :value="day" :min="today" required id="reschedule-day"/>
+          </rx-action-sheet>
+          <rx-confirm id="cancel-service" label="{{ t('workshop.service.cancel') }}" :action="route('workshop.service.cancel', order.id)" title="{{ t('workshop.service.cancel_title') }}" message="{{ t('workshop.service.cancel_text') }}" method="POST"/>
+          </template>
+          <p rx-elif="status == 'booked'" class="rx-hint">{{ t('workshop.service.no_change') }}</p>
+          {# [/explain:workshop.service.show.template] #}
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

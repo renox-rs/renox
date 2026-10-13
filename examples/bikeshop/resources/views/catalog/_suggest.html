@@ -1,0 +1,21 @@
+{#- The navbar search box's suggestions (`catalog.suggest`, an htmx
+    fragment): the best matches for what was typed, each a link to its
+    product, then "all results". Arrow keys move through them
+    (public/catalog/catalog.js); without JavaScript the box is a plain
+    search form. -#}
+<div rx-if="q" class="bs-suggest__panel">
+  <ul rx-if="suggestions" class="bs-suggest__list" role="list" aria-label="{{ t('catalog.suggest.label') }}">
+    <li rx-for="s in suggestions">
+      <a class="bs-suggest__item" href="{{ s.href }}" data-bs-suggestion>
+        <img rx-if="s.photo" class="bs-suggest__image" src="{{ s.photo }}" alt="" width="40" height="40" loading="lazy">
+        <span rx-else class="bs-suggest__image" aria-hidden="true"></span>
+        <span class="bs-suggest__text">
+          <span class="bs-suggest__name">{{ s.name }}</span>
+          <span class="bs-suggest__meta"><template rx-if="s.brand">{{ s.brand }} · </template><template rx-if="s.price_from is not none">{{ s.price_from | money }}</template></span>
+        </span>
+      </a>
+    </li>
+  </ul>
+  <p rx-else class="bs-suggest__empty" role="status">{{ t('catalog.suggest.none', q=q) }}</p>
+  <a class="bs-suggest__all rx-link" href="{{ route('catalog.search') }}?q={{ q | urlencode }}" data-bs-suggestion>{{ t('catalog.suggest.all', q=q) }}</a>
+</div>

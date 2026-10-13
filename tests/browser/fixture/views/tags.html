@@ -1,0 +1,20 @@
+<rx-page layout="layout.html">
+  <rx-style>.tags-box > .tags-mark { color: rgb(255, 0, 0); }</rx-style>
+  <div class="tags-box" id="tags-box">
+    <rx-let name="shown" :value="n * 10"/>
+    <span class="tags-mark" id="mark">{{ shown }}</span>
+    <template rx-if="n == 1">one</template>
+    <template rx-elif="n == 2"><b id="two">two</b> and text</template>
+    <template rx-else>many</template>
+    <template rx-for="x in ['a', 'b']"><i class="item">{{ loop.index }}{{ x }}</i></template>
+  </div>
+  <p id="out"></p>
+  <rx-script>
+    if (1 < 2 && document.getElementById("out")) {
+      document.getElementById("out").textContent = "inline ran";
+    }
+  </rx-script>
+  <rx-push stack="scripts" once="tags">
+    <rx-script type="module">window.rxPushed = "pushed ran";</rx-script>
+  </rx-push>
+</rx-page>

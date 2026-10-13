@@ -1,0 +1,55 @@
+{#- A rental bike (#235, #245): owner and location, what each store may do, its history. -#}
+<rx-page layout="layouts/staff.html" :title="bike.frame_number">
+  <app-rentals-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="model ~ (' (' ~ size ~ ')' if size else '')" :subtitle="bike.frame_number" :back="route('rentals.fleet')" back-label="{{ t('rentals.fleet.title') }}" :badge="t('rentals.status.bike.' ~ bike.status)"/>
+    <rx-alert rx-if="send_back" kind="info" title="{{ t('rentals.receipt.send_back', store=send_back) }}" message="{{ t('rentals.receipt.send_back_text', store=send_back) }}"/>
+    <rx-alert rx-if="service_due" kind="warning" message="{{ t('rentals.fleet.service_due_text') }}"/>
+    <rx-columns count="2">
+      <rx-card title="{{ t('rentals.fleet.bike') }}">
+        <rx-infolist>
+          <rx-entry label="{{ t('rentals.fields.owner') }}" :value="(owner)" hint="{{ t('rentals.fleet.owner_hint') }}"/>
+          <rx-entry label="{{ t('rentals.fields.location') }}" :value="location" hint="{{ t('rentals.fleet.location_hint') }}"/>
+          <rx-entry label="{{ t('rentals.fields.condition') }}" :value="t('rentals.condition.' ~ bike.condition)"/>
+          <rx-entry label="{{ t('rentals.fields.hourly_rate') }}" :value="bike.hourly_rate" format="money"/>
+          <rx-entry label="{{ t('rentals.fields.daily_rate') }}" :value="bike.daily_rate" format="money"/>
+          <rx-entry label="{{ t('rentals.fields.deposit') }}" :value="bike.deposit" format="money"/>
+          <rx-entry label="{{ t('rentals.fields.ridden') }}" :value="bike.ridden_hours" format="number" hint="{{ t('rentals.fleet.hours_left', hours=hours_to_service) }}"/>
+        </rx-infolist>
+      </rx-card>
+      {# [explain:rentals.fleet.show.template] #}
+      <rx-card title="{{ t('rentals.abilities.title') }}" subtitle="{{ t('rentals.abilities.lead') }}">
+        <rx-list id="abilities" label="{{ t('rentals.abilities.title') }}">
+          <li rx-for="a in abilities">
+            <div class="rx-list__main">
+              <strong>{{ t(a.action) }}</strong>
+              <p class="rx-subtitle">{{ t('rentals.abilities.checked_in', store=a.store, attribute=t('rentals.abilities.' ~ a.attribute)) }} · <code>{{ a.permission }}</code></p>
+            </div>
+            <rx-badge :text="t('rentals.abilities.yes') if a.allowed else t('rentals.abilities.no')" :kind="'success' if a.allowed else none"/>
+          </li>
+        </rx-list>
+      </rx-card>
+      {# [/explain:rentals.fleet.show.template] #}
+    </rx-columns>
+    <rx-tabs id="history" selected="rentals" label="{{ t('rentals.fleet.history') }}">
+      <rx-tab key="rentals" label="{{ t('rentals.fleet.rentals') }}">
+        <rx-list rx-if="rentals" id="bike-rentals" label="{{ t('rentals.fleet.rentals') }}">
+          <app-rentals-item rx-for="row in rentals" :row="row" :href="route('rentals.desk', row.id)"/>
+        </rx-list>
+        <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.fleet.no_rentals') }}" icon="key-round"/></div>
+      </rx-tab>
+      <rx-tab key="placements" label="{{ t('rentals.fleet.placements') }}">
+        <rx-list rx-if="placements" id="bike-placements" label="{{ t('rentals.fleet.placements') }}">
+          <li rx-for="p in placements"><div class="rx-list__main"><strong>{{ p.from }} → {{ p.to }}</strong><p class="rx-subtitle">{{ p.placement.requested_at | date('%d %b %Y') }}</p></div><rx-badge :text="p.placement.status"/></li>
+        </rx-list>
+        <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.fleet.no_placements') }}" icon="map-pin"/></div>
+      </rx-tab>
+      <rx-tab key="work" label="{{ t('rentals.fleet.work_orders') }}">
+        <rx-list rx-if="work_orders" id="bike-work" label="{{ t('rentals.fleet.work_orders') }}">
+          <li rx-for="w in work_orders"><div class="rx-list__main"><strong>#{{ w.order.id }} · {{ w.store }}</strong><p class="rx-subtitle">{{ w.order.scheduled_for | date('%d %b %Y') }}<template rx-if="w.billed"> · {{ t('rentals.fleet.billed_to', store=w.billed) }}</template><template rx-if="w.order.customer_note"> · {{ w.order.customer_note }}</template></p></div><rx-badge :text="w.order.status"/></li>
+        </rx-list>
+        <div rx-else class="rx-card"><rx-empty title="{{ t('rentals.fleet.no_work') }}" icon="wrench"/></div>
+      </rx-tab>
+    </rx-tabs>
+  </rx-stack>
+</rx-page>

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" role="img" aria-label="A saddle">
+<rect width="800" height="600" fill="#fdf0e1"/>
+<g fill="none" stroke-linecap="round" stroke-linejoin="round">
+  <path d="M180 260 q20 -60 120 -60 h120 q200 0 200 70 q0 40 -120 50 q-80 8 -120 60 h-80 q-60 -70 -120 -120z" fill="#0b6e66" stroke="#1c1917" stroke-width="12"/>
+  <path d="M380 380 v120 M320 500 h120" stroke="#1c1917" stroke-width="16"/>
+
+</g>
+</svg>

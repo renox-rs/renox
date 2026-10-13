@@ -1,0 +1,25 @@
+{#- Renox's sign-in pages (login, register, password reset, verification,
+    account), on the UI kit. Replace any of them with a file of the same name
+    under resources/views/renox/auth/, e.g. to extend your own layout. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}{{ app.name }}{% endblock %}</title>
+  {{ renox_head() }}
+  {{ renox_ui() }}
+  {{ stack('head') }}
+</head>
+<body class="rx-page">
+  <main class="rx-auth{% block main_class %}{% endblock %}">
+    <div class="rx-auth__inner">
+      <p class="rx-auth__brand"><a href="/">{{ app.name }}</a></p>
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+  {{ toasts() }}
+  {{ stack('scripts') }}
+</body>
+</html>

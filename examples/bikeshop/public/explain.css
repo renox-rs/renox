@@ -1,0 +1,195 @@
+/* "About this page" (src/explain.rs): the panel docked beside every page on
+   wide screens (components/about_dock.html), the same content in the kit's sheet on
+   narrower ones (components/about_panel.html), and the code samples' colours. On the
+   kit's tokens (--rx-*), in light and dark mode. */
+
+:root {
+  /* The docked panel: about a third of the screen, never too narrow to read
+     code in, never so wide the page gets cramped; folded, a slim rail. */
+  --bs-dock-w: clamp(22rem, 32vw, 36rem);
+  --bs-dock-w-shell: clamp(20rem, 29vw, 34rem);
+  --bs-dock-rail: 3.5rem;
+
+  /* The code samples (src/highlight.rs's `hl-*` classes): every colour keeps
+     at least 4.5:1 on the frame's background (WCAG AA), light and dark. */
+  --bs-code-bg: #f4efe6;
+  --bs-code-bar: rgba(70, 58, 40, 0.05);
+  --bs-hl-text: #1f2421;
+  --bs-hl-com: #6b665d;
+  --bs-hl-kw: #8a2f9e;
+  --bs-hl-str: #2d6a1f;
+  --bs-hl-num: #a84a28;
+  --bs-hl-fn: #0a5f58;
+  --bs-hl-ty: #8a5300;
+  --bs-hl-mac: #1d5fa0;
+  --bs-hl-attr: #b02a3a;
+  --bs-hl-tag: #a1332b;
+  --bs-hl-prop: #7a4e00;
+  --bs-hl-tpl: #0a5f58;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bs-code-bg: #11100e;
+    --bs-code-bar: rgba(245, 245, 244, 0.04);
+    --bs-hl-text: #f3efe8;
+    --bs-hl-com: #a8a094;
+    --bs-hl-kw: #d4a6f2;
+    --bs-hl-str: #a9d98a;
+    --bs-hl-num: #f2a578;
+    --bs-hl-fn: #7cc4ff;
+    --bs-hl-ty: #f2cc6b;
+    --bs-hl-mac: #7fd8e8;
+    --bs-hl-attr: #f59aa8;
+    --bs-hl-tag: #f08a7e;
+    --bs-hl-prop: #f2d08a;
+    --bs-hl-tpl: #5fd4c6;
+  }
+}
+:root[data-theme="dark"] {
+  --bs-code-bg: #11100e; --bs-code-bar: rgba(245, 245, 244, 0.04);
+  --bs-hl-text: #f3efe8; --bs-hl-com: #a8a094; --bs-hl-kw: #d4a6f2; --bs-hl-str: #a9d98a;
+  --bs-hl-num: #f2a578; --bs-hl-fn: #7cc4ff; --bs-hl-ty: #f2cc6b; --bs-hl-mac: #7fd8e8;
+  --bs-hl-attr: #f59aa8; --bs-hl-tag: #f08a7e; --bs-hl-prop: #f2d08a; --bs-hl-tpl: #5fd4c6;
+}
+
+/* ---------- Docked beside the page (75rem, 1200 px, and up) ---------- */
+
+.bs-dock { display: none; }
+@media (min-width: 75rem) {
+  /* The page keeps the space the panel takes: the layout's own grid (the
+     public page, the staff shell, the sign-in pages) is left as it is. */
+  body.bs-docked { --bs-dock-now: var(--bs-dock-w); padding-inline-end: var(--bs-dock-now); }
+  /* A back office (the staff shell) has a sidebar too: a little narrower. */
+  body.rx-shell.bs-docked { --bs-dock-now: var(--bs-dock-w-shell); }
+  body.bs-docked.bs-docked--rail { --bs-dock-now: var(--bs-dock-rail); }
+  .bs-docked .bs-dock {
+    display: block; position: fixed; z-index: 25; inset-block: 0; inset-inline-end: 0; width: var(--bs-dock-now);
+    background: var(--rx-surface); border-inline-start: 0.5px solid var(--rx-separator);
+    font-family: var(--rx-font);
+  }
+  /* The public bar keeps the whole width (its links, search, cart and
+     account menu need it); the panel starts under it. --bs-bar-h is the
+     bar's height, kept up to date by public/explain.js; the fallback is a
+     one-line bar's. */
+  .bs-public.bs-docked > .rx-navbar { margin-inline-end: calc(-1 * var(--bs-dock-now)); }
+  .bs-public.bs-docked .bs-dock { top: var(--bs-bar-h, 3.3125rem); }
+  /* The navbar's "About this page" opens the sheet below this width only. */
+  .bs-docked [data-rx-open="about-page"] { display: none; }
+  .bs-docked .rx-auth__alt:has([data-rx-open="about-page"]) { display: none; }
+  /* Toasts stay centred over the page, clear of the panel. */
+  .bs-docked .rx-toasts { left: calc(50% - var(--bs-dock-now) / 2); }
+  .bs-docked .rx-toasts--top-start, .bs-docked .rx-toasts--bottom-start { left: max(var(--rx-space-4), env(safe-area-inset-left)); }
+  .bs-docked .rx-toasts--top-end, .bs-docked .rx-toasts--bottom-end { left: auto; right: calc(var(--bs-dock-now) + var(--rx-space-4)); }
+}
+.bs-dock__panel { height: 100%; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.bs-dock__panel[hidden], .bs-dock__rail[hidden] { display: none; }
+.bs-dock__header {
+  position: sticky; top: 0; z-index: 1;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--rx-space-3); align-items: start;
+  padding: var(--rx-space-5) var(--rx-space-4) var(--rx-space-4) var(--rx-space-6);
+  background: var(--rx-material-thick); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+  border-bottom: 0.5px solid var(--rx-separator);
+}
+.bs-dock__heading { display: grid; gap: var(--rx-space-1); min-width: 0; }
+.bs-dock__eyebrow { margin: 0; font: var(--rx-type-caption); text-transform: var(--rx-caption-case); letter-spacing: var(--rx-caption-tracking); color: var(--rx-accent-text); }
+.bs-dock__title { margin: 0; font: var(--rx-type-heading); font-size: 1.25rem; letter-spacing: -0.015em; color: var(--rx-label); overflow-wrap: anywhere; }
+.bs-dock .bs-explain { padding: var(--rx-space-5) var(--rx-space-6) var(--rx-space-8); }
+
+/* Folded: a rail with one button, its words written down the side. */
+.bs-dock__rail { height: 100%; display: grid; justify-items: center; align-content: start; padding-block: var(--rx-space-4); }
+.bs-dock__open {
+  display: inline-flex; align-items: center; gap: var(--rx-space-2); writing-mode: vertical-rl;
+  min-width: var(--rx-target); padding: var(--rx-space-4) var(--rx-space-2);
+  border: 0; border-radius: var(--rx-radius-s); background: var(--rx-accent-soft); color: var(--rx-accent-text);
+  font: var(--rx-type-label); cursor: pointer;
+}
+.bs-dock__open svg { writing-mode: horizontal-tb; flex: none; }
+.bs-dock__open:hover { background: color-mix(in srgb, var(--rx-accent) 18%, var(--rx-surface)); }
+.bs-dock__open:focus-visible, .bs-chip:focus-visible, .bs-code__path:focus-visible { outline: 2px solid var(--rx-focus); outline-offset: 2px; }
+
+/* ---------- The content (docked or in the sheet) ---------- */
+
+.bs-explain { display: grid; gap: var(--rx-space-6); min-width: 0; }
+.bs-explain__purpose { font: var(--rx-type-lead); color: var(--rx-label); }
+.bs-explain__who { display: grid; gap: var(--rx-space-2); }
+.bs-explain__who-text { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-explain__purpose p, .bs-explain__who-text p { margin: 0; }
+.bs-explain__purpose code, .bs-explain__who-text code { font-family: var(--rx-mono); font-size: 0.9em; background: var(--rx-fill); border-radius: 4px; padding: 1px 4px; overflow-wrap: anywhere; }
+.bs-explain__section { display: grid; gap: var(--rx-space-3); min-width: 0; }
+.bs-explain__heading {
+  margin: 0; font: var(--rx-type-caption); text-transform: var(--rx-caption-case);
+  letter-spacing: var(--rx-caption-tracking); color: var(--rx-secondary-label);
+}
+.bs-explain__prose { font: var(--rx-type-body); color: var(--rx-label); }
+.bs-explain__links { gap: var(--rx-space-5); }
+.bs-explain__links > div { display: grid; gap: var(--rx-space-2); min-width: 0; }
+.bs-explain__links .bs-links { font: var(--rx-type-note); }
+.bs-explain__links a { overflow-wrap: anywhere; }
+.bs-explain__index { margin: 0; padding-top: var(--rx-space-4); border-top: 0.5px solid var(--rx-separator); font: var(--rx-type-note); }
+
+/* The features: chips that open their "why" (public/explain.js). */
+.bs-chips { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-chips > li { max-width: 100%; }
+.bs-chip {
+  display: inline-flex; align-items: center; max-width: 100%; min-height: 32px; padding: var(--rx-space-1) var(--rx-space-3);
+  border: 1px solid var(--rx-border); border-radius: var(--rx-badge-radius); background: var(--rx-surface-raised);
+  color: var(--rx-label); font: var(--rx-type-note); text-align: start; cursor: pointer;
+}
+.bs-chip code { font-family: var(--rx-mono); font-size: 0.78rem; overflow-wrap: anywhere; }
+.bs-chip:hover { background: var(--rx-fill); }
+.bs-chip[aria-expanded="true"] { border-color: var(--rx-accent); background: var(--rx-accent-soft); color: var(--rx-accent-text); }
+.bs-explain__why {
+  padding: var(--rx-space-3) var(--rx-space-4); border-radius: var(--rx-radius-s);
+  border-inline-start: 3px solid var(--rx-accent); background: color-mix(in srgb, var(--rx-accent) 6%, var(--rx-surface));
+  font: var(--rx-type-body); color: var(--rx-label);
+}
+.bs-explain__why[hidden] { display: none; }
+.bs-explain__why-api { margin: 0 0 var(--rx-space-2); font: var(--rx-type-label); color: var(--rx-accent-text); }
+.bs-explain__why-api code { background: none; padding: 0; }
+
+/* The code: the kit's tabs, then each sample in a frame with its file. */
+.bs-explain .rx-segmented { justify-self: start; }
+.bs-explain .rx-tabpanel { min-width: 0; border-radius: var(--rx-radius-s); }
+.bs-explain .rx-tabpanel:focus-visible { outline: 2px solid var(--rx-focus); outline-offset: 2px; }
+.bs-code { display: grid; gap: var(--rx-space-2); margin: 0; min-width: 0; }
+.bs-code__caption { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.bs-code__caption p { margin: 0; }
+.bs-code__caption code { font-family: var(--rx-mono); font-size: 0.9em; color: var(--rx-label); }
+.bs-code__frame { min-width: 0; overflow: hidden; border: var(--rx-surface-border); border-radius: var(--rx-radius-s); background: var(--bs-code-bg); }
+.bs-code__bar {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: var(--rx-space-2); align-items: center;
+  padding: 0 var(--rx-space-1) 0 var(--rx-space-3); background: var(--bs-code-bar); border-bottom: 1px solid var(--rx-separator);
+}
+.bs-code__lang { font: var(--rx-type-caption); text-transform: var(--rx-caption-case); letter-spacing: var(--rx-caption-tracking); color: var(--rx-accent-text); }
+.bs-code__path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--rx-secondary-label); text-decoration: none; border-radius: 4px; }
+.bs-code__path:hover { color: var(--rx-label); text-decoration: underline; }
+.bs-code__path code { font-family: var(--rx-mono); font-size: 0.75rem; }
+.bs-code__pre {
+  margin: 0; padding: var(--rx-space-3) var(--rx-space-4); overflow: auto; max-height: 32rem;
+  font: 400 0.78rem/1.65 var(--rx-mono); color: var(--bs-hl-text); tab-size: 4; white-space: pre;
+}
+.bs-code__code { font: inherit; }
+.bs-copy .bs-copy__done, .bs-copy[data-rx-done] .bs-copy__idle { display: none; }
+.bs-copy[data-rx-done] .bs-copy__done { display: block; }
+.bs-copy[data-rx-done] { color: var(--rx-success); }
+
+.hl-com { color: var(--bs-hl-com); font-style: italic; }
+.hl-kw { color: var(--bs-hl-kw); }
+.hl-str { color: var(--bs-hl-str); }
+.hl-num, .hl-lit { color: var(--bs-hl-num); }
+.hl-fn { color: var(--bs-hl-fn); }
+.hl-ty { color: var(--bs-hl-ty); }
+.hl-mac { color: var(--bs-hl-mac); }
+.hl-attr, .hl-life { color: var(--bs-hl-attr); }
+.hl-tag { color: var(--bs-hl-tag); }
+.hl-prop { color: var(--bs-hl-prop); }
+.hl-var { color: var(--bs-hl-num); }
+.hl-tpl { color: var(--bs-hl-tpl); font-weight: 600; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .bs-chip, .bs-dock__open { transition: background var(--rx-duration) var(--rx-ease), border-color var(--rx-duration) var(--rx-ease), color var(--rx-duration) var(--rx-ease); }
+}
+@media print {
+  .bs-dock { display: none !important; }
+  body.bs-docked { padding-inline-end: 0; }
+}

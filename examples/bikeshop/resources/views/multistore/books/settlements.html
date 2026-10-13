@@ -1,0 +1,20 @@
+{#- Monthly settlements between stores (#245), made on the 1st and confirmed by both stores. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.settlements.title')">
+  <app-multistore-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('multistore.settlements.title')" :subtitle="t('multistore.settlements.lead')" :back="route('multistore.books')" :back-label="t('multistore.books.title')"/>
+    <template rx-if="rows">
+    {# [explain:multistore.settlements.template] #}
+    <rx-table :rows="rows" as="s" card :caption="t('multistore.settlements.title')">
+      <rx-column :label="t('multistore.settlements.month')"><a class="rx-link" href="{{ route('multistore.settlements.show', s.id) }}">{{ s.period_start | date("%B %Y") }}</a></rx-column>
+      <rx-column :label="t('multistore.settlements.pays')">{{ s.debtor }} <rx-badge rx-if="s.debtor_confirmed" kind="success">{{ t('multistore.settlements.confirmed_short') }}</rx-badge></rx-column>
+      <rx-column :label="t('multistore.settlements.paid')">{{ s.creditor }} <rx-badge rx-if="s.creditor_confirmed" kind="success">{{ t('multistore.settlements.confirmed_short') }}</rx-badge></rx-column>
+      <rx-column :label="t('multistore.settlements.amount')" align="num">{{ s.amount | money }}</rx-column>
+      <rx-column :label="t('multistore.settlements.status')"><rx-badge :kind="'success' if s.status == 'settled' else 'warning'">{{ t('multistore.settlements.status_' ~ s.status) }}</rx-badge></rx-column>
+    </rx-table>
+    {# [/explain:multistore.settlements.template] #}
+    <rx-pagination :page="pages"/>
+    </template>
+    <rx-card rx-else><rx-empty :title="t('multistore.settlements.empty')" icon="book-open"/></rx-card>
+  </rx-stack>
+</rx-page>

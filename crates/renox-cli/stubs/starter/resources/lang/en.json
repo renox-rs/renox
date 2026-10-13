@@ -1,0 +1,160 @@
+{
+  "nav": {
+    "home": "Home",
+    "dashboard": "Dashboard",
+    "notifications": "Notifications",
+    "account": "Account",
+    "users": "Users",
+    "activity": "Activity",
+    "admin": "Admin",
+    "app": "App",
+    "log_in": "Log in",
+    "register": "Register",
+    "log_out": "Log out",
+    "sections": "Sections"
+  },
+  "footer": {
+    "made_with": "Made with Renox."
+  },
+  "home": {
+    "eyebrow": "Made with the Renox starter kit",
+    "title": "Your new app,",
+    "accent": "ready to grow.",
+    "lead": "Sign-up with email verification, roles, a dashboard and an activity log are in place. Every page is a template you own: change it and refresh.",
+    "start": "Create an account",
+    "log_in": "Log in",
+    "open_dashboard": "Go to the dashboard",
+    "edit": "Edit resources/views/home/index.html and refresh: templates reload without a rebuild.",
+    "figures": {
+      "label": "This app in figures",
+      "people": "people signed up",
+      "roles": "roles, with permissions",
+      "binary": "binary to deploy"
+    },
+    "features": {
+      "title": "Everything a new app needs,",
+      "accent": "already working",
+      "lead": "The parts every app writes first, tested and on the UI kit.",
+      "more": "Read the docs",
+      "accounts": {
+        "title": "Accounts",
+        "text": "Sign-up, login, password reset, email verification and an account page where people manage their devices."
+      },
+      "roles": {
+        "title": "Roles and permissions",
+        "text": "Admins manage people and read the activity log; members have their own account."
+      },
+      "dashboard": {
+        "title": "A dashboard",
+        "text": "Figures over a period and a chart, with no chart library."
+      },
+      "activity": {
+        "title": "An activity log",
+        "text": "Logins, account changes and role changes, recorded and searchable."
+      },
+      "notifications": {
+        "title": "Notifications",
+        "text": "A bell with new ones arriving live, and a page for the rest."
+      }
+    },
+    "steps": {
+      "title": "Make it",
+      "accent": "yours",
+      "lead": "Three steps from this page to your own app on a server.",
+      "edit": {
+        "title": "Change this page",
+        "text": "Its template and the patterns it uses are files of this app."
+      },
+      "module": {
+        "title": "Add a feature",
+        "text": "A module with its pages, model, migration and tests."
+      },
+      "ship": {
+        "title": "Ship one binary",
+        "text": "Templates and files are built in; copy it to a server and run it."
+      }
+    }
+  },
+  "patterns": {
+    "art": {
+      "chart": "Sign-ups",
+      "chart_note": "This week",
+      "people": "New people this week",
+      "roles": "Roles built in",
+      "roles_note": "Admin and member",
+      "verified": "Email verified",
+      "verified_note": "Before the dashboard opens"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Welcome back,",
+    "lead": "What happened in your app, and what you did lately.",
+    "account": "Your account",
+    "users": "Manage users",
+    "stats": {
+      "signups": "New sign-ups",
+      "users": "Users",
+      "unread": "Unread notifications"
+    },
+    "chart": {
+      "title": "Sign-ups",
+      "description": "New accounts per day in this period"
+    },
+    "summary": {
+      "title": "At a glance",
+      "description": "People in this period and in all",
+      "this_period": "Signed up in this period",
+      "before": "In the period before",
+      "verified": "Verified their email",
+      "total": "People in all"
+    },
+    "activity": {
+      "title": "Your recent activity",
+      "more": "See all",
+      "empty": "Nothing yet",
+      "empty_text": "Logins and account changes show up here."
+    }
+  },
+  "users": {
+    "title": "Users",
+    "subtitle": "Everyone who signed up, and their roles.",
+    "figures": {
+      "label": "People in figures",
+      "people": "people",
+      "admins": "admins",
+      "verified": "verified"
+    },
+    "roles": "Roles",
+    "roles_of": "Roles of :name",
+    "roles_hint": "Admin: users and the activity log. Member: their own account.",
+    "no_role": "No role",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "activity": {
+    "title": "Activity",
+    "subtitle": "Logins, account changes and role changes.",
+    "empty": "Nothing recorded yet",
+    "empty_text": "Logins, account changes and role changes show up here as they happen."
+  },
+  "sign_in": {
+    "art": {
+      "title": "Good to see you.",
+      "accent": "Pick up where you left off.",
+      "secure": "Passwords hashed with Argon2, sessions encrypted",
+      "verified": "Email verified before the dashboard opens",
+      "recorded": "Every login in the activity log"
+    },
+    "demo": {
+      "title": "Seeded accounts",
+      "lead": "On this local database only. Tap one to fill the form; the password is",
+      "as": "Log in as :name"
+    }
+  },
+  "errors": {
+    "not_found": "That page isn't here. The link may be old or mistyped.",
+    "other": "Sorry, that didn't work.",
+    "home": "Go to the home page"
+  }
+}

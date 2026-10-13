@@ -1,0 +1,4 @@
+{#- A work order's status as a badge (tone and word agree):
+    `<app-workshop-status :status="order.status"/>`. -#}
+<rx-props status>
+<rx-badge text="{{ t('workshop.status.' ~ status) }}" :kind="{'booked': 'info', 'checked_in': 'info', 'in_progress': none, 'waiting_parts': 'warning', 'waiting_approval': 'warning', 'ready': 'success', 'completed': 'success', 'cancelled': none}[status]"/>

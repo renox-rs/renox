@@ -1,0 +1,25 @@
+{#- The demo billing gateway's "hosted page" (src/app/plans/demo.rs): stands
+    in for Stripe's or Xendit's page when their keys aren't set. Paying here
+    queues the webhook a gateway would send, signed, to this app's own
+    /billing/webhooks/demo. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.demo.title') }}">
+<app-plans-assets/>
+<div class="bs-demo-billing" data-bs-reveal>
+  <rx-alert kind="warning" title="{{ t('plans.demo.notice_title') }}" message="{{ t('plans.demo.notice') }}"/>
+  <rx-card title="{{ t('plans.demo.title') }}" subtitle="{{ t('plans.demo.merchant', shop=t('shop.name')) }}">
+    <rx-infolist columns="2">
+      <rx-entry label="{{ t('plans.fields.plan') }}" :value="paying.plan"/>
+      <rx-entry label="{{ t('plans.fields.bike') }}" :value="paying.bike"/>
+      <rx-entry label="{{ t('plans.fields.monthly') }}"><strong>{{ paying.amount | money }}</strong> / {{ t('blocks.plans.month') }}</rx-entry>
+    </rx-infolist>
+    <rx-form :action="action">
+      <input type="hidden" name="outcome" value="pay">
+      <rx-button label="{{ t('plans.demo.pay', amount=(paying.amount | money)) }}" variant="primary" block key="p"/>
+    </rx-form>
+    <rx-form :action="action">
+      <input type="hidden" name="outcome" value="decline">
+      <rx-button label="{{ t('plans.demo.decline') }}" variant="plain" block/>
+    </rx-form>
+  </rx-card>
+</div>
+</rx-page>

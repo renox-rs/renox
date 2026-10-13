@@ -1,0 +1,55 @@
+[package]
+name = "renox"
+description = "A batteries-included web framework for Rust, inspired by Laravel: Axum, HTMX and Alpine.js, SQLite or PostgreSQL, deployed as one binary."
+readme = "../../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+# docs.rs builds the API reference with these features on, so the PostgreSQL,
+# UUID and Excel APIs are documented too. Not `s3`: it builds aws-lc (C, cmake).
+[package.metadata.docs.rs]
+features = ["postgres", "uuid", "xlsx"]
+
+[features]
+default = ["fake", "http", "server-events"]
+# `renox::fake`, for factories with fake data.
+fake = ["renox-core/fake"]
+# `renox::http` sends real requests (brings reqwest; the test fake works without it).
+http = ["renox-core/http"]
+# `analytics::ServerEvent` (GA4 events sent from the server, over `renox::http`).
+server-events = ["http", "renox-core/server-events"]
+# S3-compatible storage (AWS S3, Cloudflare R2, MinIO) for `STORAGE_DISK=s3`.
+s3 = ["renox-core/s3"]
+# PostgreSQL databases (`DATABASE_URL=postgres://...`).
+postgres = ["renox-core/postgres"]
+# `uuid::Uuid` model fields (BLOB on SQLite, UUID on PostgreSQL).
+uuid = ["renox-core/uuid"]
+# Excel exports of data grids (`Grid::exports`, `export=xlsx`).
+xlsx = ["renox-core/xlsx"]
+
+[dependencies]
+renox-core.workspace = true
+renox-macros.workspace = true
+axum = "0.8.9"
+tokio = { version = "1.53.1", features = ["full"] }
+
+[dev-dependencies]
+anyhow = "1.0.104"
+futures-util = "0.3.34"
+http-body-util = "0.1.5"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+tempfile = "3.27.0"
+tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "rt-multi-thread"] }
+tower = { version = "0.5.3", features = ["util"] }
+# Captures what a test logs (it/logs.rs).
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
+# Reads back Excel exports (the zip rust_xlsxwriter writes with).
+zip = { version = "8.3", default-features = false, features = ["deflate"] }

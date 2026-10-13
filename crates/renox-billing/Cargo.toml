@@ -1,0 +1,22 @@
+[package]
+name = "renox-billing"
+description = "Subscriptions for Renox apps (plans, trials, upgrades, cancellations) with Stripe and Xendit."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "billing", "subscriptions", "stripe"]
+categories = ["web-programming::http-server"]
+
+[dependencies]
+renox.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+# A failed call to a payment provider is logged for the operators.
+tracing = "0.1.44"
+
+[dev-dependencies]
+# Captures what a test logs (the warnings the module writes).
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }

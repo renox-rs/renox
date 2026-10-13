@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and ideas
+    url: https://github.com/renox-rs/renox/discussions
+    about: Ask how to do something, or float an idea before it becomes a story.
+  - name: Report a vulnerability
+    url: https://github.com/renox-rs/renox/security/advisories/new
+    about: Privately, please (SECURITY.md).
+  - name: Documentation
+    url: https://github.com/renox-rs/renox/blob/main/docs/tutorial.md
+    about: The tutorial, the guides and the cheat sheet.

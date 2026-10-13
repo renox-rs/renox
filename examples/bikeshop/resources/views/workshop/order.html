@@ -1,0 +1,90 @@
+{#- A work order at the bench (#236): checklist, parts, notes and photos, extra work, status, payment. -#}
+<rx-page layout="layouts/staff.html" title="{{ t('workshop.order.title', number=order.id) }}">
+  <app-workshop-assets/>
+  <rx-stack>
+    <rx-page-header title="{{ t('workshop.order.title', number=order.id) }}" :subtitle="bike_name" :back="route('workshop.board')" back-label="{{ t('workshop.board.title') }}" :badge="t('workshop.source.' ~ source)"/>
+    <rx-alert rx-if="billed" kind="info" message="{{ t('workshop.order.billed', store=billed) }}"/>
+    <rx-alert rx-if="order.customer_note" kind="info" title="{{ t('workshop.order.customer_note') }}" :message="order.customer_note"/>
+    <div class="bs-order" data-bs-reveal>
+      <div class="bs-order__main">
+        <form method="post" action="{{ route('workshop.order.tasks', order.id) }}" id="checklist-form">
+          {{ csrf_field() }}
+          <rx-card title="{{ t('workshop.order.checklist') }}">
+            <rx-checkbox-list rx-if="tasks" name="done" label="{{ t('workshop.order.tasks_done') }}" :options="task_options" :selected="done_tasks"/>
+            <rx-empty rx-else title="{{ t('workshop.order.no_tasks') }}" icon="clipboard-list"/>
+            <rx-button rx-if="can_update and tasks" variant="secondary" icon="check">{{ t('workshop.order.save_checklist') }}</rx-button>
+          </rx-card>
+        </form>
+
+        {# [explain:workshop.order.template] #}
+        <rx-card title="{{ t('workshop.order.parts') }}">
+          <rx-list rx-if="parts" id="order-parts" label="{{ t('workshop.order.parts') }}">
+            <li rx-for="p in parts">
+              <span class="rx-list__main">{{ p.quantity }} × {{ p.name }} · {{ p.total | money }}</span>
+              <template rx-if="p.waiting">
+              <span class="rx-badge rx-badge--warning">{{ t('workshop.parts.waiting') }}</span>
+              <form rx-if="can_update" method="post" action="{{ route('workshop.order.parts.take', order.id, p.id) }}">{{ csrf_field() }}<rx-button size="small" variant="secondary">{{ t('workshop.parts.take') }}</rx-button></form>
+              </template>
+              <span rx-else class="rx-badge rx-badge--success">{{ t('workshop.parts.used') }}</span>
+            </li>
+          </rx-list>
+          <form rx-if="can_update and order.status not in ['completed', 'cancelled']" method="post" action="{{ route('workshop.order.parts', order.id) }}" id="part-form" novalidate>
+            {{ csrf_field() }}
+            <rx-form-grid columns="2">
+              <rx-select name="variant" label="{{ t('workshop.parts.part') }}" :options="[]" placeholder="{{ t('workshop.parts.search') }}" options-url="{{ route('workshop.parts', order.id) }}" searchable required :hint="t('workshop.parts.fitting') if fits else t('workshop.parts.any')"/>
+              <rx-input name="quantity" label="{{ t('workshop.parts.quantity') }}" type="number" :value="1" min="1" max="20"/>
+            </rx-form-grid>
+            <rx-button variant="secondary" icon="plus">{{ t('workshop.parts.add') }}</rx-button>
+          </form>
+        </rx-card>
+        {# [/explain:workshop.order.template] #}
+
+        <rx-card title="{{ t('workshop.order.notes') }}">
+          <rx-history rx-if="notes" :items="note_history" :label="t('workshop.order.notes')" date-format="%d %b %H:%M"/>
+          <form rx-if="can_update" method="post" action="{{ route('workshop.order.notes', order.id) }}" enctype="multipart/form-data" id="note-form" novalidate>
+            {{ csrf_field() }}
+            <rx-toggle-buttons name="kind" label="{{ t('workshop.notes.kind') }}" :options="[['note', t('workshop.notes.note')], ['before', t('workshop.notes.before')], ['after', t('workshop.notes.after')]]" :selected="'note'"/>
+            <rx-textarea name="body" label="{{ t('workshop.notes.body') }}" rows="2"/>
+            <rx-file name="photo" label="{{ t('workshop.notes.photo') }}" accept="image/*" preview/>
+            <rx-button variant="secondary" icon="plus">{{ t('workshop.notes.add') }}</rx-button>
+          </form>
+        </rx-card>
+      </div>
+
+      <div class="bs-order__side">
+        <rx-card title="{{ t('workshop.order.summary') }}">
+          <rx-infolist>
+            <rx-entry label="{{ t('workshop.fields.status') }}"><app-workshop-status :status="status"/></rx-entry>
+            <rx-entry label="{{ t('workshop.fields.customer') }}" :value="customer.name if customer else none"/>
+            <rx-entry label="{{ t('workshop.fields.store') }}" :value="store.name if store else none"/>
+            <rx-entry label="{{ t('workshop.fields.day') }}" :value="order.scheduled_for" format="datetime"/>
+            <rx-entry label="{{ t('workshop.order.mechanic') }}" :value="(mechanic)" placeholder="{{ t('workshop.board.unassigned') }}"/>
+            <rx-entry label="{{ t('workshop.fields.labour') }}" :value="order.labour" format="money"/>
+            <rx-entry label="{{ t('workshop.fields.parts') }}" :value="order.parts" format="money"/>
+            <rx-entry label="{{ t('workshop.fields.total') }}" :value="order.total" format="money"/>
+            <rx-entry label="{{ t('workshop.fields.paid') }}" :value="order.paid_at" format="datetime" placeholder="{{ t('workshop.service.not_paid') }}"/>
+          </rx-infolist>
+          <p rx-if="customer and customer.user_id is none and can('customers.manage')"><rx-link-button :href="route('accounts.invite', customer.id)" label="{{ t('accounts.invite.title') }}" variant="plain" size="small"/></p>
+          <form rx-if="can_update and not mine and order.status not in ['completed', 'cancelled']" method="post" action="{{ route('workshop.order.assign', order.id) }}">{{ csrf_field() }}<rx-button variant="secondary" block>{{ t('workshop.order.take') }}</rx-button></form>
+          <div rx-if="can_update and next" class="rx-stack" id="status-buttons">
+            <form rx-for="to in next" method="post" action="{{ route('workshop.order.status', order.id) }}">{{ csrf_field() }}<input type="hidden" name="status" value="{{ to }}"><rx-button :variant="'primary' if loop.first else 'secondary'" block>{{ t('workshop.order.to.' ~ to) }}</rx-button></form>
+          </div>
+          <form rx-if="payable and can_take_payment" method="post" action="{{ route('workshop.order.pay', order.id) }}" id="pay-form">
+            {{ csrf_field() }}
+            <rx-toggle-buttons name="method" label="{{ t('rentals.desk.method') }}" :options="[['card', t('rentals.methods.card')], ['cash', t('rentals.methods.cash')]]" :selected="'card'"/>
+            <rx-button icon="check" block>{{ t('workshop.order.pay', amount=(order.total | money)) }}</rx-button>
+          </form>
+        </rx-card>
+        <rx-action-sheet rx-if="can_update and customer and order.status in ['checked_in', 'in_progress', 'waiting_parts']" id="extra-work" label="{{ t('workshop.extra.propose') }}" :action="route('workshop.order.extra', order.id)" title="{{ t('workshop.extra.propose') }}" description="{{ t('workshop.extra.lead') }}" slide-over icon="plus">
+          <rx-textarea name="description" label="{{ t('workshop.extra.description') }}" rows="3" required id="extra-description"/>
+          <rx-checkbox-list name="tasks" label="{{ t('workshop.extra.tasks') }}" :options="all_tasks" columns="1" id="extra-tasks"/>
+          <rx-select name="part" label="{{ t('workshop.parts.part') }}" :options="[]" placeholder="{{ t('workshop.parts.search') }}" options-url="{{ route('workshop.parts', order.id) }}" searchable id="extra-part"/>
+          <rx-input name="quantity" label="{{ t('workshop.parts.quantity') }}" type="number" :value="1" min="1" max="20" id="extra-quantity"/>
+        </rx-action-sheet>
+        <rx-card rx-if="extras" title="{{ t('workshop.service.extras') }}">
+          <p rx-for="e in extras">{{ e.description }} · {{ e.total | money }} · <span class="rx-badge">{{ t('workshop.extra_status.' ~ e.status) }}</span></p>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

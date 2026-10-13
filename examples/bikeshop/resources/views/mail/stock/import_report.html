@@ -1,0 +1,11 @@
+{#- The report of a price list imported in the background (src/app/stock/import.rs
+    `ImportPriceList`): the summary and the rows left out with their messages. -#}
+<rx-mail>
+  <p><strong>{{ summary }}</strong></p>
+  <template rx-if="failed">
+    <p>{{ t('stock.mail.import.failed') }}</p>
+    <rx-mail-table :rows="table"/>
+    <p rx-if="more">{{ t('stock.mail.import.more', count=more) }}</p>
+  </template>
+  <rx-mail-button rx-if="url" :url="url" :label="t('stock.mail.import.open')"/>
+</rx-mail>

@@ -1,0 +1,7 @@
+<rx-props items label>
+{#- <app-figures :items="[…]" label="…"/>: figures side by side, one row on every screen.
+    `items` are `{"value": …, "label": …, "icon": …, "tone": …}`; `label` names the strip
+    for screen readers. -#}
+<ul class="app-figures" aria-label="{{ label }}">
+  <li rx-for="item in items" class="app-figures__item"><app-icon-circle rx-if="item.icon" :icon="item.icon" :tone="item.tone | default(none)"/><span class="app-figures__value">{{ item.value }}</span><span class="app-figures__label">{{ item.label }}</span></li>
+</ul>

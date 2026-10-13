@@ -1,0 +1,47 @@
+{#- Bikes placed at other stores (#245): requested, approved by the owner store, moved, called
+    back; and bikes away from their home with a "send back" task. -#}
+<rx-page layout="layouts/staff.html" :title="t('multistore.placements.title')">
+  <app-multistore-assets/>
+  <rx-stack>
+    <rx-page-header :title="t('multistore.placements.title')" :subtitle="t('multistore.placements.lead')">
+      <rx-link-button rx-if="can('fleet.place')" :href="route('multistore.placements.create', direction='ask')" :label="t('multistore.placements.ask')" icon="download"/>
+      <rx-link-button rx-if="can('fleet.place')" :href="route('multistore.placements.create', direction='place')" :label="t('multistore.placements.place')" variant="primary" icon="plus"/>
+    </rx-page-header>
+    <div class="bs-split" data-bs-reveal>
+      <div>
+        <rx-card :title="t('multistore.placements.list')" :subtitle="t('multistore.placements.list_lead')">
+          {# [explain:multistore.placements.template] #}
+          <rx-list rx-if="rows" id="placements" :label="t('multistore.placements.list')">
+            <li rx-for="p in rows">
+              <div class="rx-list__main">
+                <strong>{{ p.bike }}</strong> · {{ p.frame }} <app-multistore-placement-status :status="p.status"/>
+                <p class="rx-subtitle">{{ p.from }} → {{ p.to }} · {{ p.requested_at | date("%d %b %Y") }}<template rx-if="p.note"> · {{ p.note }}</template></p>
+              </div>
+              <rx-row-actions>
+                <template rx-if="p.can_decide">
+                  <rx-form :action="route('multistore.placements.decide', p.id)"><input type="hidden" name="decision" value="refuse"><rx-button :label="t('multistore.placements.refuse')" variant="secondary" size="small"/></rx-form>
+                  <rx-form :action="route('multistore.placements.decide', p.id)"><input type="hidden" name="decision" value="approve"><rx-button :label="t('multistore.placements.approve')" size="small" icon="check"/></rx-form>
+                </template>
+                <rx-form rx-if="p.can_move" :action="route('multistore.placements.move', p.id)" :id="'move-' ~ p.id"><rx-button :label="t('multistore.placements.move')" variant="primary" size="small" icon="next"/></rx-form>
+                <rx-confirm rx-if="p.can_recall" :id="'recall-' ~ p.id" :label="t('multistore.placements.recall')" :action="route('multistore.placements.recall', p.id)" :title="t('multistore.placements.recall_title', frame=p.frame)" :message="t('multistore.placements.recall_text', store=p.to)" method="POST" size="small"/>
+              </rx-row-actions>
+            </li>
+          </rx-list>
+          <rx-empty rx-else :title="t('multistore.placements.none')" icon="map-pin"/>
+          {# [/explain:multistore.placements.template] #}
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('multistore.placements.send_back_title')" :subtitle="t('multistore.placements.send_back_lead')">
+          <rx-list rx-if="send_back" id="send-back" :label="t('multistore.placements.send_back_title')">
+            <li rx-for="b in send_back">
+              <div class="rx-list__main"><strong>{{ b.bike }}</strong> · {{ b.frame }}<p class="rx-subtitle">{{ t('multistore.placements.away', at=b.at, home=b.home, owner=b.owner) }}</p></div>
+              <rx-form rx-if="b.can_send" :action="route('multistore.placements.send_back', b.bike_id)" :id="'send-back-' ~ b.bike_id"><rx-button :label="t('multistore.placements.send_back', store=b.home)" variant="secondary" size="small" icon="next"/></rx-form>
+            </li>
+          </rx-list>
+          <rx-empty rx-else :title="t('multistore.placements.all_home')" icon="house"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

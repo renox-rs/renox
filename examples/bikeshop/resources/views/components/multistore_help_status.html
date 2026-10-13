@@ -1,0 +1,5 @@
+{#- A help request's status as a badge: `<app-multistore-help-status :row="r"/>`. -#}
+<rx-props row>
+<rx-let name="tones" :value="{'requested': 'info', 'approved': 'success', 'refused': none, 'withdrawn': none, 'ended_early': 'warning'}"/>
+<rx-badge rx-if="row.active" kind="success">{{ t('multistore.help.status.active') }}</rx-badge>
+<rx-badge rx-else :kind="tones[row.status]">{{ t('multistore.help.status.' ~ row.status) }}</rx-badge>

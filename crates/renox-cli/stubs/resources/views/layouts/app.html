@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  {#- Title, description, canonical URL and social cards; a page fills the
+      "seo" block with seo(title="…", description="…", image="…") -#}
+  <rx-outlet name="seo">{{ seo() }}</rx-outlet>
+  <rx-head/>
+  {#- The UI kit (renox/ui.html, docs/ui.md): its styles and behavior. -#}
+  <rx-ui/>
+  <link rel="stylesheet" href="{{ asset('app.css') }}">
+  {#- What pages and components push with rx-push stack="head". -#}
+  <rx-outlet stack="head"/>
+</head>
+<body class="rx-page">
+  {#- The kit's navigation bar (docs/ui.md "Navigation"): add sections with rx-nav-links and rx-nav-link. -#}
+  <rx-navbar brand="{{ app.name }}" href="{{ route('home') }}">
+    <span class="rx-spacer"></span>
+    <template rx-if="auth.check">
+      <rx-menu :label="auth.user.name" id="account-menu" variant="plain">
+        <rx-menu-link route="account.show" label="Account"/>
+        <rx-menu-separator/>
+        <rx-menu-action route="logout" label="Log out"/>
+      </rx-menu>
+    </template>
+    <template rx-else>
+      <rx-link-button route="login" label="Log in" variant="plain" size="small"/>
+      <rx-link-button route="register" label="Register" variant="primary" size="small"/>
+    </template>
+  </rx-navbar>
+  <main class="rx-container" id="main">
+    <rx-alert rx-if="flash.status" kind="success">{{ flash.status }}</rx-alert>
+    <rx-outlet name="content"/>
+  </main>
+  {#- Toasts from `Toast::success(…)`, after a redirect or an htmx request. -#}
+  <rx-toasts/>
+  {#- Scripts pushed by pages and components, e.g. a chart library, once. -#}
+  <rx-outlet stack="scripts"/>
+</body>
+</html>

@@ -1,0 +1,50 @@
+name: Release build (site)
+
+# Builds the documentation site (renox-site) on the same Ubuntu (glibc) as the
+# production server. The server pulls the artifact with `gh run download`;
+# CI holds no server keys.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "docs/**"
+      - "crates/**"
+      - "*.md"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/release-site.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-site-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build renox-site (x86_64-linux, ubuntu-24.04)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --locked -p renox-site
+      - name: Package
+        run: |
+          mkdir dist
+          cp target/release/renox-site dist/
+          strip dist/renox-site
+          echo "${GITHUB_SHA}" > dist/REVISION
+          (cd dist && sha256sum renox-site > renox-site.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: renox-site-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+          if-no-files-found: error

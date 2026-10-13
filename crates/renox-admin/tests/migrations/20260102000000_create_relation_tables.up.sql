@@ -1,0 +1,24 @@
+CREATE TABLE variants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL REFERENCES products (id),
+    name TEXT NOT NULL,
+    stock INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL
+);
+CREATE TABLE product_tag (
+    product_id INTEGER NOT NULL REFERENCES products (id),
+    tag_id INTEGER NOT NULL REFERENCES tags (id),
+    PRIMARY KEY (product_id, tag_id)
+);
+CREATE TABLE settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE audits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note TEXT NOT NULL
+);

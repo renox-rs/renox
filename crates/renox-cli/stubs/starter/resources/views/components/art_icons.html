@@ -1,0 +1,5 @@
+<rx-props :names="['users', 'layout-dashboard', 'bell']">
+{#- The compact hero's art: three icons over the theme's colours. -#}
+<div class="app-art" aria-hidden="true">
+  <div class="app-art__icons"><span rx-for="name in names"><rx-icon :name="name" :size="26"/></span></div>
+</div>

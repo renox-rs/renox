@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Navigation</title>
+  {{ renox_head() }}
+  {{ renox_ui() }}
+</head>
+<body class="rx-page">
+  {% from "renox/ui.html" import navbar, nav_links, nav_link, nav_search, menu, menu_link, sheet, sidebar_link, input, link_button %}
+  {%- set tabs = [
+    {"href": route('tabs.home'), "label": "Home", "icon": "house", "active": route_is('tabs.home')},
+    {"href": route('tabs.orders'), "label": "Orders", "icon": "receipt", "active": route_is('tabs.orders'), "badge": 3},
+    {"href": "/widgets", "label": "Widgets", "icon": "sliders-horizontal"},
+    {"href": "/overlays", "label": "Overlays with a long name", "icon": "layout-dashboard"},
+    {"open": "nav-more", "label": "More", "icon": "menu"},
+  ] %}
+  {% call navbar("Fixture", href=route('tabs.home'), mark=true, width="wide", tabs=tabs) %}
+    {% call nav_links() %}
+      {{ nav_link(route('tabs.home'), "Home", active=route_is('tabs.home')) }}
+      {{ nav_link(route('tabs.orders'), "Orders", active=route_is('tabs.orders'), badge=3) }}
+      {{ nav_link("/widgets", "Widgets") }}
+    {% endcall %}
+    <span class="rx-spacer"></span>
+    {% call nav_search(label="Search orders") %}
+      <form role="search" method="get" action="/tabs/orders" id="nav-search-form">
+        {{ input("q", "Search orders", type="search", hide_label=true, placeholder="Search orders") }}
+      </form>
+    {% endcall %}
+    <span class="rx-hide-narrow" id="nav-account">{{ link_button("/plain", "Account", variant="plain", size="small") }}</span>
+  {% endcall %}
+  {% call sheet("nav-more", "More", slide_over=true, width="sm") %}
+    {{ sidebar_link("/plain", "Account") }}
+    {{ sidebar_link("/errors", "Errors") }}
+  {% endcall %}
+  <main class="rx-container" id="main">
+    <h1 class="rx-title">{{ "Orders" if route_is('tabs.orders') else "Home" }}</h1>
+    {%- for n in range(40) %}<p>Line {{ n + 1 }} of a long page.</p>{% endfor %}
+    <p id="last">The end of the page.</p>
+  </main>
+</body>
+</html>

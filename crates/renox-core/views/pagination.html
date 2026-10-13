@@ -1,0 +1,31 @@
+{#- Page links for a `Paginated` value:
+    {% from "renox/pagination.html" import pagination %}
+    {{ pagination(products) }}
+    Links keep the page's other query parameters (e.g. ?q=coffee).
+    Add hx-boost="true" on a parent element to swap pages without a full reload. -#}
+{% macro pagination(p) -%}
+{% if p.last_page > 1 -%}
+<nav class="pagination" aria-label="Pagination">
+  {%- if p.has_prev %}<a href="{{ page_url(p.page - 1) }}" rel="prev">&laquo;</a>{% else %}<span aria-disabled="true">&laquo;</span>{% endif %}
+  {%- for n in p.pages %}
+    {%- if n is none %}<span class="gap">&hellip;</span>
+    {%- elif n == p.page %}<span aria-current="page">{{ n }}</span>
+    {%- else %}<a href="{{ page_url(n) }}">{{ n }}</a>{% endif %}
+  {%- endfor %}
+  {%- if p.has_next %}<a href="{{ page_url(p.page + 1) }}" rel="next">&raquo;</a>{% else %}<span aria-disabled="true">&raquo;</span>{% endif -%}
+</nav>
+{%- endif %}
+{%- endmacro %}
+
+{#- Previous / next links for a `SimplePage` (no total):
+    {% from "renox/pagination.html" import simple_pagination %}
+    {{ simple_pagination(orders) }} -#}
+{% macro simple_pagination(p) -%}
+{% if p.has_prev or p.has_next -%}
+<nav class="pagination" aria-label="Pagination">
+  {%- if p.has_prev %}<a href="{{ page_url(p.page - 1) }}" rel="prev">&laquo;</a>{% else %}<span aria-disabled="true">&laquo;</span>{% endif %}
+  <span aria-current="page">{{ p.page }}</span>
+  {%- if p.has_next %}<a href="{{ page_url(p.page + 1) }}" rel="next">&raquo;</a>{% else %}<span aria-disabled="true">&raquo;</span>{% endif -%}
+</nav>
+{%- endif %}
+{%- endmacro %}

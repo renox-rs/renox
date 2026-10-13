@@ -1,0 +1,30 @@
+{#- The active store's orders (src/app/sales/staff.rs `index`). -#}
+<rx-page layout="layouts/staff.html" title="{{ t('sales.staff.title') }}">
+  <app-sales-assets/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header title="{{ t('sales.staff.title') }}" subtitle="{{ t('sales.staff.lead') }}">
+      <rx-link-button rx-if="can('orders.sell')" route="sales.counter" variant="primary" label="{{ t('sales.counter.title') }}" data-rx-key="n"/>
+    </rx-page-header>
+    {# [explain:sales.orders.index.template] #}
+    <rx-link-tabs :items="tab_items" :current="current_tab" label="{{ t('sales.staff.tabs') }}"/>
+    {# [/explain:sales.orders.index.template] #}
+    <template rx-if="orders.items">
+    <div class="rx-card">
+      {# [explain:sales.orders.index.template] #}
+      <rx-table :rows="orders.items" as="o" caption="{{ t('sales.staff.title') }}">
+        <rx-column label="{{ t('sales.orders.number') }}"><a class="rx-link" href="{{ route('sales.orders.show', o.id) }}">{{ o.number }}</a></rx-column>
+        {# [/explain:sales.orders.index.template] #}
+        <rx-column label="{{ t('sales.orders.placed_at') }}">{{ o.placed_at | date("%Y-%m-%d %H:%M") }}</rx-column>
+        <rx-column label="{{ t('sales.orders.customer') }}">{{ o.customer or t('sales.staff.walk_in') }}</rx-column>
+        <rx-column label="{{ t('sales.orders.channel') }}">{{ t('sales.channel.' ~ o.channel) }} · {{ t('sales.checkout.' ~ o.fulfilment) }}</rx-column>
+        <rx-column label="{{ t('sales.orders.status') }}"><rx-badge text="{{ t('sales.status.' ~ o.status) }}" :kind="'success' if o.status in ['paid', 'ready'] else ('warning' if o.status == 'pending' else none)"/></rx-column>
+        <rx-column label="{{ t('sales.orders.total') }}" align="num">{{ o.total | money }}</rx-column>
+      </rx-table>
+    </div>
+    {# [explain:sales.orders.index.template] #}
+    <rx-pagination :page="orders"/>
+    {# [/explain:sales.orders.index.template] #}
+    </template>
+    <div rx-else class="rx-card"><rx-empty title="{{ t('sales.staff.empty') }}" icon="receipt"/></div>
+  </rx-stack>
+</rx-page>

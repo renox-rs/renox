@@ -1,0 +1,22 @@
+[package]
+name = "{{name}}"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+{{renox_dependency}}
+serde = { version = "1", features = ["derive"] }
+
+# Password hashing (Argon2) is deliberately slow, and far slower unoptimised:
+# every login, registration and auth test paid for it. Optimise just these
+# crates in dev and test builds; the rest stays quick to compile.
+[profile.dev.package.argon2]
+opt-level = 3
+
+[profile.dev.package.blake2]
+opt-level = 3
+
+# Line numbers in backtraces, without full debug info: much smaller dev
+# binaries and faster links on every `rnx serve` rebuild.
+[profile.dev]
+debug = "line-tables-only"

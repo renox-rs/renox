@@ -1,0 +1,372 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  lint:
+    name: fmt, clippy, docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # Without the default features (`fake`, `server-events`).
+      - run: cargo clippy -p renox --no-default-features -- -D warnings
+      # No C crypto library in a default build (reqwest and lettre use ring).
+      - run: "! cargo tree -p hello -e normal -i aws-lc-rs"
+      - run: cargo doc --workspace --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # renox-cli's tests run rustfmt on the apps `rnx new` writes.
+          components: rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace
+
+  postgres:
+    name: test (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: renox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Every test app gets a fresh schema in this database instead of an
+      # in-memory SQLite one (see `db::connect`).
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/renox_test
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The bike shop runs on both databases (its own PostgreSQL migrations;
+      # tests/fields.rs round-trips every column type, tests/queries.rs walks
+      # its main pages on the large seed here too). examples/hello is SQLite.
+      - run: cargo test -p renox -p renox-core -p renox-cli -p bikeshop --features renox/postgres
+
+  chaos:
+    name: chaos (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # Stops, pauses and restarts PostgreSQL (or locks SQLite) under a running
+      # app and checks it answers fast and recovers; see docs/operations.md.
+      - run: tests/chaos/run.sh ${{ matrix.database }}
+
+  msrv:
+    name: MSRV (1.94)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Keep in step with `rust-version` in Cargo.toml. A Rust version, not an action
+      # release: Dependabot must not bump it (#156, #158).
+      - uses: dtolnay/rust-toolchain@1.94
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --workspace --all-targets --all-features
+
+  features:
+    name: feature matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack
+      # Every feature on its own, none (a SQLite-only build) and all of them:
+      # a missing `#[cfg(feature = …)]` fails here.
+      - run: cargo hack check -p renox-core -p renox --each-feature --no-dev-deps
+
+  semver:
+    name: semver checks
+    # The public API against the latest release on crates.io (1.0.0 and up,
+    # #139): a breaking change fails here, since 1.x promises none.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-semver-checks
+      # renox-macros is a proc-macro crate, which cargo-semver-checks can't read.
+      # `--release-type minor`: the version only changes at a release, so an
+      # unreleased change is checked as the next minor (additions pass, breaking
+      # changes fail).
+      - run: cargo semver-checks -p renox-core -p renox --release-type minor
+
+  cli:
+    name: rnx new + make:* (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: renox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # The postgres apps run their tests, commands and HTTP checks on this server.
+      E2E_POSTGRES: ${{ matrix.database == 'postgres' && 'postgres://postgres:postgres@localhost:5432' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          # The new apps must pass `cargo fmt --check` and clippy as written.
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/cli-e2e"
+      # New apps made with the `rnx new` options people combine, and one with every
+      # generator's output, must be formatted, lint-free, pass their tests, and work
+      # over HTTP (tests/cli/smoke.py).
+      - run: tests/cli/run.sh ${{ matrix.database }}
+
+  browser:
+    name: browser (${{ matrix.shard }})
+    runs-on: ubuntu-latest
+    # Two halves in parallel keep the job under 10 minutes (#262); a hang
+    # fails here instead of after GitHub's six hours.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [rest, bikeshop]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      # Headless Chrome (preinstalled on the runner) driven over the DevTools
+      # protocol by Node's own test runner: renox.js, the UI kit and the data
+      # grid on the fixture, the editors, the guestbook (tests/browser, #262),
+      # and the bike shop's pages, flows and blocks (bikeshop-*.test.mjs).
+      - run: tests/browser/run.sh
+        env:
+          BROWSER_SHARD: ${{ matrix.shard }}
+          BROWSER_SCREENS: ${{ github.workspace }}/browser-screens
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-screens-${{ matrix.shard }}
+          path: browser-screens
+
+  process:
+    name: process
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # The app binary and rnx as real processes (signals, workers, the
+      # scheduler, systemd's socket, logs, prompts, rnx serve and build,
+      # Tailwind through a stand-in), and both example binaries served and
+      # asked for their pages as a guest and logged in (tests/process, #270);
+      # then the engine checks and the bike shop on PostgreSQL.
+      - run: sudo apt-get update && sudo apt-get install -y systemd
+      - run: tests/process/run.sh
+        env:
+          RNX_BUILD: 1
+      - run: tests/process/run.sh postgres
+        env:
+          PROCESS_POSTGRES: postgres://postgres:postgres@localhost:5432
+
+  tutorial:
+    name: tutorial (docs/tutorial.md, followed step by step)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/tutorial"
+      # A reader who follows the tutorial must end up with an app that passes
+      # cargo fmt --check, clippy and the tests the tutorial writes, and runs.
+      - run: tests/tutorial/run.sh
+
+  docker:
+    name: docker (make:deploy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # `rnx new` pins the app to this commit, which GitHub has (a PR's
+          # merge commit may be gone by the time the image builds).
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> target/cli-e2e"
+      # As users do: Renox from GitHub, the Dockerfile `make:deploy` writes,
+      # then the container must answer /health.
+      - run: tests/cli/run.sh
+        env:
+          FROM_GIT: 1
+          DOCKER: 1
+
+  s3:
+    name: S3 storage (SeaweedFS)
+    runs-on: ubuntu-latest
+    env:
+      TEST_S3_ENDPOINT: http://127.0.0.1:8333
+      TEST_S3_BUCKET: renox-test
+      TEST_S3_ACCESS_KEY_ID: renox
+      TEST_S3_SECRET_ACCESS_KEY: renox-secret
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # MinIO no longer publishes images; SeaweedFS speaks the same S3 API.
+      - name: Start SeaweedFS
+        run: |
+          docker run -d --name renox-s3 -p 8333:8333 \
+            -e AWS_ACCESS_KEY_ID=$TEST_S3_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY=$TEST_S3_SECRET_ACCESS_KEY \
+            chrislusf/seaweedfs:4.47 server -s3 -ip.bind=0.0.0.0
+          for _ in $(seq 60); do
+            docker exec renox-s3 sh -c "echo 's3.bucket.create -name $TEST_S3_BUCKET' | weed shell" 2>/dev/null \
+              | grep -q "created bucket" && exit 0
+            sleep 1
+          done
+          docker logs renox-s3 | tail -40
+          exit 1
+      - run: cargo test -p renox --features s3 --test it s3
+      # The bike shop's /about/fields photos and manuals on the same server.
+      - run: cargo test -p bikeshop --features s3 --test fields
+
+  deny:
+    name: cargo-deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Licenses, RustSec advisories, banned crates and sources (deny.toml).
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  coverage:
+    name: coverage
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: renox_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+      # #247: every library crate, the CLI and the macros
+      # (measured while the test crates compile), on SQLite with Excel
+      # exports, then again on PostgreSQL; the two runs are merged. Doctests
+      # aren't counted on stable.
+      - run: >-
+          cargo llvm-cov --no-report
+          -p renox -p renox-core -p renox-cli -p renox-macros
+          -p renox-2fa -p renox-oauth -p renox-admin -p renox-billing -p renox-editors
+          -p renox-blocks --features renox/xlsx
+      - run: >-
+          cargo llvm-cov --no-report
+          -p renox -p renox-core -p renox-cli
+          -p renox-2fa -p renox-oauth -p renox-admin -p renox-billing -p renox-editors
+          --features renox/postgres
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/renox_test
+      - run: cargo llvm-cov report --summary-only | tee coverage.txt
+      - run: cargo llvm-cov report --html --output-dir coverage-html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage-html/html
+      - run: |
+          echo '### Line coverage (SQLite + PostgreSQL)' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat coverage.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Doctests are not counted (stable Rust has no doctest coverage); the examples, tests/browser and tests/process are measured by their own jobs, not here. The job fails under 90 % of lines in total.' >> "$GITHUB_STEP_SUMMARY"
+      # The floor (#247): the total line coverage of the crates above. The
+      # summary and the HTML report are written first, so a drop is visible.
+      - run: cargo llvm-cov report --fail-under-lines 90 > /dev/null

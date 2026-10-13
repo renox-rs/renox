@@ -1,0 +1,45 @@
+/* The service plans' pages (#237): CSS grids spaced with the kit's tokens
+   (--rx-space-*), type from the kit's scale (--rx-type-*); no sizes of our own.
+   Loaded by those pages only, through the layout's `head` stack. */
+
+/* /plans: the compared plans, then how a plan works. */
+.bs-plans-page { display: grid; gap: var(--rx-space-6); min-width: 0; }
+/* How a plan works: three numbered steps, each led by an icon in a tinted
+   circle (the number stays for screen readers: it's an <ol>). */
+.bs-plans-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(15rem, 100%), 1fr)); gap: var(--rx-space-5); margin: 0; padding: 0; list-style: none; font: var(--rx-type-body); }
+.bs-plans-steps li { display: grid; gap: var(--rx-space-3); align-content: start; }
+.bs-plans-page__how { display: grid; gap: var(--rx-space-3); }
+.bs-plans-page__actions { display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-2); }
+
+/* /plans/subscribe: the choices beside the summary on a wide screen, above it on a phone. */
+.bs-subscribe { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-subscribe { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); } }
+.bs-subscribe__summary { position: sticky; top: var(--rx-space-6); min-width: 0; }
+.bs-subscribe__price { font: var(--rx-type-heading); }
+
+/* /plans/mine: a card per bike. */
+.bs-my-plans { display: grid; gap: var(--rx-space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 20rem), 1fr)); }
+.bs-my-plan { display: grid; gap: var(--rx-space-3); align-content: start; }
+.bs-my-plan__header { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--rx-space-2); }
+
+/* /plans/mine/{plan}: the visits beside the details and changes. */
+.bs-plan-page { display: grid; gap: var(--rx-space-6); align-items: start; }
+@media (min-width: 64rem) { .bs-plan-page { grid-template-columns: minmax(0, 3fr) minmax(18rem, 2fr); } }
+.bs-plan-page__main, .bs-plan-page__side { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-plan-actions { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr)); gap: var(--rx-space-2); margin-top: var(--rx-space-3); }
+.bs-plan-actions > form, .bs-plan-actions > .rx-button { display: grid; }
+.bs-visits { margin-top: var(--rx-space-4); }
+.bs-visit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--rx-space-2) var(--rx-space-3); }
+.bs-visit__when { display: grid; gap: var(--rx-space-1); font: var(--rx-type-body); }
+.bs-visit__when .rx-subtitle { font: var(--rx-type-note); }
+.bs-visit__actions { grid-column: 1 / -1; display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-2); }
+.bs-visit[data-bs-leaving] { pointer-events: none; }
+
+/* /plans/mails: the previews side by side on a wide screen. */
+.bs-plan-mails { display: grid; gap: var(--rx-space-4); grid-template-columns: repeat(auto-fill, minmax(min(100%, 28rem), 1fr)); }
+.bs-plan-mails__frame { display: block; width: 100%; height: 34rem; border: var(--rx-surface-border); border-radius: var(--rx-radius-s); background: #fff; }
+
+/* The demo gateway's page and renox-billing's replaced plans page. */
+.bs-demo-billing { display: grid; gap: var(--rx-space-4); max-width: 32rem; margin-inline: auto; }
+.bs-demo-billing form { margin-top: var(--rx-space-2); }
+.bs-billing-plan { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--rx-space-3); }

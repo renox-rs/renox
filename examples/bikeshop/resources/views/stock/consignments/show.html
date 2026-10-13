@@ -1,0 +1,60 @@
+{#- One consignment shipment (#240, #245): its steps, its lines (sent, received, sent back),
+    and the buttons for the step the person may take, each checked in the store that matters. -#}
+<rx-page layout="layouts/staff.html" :title="'CS-' ~ shipment.id">
+  <app-stock-assets/>
+  <rx-stack>
+    {# [explain:stock.consignments.show.template] #}
+    <rx-page-header :title="'CS-' ~ shipment.id" :subtitle="t('stock.consignments.from_to', owner=owner, location=location)" :back="route('stock.consignments')" :back-label="t('stock.consignments.title')">
+      <rx-form rx-if="actions.approve" :action="route('stock.consignments.decide', shipment.id)"><input type="hidden" name="decision" value="refuse"><rx-button :label="t('stock.consignments.refuse')" variant="secondary"/></rx-form>
+      <rx-form rx-if="actions.approve" :action="route('stock.consignments.decide', shipment.id)"><input type="hidden" name="decision" value="approve"><rx-button :label="t('stock.consignments.approve')" icon="check"/></rx-form>
+      <rx-form rx-if="actions.ship" :action="route('stock.consignments.ship', shipment.id)" id="ship-form"><rx-button :label="t('stock.consignments.ship')" icon="box" title="{{ t('stock.consignments.ship_text', location=location) }}"/></rx-form>
+      <rx-confirm rx-if="actions.recall" id="recall" :label="t('stock.consignments.recall')" :action="route('stock.consignments.recall', shipment.id)" :title="t('stock.consignments.recall')" :message="t('stock.consignments.recall_text', location=location)" method="POST"/>
+      <rx-form rx-if="actions.send_back" :action="route('stock.consignments.send_back', shipment.id)" id="send-back-form"><rx-button :label="t('stock.consignments.send_back')" icon="box" title="{{ t('stock.consignments.send_back_text', owner=owner) }}"/></rx-form>
+      <rx-form rx-if="actions.receive_back" :action="route('stock.consignments.receive_back', shipment.id)" id="receive-back-form"><rx-button :label="t('stock.consignments.receive_back')" icon="check" title="{{ t('stock.consignments.receive_back_text') }}"/></rx-form>
+    </rx-page-header>
+    {# [/explain:stock.consignments.show.template] #}
+    <rx-alert rx-if="status == 'refused'" :message="t('stock.consignments.refused_text', owner=owner)" kind="warning"/>
+    <rx-alert rx-if="in_transit" :message="t('stock.consignments.in_transit_text')" kind="info"/>
+    <app-stock-steps :items="steps" prefix="stock.consignments.status." :label="t('stock.consignments.steps')"/>
+    <div class="bs-split">
+      <div>
+        <rx-form rx-if="actions.receive" :action="route('stock.consignments.receive', shipment.id)" id="receive-form" novalidate>
+          <rx-form-errors/>
+          <rx-card :title="t('stock.consignments.receive')" :subtitle="t('stock.consignments.receive_lead')">
+            <ul class="bs-rows" role="list">
+              <li class="bs-row bs-row--head" aria-hidden="true"><span>{{ t('stock.fields.product') }}</span><span class="bs-row__figure">{{ t('stock.consignments.to_arrive') }}</span><span>{{ t('stock.consignments.arrived') }}</span></li>
+              <li rx-for="l in lines | selectattr('open', 'gt', 0)" class="bs-row">
+                <span class="bs-row__name">{{ l.name }}<small>{{ l.sku }}</small></span>
+                <span class="bs-row__figure">{{ l.open }}</span>
+                <span><input type="hidden" name="lines[{{ loop.index0 }}][line]" value="{{ l.id }}"><rx-input name="lines[{{ loop.index0 }}][received]" :label="t('stock.consignments.arrived_of', name=l.name)" type="number" :value="l.open" hide-label min="0" :max="l.open"/></span>
+              </li>
+            </ul>
+            <rx-checkbox name="close" :label="t('stock.consignments.close')" :hint="t('stock.consignments.close_hint')"/>
+            <rx-button :label="t('stock.consignments.receive')" icon="check"/>
+          </rx-card>
+        </rx-form>
+        <rx-card :title="t('stock.consignments.lines')">
+          <rx-table :rows="lines" as="l" :caption="t('stock.consignments.lines')">
+            <rx-column :label="t('stock.fields.product')">{{ l.name }}<br><span class="rx-subtitle">{{ l.sku }}</span></rx-column>
+            <rx-column :label="t('stock.consignments.sent')" align="num">{{ l.quantity }}</rx-column>
+            <rx-column :label="t('stock.consignments.received')" align="num">{{ l.received_quantity }}</rx-column>
+            <rx-column :label="t('stock.consignments.returned')" align="num">{{ l.returned_quantity }}</rx-column>
+          </rx-table>
+        </rx-card>
+      </div>
+      <div>
+        <rx-card :title="t('stock.consignments.details')">
+          <rx-infolist>
+            <rx-entry :label="t('stock.fields.status')"><app-stock-shipment-status :status="status"/></rx-entry>
+            <rx-entry :label="t('stock.fields.owner_store')" :value="(owner)" :hint="t('stock.consignments.owner_hint')"/>
+            <rx-entry :label="t('stock.fields.location_store')" :value="location" :hint="t('stock.consignments.location_hint')"/>
+            <rx-entry :label="t('stock.consignments.note')" :value="shipment.note"/>
+          </rx-infolist>
+        </rx-card>
+        <rx-card :title="t('stock.consignments.history')">
+          <rx-history :items="events" :label="t('stock.consignments.history')" date-format="%d %b %Y %H:%M"/>
+        </rx-card>
+      </div>
+    </div>
+  </rx-stack>
+</rx-page>

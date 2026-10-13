@@ -1,0 +1,36 @@
+{#- `staff.roles.index`: the role × permission matrix (src/app/staff/roles.rs).
+    A CSS grid with table semantics (role="table"): the permission in the
+    first column, then one switch per role (`columns`), grouped by area.
+    Each switch posts on its own with htmx (`staff.roles.toggle`): checked
+    grants, unchecked revokes; the answer is a toast. Without JavaScript the
+    form's button sends the switch the same way. -#}
+<rx-page layout="layouts/staff.html" :title="t('staff.roles.title')">
+  <app-staff-styles/>
+  <rx-stack data-bs-reveal>
+    <rx-page-header :title="t('staff.roles.title')" :subtitle="t('staff.roles.lead')"/>
+    <rx-alert :message="t('staff.roles.note')" kind="info"/>
+    <rx-card>
+    <div class="bs-matrix-wrap">
+      <div class="bs-matrix" role="table" aria-label="{{ t('staff.roles.title') }}" style="--bs-roles: {{ columns | length }}" id="matrix">
+        <div role="row">
+          <div role="columnheader">{{ t('staff.roles.permission') }}</div>
+          <div rx-for="c in columns" role="columnheader" data-bs-role="{{ c.name }}">{{ tx(c.label) }}<rx-badge rx-if="c.global">{{ t('staff.roles.global') }}</rx-badge><span class="rx-subtitle">{{ t('staff.roles.count', count=c.count) }}</span></div>
+        </div>
+        <template rx-for="row in rows">
+        <div rx-if="row.new_group" role="row"><div role="rowheader" class="bs-matrix__group" aria-level="2">{{ tx(row.group) }}</div></div>
+        {# [explain:staff.roles.index.template] #}
+        <div role="row" data-bs-permission="{{ row.name }}">
+          <div role="rowheader"><code>{{ row.name }}</code><span>{{ tx(row.description) }}</span></div>
+          <div rx-for="cell in row.cells" role="cell">
+            <rx-checkbox name="granted" :label="t('staff.roles.cell', role=tx(cell.role), permission=row.name)" :checked="cell.granted" switch hide-label
+                         :disabled="cell.locked" id="perm-{{ cell.role }}-{{ row.name | replace('.', '-') }}"
+                         hx-post="{{ route('staff.roles.toggle', cell.role, row.name) }}" hx-trigger="change" hx-swap="none" data-bs-cell="{{ cell.role }}:{{ row.name }}"/>
+          </div>
+        </div>
+        {# [/explain:staff.roles.index.template] #}
+        </template>
+      </div>
+    </div>
+    </rx-card>
+  </rx-stack>
+</rx-page>

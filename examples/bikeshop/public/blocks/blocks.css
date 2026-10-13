@@ -1,0 +1,12 @@
+/* The styles of the /about/blocks showcase page (the blocks themselves are
+   renox-blocks'; the date picker with closed days is the kit's date_picker). */
+
+/* ---------- /about/blocks (the blocks' showcase page) ---------- */
+
+.bs-showcase { display: grid; gap: var(--rx-space-6); }
+.bs-showcase__toc { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); margin: 0; padding: 0; list-style: none; }
+.bs-showcase__demo { display: grid; gap: var(--rx-space-4); min-width: 0; }
+.bs-showcase__pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--rx-space-5); align-items: start; }
+.bs-showcase__signature { margin: 0; padding: var(--rx-space-3) var(--rx-space-4); border-radius: var(--rx-radius-s); background: var(--rx-fill); overflow-x: auto; font: var(--rx-type-note); }
+.bs-showcase__signature code { font-family: var(--rx-mono); white-space: pre; }
+.bs-showcase__variant { display: grid; grid-auto-flow: column; justify-content: start; gap: var(--rx-space-4); margin: 0; font: var(--rx-type-body); }

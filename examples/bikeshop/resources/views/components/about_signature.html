@@ -1,0 +1,8 @@
+{#- A block's macro signature in a closed disclosure (about/blocks.html); the
+    text is the content, written right after the opening tag:
+    `<app-about-signature>quantity(name, …)</app-about-signature>`. -#}
+<rx-props>
+<details class="bs-showcase__details">
+  <summary class="rx-link">{{ t('blocks.page.signature') }}</summary>
+  <pre class="bs-showcase__signature"><code><rx-slot /></code></pre>
+</details>

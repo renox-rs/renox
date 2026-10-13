@@ -1,0 +1,21 @@
+<p>Count: <b id="count">{{ state.count }}</b> {{ data.label }}</p>
+<button id="inc" type="button" rx-click="increment">+1</button>
+<button id="add5" type="button" rx-click="add(5)">+5</button>
+<input id="note" type="text" placeholder="Note">
+<form id="rename" rx-submit="rename">
+  <input id="name" name="name" type="text" value="{{ state.name }}">
+  <button id="rename-go" type="submit">Rename</button>
+</form>
+<p>Name: <span id="shown-name">{{ state.name }}</span></p>
+<input id="search" rx-model.live="search">
+<span id="echo">{{ state.search }}</span>
+<input id="lazy" rx-model.blur="lazy">
+<span id="lazy-echo">{{ state.lazy }}</span>
+<input id="nick" rx-model="nick">
+<span id="nick-echo">{{ state.nick }}</span>
+{% from "renox/ui.html" import input %}
+{{ input("title", "Title", id="title", attrs={"rx-model": "title"}) }}
+<button id="save" type="button" rx-click="save">Save</button>
+<button id="notify" type="button" rx-click="notify">Notify</button>
+<button id="go" type="button" rx-click="go">Go</button>
+<button id="ping" type="button" rx-click="ping">Ping</button>

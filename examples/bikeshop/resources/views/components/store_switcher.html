@@ -1,0 +1,19 @@
+{#- The store switcher, in the staff layout's top bar (src/app/access/active_store.rs).
+
+    `store_switcher` is shared with every view by the access area: the store
+    this request works in (`current`) and every store where the person holds
+    `staff.access` today (`stores`), so a dated role (help in another store
+    this week) shows up only between its dates. A layout passes it in as
+    `switcher`. With one store it is a label; with more, the kit's `menu`
+    whose items post to `access.store.switch`, which checks the store again
+    before keeping it in the session. Customers and guests get `none`:
+    nothing is shown. -#}
+<rx-props switcher>
+<div rx-if="switcher and switcher.current" class="bs-store-switcher" data-bs-store="{{ switcher.current.id }}">
+  <rx-menu rx-if="switcher.stores | length > 1" :label="t('access.switcher.working_in', store=switcher.current.name)" id="store-menu" variant="plain">
+    <rx-menu-section :title="t('access.switcher.switch_to')">
+      <rx-menu-action rx-for="store in switcher.stores" :action="route('access.store.switch', store.id)" :label="store.name" :icon="'check' if store.id == switcher.current.id else none"/>
+    </rx-menu-section>
+  </rx-menu>
+  <rx-badge rx-else :text="t('access.switcher.working_in', store=switcher.current.name)"/>
+</div>

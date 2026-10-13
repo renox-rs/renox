@@ -1,0 +1,28 @@
+{#- `accounts.claim`: a walk-in customer opens the signed link from their
+    invitation (src/app/accounts/claim.rs). Logged in by now (the route needs
+    it); `summary` (name, orders, rentals, bikes), `email` (where the
+    invitation went), `problem` (none, "taken" or "other_email") and
+    `action` (this signed address, which the button posts back to). -#}
+<rx-page layout="layouts/app.html" title="{{ t('accounts.claim.title') }}">
+<app-accounts-styles/>
+<div class="bs-claim" data-bs-reveal>
+  <rx-page-header title="{{ t('accounts.claim.title') }}" subtitle="{{ t('accounts.claim.lead', name=summary.name) }}"/>
+  {# [explain:accounts.claim.template] #}
+  <template rx-if="problem == 'taken'">
+    <rx-alert kind="warning" message="{{ t('accounts.claim.taken') }}"/>
+    <rx-link-button route="account.show" label="{{ t('nav.account') }}"/>
+  </template>
+  <rx-alert rx-elif="problem == 'other_email'" kind="error" message="{{ t('accounts.claim.other_email', email=email, current=auth.user.email) }}"/>
+  <rx-card rx-else title="{{ summary.name }}" subtitle="{{ t('accounts.claim.what') }}">
+    <rx-stats columns="3">
+      <rx-stat label="{{ t('accounts.claim.orders') }}" :value="summary.orders"/>
+      <rx-stat label="{{ t('accounts.claim.rentals') }}" :value="summary.rentals"/>
+      <rx-stat label="{{ t('accounts.claim.bikes') }}" :value="summary.bikes"/>
+    </rx-stats>
+    <rx-form :action="action">
+      <div class="rx-card__footer"><rx-button label="{{ t('accounts.claim.button') }}"/></div>
+    </rx-form>
+  </rx-card>
+  {# [/explain:accounts.claim.template] #}
+</div>
+</rx-page>
