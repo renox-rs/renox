@@ -22,7 +22,7 @@ pub const SITE: &str = "https://learn.renox.rs";
 /// The documentation site.
 pub const DOCS: &str = "https://docs.renox.rs";
 /// The landing page.
-pub const WWW: &str = "https://renox.rs";
+pub const WWW: &str = "https://www.renox.rs";
 /// The source.
 pub const REPOSITORY: &str = "https://github.com/renox-rs/renox";
 

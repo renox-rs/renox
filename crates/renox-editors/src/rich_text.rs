@@ -328,8 +328,8 @@ mod tests {
         let html = r#"<div>Hello <strong>bold</strong> <em>it</em> <del>old</del><br></div><h1>Title</h1><blockquote>q</blockquote><pre>let x = 1;</pre><ul><li>a</li></ul><ol><li>b</li></ol>"#;
         assert_eq!(sanitize(html), html);
         assert_eq!(
-            sanitize(r#"<a href="https://renox.rs" title="Docs" class="x">docs</a>"#),
-            r#"<a href="https://renox.rs" title="Docs" rel="noopener noreferrer nofollow">docs</a>"#
+            sanitize(r#"<a href="https://www.renox.rs" title="Docs" class="x">docs</a>"#),
+            r#"<a href="https://www.renox.rs" title="Docs" rel="noopener noreferrer nofollow">docs</a>"#
         );
         assert_eq!(
             sanitize(r#"<a href="/pricing">p</a>"#),

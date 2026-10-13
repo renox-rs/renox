@@ -248,7 +248,7 @@ pub fn render(markdown: &str) -> (String, Vec<(String, String)>) {
             }
             Event::Start(Tag::Link {
                 dest_url, title, ..
-            }) if dest_url.starts_with("http") && !dest_url.starts_with("https://renox.rs") => {
+            }) if dest_url.starts_with("http") && !dest_url.starts_with("https://www.renox.rs") => {
                 let title_attr = if title.is_empty() {
                     String::new()
                 } else {

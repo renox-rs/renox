@@ -1,6 +1,6 @@
 # renox.rs: the landing page and the blog
 
-**https://renox.rs** says why Renox exists and why it is powerful. It is a Renox app
+**https://www.renox.rs** says why Renox exists and why it is powerful. It is a Renox app
 (`renox-www`) compiled into one binary. The guides live elsewhere, on the docs site at
 **https://docs.renox.rs** (`site/`); this site links to them everywhere.
 
@@ -112,21 +112,21 @@ sudo systemctl start renox-www
 Set these in `/opt/renox-www/.env`:
 - `APP_ENV=production` and `APP_DEBUG=false`;
 - `APP_KEY=`, from `rnx key:generate --show`;
-- `APP_URL=https://renox.rs` (canonical links, the sitemap, the feed and the JSON-LD use it);
+- `APP_URL=https://www.renox.rs` (canonical links, the sitemap, the feed and the JSON-LD use it);
 - `APP_PORT=3090` (the socket's port);
 - `TRUSTED_PROXIES=127.0.0.1` and `TRUSTED_HOSTS=renox.rs,www.renox.rs`.
 - `GA4_MEASUREMENT_ID` only to use another Google Analytics property: renox.rs's own
   (`G-48GJK3ZM4J`, `landing::GA4`) is the default. The tag is sent in production only, with the
   request's CSP nonce, and the CSP allows Google's script and collection hosts.
 
-Then the proxy, for example Caddy. `www` redirects to the bare domain, so search engines see one
+Then the proxy, for example Caddy. The bare domain redirects to `www`, so search engines see one
 address:
 
 ```text
-renox.rs {
+www.renox.rs {
     reverse_proxy 127.0.0.1:3090
 }
-www.renox.rs {
-    redir https://renox.rs{uri} permanent
+renox.rs {
+    redir https://www.renox.rs{uri} permanent
 }
 ```

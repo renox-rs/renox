@@ -3,4 +3,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://renox.rs/sitemap.xml
+Sitemap: https://www.renox.rs/sitemap.xml
