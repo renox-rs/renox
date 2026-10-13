@@ -208,7 +208,7 @@
   (Renoxium's account serves project sites on a personal domain): the docs site runs on the
   Renoxium's own server, built with Renox: https://docs.renox.rs (renox.renoxium.com from
   2026-10-04, the project's own domain since 2026-10-07, #331). The project's domain is
-  renox.rs: the landing page at https://renox.rs (www too, its own app, planned), the docs
+  renox.rs: the landing page at https://www.renox.rs (the bare domain too, its own app, planned), the docs
   at docs.renox.rs, the bikeshop demo at https://bikeshop.renox.rs (#141;
   the server pulls each build of `.github/workflows/release-site.yml`).
   Then #124 (new apps failed `cargo fmt --check`): `rnx` formats what it writes, merged

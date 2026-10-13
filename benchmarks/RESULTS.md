@@ -51,5 +51,5 @@ The first run, on 2026-10-07 before #334, had Renox at 9,265 requests a second o
 `/plaintext` and 6,237 on `/page`. Every middleware layer cloned a 35-field `AppState`.
 [`results/2026-10-07T15-49-18Z-before-334.json`](results/2026-10-07T15-49-18Z-before-334.json)
 keeps that run, and the blog post
-[How a benchmark made Renox 3.3× faster](https://renox.rs/blog/how-a-benchmark-made-renox-faster)
+[How a benchmark made Renox 3.3× faster](https://www.renox.rs/blog/how-a-benchmark-made-renox-faster)
 tells the story.

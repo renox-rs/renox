@@ -5,7 +5,7 @@
 use renox::testing::TestApp;
 
 async fn site() -> TestApp {
-    TestApp::with_config(renox_www::app(), |c| c.url = "https://renox.rs".into()).await
+    TestApp::with_config(renox_www::app(), |c| c.url = "https://www.renox.rs".into()).await
 }
 
 /// Every `https://docs.renox.rs/docs/{slug}` in `html`.
@@ -28,8 +28,8 @@ async fn the_home_page_has_its_words_its_tags_and_its_structured_data() {
     page.assert_ok()
         .assert_see("<title>Renox: Laravel&#x27;s productivity, Rust&#x27;s guarantees</title>")
         .assert_see("<meta name=\"description\" content=\"Renox is a batteries-included web framework for Rust")
-        .assert_see("<link rel=\"canonical\" href=\"https://renox.rs/\">")
-        .assert_see("<meta property=\"og:image\" content=\"https://renox.rs/img/og.png\">")
+        .assert_see("<link rel=\"canonical\" href=\"https://www.renox.rs/\">")
+        .assert_see("<meta property=\"og:image\" content=\"https://www.renox.rs/img/og.png\">")
         .assert_see("<meta name=\"twitter:card\" content=\"summary_large_image\">")
         .assert_see("\"@type\":\"SoftwareSourceCode\"")
         .assert_see("\"codeRepository\":\"https://github.com/renox-rs/renox\"")
@@ -83,7 +83,7 @@ async fn the_blog_lists_posts_and_each_post_is_an_article() {
         .assert_ok()
         .assert_see("<meta property=\"og:type\" content=\"article\">")
         .assert_see("<meta property=\"article:published_time\" content=\"2026-10-07T00:00:00Z\">")
-        .assert_see("<link rel=\"canonical\" href=\"https://renox.rs/blog/how-a-benchmark-made-renox-faster\">")
+        .assert_see("<link rel=\"canonical\" href=\"https://www.renox.rs/blog/how-a-benchmark-made-renox-faster\">")
         .assert_see("\"@type\":\"BlogPosting\"")
         .assert_see("\"@type\":\"BreadcrumbList\"")
         .assert_see("<h2 id=\"the-fix\">")
@@ -112,20 +112,20 @@ async fn crawlers_get_a_sitemap_a_feed_and_robots_txt() {
     app.get("/sitemap.xml")
         .await
         .assert_ok()
-        .assert_see("<loc>https://renox.rs/</loc>")
-        .assert_see("<loc>https://renox.rs/blog/meet-the-bike-shop</loc>")
-        .assert_see("<loc>https://renox.rs/blog/tags/rust</loc>");
+        .assert_see("<loc>https://www.renox.rs/</loc>")
+        .assert_see("<loc>https://www.renox.rs/blog/meet-the-bike-shop</loc>")
+        .assert_see("<loc>https://www.renox.rs/blog/tags/rust</loc>");
     app.get("/blog/feed.xml")
         .await
         .assert_ok()
         .assert_header("content-type", "application/atom+xml; charset=utf-8")
         .assert_see("<feed xmlns=\"http://www.w3.org/2005/Atom\">")
-        .assert_see("<id>https://renox.rs/blog/why-we-built-renox</id>");
+        .assert_see("<id>https://www.renox.rs/blog/why-we-built-renox</id>");
     app.get("/robots.txt")
         .await
         .assert_ok()
         .assert_see("Allow: /")
-        .assert_see("Sitemap: https://renox.rs/sitemap.xml");
+        .assert_see("Sitemap: https://www.renox.rs/sitemap.xml");
 }
 
 #[renox::test]
@@ -135,7 +135,7 @@ async fn language_models_get_llms_txt() {
     llms.assert_ok()
         .assert_see("# Renox\n")
         .assert_see("- [Tutorial](https://docs.renox.rs/docs/tutorial)")
-        .assert_see("https://renox.rs/blog/why-we-built-renox.md");
+        .assert_see("https://www.renox.rs/blog/why-we-built-renox.md");
     app.get("/llms-full.txt")
         .await
         .assert_ok()
@@ -166,7 +166,7 @@ async fn google_analytics_is_sent_in_production_only() {
         .assert_dont_see("googletagmanager.com/gtag");
     // Production: the tag with the request's nonce, and a CSP that lets it load.
     let app = TestApp::with_config(renox_www::app(), |c| {
-        c.url = "https://renox.rs".into();
+        c.url = "https://www.renox.rs".into();
         c.env = renox::Environment::Production;
         c.debug = false;
     })

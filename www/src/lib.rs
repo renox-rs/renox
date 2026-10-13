@@ -20,7 +20,7 @@ pub mod landing;
 
 /// The site's own address (canonical links, the feed, JSON-LD) when
 /// `APP_URL` isn't set to it.
-pub const SITE: &str = "https://renox.rs";
+pub const SITE: &str = "https://www.renox.rs";
 
 pub fn app() -> App {
     App::new()
