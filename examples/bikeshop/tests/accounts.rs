@@ -139,7 +139,7 @@ fn escaped(text: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
-        .replace('\'', "&#x27;")
+        .replace('\'', "&#39;")
 }
 
 /// Mails the invitation for `customer` as a cashier and returns the link's path.
@@ -689,14 +689,15 @@ async fn deleting_the_account_leaves_no_personal_data_and_keeps_the_books() {
     assert!(gone.address_id.is_none() && gone.deleted_at.is_some());
     assert!(Address::find(app.db(), home.id).await.unwrap().is_none());
     assert!(!app.state().storage.exists(&photo).await.unwrap());
-    // Nothing of hers is left in the table, in any column.
+    // Nothing of hers is left in the table, in any column. Her full name and
+    // number: the stranger's fake ones may hold "Nia" or "611".
     let raw: Vec<String> = renox::db::sql(
         "SELECT COALESCE(name, '') || COALESCE(email, '') || COALESCE(phone, '') FROM customers",
     )
     .scalars(app.db())
     .await
     .unwrap();
-    assert!(raw.iter().all(|r| !r.contains("Nia") && !r.contains("611")));
+    assert!(raw.iter().all(|r| !r.contains("Nia Lopez") && !r.contains("611 111 111")));
 
     // The books keep the order and its total, on the anonymous record.
     let kept = Order::find(app.db(), order.id).await.unwrap().unwrap();
