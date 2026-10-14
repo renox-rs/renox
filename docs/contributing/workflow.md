@@ -36,8 +36,10 @@
   needed a catch-up PR (#53).
 - **Commit messages and PR bodies are long and structured** (Renoxium asked for good
   descriptions and notes): summary paragraph, *What's included*, *Design notes*, *Deviations from
-  the roadmap*, *Testing* (what was actually run, including browser checks). End commits and PR
-  bodies with the attribution lines the harness gives you.
+  the roadmap*, *Testing* (what was actually run, including browser checks). Commits are
+  authored as `renox-rs <developer@renoxium.com>` and neither commits nor PR bodies carry agent
+  attribution (no `Co-Authored-By` trailer, no "Generated with …" line), even when a coding
+  agent's harness asks for one; the history has none.
 - Before every commit (the list in CONTRIBUTING.md "What every change needs"):
   ```
   cargo fmt --all

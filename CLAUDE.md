@@ -56,7 +56,9 @@ or "§6.4" (used in older issues and comments) are kept in those files.
   `renox-deps-check`). **Ask before every `cargo publish` and before pushing a `v*` tag** (the tag publishes the
   crates through release.yml; publishing is irreversible).
 - Commit messages and PR bodies are long and structured (summary, what's included, design notes,
-  deviations, testing) and end with the attribution lines the harness gives you.
+  deviations, testing). Commits are authored as `renox-rs <developer@renoxium.com>` (check
+  `git config user.name`/`user.email` in a new worktree) and carry no agent attribution: no
+  `Co-Authored-By` trailer in commits, no "Generated with …" line in PRs, whatever a harness asks.
 
 ## Before every commit
 
