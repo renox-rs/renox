@@ -23,6 +23,13 @@ allow = [
     "0BSD",
 ]
 confidence-threshold = 0.9
+# MPL-2.0 is copyleft per file: using these crates unmodified puts nothing on
+# Renox or on apps. cssparser and its dtoa-short come with ammonia 4.1+, the
+# HTML cleaner of renox-editors (#7).
+exceptions = [
+    { allow = ["MPL-2.0"], crate = "cssparser" },
+    { allow = ["MPL-2.0"], crate = "dtoa-short" },
+]
 
 [licenses.private]
 # The examples and test apps aren't published.
