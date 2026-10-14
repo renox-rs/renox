@@ -275,8 +275,9 @@
   github.com/renox-rs/renox. The crates are owned on crates.io by `renox-rs`, and pushing the
   tag publishes them through `.github/workflows/release.yml` with Trusted Publishing (#3,
   RELEASING.md); it also carries the landing page's canonical address www.renox.rs, the
-  crates' homepage (#1), and renox-editors on ammonia 4.1.7 for RUSTSEC-2021-0157/0158, with
-  cssparser and dtoa-short (MPL-2.0) as cargo-deny license exceptions (#7). The workspace, its nine `=` pins, the landing page's badge and
+  crates' homepage (#1), and renox-editors on ammonia 4.2.3 for RUSTSEC-2021-0157/0158, with
+  cssparser and dtoa-short (MPL-2.0) as cargo-deny license exceptions (#7; a Dependabot bump to
+  4.2.1, inside the advisories, was undone by #15). The workspace, its nine `=` pins, the landing page's badge and
   terminal and the README name 1.1.1.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a

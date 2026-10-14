@@ -16,10 +16,10 @@ A patch release with no API changes: the first one published from
 [renox-rs/renox](https://github.com/renox-rs/renox), so the crates' pages on crates.io link to
 it.
 
-- renox-editors uses ammonia 4.1.7: RUSTSEC-2021-0157 (CSS `url()` quoting) and
-  RUSTSEC-2021-0158 (SVG animation tags) now cover the whole ammonia 4.0 line. Neither could
-  be reached through renox-editors' cleaner (no `style` attribute, no SVG), but `cargo audit`
-  reported both against apps that use it (#7).
+- renox-editors uses ammonia 4.2.3: RUSTSEC-2021-0157 (CSS `url()` quoting) and
+  RUSTSEC-2021-0158 (SVG animation tags) now cover every ammonia before 4.1.7 and 4.2.0–4.2.2.
+  Neither could be reached through renox-editors' cleaner (no `style` attribute, no SVG), but
+  `cargo audit` reported both against apps that use it (#7, #15).
 - Releases are published by pushing a `v*` tag: `.github/workflows/release.yml` checks the tag
   against the workspace version, publishes the ten crates with crates.io Trusted Publishing (no
   stored token) and creates the GitHub release from this file (#3). RELEASING.md describes the
