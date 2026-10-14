@@ -11,7 +11,7 @@
 
 - The 1.1 way (Renox 1.1: `cargo install renox-cli`, `renox = "1.1"`),
   and where each part is taught: pages as `<rx-*>` / `<app-*>` tags with `rx-if` / `rx-elif` / `rx-else` /
-  `rx-for` (also on `<template>`), `<rx-let>`, `<rx-include>`, `?attr="expr"` (an attribute that may be absent), `<rx-simple-table>`, `<rx-link-tab>`, `<rx-mail-text>`, `<rx-script>` / `<rx-style>` ([docs/ui.md](docs/ui.md#components-as-tags), and "No raw MiniJinja" at its end); your own components with `<rx-props>`
+  `rx-for` (also on `<template>`), `<rx-let>`, `<rx-include>`, `?attr="expr"` (an attribute that may be absent), `<rx-simple-table>`, `<rx-link-tab>`, `<rx-mail-text>`, `<rx-script>` / `<rx-style>` ([docs/ui.md](docs/ui.md#components-as-tags), and "No raw MiniJinja" at its end); spacing: kit components have no outer margin, so siblings go in `<rx-stack>` / `<rx-row>` ([docs/ui.md](docs/ui.md#spacing-put-siblings-in-rx-stack-or-rx-row)); your own components with `<rx-props>`
   ([docs/ui.md](docs/ui.md#your-own-components)); parts of a page with state as live components,
   `<live-NAME :component="x"/>` ([docs/live.md](docs/live.md), the bike shop's `/about/htmx/live`);
   typed columns (`Product::PRICE.lt(1)`) and `#[model(form)]` ([CHEATSHEET.md](CHEATSHEET.md));

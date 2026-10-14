@@ -87,6 +87,11 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   `x` and `:title="x"` is an expression (no `{{ }}` after the colon); a statement there is an error.
   `rx-else` goes on the very next sibling of its `rx-if` element, and never follows `rx-for`.
   `class` is not allowed on kit tags (only on `rx-stack`, `rx-row`, `rx-form`).  An `<app-…>` file needs `<rx-props>` first.
+  **Kit components have no outer margin**: siblings touch unless their container spaces them.
+  Start a page with `<rx-stack>` (`rnx new`'s `main.rx-container` has no gap; the starter's
+  `main.rx-shell__content` has one), put buttons side by side in `<rx-row>`, and fields in an
+  `rx-card`, `rx-form-grid` or `rx-stack` (`<rx-form>` is a plain `<form>`). Wrap instead of
+  adding margins (docs/ui.md "Spacing").
   Form tags: `<rx-repeater>` gives its content `row` and `prefix` (`name="{{ prefix }}[qty]"`);
   `<rx-wizard id=…>` takes its steps from `<rx-wizard-step key=… title=…>` children.
   Navigation: `<rx-navbar>`, `<rx-sidebar>`, `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;

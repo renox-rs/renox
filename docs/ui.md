@@ -1077,6 +1077,52 @@ not touched at all.
 </rx-page>
 ```
 
+### Spacing: put siblings in `rx-stack` or `rx-row`
+
+The kit's components have no outer margin. The space between two of them comes from the element
+they sit in, so the same card looks right in a list and in a sheet. Whitespace between the tags
+doesn't add any: Renox keeps it, but HTML gives none between blocks.
+
+Two tags exist only to space their children:
+
+- `<rx-stack>`: one below the other, with the kit's section spacing (`--rx-space-5`).
+- `<rx-row>`: side by side, wrapping on narrow screens (`--rx-space-3`); `end` pushes them to
+  the right.
+
+Some kit containers space their children too: `rx-card`, `rx-sheet`, `rx-form-grid`,
+`rx-fieldset`, `rx-dashboard`, `rx-card-grid`, and the starter's sidebar layout
+(`main.rx-shell__content`). Others don't, and their children touch:
+
+- the `<main class="rx-container">` of `rnx new`'s layout, so a page starts with `<rx-stack>`;
+- `<rx-form>`, a plain `<form>`: put its fields in an `rx-card`, an `rx-form-grid` or an
+  `rx-stack`;
+- your own `<div>`s and `<app-…>` components.
+
+```html
+<!-- Wrong: in rx-container the alert, the card and the table touch. -->
+<rx-page layout="layouts/app.html" title="Orders">
+  <rx-page-header title="Orders"/>
+  <rx-alert kind="info" message="Orders placed before noon ship today."/>
+  <rx-table :rows="orders" caption="Orders">…</rx-table>
+</rx-page>
+
+<!-- Right: rx-stack spaces them, rx-row spaces the buttons. -->
+<rx-page layout="layouts/app.html" title="Orders">
+  <rx-stack>
+    <rx-page-header title="Orders"/>
+    <rx-alert kind="info" message="Orders placed before noon ship today."/>
+    <rx-table :rows="orders" caption="Orders">…</rx-table>
+    <rx-row end>
+      <rx-link-button route="orders.export" label="Export" variant="secondary"/>
+      <rx-link-button route="orders.create" label="New order" variant="primary"/>
+    </rx-row>
+  </rx-stack>
+</rx-page>
+```
+
+`class` isn't allowed on kit tags, so don't reach for a margin class (`mt-4`): wrap the siblings
+instead. `rx-stack` and `rx-row` do take `class` and any attribute, and nest as deep as needed.
+
 ### Attribute values
 
 | You write | It means |
