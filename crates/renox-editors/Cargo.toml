@@ -19,5 +19,5 @@ renox.workspace = true
 # cover the whole 4.0 line since 2026-10-11 (#7). 4.1 brings cssparser
 # (MPL-2.0, a cargo-deny exception in deny.toml) for `style` attributes,
 # which this crate drops anyway.
-ammonia = "~4.1.7"
+ammonia = "~4.2.1"
 serde = { version = "1.0.229", features = ["derive"] }
