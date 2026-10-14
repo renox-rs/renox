@@ -271,6 +271,14 @@
   moved to `1.1.0` (the landing page, the plugin guides, the tutorial, llms.txt and the README
   name 1.1.0; publishing it is Renoxium's `cargo publish`, in RELEASING.md's order, then the tag
   `v1.1.0`).
+- **1.1.1** (#5, 2026-10-14; a patch with no API change): the first release from
+  github.com/renox-rs/renox. The crates are owned on crates.io by `renox-rs`, and pushing the
+  tag publishes them through `.github/workflows/release.yml` with Trusted Publishing (#3,
+  RELEASING.md); it also carries the landing page's canonical address www.renox.rs, the
+  crates' homepage (#1), and renox-editors on ammonia 4.2.3 for RUSTSEC-2021-0157/0158, with
+  cssparser and dtoa-short (MPL-2.0) as cargo-deny license exceptions (#7; a Dependabot bump to
+  4.2.1, inside the advisories, was undone by #15). The workspace, its nine `=` pins, the landing page's badge and
+  terminal and the README name 1.1.1.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 
