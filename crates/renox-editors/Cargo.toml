@@ -15,9 +15,10 @@ categories = ["web-programming::http-server", "text-editors"]
 renox.workspace = true
 # Cleans the HTML a rich text editor sends (an allowlist of tags,
 # attributes and URL schemes), so a user's markup can't run scripts.
-# 4.1.7: the first 4.1 with the fixes for RUSTSEC-2021-0157/0158, which
-# cover the whole 4.0 line since 2026-10-11 (#7). 4.1 brings cssparser
-# (MPL-2.0, a cargo-deny exception in deny.toml) for `style` attributes,
-# which this crate drops anyway.
-ammonia = "~4.2.1"
+# RUSTSEC-2021-0157/0158 (since 2026-10-11) cover every ammonia before
+# 4.1.7 and 4.2.0-4.2.2; 4.2.3 is the first fixed 4.2 (#7, #15: a
+# Dependabot bump to 4.2.1 brought them back). Don't go below it. 4.1+
+# brings cssparser (MPL-2.0, a cargo-deny exception in deny.toml) for
+# `style` attributes, which this crate drops anyway.
+ammonia = "~4.2.3"
 serde = { version = "1.0.229", features = ["derive"] }
