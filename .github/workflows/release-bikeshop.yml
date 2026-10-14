@@ -45,7 +45,7 @@ jobs:
           strip dist/bikeshop
           echo "${GITHUB_SHA}" > dist/REVISION
           (cd dist && sha256sum bikeshop > bikeshop.sha256)
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: bikeshop-${{ github.sha }}
           path: dist/
