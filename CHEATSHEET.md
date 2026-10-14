@@ -315,6 +315,9 @@ and `rnx view:check` names a wrong one with its file and line.
 ```html
 {# layout: {{ renox_head() }}{{ renox_ui() }} in <head>, <body class="rx-page">, {{ toasts() }} #}
 {# The page's frame (rnx new's layout uses rx-navbar; a back office uses rx-sidebar + rx-shell) #}
+{# Spacing: kit parts have no outer margin, their container spaces them. Start a page with <rx-stack>,
+   put buttons in <rx-row> (<rx-row end> for the right), fields in rx-card / rx-form-grid / rx-stack;
+   main.rx-container and <rx-form> add no space (docs/ui.md#spacing-put-siblings-in-rx-stack-or-rx-row) #}
 <rx-navbar brand="{{ app.name }}" :href="route('home')">
   <rx-nav-links><rx-nav-link route="products.index" label="Products" :active="route_is('products.*')"/></rx-nav-links>
 </rx-navbar>
