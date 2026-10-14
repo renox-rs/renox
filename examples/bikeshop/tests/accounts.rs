@@ -697,7 +697,10 @@ async fn deleting_the_account_leaves_no_personal_data_and_keeps_the_books() {
     .scalars(app.db())
     .await
     .unwrap();
-    assert!(raw.iter().all(|r| !r.contains("Nia Lopez") && !r.contains("611 111 111")));
+    assert!(
+        raw.iter()
+            .all(|r| !r.contains("Nia Lopez") && !r.contains("611 111 111"))
+    );
 
     // The books keep the order and its total, on the anonymous record.
     let kept = Order::find(app.db(), order.id).await.unwrap().unwrap();
