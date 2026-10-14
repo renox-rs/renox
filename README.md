@@ -17,6 +17,13 @@ SQLite (or PostgreSQL) stores the data. You add one dependency, `renox`, and you
 Already know Laravel? Read [coming from Laravel](docs/laravel.md); every guide is listed under
 [Documentation](#documentation). API reference: [docs.rs/renox](https://docs.rs/renox).
 
+**Contents:** [Why Renox](#why-renox) · [Quick start](#quick-start) ·
+[Coding agents](#use-renox-with-claude-code-or-another-coding-agent) · [A taste](#a-taste) ·
+[Performance](#performance) · [Developer experience](#developer-experience) ·
+[Feature tour](#feature-tour) · [How it compares](#how-it-compares) · [Examples](#examples) ·
+[Coming from Laravel](#coming-from-laravel) · [Documentation](#documentation) ·
+[Status](#status) · [License](#license)
+
 ## Why Renox
 
 - **One binary to deploy.** A binary is a single program file. `rnx build` packs your pages
@@ -33,6 +40,12 @@ Already know Laravel? Read [coming from Laravel](docs/laravel.md); every guide i
   the error shows up next to the field. Parts of a page (fragments) update in place, and you
   don't write any JavaScript for that. htmx and Alpine.js come bundled, and a
   Content-Security-Policy (a browser rule that blocks injected scripts) is on by default.
+- **Fast and light.** A page read from SQLite through a template is served about 9× faster
+  than on Laravel Octane, at a tenth of the latency, in 12 MiB of memory under load
+  ([Performance](#performance)).
+- **Mistakes caught early.** A wrong component, prop or route name fails with the file, the
+  line and "did you mean"; `rnx db:check` and `rnx view:check` catch the rest before a page
+  is opened ([Developer experience](#developer-experience)).
 
 ![A guestbook form: invalid input shows errors inline, a valid post appears in the list, all without a page reload](docs/assets/demo.gif)
 
@@ -217,9 +230,11 @@ impl Module for Guestbook {
 ```html
 <rx-form hx-post="{{ route('entries.store') }}" hx-target="#entries" hx-swap="outerHTML">
   {#- the CSRF field is written for you -#}
-  <rx-input name="name" label="Name"/>
-  <rx-textarea name="message" label="Message"/>
-  <rx-button label="Send"/>
+  <rx-stack>                                    {#- spaces the fields: kit parts have no margin #}
+    <rx-input name="name" label="Name"/>
+    <rx-textarea name="message" label="Message"/>
+    <rx-row><rx-button label="Send"/></rx-row>
+  </rx-stack>
 </rx-form>
 {% block entries %}                                                  {# all htmx gets back #}
 <ul id="entries"><li rx-for="e in entries">{{ e.name }}: {{ e.message }}</li></ul>
@@ -228,6 +243,62 @@ impl Module for Guestbook {
 
 The `rx-*` tags are the UI kit's components: they become MiniJinja when the template loads,
 and a typo in a tag or an attribute fails with the file, the line and "did you mean".
+
+## Performance
+
+Measured with [`benchmarks/`](benchmarks) on 2026-10-07: four servers with the same endpoints
+over the same SQLite database (10,000 rows), each in Docker on two CPU cores of an Intel
+i7-6700 with 1 GB of memory, loaded by [oha](https://github.com/hatoo/oha) with 64 connections
+for 15 s after a 5 s warm-up. Renox runs a release build with everything it puts in front of a
+route by default (security headers with a CSP nonce, the request id, an encrypted session
+cookie, CSRF, the user, the locale, the view layer, error pages, the request timeout). Laravel
+12 runs in production mode with OPcache and `artisan optimize`.
+
+**`/page`**, 20 rows from SQLite through a template (a page as an app serves it):
+
+| | Requests/s | Latency p50 / p99 | Memory under load | Cold start | What you deploy |
+|---|---:|---:|---:|---:|---|
+| **Renox** | **9,630** | **6.7 / 11.6 ms** | **12 MiB** | **655 ms** | **one 19 MiB binary** |
+| Axum, bare (no middleware) | 15,137 | 4.2 / 6.9 ms | 11 MiB | 493 ms | one 6 MiB binary |
+| Laravel Octane (FrankenPHP) | 1,066 | 59.7 / 75.4 ms | 128 MiB | 1,120 ms | 27 MiB app + vendor, plus PHP |
+| Laravel (PHP-FPM + nginx) | 581 | 112.0 / 146.1 ms | 106 MiB | 2,694 ms | 27 MiB app + vendor, plus PHP |
+
+- **Against Laravel:** about 9× the throughput of Octane and 16× PHP-FPM on a real page, at a
+  tenth of the latency and a tenth of the memory.
+- **Against bare Axum,** the floor Renox is built on: its defaults cost about a third of
+  `/page`'s throughput. On `/plaintext`, a route that does nothing, Renox serves 29,287
+  requests/s against Axum's 106,011, because there the defaults are all the work there is.
+- **What it doesn't say:** one machine, two cores, SQLite, read-only endpoints. Your app's
+  queries and templates will dominate long before the framework does.
+
+Every endpoint, the raw numbers and the method are in
+[benchmarks/RESULTS.md](benchmarks/RESULTS.md) and [benchmarks/README.md](benchmarks/README.md).
+`benchmarks/run.sh` runs it all again in about eight minutes; a pull request is welcome if
+something is unfair. How a benchmark run made Renox 3.3× faster:
+[the blog post](https://www.renox.rs/blog/how-a-benchmark-made-renox-faster).
+
+## Developer experience
+
+Renox's aim is that a mistake shows up as a precise message from a command, not as a broken
+page in production:
+
+| You | Renox |
+|---|---|
+| Mistype a component, a prop or a route name in a template | The page fails to load with the file, the line and "did you mean `products.index`?"; `rnx view:check` checks every template at once |
+| Change a model but not its table | `rnx db:check` names the column; `rnx make:migration --auto` writes the SQL for SQLite or PostgreSQL |
+| Misuse `#[derive(Model)]`, a form or a live component | A compile error on the attribute or field at fault (each case is a `compile_fail` test) |
+| Miss something on the machine or in the app (Rust's version, a linker, `.env`, `APP_KEY`, Tailwind) | `rnx doctor` lists it, each with the command or step that fixes it |
+| Save a file | `rnx serve` rebuilds and restarts; the browser reloads when a view changes |
+| Write a test | `TestApp` drives the app without a server, on a fresh database with fake mail, queue, HTTP and events, and can travel in time; `cargo test` runs pages, forms, mail and jobs in seconds |
+| Keep the app honest | `TestApp::assert_models_match_schema` and `assert_views_compile` put `db:check` and `view:check` in your tests |
+| Wonder why a page is slow | `/_renox/debug` shows the last requests with their SQL and flags N+1 queries |
+| Type a tag in VS Code | Autocomplete for every `rx-*` tag and prop (`.vscode/renox-components.json`, kept fresh by `rnx serve`) |
+| Read the docs | Every Rust example in the guides, this README and the cheat sheet is compiled in CI, so none is stale |
+
+New apps also come with an `AGENTS.md` for coding agents
+([above](#use-renox-with-claude-code-or-another-coding-agent)), and the generators
+(`rnx make:module --resource`, `make:model`, `make:policy`, `make:job`, …) write the code and
+its tests.
 
 ## Feature tour
 
@@ -647,51 +718,20 @@ change on `main`. The landing page and blog are [renox.rs](https://renox.rs) ([`
 
 Renox **1.1.1** is on crates.io: `renox`, `renox-core`, `renox-macros`, `renox-cli`, and the
 plugins `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and
-`renox-billing`. From here Renox follows semver ([docs/stability.md](docs/stability.md)). The [Laravel parity review](docs/audit/2026-10-laravel-parity.md)
-compares it with Laravel and Filament feature by feature, as of October 2026. Since the first
-review (after M17), milestones M18–M32 closed its gaps:
+`renox-billing`. It follows semver ([docs/stability.md](docs/stability.md)): a 1.x release only
+adds, so 1.0 apps keep compiling.
 
-- **M18–M21:** tenancy, roles and permissions, account pages; the query builder and model
-  hooks; cron schedules in real time zones, locks, a fuller queue, an HTTP client, a queue
-  dashboard, localized mail; the UI kit, scaffolding, test tools, error reports and logs,
-  Tailwind, typed commands, form requests, database sessions, deploys without refused
-  connections.
-- **M22–M26:** ULID/UUID/string keys, savepoints, encrypted fields, domain and fallback routes,
-  `route_is`, factory states, plural ranges, `#[derive(Validate)]`, the browser's language,
-  and a completeness pass (docs for every public item, CLI tests).
-- **M27–M28:** the data grid, then search, actions, summaries, groups, cards on phones,
-  related columns and an advanced filter.
-- **After M28:** Filament's forms, infolists, notifications, dashboard widgets and actions in
-  the UI kit.
-- **M29–M32:** fourteen examples, among them a full back office; every example on the kit,
-  with its navigation and page frame; a warm default theme with a type scale; and an
-  English-only codebase.
-- **M33:** small additions the review still listed: 28 more validation rules
-  (`gt`/`lt`, `decimal`, `dimensions`, `json`, …), route model binding (`Found`), named
-  disks, ETags, the `XSRF-TOKEN` cookie, trusted hosts, and view and redirect routes.
-- **M34:** the rest of the review's small additions: `current_password`, the breach check,
-  session `keep`/`flash_now`, named error bags, several mailers with failover, `has_many_through`.
+- **1.0** brought the API audit with semver checks in CI, the documentation site with the
+  tutorial and the Laravel guide, the starter kit (`rnx new --starter`) and the bike shop
+  example with its design system.
+- **1.1** made `rx-*` tags the way to write pages, and added live components, typed columns,
+  `#[model(form)]`, migrations generated from models, `db:check`, `view:check`, typed view
+  contexts, editor autocomplete and `rnx doctor`, plus what the bike shop had to work around.
+- The [Laravel parity review](docs/audit/2026-10-laravel-parity.md) compares Renox with Laravel
+  and Filament feature by feature, as of October 2026.
 
-Then v1.0. It brought:
-- the API audit and its fixes, and semver checks in CI;
-- the documentation site with the tutorial and the Laravel guide;
-- the starter kit (`rnx new --starter`) and the 1.x promise;
-- the bike shop example and its design system: the editorial default theme, icons, the phone
-  tab bar, renox-blocks, and the starter's page patterns.
-
-**1.1** (`cargo install renox-cli`, or `renox = "1.1"`). Everything in it is additive, so 1.0
-apps keep compiling:
-- what the bike shop had to work around: seeders from modules, public `db::Conn`, signed
-  routes inside groups, the session in view contexts, users by permission, device tokens;
-  computed grid columns, Excel workbooks with several sheets and heatmap charts; paused
-  subscriptions in renox-billing; actions with input, relation managers and layout slots in
-  renox-admin;
-- the developer-experience work: `rx-*` tags as the default way to write pages (in `rnx new`,
-  the starter, both examples and the guides), component events, live components, typed
-  columns, `#[model(form)]`, migrations generated from models, `db:check`, `view:check`,
-  typed view contexts, editor autocomplete and `rnx doctor`.
-
-Breaking changes up to 1.0 are listed in [CHANGELOG.md](CHANGELOG.md).
+What each release and milestone added, and why: [CHANGELOG.md](CHANGELOG.md) and
+[ROADMAP.md](ROADMAP.md).
 
 An app made by `rnx` from crates.io depends on that release (`renox = { version = "…" }`); to
 upgrade, raise the version and read the changelog. An `rnx` installed from Git pins its apps
