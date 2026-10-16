@@ -31,6 +31,7 @@ the database checks. Outside an app directory it checks the machine only and tel
 - [Sharing compiled dependencies](#sharing-compiled-dependencies): reuse work between apps.
 - [Docker](#docker): keep Docker builds quick.
 - [Editor autocomplete](#editor-autocomplete): tag and attribute suggestions for templates.
+- [Packages](#packages): a reusable module in its own crate, made with `rnx make:package`.
 
 ### Words you'll meet
 
@@ -172,3 +173,74 @@ New apps get suggestions for the kit's `<rx-…>` tags in VS Code. `rnx serve` w
 can't write it, `rnx serve` warns and keeps running. See
 [the UI guide](ui.md#editor-autocomplete). JetBrains IDEs aren't covered: they read Web Types,
 not this format.
+
+## Packages
+
+A module you want to reuse across apps (an internal library, a community plugin) belongs in its
+own crate. `rnx make:module` writes a module inside the app; `rnx make:package` writes a crate
+laid out like Renox's own plugins:
+
+```bash
+rnx make:package invoicing                       # crates/invoicing, joined to the workspace
+rnx make:package invoicing --path libs/invoicing # another folder inside the workspace
+rnx make:package invoicing --resource invoices --fields "number:string total:money"
+rnx make:package invoicing --with assets,commands
+```
+
+The name is snake or kebab case, like an app's. The crate keeps the name you gave (`-` stays),
+the library name uses `_`, and the module struct is the PascalCase name (`invoicing` writes
+`Invoicing`). Nothing is overwritten: if the folder exists, or `--with` has a value that isn't
+known, the command stops before writing anything.
+
+### What it writes
+
+| File | What it is |
+|---|---|
+| `Cargo.toml`, `build.rs` | the crate, with `renox` and dev-dependencies for its tests; the build script only tells cargo to rebuild when `migrations/` or `views/` change |
+| `src/lib.rs` | `pub struct Invoicing;` and its `impl Module` (routes, migrations, `register`) |
+| `src/texts.rs` | the English texts, under `invoicing.*` keys |
+| `migrations/` | one timestamped migration, `YYYYMMDDHHMMSS_create_invoicing_…_table`. The package name is in the file name so two packages can't clash; the `0001…` prefix is the framework's |
+| `views/invoicing/*.html` | the pages, written with `<rx-*>` tags and a `#[derive(ViewData)]` struct |
+| `tests/package.rs` | a `TestApp` that mounts the module: the page answers, `assert_models_match_schema`, `assert_views_compile`, and an app file overrides a package view |
+| `README.md` | the guide; it is included as the crate's docs, so its example is a doctest |
+
+With `--resource invoices`, the package also gets what `rnx make:module --resource` writes
+(model, factory, form, the seven handlers, views and tests), mounted from the package's
+`lib.rs`. `--fields` and `--model` work as they do there. The package has no database, so the
+command does not run `migrate`: the app does.
+
+`--with assets` adds a `public/` stylesheet registered with `Registry::asset` (versioned URL).
+`--with commands` adds a typed command, `invoicing:status`, which the app runs as
+`rnx invoicing:status`. `--with admin` is not available yet: it needs `Registry::contribute`
+in Renox, so the command stops with "needs a newer renox".
+
+### The workspace and the app
+
+The package joins the workspace of the app you run the command in:
+
+- A single-package app (what `rnx new` makes) becomes a workspace:
+  `[workspace] members = [".", "crates/invoicing"]`.
+- An app that already has `[workspace]` gets the path appended to `members`, once.
+- A virtual workspace (a root `Cargo.toml` with `[workspace]` and no `[package]`) gets the path
+  appended to `members` and the app is left alone. Pass `--register <crate path>` to register
+  the package in one of its crates, e.g. `--register crates/web`.
+
+The `renox` dependency follows the app: a path dependency when the app uses one (rewritten
+relative to the package), the app's version otherwise, and `renox.workspace = true` when
+`[workspace.dependencies]` has `renox`.
+
+When the command registers the package, it adds `invoicing = { path = "crates/invoicing" }` to
+the app's `Cargo.toml` and `.module(invoicing::Invoicing)` to its `src/lib.rs`. Then:
+
+```bash
+rnx migrate        # the package's migrations run with the app's
+rnx db:check       # its models are checked against the schema
+cargo test --workspace
+```
+
+### Overriding a package's views and texts
+
+The package compiles its views in, and registers each one only if the app has no template of
+that name. To change the invoicing page, put a file at
+`resources/views/invoicing/index.html` in the app; it wins. The generated test checks this. The
+texts are English; the app changes or translates them in `resources/lang/{locale}.json`.

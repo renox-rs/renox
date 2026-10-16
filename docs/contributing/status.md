@@ -507,3 +507,10 @@
   `examples/` (plus doctests), and 44 direct dependencies in renox-core (6 optional;
   pulldown-cmark came with the `markdown` filter, #94).
   Keep dependencies lean and remove unused ones.
+- **#34, `rnx make:package`**: `renox-cli/src/package.rs` (name, `--with`, workspace `members`
+  edit, the `renox` dependency, app registration) and `stubs/package/` (compiled in with
+  `include_str!`; a stub missing from the lists in `package.rs` isn't written). Migrations use the
+  `make:migration` timestamp form with the package name; the `0001…` prefix stays the
+  framework's. A virtual workspace is supported (`--register`, `renox.workspace = true`).
+  `--resource` reuses `scaffold::resource` with the package as target. `--with admin` errors until
+  `Registry::contribute` (#31) exists. Guide: docs/development.md "Packages".

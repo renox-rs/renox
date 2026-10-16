@@ -1921,8 +1921,19 @@ Notes:
 - Derived files (thumbnails) are stored at `Upload::derived_key(key, name)` (the name before the
   extension); the app deletes them with the original.
 
+### Packages (#34)
+- [x] `rnx make:package <name> [--path] [--resource --fields --model] [--with assets,commands]
+  [--register]`: a crate with a `Module`, timestamped migrations named after the package, views
+  the app can override, English texts, tests and a doctested README; joins the workspace
+  (single package, existing, or virtual) and registers itself in the app
+- [x] Docs (development.md "Packages"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
+- [ ] `--with admin` (an `AdminResource` contributed through `Registry::contribute`, after #31)
+
 ## Decisions
 
+- **Packages use timestamped migration names with the package name** (#34), never the `0001…`
+  prefix, which is reserved for the framework; `--with admin` errors until `Registry::contribute`
+  exists, rather than writing code that doesn't build.
 - **Rate limits for queued channel and mail sends are separate methods** (#46):
   `App::channel_rate_limit(name, …)` and `App::mailer_rate_limit(name, …)`, not a builder
   returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in

@@ -43,6 +43,7 @@ Prefer them over writing boilerplate by hand:
 rnx doctor   # what's missing on this machine or in this app, with the fix
 rnx make:module products                               # src/app/products + view + registration
 rnx make:module products --resource --fields "name:string price:money"  # a whole CRUD, with tests; runs migrate (asks outside APP_ENV=local; --no-migrate), prints the URL; --open opens it
+rnx make:package invoicing                             # a reusable crate in crates/invoicing (Module, migrations, views, texts, tests); --resource, --with assets,commands
 rnx make:model Product --module products --migration   # model + migrations/*.sql
 rnx make:model Invoice --module billing --key ulid -m  # id: Ulid (also uuid, string)
 rnx make:policy Product --module products

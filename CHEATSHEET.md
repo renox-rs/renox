@@ -24,6 +24,9 @@ rnx make:module products             # routes + view, registered in src/lib.rs
 rnx make:module products --resource --fields "name:string price:money notes:text active:bool due_on:date"
                                      # model, migration, factory, form, 7 handlers, UI-kit views, tests
                                      # runs migrate (asks outside APP_ENV=local; --no-migrate), prints the URL; --open opens it
+rnx make:package invoicing           # a reusable crate (Module, migrations, views, texts, tests) in crates/invoicing,
+                                     # joined to the workspace and registered in the app; --path, --resource invoices
+                                     # --fields "..", --with assets,commands, --register <crate> (virtual workspace)
 rnx make:model Product --module products --migration   # --key ulid|uuid|string for other ids
 rnx make:migration add_sku_to_products
 rnx make:migration --auto add_sku     # SQL from what changed in the models (db:diff); --yes skips questions
