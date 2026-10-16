@@ -307,7 +307,10 @@ impl Field {
     }
 
     /// Shown but not changeable on the edit page (it is still sent, so the
-    /// form's rules see it).
+    /// form's rules see it). On a settings page
+    /// ([`Admin::settings`](crate::Admin::settings)) the stored value is kept
+    /// whatever is sent, so seeded values can be shown without being
+    /// editable.
     pub fn readonly_on_edit(mut self) -> Self {
         self.readonly_on_edit = true;
         self
@@ -321,6 +324,10 @@ impl Field {
     /// The field's kind.
     pub fn kind(&self) -> FieldKind {
         self.kind
+    }
+
+    pub(crate) fn is_readonly_on_edit(&self) -> bool {
+        self.readonly_on_edit
     }
 
     pub(crate) fn shown(&self, creating: bool) -> bool {

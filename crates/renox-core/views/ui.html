@@ -905,14 +905,18 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
     reader, `template_url` links to an empty file to fill in
     (`renox::import::template`). A file that can't be read shows its error
     under the field. `button=false` for a sheet opened from an
-    `action_group`.
+    `action_group`. `check=true` adds a ticked "check the file first" box
+    sent as `dry_run`: with it the handler calls `Import::dry_run_if(…)`, the
+    report says what would happen and the sheet stays open to import for
+    real once the box is unticked. `accept=".csv,.xlsx"` takes Excel files.
     {{ import_action("import-products", "Import", route('products.import'), "Import products",
        columns=["sku", "name", "price"], template_url=route('products.template')) }} -#}
-{% macro import_action(id, label, action, title, description=none, columns=none, template_url=none, submit_label=none, accept=".csv,text/csv", name="file", variant="secondary", size=none, icon="upload", key=none, button=true) -%}
+{% macro import_action(id, label, action, title, description=none, columns=none, template_url=none, submit_label=none, accept=".csv,text/csv", name="file", variant="secondary", size=none, icon="upload", key=none, button=true, check=false) -%}
 {% call action_sheet(id, label, action, title, description=description, submit_label=submit_label or label, variant=variant, size=size, icon=icon, key=key, enctype="multipart/form-data", target="#" ~ id ~ "-result", swap="innerHTML", button=button, width="lg") %}
   {%- if columns %}<p class="rx-hint rx-import__columns">{{ t('ui.import.columns') }} {% for column in columns %}<code>{{ column }}</code>{% if not loop.last %}, {% endif %}{% endfor %}</p>{% endif %}
   {%- if template_url %}<p class="rx-import__template"><a class="rx-link" href="{{ template_url }}" download>{{ _icon("download") }} {{ t('ui.import.template') }}</a></p>{% endif %}
   {{ file(name, t('ui.import.file'), accept=accept, required=true, id=id ~ "-file") }}
+  {%- if check %}{{ checkbox("dry_run", t('ui.import.check_first'), checked=true, id=id ~ "-check") }}{% endif %}
   <div class="rx-import__result" id="{{ id }}-result" data-rx-action-result aria-live="polite"></div>
 {% endcall %}
 {%- endmacro %}

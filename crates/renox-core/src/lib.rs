@@ -115,6 +115,7 @@ pub mod security;
 pub mod select;
 pub mod seo;
 mod session;
+pub mod settings;
 pub mod shell;
 pub mod signed;
 mod state;
@@ -122,6 +123,7 @@ pub mod storage;
 #[cfg(test)]
 mod test_logs;
 pub mod testing;
+pub mod text;
 pub mod timezone;
 pub mod toast;
 pub mod upload;

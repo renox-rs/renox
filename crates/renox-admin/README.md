@@ -37,7 +37,10 @@ What each resource gets:
   and every word of the panel translatable (`renox.admin.*`);
 - the model's `Policy` asked before every page and button (`viewAny`, `view`, `create`,
   `update`, `delete`, `deleteAny`, `restore`, `forceDelete`, …);
-- a sidebar with every resource the user may see, and a dashboard with their counts.
+- a sidebar with every resource the user may see, and a dashboard with their counts;
+- settings pages (`Admin::settings::<Company>("Company")`): a form for a group of settings kept
+  in the database (`renox::settings`), checked by the group's rules, with sealed groups never
+  printed.
 
 The pages are templates (`renox-admin/*.html`) an app replaces with files of the same name.
 The guide is [docs/admin.md](https://github.com/renox-rs/renox/blob/main/docs/admin.md);

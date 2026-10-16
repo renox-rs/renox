@@ -66,7 +66,7 @@ plain `from_fn` middlewares with no state parameter and can be added from `Modul
   migrate:status|db:seed|queue:work|queue:failed|queue:retry|queue:flush|queue:forget|
   queue:prune-failed|queue:prune-batches|webhook:failed|webhook:retry|cache:prune|session:prune|sequence:list|
   ui:publish|schedule:list|schedule:run|schedule:work|route:list|db:shell|db:check|db:diff|
-  view:check|view:data|down|up|help`, default `serve` (modules add more: `tokens:prune` and `notifications:prune` from Auth, `audit:prune` from Audit),
+  view:check|view:data|down|up|help`, default `serve` (modules add more: `tokens:prune` and `notifications:prune` from Auth, `audit:prune` from Audit, `settings:get|set|list` from Settings),
   plus the app's own commands (`App::command`, or `App::typed_command` for a clap `AppCommand`;
   names can't clash with built-ins). Migrations and
   jobs are compiled into the app, so only the app can run them. `rnx <anything unknown>` forwards

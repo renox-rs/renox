@@ -60,6 +60,7 @@ the queue workers and the scheduler.
 | `webhook:failed`, `webhook:retry <id>` | Failed webhook calls (see Failed webhook calls). |
 | `sequence:list` | Lists the numbering series (`Sequence`, docs/relations.md "Numbering documents") and the last number of each. |
 | `cache:prune`, `session:prune` | Deletes expired cache rows and database sessions. |
+| `import:prune [--days N]` | Deletes the records of imports whose undo window ended more than N days ago (0): `renox::import::prune(&state, age)`. |
 | `schedule:list`, `schedule:run <task>`, `schedule:work` | The scheduler (`schedule:work` runs it alone, when `serve` runs with `SCHEDULER=false`). |
 | `db:check` | Compares the models registered with `App::model` with the tables the migrations build, and fails on a mismatch. |
 | `db:diff [name] [--yes]` | Writes a migration for what changed in those models (`rnx make:migration --auto`). Review it before `migrate`. |
@@ -639,6 +640,7 @@ commands, so it calls the function.)
 | `job_batches` | every dispatched batch | `queue:prune-batches --hours 24` (`state.queue.prune_batches(age)`, finished batches) |
 | `webhook_calls` | every received webhook | nothing yet: delete old `processed` rows yourself if it matters |
 | `notifications` | every database notification | `notifications:prune --days 30` (Auth module): notifications read more than that long ago; unread ones stay (`renox::auth::prune_read_notifications(&state.db, age)`). A user's rows are also deleted with the user (`ON DELETE CASCADE`) |
+| `import_batches`, `import_changes` | one batch per undoable import (`Import::undoable`) and a row per record it inserted or updated, with the row's before-image | `import:prune` (`renox::import::prune(&state, age)`): batches whose undo window ended. Until then they are what lets `renox::import::undo` put the import back |
 | `grid_preferences` | one small row per user and data grid | `User::delete_account` (the account page's "delete account") deletes the user's rows. The table has no foreign key to `users` (every app has it, not every app has `users`), so an app that deletes users another way must delete these rows too |
 | `subscriptions`, `billing_customers` (`renox-billing`) | every subscription an owner takes (kept as history) | nothing: they're small. The account page's "delete account" cancels the user's running subscriptions at the gateway and deletes their rows (a listener on `AccountDeleted`); an app that deletes users (or teams) another way must do the same |
 

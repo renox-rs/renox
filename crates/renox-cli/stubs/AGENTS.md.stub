@@ -28,7 +28,9 @@ one Renox version (the `renox` line in `Cargo.toml`); the links below are for th
   fragments, live validation), `docs/grid.md` (data grids with `renox::grid`: columns,
   filters, search, editing, actions, summaries, exports), `docs/testing.md` (TestApp, fakes, time travel),
   `docs/authorization.md` (gates, policies, roles, token abilities, tenants), `docs/queue.md`
-  (jobs, retries, chains, batches), `docs/postgresql.md`, `docs/operations.md` (production).
+  (jobs, retries, chains, batches), `docs/settings.md` (values an administrator edits, kept in
+  the database: a company name, a number format, feature switches), `docs/postgresql.md`,
+  `docs/operations.md` (production).
 - {{renox_offline}} After moving the app to another Renox version, use that version's
   files. To read the docs as a website (with search), https://docs.renox.rs shows the
   latest version.
@@ -240,6 +242,10 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   `authorize` (403 before the rules), `after` (database checks, errors shown on the field).
   Rules include `alpha_dash`, `uuid`, `ip`, `size`, `starts_with`, `required_without`,
   `prohibited_if`, and `v.distinct(…)` for lists.
+- Imports (`renox::import`): `Import::from_upload(&file)` reads CSV, or Excel with the `xlsx`
+  feature; `.dry_run_if(form.dry_run)` checks without writing (`<rx-import-action check>`);
+  `.undoable(window)` can be undone with `renox::import::undo` only for rows written through the
+  closure's `tx.insert/update/save(&mut model)`, never raw SQL.
 - **The standard mechanism of a Renox dashboard application** (this app's signed-in pages, a
   back office, an admin panel, any daily workspace with a sidebar and many modules): the
   layout is `<rx-shell fill>` (`layouts/app.html` already is; docs/ui.md "The dashboard
