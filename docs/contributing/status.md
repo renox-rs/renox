@@ -401,6 +401,13 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#46, rate limits for queued channel and mail sends**: `App::channel_rate_limit` /
+  `Registry::channel_rate_limit` and `App::mailer_rate_limit` (`"default"` = the default mailer).
+  `Job::middleware` has no state, so the limit is copied into the payload of `SendToChannel`,
+  `SendMail` and `SendMailVia` when they are queued (`queue::Limit`, optional fields; `SendMail`
+  flattens its `Mail`, so old payloads still decode) and the job returns
+  `Middleware::rate_limited("channel:<name>" | "mailer:<name>", …)`. Unknown names fail at boot.
+  Tests: tests/it/rate_limits.rs.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

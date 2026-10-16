@@ -2022,6 +2022,11 @@ fn channels(app: App) -> App {
         let _ = (phone, message);
         Ok(())
     })
+    // Cap queued sends (notify_later) to this channel: 20 a second, shared by every worker;
+    // the rest wait for the next window without using an attempt. Unknown name = boot error.
+    .channel_rate_limit("whatsapp", 20, std::time::Duration::from_secs(1))
+    // Same for queued mail through a named mailer ("default" = the default one):
+    // .mailer_rate_limit("bulk", 100, std::time::Duration::from_secs(60))
 }
 
 async fn ship(state: &AppState, user: &User) -> Result {
