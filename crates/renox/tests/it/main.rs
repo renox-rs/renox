@@ -80,6 +80,7 @@ mod tooling;
 mod typed_columns;
 mod types;
 mod ui;
+mod upload_pipeline;
 mod uploads;
 mod validation;
 mod views;

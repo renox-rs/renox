@@ -349,6 +349,9 @@ pub struct SampleForm {
     manual: Option<Upload>, // <input type="file" accept="application/pdf">
 }
 
+/// The name of the thumbnail the upload pipeline derives from a photo (src/lib.rs).
+const THUMB: &str = "thumb";
+
 // [explain:fields.rules]
 impl Validate for SampleForm {
     fn rules(&self, v: &mut Validator) {
@@ -417,7 +420,11 @@ impl SampleForm {
         let mut replaced = Vec::new();
         if let Some(photo) = self.photo {
             let key = photo.store_public(&state.storage, "samples").await?;
-            replaced.extend(sample.photo.replace(key));
+            // The old photo goes with its thumbnail.
+            if let Some(old) = sample.photo.replace(key) {
+                replaced.push(Upload::derived_key(&old, THUMB));
+                replaced.push(old);
+            }
         }
         if let Some(manual) = self.manual {
             let key = manual.store(&state.storage, "samples").await?;
@@ -511,9 +518,18 @@ async fn store(
 async fn show(State(state): State<AppState>, user: AuthUser, Path(id): Path<Uuid>) -> Result<View> {
     let sample = own(&state.db, &user, id).await?;
     let photo_url = sample.photo.as_deref().map(|key| state.storage.url(key));
+    // The pipeline's thumbnail, stored next to the photo; a photo saved before
+    // the pipeline existed shows itself.
+    let mut thumb_url = photo_url.clone();
+    if let Some(key) = sample.photo.as_deref() {
+        let thumb = Upload::derived_key(key, THUMB);
+        if state.storage.exists(&thumb).await? {
+            thumb_url = Some(state.storage.url(&thumb));
+        }
+    }
     Ok(view(
         "about/fields_show.html",
-        context! { sample, photo_url },
+        context! { sample, photo_url, thumb_url },
     ))
 }
 
@@ -564,6 +580,12 @@ async fn destroy(
     sample.delete(&state.db).await?;
     for key in sample.photo.iter().chain(sample.manual.iter()) {
         state.storage.delete(key).await?;
+    }
+    if let Some(photo) = &sample.photo {
+        state
+            .storage
+            .delete(&Upload::derived_key(photo, THUMB))
+            .await?;
     }
     Ok((
         Toast::success(lang.t("fields.deleted", &[("name", &sample.name)])),

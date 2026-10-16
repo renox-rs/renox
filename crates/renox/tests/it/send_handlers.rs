@@ -828,6 +828,37 @@ async fn grid(request: renox::grid::GridRequest, State(db): State<Db>) -> Result
     Ok(format!("{} {all}", page.total()))
 }
 
+/// The upload pipeline's storage APIs: encrypted files, derived files,
+/// `Upload::process`, `Download::decrypted`.
+async fn uploaded(State(state): State<AppState>) -> Result<String> {
+    let mut file = Upload::new("scan.txt", "text/plain", b"private".to_vec());
+    file.process(&state).await?;
+    file.derive(
+        "copy",
+        Upload::new("scan.txt", "text/plain", b"copy".to_vec()),
+    );
+    let key = file.store_encrypted(&state.storage, "ids").await?;
+    let plain = state.storage.get_decrypted(&key).await?;
+    let copy = state
+        .storage
+        .get_decrypted(&Upload::derived_key(&key, "copy"))
+        .await?;
+    state
+        .storage
+        .put_encrypted("ids/direct.txt", b"direct".to_vec().into())
+        .await?;
+    renox::Download::decrypted(&state.storage, "ids/direct.txt", "direct.txt").await?;
+    let moved = state
+        .storage
+        .rewrap_encrypted("ids", &renox::generate_key())
+        .await?;
+    Ok(format!(
+        "{} {} {moved}",
+        plain.is_some_and(|p| &p[..] == b"private"),
+        copy.is_some_and(|p| &p[..] == b"copy")
+    ))
+}
+
 impl Module for Handlers {
     fn name(&self) -> &'static str {
         "handlers"
@@ -856,6 +887,7 @@ impl Module for Handlers {
             .get("/import-more", import_more)
             .get("/search", search)
             .get("/live", live)
+            .get("/uploaded", uploaded)
     }
 }
 
@@ -937,4 +969,8 @@ async fn data_apis_work_in_routed_handlers() {
         .assert_ok()
         .assert_see("1 1 1 1 true 0");
     app.get("/search").await.assert_ok().assert_see("1 1 1");
+    app.get("/uploaded")
+        .await
+        .assert_ok()
+        .assert_see("true true 0");
 }

@@ -458,6 +458,17 @@
   (derefs to the transaction and is an `Executor`, so closures written for `&mut Transaction`
   compile unchanged). Not done: mapping columns in the browser (a follow-up); `ImportTx` has no
   `delete`.
+- **#43, the upload pipeline**: `upload/pipeline.rs` (`Pipeline`, `UploadStep`, `StepOutcome`,
+  `UploadContext`), `upload/clamav.rs`, `upload/images.rs` (feature `images`, the `image` crate with
+  JPEG/PNG/WebP only), `App::uploads`, `AppState.uploads`. `Valid<T>` runs the steps after the
+  rules (`validation/extract.rs`) on the multipart form's files and, when a step changed one,
+  parses the form again with it. Encrypted storage: `crypto::encrypt_file`/`decrypt_file`/
+  `rewrap_file` (`RNXE`, v1; `aes-gcm` direct dependency, same version as `cookie`'s),
+  `Storage::put_encrypted`/`get_decrypted`/`rewrap_encrypted` (`Storage` holds the `APP_KEY`),
+  `storage::file_response` decrypts for local temporary URLs. Tests: tests/it/upload_pipeline.rs
+  (+ send_handlers, s3), unit tests in `images.rs`/`crypto.rs`; bikeshop's tests/fields.rs uses a
+  real PNG (tests/fixtures/bike.png) since the pipeline decodes images. Not run here: the S3
+  round trip (needs the `s3` job).
 - **#48, calendar files and the receipt print layout**: `renox::calendar` (`Ics`, `Event`,
   `Method`, `Status`; RFC 5545: CRLF, folding at 75 octets without splitting a character,
   escaping, UTC times, `DTSTAMP` from `clock`; no dependency), `Mail::attach_ics` (`invite.ics`

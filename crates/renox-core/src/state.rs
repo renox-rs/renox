@@ -66,6 +66,8 @@ pub struct AppStateInner {
     pub storage: Storage,
     /// The app's other disks (`App::disk`), by name; see [`AppState::disk`].
     pub(crate) disks: Arc<std::collections::HashMap<String, Storage>>,
+    /// The steps uploaded files pass (`App::uploads`).
+    pub(crate) uploads: crate::upload::Pipeline,
     /// Calls other services; faked in tests (`TestApp::fake_http`).
     pub http: crate::http::Http,
     /// Translations from `LANG_PATH` and the built-in ones (`Lang`, `t()`).

@@ -110,6 +110,21 @@ impl Download {
         Ok(Self::bytes(filename, content_type, bytes))
     }
 
+    /// A file written with [`Storage::put_encrypted`] (or
+    /// `Upload::store_encrypted`), decrypted for the response. A missing key
+    /// is a 404; a file that isn't encrypted or can't be opened with this
+    /// `APP_KEY` is an error.
+    pub async fn decrypted(
+        storage: &Storage,
+        key: &str,
+        filename: impl Into<String>,
+    ) -> Result<Self> {
+        let bytes = storage.get_decrypted(key).await?.ok_or(Error::NotFound)?;
+        let filename = filename.into();
+        let content_type = guess(&filename, Path::new(key));
+        Ok(Self::bytes(filename, content_type, bytes))
+    }
+
     /// Any stream of bytes, e.g. a CSV written row by row as the database
     /// hands them over.
     pub fn stream<S, E>(

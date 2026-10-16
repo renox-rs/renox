@@ -10,9 +10,10 @@ use renox::chrono::{NaiveDate, NaiveTime};
 use renox::prelude::*;
 use renox::testing::{TestApp, TestResponse};
 
-/// Not a real image, but it starts like one: a PNG header saying 800 × 600.
-const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\x03\x20\0\0\x02\x58 and no pixels";
-/// The same, 8000 pixels wide.
+/// A real 800 × 600 PNG: the upload pipeline (`Images`, src/lib.rs) decodes it.
+const PNG: &[u8] = include_bytes!("fixtures/bike.png");
+/// Not a real image, but it starts like one: a PNG header saying 8000 × 600,
+/// which the rules refuse before the pipeline looks at it.
 const WIDE_PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR\0\0\x1f\x40\0\0\x02\x58 and no pixels";
 const PDF: &[u8] = b"%PDF-1.7\n% a manual\n";
 
@@ -483,6 +484,17 @@ async fn files_are_checked_by_content_and_stored_public_or_private() {
     let photo_url = storage.url(sample.photo.as_deref().unwrap());
     assert!(photo_url.starts_with("/storage/samples/"), "{photo_url}");
     app.get(&photo_url).await.assert_ok();
+    // The pipeline stored a 320 px thumbnail next to the photo, and the page
+    // shows it (linking to the photo).
+    let photo_key = sample.photo.clone().unwrap();
+    let thumb_key = Upload::derived_key(&photo_key, "thumb");
+    let thumb = storage.get(&thumb_key).await.unwrap().unwrap();
+    assert_eq!(
+        Upload::new("t.png", "", thumb).dimensions(),
+        Some((320, 240))
+    );
+    let thumb_url = storage.url(&thumb_key);
+    app.get(&thumb_url).await.assert_ok();
     assert_eq!(sample.manual_name.as_deref(), Some("Owner manual.pdf"));
     let manual_key = sample.manual.clone().unwrap();
     // The private file has no public address…
@@ -495,7 +507,9 @@ async fn files_are_checked_by_content_and_stored_public_or_private() {
     assert!(disposition.contains("Owner manual.pdf"), "{disposition}");
     app.get(&show)
         .await
-        .assert_see(&photo_url)
+        .assert_see(&format!(
+            r#"<a href="{photo_url}"><img class="bs-sample-photo" src="{thumb_url}""#
+        ))
         .assert_see(&format!(r#"href="{show}/manual""#));
 
     // A new photo replaces the old file; deleting the sample deletes the rest.
@@ -507,7 +521,13 @@ async fn files_are_checked_by_content_and_stored_public_or_private() {
         .await
         .assert_redirect(&show);
     assert!(!storage.exists(&old_photo).await.unwrap());
+    assert!(
+        !storage.exists(&thumb_key).await.unwrap(),
+        "the old thumbnail goes too"
+    );
     let sample = only_sample(&app).await;
+    let new_thumb = Upload::derived_key(sample.photo.as_deref().unwrap(), "thumb");
+    assert!(storage.exists(&new_thumb).await.unwrap());
     app.delete(&show).await.assert_redirect("/about/fields");
     assert!(
         !storage
@@ -515,6 +535,7 @@ async fn files_are_checked_by_content_and_stored_public_or_private() {
             .await
             .unwrap()
     );
+    assert!(!storage.exists(&new_thumb).await.unwrap());
     assert!(!storage.exists(&manual_key).await.unwrap());
 }
 
@@ -599,7 +620,14 @@ mod on_s3 {
         let url = storage.url(photo);
         assert!(url.starts_with("http://"), "{url}");
         app.get(&show).await.assert_see(&url);
-        assert_eq!(storage.get(photo).await.unwrap().as_deref(), Some(PNG));
+        // The pipeline re-encoded the photo (no metadata) and made a thumbnail.
+        let stored = storage.get(photo).await.unwrap().unwrap();
+        assert_eq!(
+            Upload::new("p.png", "", stored).dimensions(),
+            Some((800, 600))
+        );
+        let thumb = Upload::derived_key(photo, "thumb");
+        assert!(storage.exists(&thumb).await.unwrap());
         // A presigned link to the private manual works without the app too…
         let link = storage
             .temporary_url(app.state(), &manual, std::time::Duration::from_secs(300))

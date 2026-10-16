@@ -34,7 +34,7 @@
       <rx-entry :label="t('fields.form.pickup')" :value="sample.pickup_at"/>
       <rx-entry :label="t('fields.form.launch')" :value="sample.launch_at" format="datetime" date-format="%d %b %Y, %H:%M"/>
       <rx-entry :label="t('fields.form.released')" :value="sample.released_on" format="date" date-format="%d %b %Y"/>
-      <rx-entry rx-if="photo_url" :label="t('fields.form.photo')"><img class="bs-sample-photo" src="{{ photo_url }}" alt="{{ t('fields.show.photo_alt', name=sample.name) }}"></rx-entry>
+      <rx-entry rx-if="photo_url" :label="t('fields.form.photo')"><a href="{{ photo_url }}"><img class="bs-sample-photo" src="{{ thumb_url }}" alt="{{ t('fields.show.photo_alt', name=sample.name) }}"></a></rx-entry>
       <rx-entry rx-else :label="t('fields.form.photo')" :value="none" :placeholder="t('fields.show.none')"/>
       <rx-entry rx-if="sample.manual" :label="t('fields.form.manual')" :value="sample.manual_name" :url="route('about.fields.manual', sample.id)" new-tab/>
       <rx-entry rx-else :label="t('fields.form.manual')" :value="none" :placeholder="t('fields.show.none')"/>

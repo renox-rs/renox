@@ -1899,6 +1899,28 @@ Notes:
 - The large seed is fast enough to run in every CI test job (~7 s on SQLite, ~27 s on
   PostgreSQL for the query walk), so nothing is `#[ignore]`d.
 
+### The upload pipeline (#43)
+
+Steps between receiving an upload and storing it, so every upload path gets the same protection.
+
+- [x] `renox::upload::{Pipeline, UploadStep, StepOutcome, UploadContext}`, `App::uploads`; steps run
+  inside `Valid<T>` after the rules (a rejection is an error on the file's field: redirect back
+  or `422`), or by hand with `Upload::process`.
+- [x] `ClamAv::tcp` / `ClamAv::unix`: clamd `INSTREAM` with no dependency; fails closed, with a
+  timeout (`.timeout`, `.fail_open`). Tested against a fake clamd (EICAR).
+- [x] `images` feature: `Images` (resize, EXIF orientation, metadata stripped, thumbnails) with the
+  `image` crate (JPEG, PNG, WebP); `cargo tree -p hello -i image` is empty in CI.
+- [x] Encrypted files: `Upload::store_encrypted`, `Storage::put_encrypted`/`get_decrypted`/
+  `rewrap_encrypted`, `Download::decrypted`; local temporary URLs and `/_renox/files` decrypt.
+- [x] Docs (validation.md, operations.md, development.md), CHEATSHEET.md, llms.txt, the new apps'
+  AGENTS.md; bikeshop's `/about/fields` shows the thumbnail.
+- [ ] Later: decrypting S3 presigned links (they serve ciphertext), HEIC through a documented
+  external converter recipe only.
+
+Notes:
+- Derived files (thumbnails) are stored at `Upload::derived_key(key, name)` (the name before the
+  extension); the app deletes them with the original.
+
 ## Decisions
 
 - **Rate limits for queued channel and mail sends are separate methods** (#46):
@@ -1906,6 +1928,13 @@ Notes:
   returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in
   the job payload because `Job::middleware` has no `AppState`; it reuses
   `Middleware::rate_limited` (a fixed window). A sliding window or token bucket stays a follow-up.
+- **The upload pipeline** (#43): steps are `Arc<dyn UploadStep>` returning `BoxFuture` (no
+  `async_trait`). `Valid<T>` runs them after the rules and `after`, then reads the form again with
+  the changed files, so a handler sees the processed upload. Encrypted files use
+  `aes-gcm` (pure Rust, the version `cookie` already pulls in): a data key per file wrapped under
+  the key `cookie::Key` derives from `APP_KEY`, header `RNXE` + version 1. Rotating `APP_KEY`
+  re-wraps headers (`rewrap_encrypted`). HEIC/AVIF decoding is not in Renox (no mature pure-Rust
+  decoder; libheif is C and LGPL).
 - **`rx-*` tags are the default way to write pages** in `rnx new`, the docs and the examples (owner, 2026-10-11, #384); kit macros stay supported and are what the tags compile to.
 - **Browser tests on Node's own test runner and raw CDP** (#262, 2026-10): `tests/browser/`
   drives headless Chrome over the DevTools protocol with Node 24's `node:test` and global
