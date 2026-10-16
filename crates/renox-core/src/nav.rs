@@ -2,7 +2,7 @@
 //! ([`NavLink`], [`Registry::nav`](crate::Registry::nav),
 //! [`App::nav`](crate::App::nav)).
 
-// The menu builder that reads the links comes with the next change.
+// The template function that calls the menu builder comes with the next change.
 #![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
@@ -12,6 +12,9 @@ use std::sync::Arc;
 
 use anyhow::anyhow;
 
+use serde::Serialize;
+
+use crate::i18n::Lang;
 use crate::{AppState, AuthUser, Result};
 
 /// Where a [`NavLink`] points.
@@ -203,9 +206,234 @@ impl Nav {
     }
 }
 
+/// One link of a built menu, ready to draw.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct MenuItem {
+    pub(crate) key: String,
+    pub(crate) label: String,
+    pub(crate) url: String,
+    pub(crate) icon: Option<String>,
+    pub(crate) badge: Option<String>,
+    pub(crate) active: bool,
+}
+
+/// A heading and its links; the heading is `None` for links without a group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct MenuGroup {
+    pub(crate) label: Option<String>,
+    pub(crate) items: Vec<MenuItem>,
+}
+
+/// What a menu is built for: the request it is drawn in.
+pub(crate) struct MenuRequest<'a> {
+    pub(crate) state: &'a AppState,
+    /// `None` for an anonymous visitor.
+    pub(crate) user: Option<&'a AuthUser>,
+    pub(crate) locale: &'a str,
+    /// The current route name, if the request matched a named route.
+    pub(crate) route: Option<&'a str>,
+    pub(crate) path: &'a str,
+}
+
+impl Nav {
+    /// Builds the menu `menu` for one request: drops hidden links and the
+    /// ones the user may not see (permission, gate, `when`, in that order),
+    /// runs the badges of the rest, translates the labels, marks the active
+    /// link and arranges groups by their lowest `order`. An unknown menu is
+    /// empty. A badge that fails is logged and the link drawn without it.
+    pub(crate) async fn menu(&self, menu: &str, request: &MenuRequest<'_>) -> Vec<MenuGroup> {
+        let Some(links) = self.menus.get(menu) else {
+            return Vec::new();
+        };
+        let lang = Lang::of(request.state, request.locale);
+        let mut entries = Vec::new();
+        for link in links {
+            if self.hidden.contains(&(menu.to_owned(), link.key.clone())) {
+                continue;
+            }
+            if !visible(link, request).await {
+                continue;
+            }
+            let url = match &link.target {
+                Target::Url(url) => url.clone(),
+                Target::Route(name) => match request.state.routes.url(name, &[]) {
+                    Ok(url) => url,
+                    Err(err) => {
+                        tracing::warn!(menu, key = %link.key, "navigation link skipped: {err}");
+                        continue;
+                    }
+                },
+            };
+            let badge = match (&link.badge, request.user) {
+                (Some(badge), Some(user)) => {
+                    match badge(request.state.clone(), user.clone()).await {
+                        Ok(badge) => badge.filter(|text| !text.is_empty()),
+                        Err(err) => {
+                            tracing::warn!(menu, key = %link.key, "navigation badge failed: {err}");
+                            None
+                        }
+                    }
+                }
+                _ => None,
+            };
+            let item = MenuItem {
+                key: link.key.clone(),
+                label: lang.t(&link.label, &[]),
+                url,
+                icon: link.icon.clone(),
+                badge,
+                active: is_active(link, request.route, request.path),
+            };
+            entries.push((link.group.clone(), link.order, item));
+        }
+        arrange(entries, |group| lang.t(group, &[]))
+    }
+}
+
+/// Whether the request's user may see `link`.
+async fn visible(link: &NavLink, request: &MenuRequest<'_>) -> bool {
+    let restricted = link.permission.is_some() || link.gate.is_some() || link.when.is_some();
+    let Some(user) = request.user else {
+        return !restricted;
+    };
+    if let Some(permission) = &link.permission {
+        // Without the Permissions module a permission name falls back to the
+        // gates, where an unknown name denies.
+        if !user.has_permission_anywhere(permission) && !gate_allows(user, permission).await {
+            return false;
+        }
+    }
+    if let Some(gate) = &link.gate
+        && !gate_allows(user, gate).await
+    {
+        return false;
+    }
+    link.when.as_ref().is_none_or(|check| check(user))
+}
+
+async fn gate_allows(user: &AuthUser, gate: &str) -> bool {
+    match user.allows_async(gate).await {
+        Ok(allowed) => allowed,
+        Err(err) => {
+            tracing::warn!(gate, "navigation gate failed: {err}");
+            false
+        }
+    }
+}
+
+/// Whether `link` is the current page: a route link matches its own route
+/// and the routes under its prefix (`invoices.index` also matches
+/// `invoices.show`), `NavLink::active` replaces that pattern, and a URL link
+/// matches the exact path.
+fn is_active(link: &NavLink, route: Option<&str>, path: &str) -> bool {
+    if let Some(pattern) = &link.active {
+        return route.is_some_and(|name| crate::routing::route_name_matches(name, pattern));
+    }
+    match &link.target {
+        Target::Url(url) => url == path,
+        Target::Route(own) => route.is_some_and(|name| {
+            name == own
+                || own
+                    .rsplit_once('.')
+                    .is_some_and(|(prefix, _)| name.starts_with(&format!("{prefix}.")))
+        }),
+    }
+}
+
+/// Splits entries into groups: ungrouped links first, then the groups by
+/// their lowest `order` (ties keep the order the groups first appeared in);
+/// links inside a group by `order`, ties in insertion order.
+fn arrange(
+    entries: Vec<(Option<String>, i32, MenuItem)>,
+    label: impl Fn(&str) -> String,
+) -> Vec<MenuGroup> {
+    type Bucket = (Option<String>, i32, Vec<(i32, MenuItem)>);
+    let mut groups: Vec<Bucket> = Vec::new();
+    for (group, order, item) in entries {
+        match groups.iter_mut().find(|(name, ..)| *name == group) {
+            Some((_, lowest, items)) => {
+                *lowest = (*lowest).min(order);
+                items.push((order, item));
+            }
+            None => groups.push((group, order, vec![(order, item)])),
+        }
+    }
+    // Stable sorts keep insertion order on ties; `false < true` puts the
+    // ungrouped links first.
+    groups.sort_by_key(|(name, lowest, _)| (name.is_some(), *lowest));
+    groups
+        .into_iter()
+        .map(|(name, _, mut items)| {
+            items.sort_by_key(|(order, _)| *order);
+            MenuGroup {
+                label: name.map(|name| label(&name)),
+                items: items.into_iter().map(|(_, item)| item).collect(),
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn item(key: &str) -> MenuItem {
+        MenuItem {
+            key: key.into(),
+            label: key.into(),
+            url: format!("/{key}"),
+            icon: None,
+            badge: None,
+            active: false,
+        }
+    }
+
+    #[test]
+    fn groups_follow_their_lowest_order_and_ungrouped_links_come_first() {
+        let entries = vec![
+            (Some("Sales".to_owned()), 30, item("orders")),
+            (Some("Finance".to_owned()), 20, item("invoices")),
+            (None, 90, item("home")),
+            (Some("Sales".to_owned()), 5, item("quotes")),
+            (Some("Finance".to_owned()), 10, item("payments")),
+        ];
+        let groups = arrange(entries, |name| name.to_uppercase());
+        let shape: Vec<(Option<&str>, Vec<&str>)> = groups
+            .iter()
+            .map(|g| {
+                (
+                    g.label.as_deref(),
+                    g.items.iter().map(|i| i.key.as_str()).collect(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            shape,
+            vec![
+                (None, vec!["home"]),
+                (Some("SALES"), vec!["quotes", "orders"]),
+                (Some("FINANCE"), vec!["payments", "invoices"]),
+            ]
+        );
+    }
+
+    #[test]
+    fn active_follows_the_route_prefix_pattern_or_exact_path() {
+        let index = NavLink::route("invoices.index", "Invoices");
+        assert!(is_active(&index, Some("invoices.index"), "/invoices"));
+        assert!(is_active(&index, Some("invoices.show"), "/invoices/1"));
+        assert!(!is_active(&index, Some("orders.index"), "/orders"));
+        assert!(!is_active(&index, None, "/"));
+        let flat = NavLink::route("home", "Home");
+        assert!(is_active(&flat, Some("home"), "/"));
+        assert!(!is_active(&flat, Some("home.other"), "/"));
+        let custom = NavLink::route("a.index", "A").active("b.*");
+        assert!(is_active(&custom, Some("b.show"), "/b/1"));
+        assert!(!is_active(&custom, Some("a.index"), "/a"));
+        let url = NavLink::url("/docs", "Docs");
+        assert!(is_active(&url, None, "/docs"));
+        assert!(!is_active(&url, None, "/docs/x"));
+    }
 
     #[test]
     fn keys_default_to_the_route_or_url_and_can_be_renamed() {
