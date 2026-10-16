@@ -18,7 +18,7 @@ use crate::db::{Db, Migration};
 use crate::queue::{Job, JobContext, unix_now};
 use crate::{AppState, Error, Result};
 
-pub(crate) const MIGRATIONS: [Migration; 2] = [
+pub(crate) const MIGRATIONS: [Migration; 4] = [
     crate::db::framework_migration!("webhook", "00010101000300_create_webhook_calls_table"),
     Migration::new(
         "00010101000301_store_webhook_payloads_as_bytes",
@@ -35,6 +35,8 @@ pub(crate) const MIGRATIONS: [Migration; 2] = [
             "../../migrations/webhook/00010101000301_store_webhook_payloads_as_bytes.postgres.down.sql"
         )),
     ),
+    crate::db::framework_migration!("webhook", "00010101000310_create_webhook_endpoints_table"),
+    crate::db::framework_migration!("webhook", "00010101000311_create_webhook_deliveries_table"),
 ];
 
 /// Tells Renox how to receive one provider's webhooks.
