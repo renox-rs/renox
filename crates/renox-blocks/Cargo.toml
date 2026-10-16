@@ -1,6 +1,6 @@
 [package]
 name = "renox-blocks"
-description = "Interactive UI blocks for Renox apps: a stepper, a two-handle range, a keypad, swatches, a date and time range, a gallery, a timeline, a plan comparison, a month calendar, an availability grid and a kanban board."
+description = "Interactive UI blocks for Renox apps: a stepper, a two-handle range, a keypad, swatches, a date and time range, a gallery, a timeline, a plan comparison, a month calendar, an availability grid, a week calendar, a status stepper and a kanban board."
 readme = "README.md"
 version.workspace = true
 edition.workspace = true

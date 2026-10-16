@@ -55,6 +55,7 @@ mod polish;
 mod postgres;
 mod query_builder;
 mod queue;
+mod rate_limits;
 mod requests;
 #[cfg(feature = "s3")]
 mod s3;

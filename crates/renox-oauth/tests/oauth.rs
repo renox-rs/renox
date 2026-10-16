@@ -14,7 +14,8 @@ use renox::http::{FakeHttp, FakeResponse};
 use renox::prelude::*;
 use renox::testing::{TestApp, TestResponse};
 use renox_oauth::{
-    AccountLinked, AccountUnlinked, GitHub, Google, LoggedInWith, OAuth, OAuthAccount,
+    AccountLinked, AccountUnlinked, GitHub, Google, LoggedInWith, Microsoft, OAuth, OAuthAccount,
+    OAuthRefused,
 };
 use sha2::{Digest, Sha256};
 
@@ -878,4 +879,397 @@ async fn the_account_page_lists_providers_the_app_no_longer_offers() {
     // It can still be unlinked.
     app.delete("/auth/gitlab").await.assert_redirect("/account");
     app.assert_database_count("oauth_accounts", 0).await;
+}
+
+// ---------- #51: Microsoft work accounts, a Workspace domain, allowed domains ----------
+
+const TENANT: &str = "11111111-2222-3333-4444-555555555555";
+const OTHER_TENANT: &str = "99999999-8888-7777-6666-555555555555";
+const CONSUMER: &str = "9188040d-6c67-4c5b-b112-36a304b66dad";
+const FAR_FUTURE: i64 = 4_102_444_800;
+
+/// An ID token as the token endpoint sends it. The signature is junk: Renox
+/// doesn't verify it (OpenID Connect Core 3.1.3.7).
+fn id_token(claims: renox::serde_json::Value) -> String {
+    let part = |value: &renox::serde_json::Value| URL_SAFE_NO_PAD.encode(value.to_string());
+    format!(
+        "{}.{}.not-checked",
+        part(&json!({ "alg": "RS256" })),
+        part(&claims)
+    )
+}
+
+/// Claims of a work account of `tid`, for the client `ms-id`.
+fn claims(tid: &str, email: &str) -> renox::serde_json::Value {
+    json!({
+        "iss": format!("https://login.microsoftonline.com/{tid}/v2.0"),
+        "aud": "ms-id",
+        "exp": FAR_FUTURE,
+        "tid": tid,
+        "oid": "oid-1",
+        "sub": "sub-1",
+        "email": email,
+        "name": "Mira Staff",
+    })
+}
+
+async fn microsoft_app(microsoft: Microsoft) -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Auth::new().account())
+            .module(Audit)
+            .module(OAuth::new().provider(microsoft)),
+    )
+    .await
+}
+
+/// Microsoft answers the code with an access token and this ID token.
+fn microsoft_says(app: &TestApp, tenant_path: &str, claims: renox::serde_json::Value) -> FakeHttp {
+    let http = app.fake_http();
+    http.on(
+        &format!("POST https://login.microsoftonline.com/{tenant_path}/oauth2/v2.0/token"),
+        FakeResponse::json(
+            200,
+            json!({ "access_token": "ms-token", "token_type": "Bearer", "id_token": id_token(claims) }),
+        ),
+    );
+    http
+}
+
+#[renox::test]
+async fn microsoft_signs_in_the_configured_tenant() {
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(TENANT)).await;
+    let url = start(&app, "microsoft", "").await;
+    assert!(
+        url.starts_with(&format!(
+            "https://login.microsoftonline.com/{TENANT}/oauth2/v2.0/authorize?"
+        )),
+        "{url}"
+    );
+    assert_eq!(
+        param(&query(&url), "scope").unwrap(),
+        "openid email profile"
+    );
+    microsoft_says(&app, TENANT, claims(TENANT, "mira@contoso.com"));
+    let state = param(&query(&url), "state").unwrap();
+    back(&app, "microsoft", &state).await.assert_redirect("/");
+
+    // The tenant's email counts as verified: the account is made.
+    let mira = User::find_by_email(app.db(), "mira@contoso.com")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(mira.name, "Mira Staff");
+    app.assert_authenticated(Some(&mira));
+    let link = OAuthAccount::find_linked(app.db(), "microsoft", "oid-1")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(link.user_id, mira.id);
+}
+
+#[renox::test]
+async fn microsoft_resolves_a_domain_tenant_once_and_checks_the_callbacks_tenant() {
+    let domain = "contoso.onmicrosoft.com";
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(domain)).await;
+    let http = microsoft_says(&app, domain, claims(TENANT, "mira@contoso.com"));
+    http.on(
+        &format!(
+            "https://login.microsoftonline.com/{domain}/v2.0/.well-known/openid-configuration"
+        ),
+        FakeResponse::json(
+            200,
+            json!({ "issuer": format!("https://login.microsoftonline.com/{TENANT}/v2.0") }),
+        ),
+    );
+    sign_in_with(&app, "microsoft").await.assert_redirect("/");
+    app.logout();
+    sign_in_with(&app, "microsoft").await.assert_redirect("/");
+    let discoveries = http
+        .sent()
+        .iter()
+        .filter(|r| r.url.contains(".well-known"))
+        .count();
+    assert_eq!(discoveries, 1, "kept after the first use");
+
+    // Another tenant's account, although it went through this tenant's URL.
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(domain)).await;
+    let http = microsoft_says(&app, domain, claims(OTHER_TENANT, "mira@contoso.com"));
+    http.on(
+        &format!(
+            "https://login.microsoftonline.com/{domain}/v2.0/.well-known/openid-configuration"
+        ),
+        FakeResponse::json(
+            200,
+            json!({ "issuer": format!("https://login.microsoftonline.com/{TENANT}/v2.0") }),
+        ),
+    );
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+}
+
+#[renox::test]
+async fn microsoft_refuses_another_tenant_and_says_so() {
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(TENANT)).await;
+    microsoft_says(&app, TENANT, claims(OTHER_TENANT, "spy@evil.example"));
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+    app.assert_database_count("users", 0).await;
+    app.get("/login")
+        .await
+        .assert_see("belongs to another organisation");
+    // Announced, and so in the activity log.
+    app.assert_database_has("audit_logs", &[("action", &"oauth.refused")])
+        .await;
+    let with_reason: i64 =
+        renox::db::sql("SELECT COUNT(*) FROM audit_logs WHERE action = ? AND data LIKE ?")
+            .bind("oauth.refused")
+            .bind("%\"reason\":\"tenant\"%")
+            .scalar(app.db())
+            .await
+            .unwrap();
+    assert_eq!(with_reason, 1);
+
+    // The event itself.
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(TENANT)).await;
+    app.fake_events();
+    microsoft_says(&app, TENANT, claims(OTHER_TENANT, "spy@evil.example"));
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    let refused = app.emitted::<OAuthRefused>();
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].provider, "microsoft");
+    assert_eq!(refused[0].reason, "tenant");
+}
+
+#[renox::test]
+async fn microsoft_refuses_personal_accounts() {
+    // Even where any work account is accepted.
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret")).await;
+    app.fake_events();
+    microsoft_says(
+        &app,
+        "organizations",
+        claims(CONSUMER, "someone@outlook.com"),
+    );
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+    app.get("/login")
+        .await
+        .assert_see("Personal Microsoft accounts");
+    assert_eq!(app.emitted::<OAuthRefused>()[0].reason, "personal_account");
+}
+
+#[renox::test]
+async fn with_any_work_account_the_email_is_not_trusted() {
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret")).await;
+    microsoft_says(
+        &app,
+        "organizations",
+        claims(OTHER_TENANT, "boss@contoso.com"),
+    );
+    // Any organisation can claim any address: nothing is made or linked.
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+    app.assert_database_count("users", 0).await;
+    app.get("/login").await.assert_see("verified email");
+}
+
+#[renox::test]
+async fn an_id_token_for_another_app_or_expired_is_not_accepted() {
+    let app = microsoft_app(Microsoft::new("ms-id", "ms-secret").tenant(TENANT)).await;
+    let mut other_app = claims(TENANT, "mira@contoso.com");
+    other_app["aud"] = json!("someone-elses-client");
+    microsoft_says(&app, TENANT, other_app);
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+
+    let mut expired = claims(TENANT, "mira@contoso.com");
+    expired["exp"] = json!(1);
+    microsoft_says(&app, TENANT, expired);
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+
+    let mut wrong_issuer = claims(TENANT, "mira@contoso.com");
+    wrong_issuer["iss"] = json!("https://evil.example/v2.0");
+    microsoft_says(&app, TENANT, wrong_issuer);
+    sign_in_with(&app, "microsoft")
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+    app.assert_database_count("users", 0).await;
+}
+
+#[renox::test]
+async fn the_microsoft_tenant_can_come_from_the_configuration() {
+    let app = TestApp::with_config(
+        App::new()
+            .module(Auth::new())
+            .module(OAuth::new().microsoft()),
+        |c| {
+            c.vars.insert("MICROSOFT_CLIENT_ID".into(), "ms-id".into());
+            c.vars
+                .insert("MICROSOFT_CLIENT_SECRET".into(), "ms-secret".into());
+            c.vars.insert("MICROSOFT_TENANT".into(), TENANT.into());
+        },
+    )
+    .await;
+    let url = start(&app, "microsoft", "").await;
+    assert!(
+        url.contains(&format!("/{TENANT}/oauth2/v2.0/authorize")),
+        "{url}"
+    );
+    microsoft_says(&app, TENANT, claims(OTHER_TENANT, "x@evil.example"));
+    let state = param(&query(&url), "state").unwrap();
+    back(&app, "microsoft", &state)
+        .await
+        .assert_redirect("/login");
+    app.assert_guest();
+    let unset = TestApp::new(
+        App::new()
+            .module(Auth::new())
+            .module(OAuth::new().microsoft()),
+    )
+    .await;
+    unset
+        .get("/auth/microsoft/redirect")
+        .await
+        .assert_not_found();
+}
+
+/// Google answers with this account; `hd` only for a Workspace one.
+fn workspace_says(app: &TestApp, email: &str, hd: Option<&str>, verified: bool) {
+    let http = app.fake_http();
+    http.on(
+        GOOGLE_TOKEN,
+        FakeResponse::json(200, json!({ "access_token": "google-token" })),
+    );
+    http.on(
+        GOOGLE_USER,
+        FakeResponse::json(
+            200,
+            json!({ "sub": "g-1", "email": email, "email_verified": verified, "hd": hd }),
+        ),
+    );
+}
+
+async fn workspace_app() -> TestApp {
+    TestApp::new(
+        App::new().module(Auth::new()).module(Audit).module(
+            OAuth::new()
+                .provider(Google::new("google-id", "google-secret").hosted_domain("Example.com")),
+        ),
+    )
+    .await
+}
+
+#[renox::test]
+async fn a_hosted_domain_is_sent_and_checked_on_the_callback() {
+    let app = workspace_app().await;
+    let url = start(&app, "google", "").await;
+    assert_eq!(param(&query(&url), "hd").as_deref(), Some("example.com"));
+
+    // A Workspace account of the domain.
+    workspace_says(&app, "nia@example.com", Some("example.com"), true);
+    let state = param(&query(&url), "state").unwrap();
+    back(&app, "google", &state).await.assert_redirect("/");
+    app.assert_database_count("users", 1).await;
+
+    // `hd` removed from the URL changes nothing: a gmail.com account has no
+    // `hd` claim, and the callback checks that.
+    let app = workspace_app().await;
+    app.fake_events();
+    workspace_says(&app, "someone@gmail.com", None, true);
+    sign_in_with(&app, "google").await.assert_redirect("/login");
+    app.assert_guest();
+    app.get("/login")
+        .await
+        .assert_see("Only Google accounts of example.com");
+    app.assert_database_count("users", 0).await;
+    let refused = app.emitted::<OAuthRefused>();
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].reason, "hosted_domain");
+
+    // Another Workspace domain.
+    let app = workspace_app().await;
+    workspace_says(&app, "eve@other.example", Some("other.example"), true);
+    sign_in_with(&app, "google").await.assert_redirect("/login");
+    app.assert_guest();
+    app.assert_database_count("users", 0).await;
+}
+
+async fn domains_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Auth::new())
+            .module(Audit)
+            .module(oauth().allow_domains(&["Example.com"])),
+    )
+    .await
+}
+
+#[renox::test]
+async fn allowed_domains_refuse_other_addresses_on_every_provider() {
+    // Google: another domain, an unverified address of the right one, and a
+    // subdomain (which isn't the domain).
+    for (email, verified) in [
+        ("nia@gmail.com", true),
+        ("nia@example.com", false),
+        ("nia@mail.example.com", true),
+    ] {
+        let app = domains_app().await;
+        google_says(&app, "g-1", email, verified);
+        sign_in_with(&app, "google").await.assert_redirect("/login");
+        app.assert_guest();
+        app.assert_database_count("users", 0).await;
+        app.get("/login")
+            .await
+            .assert_see("Only accounts of example.com");
+    }
+
+    // GitHub: its verified address is at another domain.
+    let app = domains_app().await;
+    app.fake_events();
+    let http = app.fake_http();
+    http.on(
+        "POST https://github.com/login/oauth/access_token",
+        FakeResponse::json(200, json!({ "access_token": "gh-token" })),
+    );
+    http.on(
+        "https://api.github.com/user",
+        FakeResponse::json(200, json!({ "id": 7, "login": "nia" })),
+    );
+    http.on(
+        "https://api.github.com/user/emails",
+        FakeResponse::json(
+            200,
+            json!([{ "email": "nia@home.example", "primary": true, "verified": true }]),
+        ),
+    );
+    sign_in_with(&app, "github").await.assert_redirect("/login");
+    app.assert_guest();
+    app.assert_database_count("users", 0).await;
+    let refused = app.emitted::<OAuthRefused>();
+    assert_eq!(refused.len(), 1);
+    assert_eq!(refused[0].reason, "domain");
+    assert_eq!(refused[0].email.as_deref(), Some("nia@home.example"));
+
+    // The allowed domain signs in, in any letter case.
+    let app = domains_app().await;
+    google_says(&app, "g-4", "Nia@EXAMPLE.com", true);
+    sign_in_with(&app, "google").await.assert_redirect("/");
+    app.assert_database_count("users", 1).await;
 }

@@ -293,6 +293,16 @@
   renox-admin's layout and the bike shop's staff and admin layouts use it, with the tag in
   `<body class="rx-page">` (the docs taught `rx-shell` on `<body>` before). Rule text in
   llms.txt "Start here" and AGENTS.md.stub; tests/browser/ui-shell.test.mjs.
+- **#55, status stepper and week calendar** (part 3 of #32; parts #53 and #54 are separate PRs):
+  renox-blocks gets `status_stepper` (steps `{key, label, tone?, terminal?}`, `aria-current="step"`,
+  state said in words, horizontal or vertical, CSS only) and `week_calendar` (resources as rows,
+  `days` x `from`..`to` by `step` minutes as columns; `week.rs` works out each event's cells and
+  lane, the free slots and their RFC 3339 start and end through the `date` filter, so times follow
+  `APP_TIMEZONE`; a free slot is a `role=gridcell` with `hx-post`, static `hx-vals` and
+  `data-resource/-start/-end`; `assets/parts/week.js` is the grid's roving-tabindex keyboard,
+  right-to-left aware). `blocks.week.*` and `blocks.stepper.*` texts; shown on the bike shop's
+  /about/blocks; tests in crates/renox-blocks/tests/blocks.rs and
+  tests/browser/blocks.test.mjs.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 
@@ -305,6 +315,14 @@
   `password`: the account page lets them set one and asks them for a recent confirmation
   instead of a password), and the login/register/confirm pages'
   `{% include "renox/auth/login_options.html" ignore missing %}`.
+- **#51, company sign-in in `renox-oauth`**: `Microsoft` (OpenID Connect against
+  `login.microsoftonline.com/{tenant}/v2.0`; the ID token from the token endpoint, unsigned-checked
+  per OIDC Core §3.1.3.7, with `iss`/`aud`/`exp`/`tid` checked; a domain tenant is resolved to its
+  id from the discovery document and cached; the consumer tenant is always refused; the email is
+  verified only for a specific tenant), `Google::hosted_domain` (sends `hd`, checks the userinfo
+  `hd`), `OAuth::allow_domains` (verified email domain, any provider), `Refused` (an error type
+  `Provider::profile` returns to turn an account away), `Provider::with_config` (settings read
+  from the configuration, here `MICROSOFT_TENANT`) and the `OAuthRefused` event (`oauth.refused`).
 - **#148, `renox-admin`** (the admin panel: `Admin::new().authorize(…).resource(…)`,
   `impl AdminResource` with grid columns, form fields, filters, actions and the model's
   `Policy`; lists, forms, view pages, the trash, exports; the admin example): branch
@@ -401,6 +419,13 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#46, rate limits for queued channel and mail sends**: `App::channel_rate_limit` /
+  `Registry::channel_rate_limit` and `App::mailer_rate_limit` (`"default"` = the default mailer).
+  `Job::middleware` has no state, so the limit is copied into the payload of `SendToChannel`,
+  `SendMail` and `SendMailVia` when they are queued (`queue::Limit`, optional fields; `SendMail`
+  flattens its `Mail`, so old payloads still decode) and the job returns
+  `Middleware::rate_limited("channel:<name>" | "mailer:<name>", …)`. Unknown names fail at boot.
+  Tests: tests/it/rate_limits.rs.
 - **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
   `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
   nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on
