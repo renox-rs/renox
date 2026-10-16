@@ -190,7 +190,8 @@ async fn every_block_renders_and_the_files_load_once() {
         ),
     ];
     for part in [
-        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "receipt", "week",
+        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "receipt",
+        "week",
     ] {
         let path = between(&html, &format!(" data-{part}=\""), "\"");
         assert!(

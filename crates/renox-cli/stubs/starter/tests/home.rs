@@ -222,7 +222,10 @@ async fn members_can_log_in_with_a_link_sent_by_mail() {
     let link = app.last_login_link().await.expect("a link was mailed");
     let path = &link[link.find("/login/link/").unwrap()..];
     // Opening the link logs nobody in; its button does.
-    app.get(path).await.assert_ok().assert_see("anna@example.com");
+    app.get(path)
+        .await
+        .assert_ok()
+        .assert_see("anna@example.com");
     app.assert_guest();
     app.post(path, &[]).await.assert_redirect("/dashboard");
     app.assert_authenticated(Some(&anna));

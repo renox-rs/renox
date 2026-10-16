@@ -129,6 +129,11 @@ jobs:
     # #139): a breaking change fails here, since 1.x promises none.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    # Advisory until calamine moves off zip 8.x (#66): every zip 8.x release is
+    # yanked and calamine 0.36.1 needs `zip ^8.6`, so the fresh resolve that
+    # cargo-semver-checks does (it ignores Cargo.lock) fails before it compares
+    # anything. Remove this line when calamine releases against zip 9.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
