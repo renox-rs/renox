@@ -1,0 +1,30 @@
+{#- The orders grid in the dashboard standard, `<rx-shell fill>` (#24): on
+    a large screen the grid takes the height left under the page header,
+    with nothing but the grid itself; on a phone the page scrolls and the
+    grid keeps its minimum height. tests/browser/ui-shell.test.mjs drives it. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Orders</title>
+  <rx-head/>
+  <rx-ui/>
+</head>
+<body class="rx-page">
+  <rx-shell fill>
+    <rx-sidebar brand="Sales" :href="route('orders.shell')">
+      <rx-sidebar-link route="orders.shell" label="Orders" :active="true"/>
+      <rx-sidebar-link route="orders.index" label="Orders, full screen"/>
+    </rx-sidebar>
+    <div class="rx-shell__main">
+      <rx-navbar width="full" :skip="false"/>
+      <main class="rx-shell__content" id="main">
+        <rx-page-header title="Orders"/>
+        <rx-grid :page="orders"/>
+      </main>
+    </div>
+  </rx-shell>
+  <rx-toasts/>
+</body>
+</html>

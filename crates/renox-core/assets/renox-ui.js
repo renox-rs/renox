@@ -656,6 +656,32 @@
     elt.querySelectorAll('.rx-button[aria-busy="true"]').forEach(function (b) { b.removeAttribute("aria-busy"); });
   });
 
+  // ---------- The dashboard shell (`<rx-shell fill>`) ----------
+
+  // On a large screen the window of a fill shell never scrolls: its content
+  // and panes do. htmx's `revealed` listens to the window's scroll only, so
+  // a scroll inside the shell is passed on to the window.
+  document.addEventListener("scroll", function (event) {
+    var el = event.target;
+    if (el && el.closest && el.closest(".rx-shell--fill")) window.dispatchEvent(new Event("scroll"));
+  }, { capture: true, passive: true });
+  // htmx's history keeps the window's place only: the places of the content
+  // and of each pane go with the page's copy, and come back with it.
+  var SCROLLERS = ".rx-shell--fill .rx-shell__content, .rx-shell--fill .rx-pane, .rx-shell--fill > .rx-sidebar";
+  document.addEventListener("htmx:beforeHistorySave", function () {
+    document.querySelectorAll(SCROLLERS).forEach(function (el) {
+      if (el.scrollTop) el.setAttribute("data-rx-scroll", String(Math.round(el.scrollTop)));
+      else el.removeAttribute("data-rx-scroll");
+    });
+  });
+  document.addEventListener("htmx:historyRestore", function () {
+    document.querySelectorAll(SCROLLERS).forEach(function (el) {
+      var top = Number(el.getAttribute("data-rx-scroll"));
+      el.removeAttribute("data-rx-scroll");
+      if (top) el.scrollTop = top;
+    });
+  });
+
   // ---------- Live validation ----------
 
   // Forms with data-live-validate check a field when it's left, then as it's

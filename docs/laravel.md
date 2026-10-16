@@ -1386,7 +1386,7 @@ address, loads that page of orders, and passes it to the template.
 | Actions and modals | `action_sheet`, `slide_over`, `confirm`, `icon_button`, keyboard shortcuts |
 | Notifications | `Toast` and the `notification_bell` over Server-Sent Events |
 | Widgets | `stat`/`stats`, `chart(…)`, `renox::chart::Trend` |
-| Panel navigation | `<rx-navbar>`, `<rx-sidebar>` in `<rx-shell>`, `<rx-page-header>` |
+| Panel navigation | `<rx-navbar>`, `<rx-sidebar>` in `<rx-shell fill>` (the dashboard standard: the window never scrolls, each panel does), `<rx-page-header>` |
 | Resources (`ProductResource`), policies, `DeleteBulkAction`, `TrashedFilter` | `impl AdminResource` with the `renox-admin` crate: columns, fields, `filters`, `actions`, the model's `Policy`, soft deletes ([admin.md](admin.md)) |
 
 Details: [ui.md](ui.md) and [grid.md](grid.md).

@@ -2,7 +2,10 @@
   {#- The dashboard: a welcome card (the compact hero), figures over a period
       (`?period=`), sign-ups as a chart, a summary with totals and the
       signed-in person's recent activity. The patterns are components
-      (resources/views/components/), their texts are in resources/lang/en.json. -#}
+      (resources/views/components/), their texts are in resources/lang/en.json.
+      The layout is `<rx-shell fill>`: on a large screen the activity is a
+      pane (`rx-pane`) that takes the height left (`rx-fill`) and scrolls on
+      its own, so the panels cover the screen. -#}
   <app-hero :title="t('dashboard.welcome')" :accent="auth.user.name ~ '.'" :lead="t('dashboard.lead')" :eyebrow="t('dashboard.title')" eyebrow-icon="layout-dashboard" art="icons" :compact="true">
     <rx-link-button route="account.show" label="{{ t('dashboard.account') }}" icon="circle-user"/>
     <rx-link-button rx-if="can('users.manage')" route="users.index" label="{{ t('dashboard.users') }}" icon="users"/>
@@ -33,19 +36,21 @@
   </rx-dashboard>
 
   <rx-let name="see_all" :value="route('activity.index') if can('activity.view') else none"/>
-  <app-section-head :title="t('dashboard.activity.title')" id="activity-title" :more-href="see_all" :more-label="t('dashboard.activity.more')" :compact="true">
-    <template rx-if="activity">
-      {#- An icon per kind of entry; others get the clock. -#}
-      <rx-let name="marks" :value="{'auth.login': 'log-in', 'auth.logout': 'log-out', 'auth.login_failed': 'triangle-alert', 'auth.locked_out': 'lock',
-                     'auth.registered': 'user', 'auth.email_verified': 'mail', 'auth.password_changed': 'key-round', 'auth.password_reset': 'key-round',
-                     'auth.profile_updated': 'pencil', 'user.roles_changed': 'shield-check'}"/>
-      <rx-list label="{{ t('dashboard.activity.title') }}">
-        <li rx-for="entry in activity"><app-icon-circle :icon="marks[entry.action] | default('history')" :size="18"/><div class="rx-list__main">
-          <span>{{ entry.action }}</span>
-          <span class="rx-subtitle">{{ entry.created_at | since }}<template rx-if="entry.ip"> · {{ entry.ip }}</template></span>
-        </div></li>
-      </rx-list>
-    </template>
-    <div rx-else class="app-panel"><app-empty-state icon="history" :title="t('dashboard.activity.empty')" :text="t('dashboard.activity.empty_text')"/></div>
-  </app-section-head>
+  <div class="rx-pane rx-fill">
+    <app-section-head :title="t('dashboard.activity.title')" id="activity-title" :more-href="see_all" :more-label="t('dashboard.activity.more')" :compact="true">
+      <template rx-if="activity">
+        {#- An icon per kind of entry; others get the clock. -#}
+        <rx-let name="marks" :value="{'auth.login': 'log-in', 'auth.logout': 'log-out', 'auth.login_failed': 'triangle-alert', 'auth.locked_out': 'lock',
+                       'auth.registered': 'user', 'auth.email_verified': 'mail', 'auth.password_changed': 'key-round', 'auth.password_reset': 'key-round',
+                       'auth.profile_updated': 'pencil', 'user.roles_changed': 'shield-check'}"/>
+        <rx-list label="{{ t('dashboard.activity.title') }}">
+          <li rx-for="entry in activity"><app-icon-circle :icon="marks[entry.action] | default('history')" :size="18"/><div class="rx-list__main">
+            <span>{{ entry.action }}</span>
+            <span class="rx-subtitle">{{ entry.created_at | since }}<template rx-if="entry.ip"> · {{ entry.ip }}</template></span>
+          </div></li>
+        </rx-list>
+      </template>
+      <app-empty-state rx-else icon="history" :title="t('dashboard.activity.empty')" :text="t('dashboard.activity.empty_text')"/>
+    </app-section-head>
+  </div>
 </rx-page>

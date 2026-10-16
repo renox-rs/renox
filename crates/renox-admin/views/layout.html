@@ -1,6 +1,9 @@
 {#- The panel's frame (renox-admin/layout.html): the kit's back-office
     shell, a sidebar with the resources the user may see, a bar with the
-    account menu, then the page. Replace it with a file of the same name
+    account menu, then the page. It is the dashboard standard,
+    `<rx-shell fill>`: on a large screen the window never scrolls and the
+    sidebar and the page scroll on their own; tablets and phones scroll the
+    page. Replace it with a file of the same name
     under the app's views to brand the panel. To add to it without
     replacing it, put a file under renox-admin/slots/ (head, sidebar_start,
     sidebar_end, navbar_end, before_content, after_content): it is drawn
@@ -17,7 +20,8 @@
   {{ stack('head') }}
   {% include "renox-admin/slots/head.html" ignore missing %}
 </head>
-<body class="rx-page rx-shell">
+<body class="rx-page">
+  <rx-shell fill>
   {% from "renox/ui.html" import sidebar, sidebar_link, sidebar_section, navbar, menu, menu_link, menu_action, menu_separator %}
   {% call sidebar(admin.title, href=admin.home, label=admin.text.admin_navigation) %}
     {% include "renox-admin/slots/sidebar_start.html" ignore missing %}
@@ -50,6 +54,7 @@
       {% include "renox-admin/slots/after_content.html" ignore missing %}
     </main>
   </div>
+  </rx-shell>
   {{ toasts() }}
   {{ stack('scripts') }}
 </body>

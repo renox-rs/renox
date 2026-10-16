@@ -15,10 +15,14 @@
   <link rel="stylesheet" href="{{ asset('patterns.css') }}">
   <rx-outlet stack="head"/>
 </head>
-{#- The signed-in pages: the kit's app shell, `rx-shell`, with a `sidebar`,
-    then the main column with a full-width `navbar` for the bell and the
-    account menu. On phones the links move to the kit's tab bar at the
-    bottom of the screen (`tabs`). The home page uses layouts/public.html. -#}
+{#- The signed-in pages: the kit's app shell with a `sidebar`, then the main
+    column with a full-width `navbar` for the bell and the account menu.
+    `<rx-shell fill>` is the standard for dashboard apps: on a large screen
+    the window never scrolls, each panel (the sidebar, the content, a grid,
+    an `rx-pane`) scrolls on its own, and an `rx-fill` element takes the
+    height left, so the panels cover the screen. Tablets and phones scroll
+    the page; there the links move to the kit's tab bar at the bottom of the
+    screen (`tabs`). The home page uses layouts/public.html. -#}
 <body class="rx-page">
   {#- A guest sees this layout only on an error page. -#}
   <rx-let name="tabs" :value="(
@@ -34,7 +38,7 @@
     {'href': route('login'), 'label': t('nav.log_in'), 'icon': 'log-in'},
     {'href': route('register'), 'label': t('nav.register'), 'icon': 'circle-user'},
   ]"/>
-  <rx-shell>
+  <rx-shell fill>
   <rx-sidebar brand="{{ app.name }}" href="{{ route('home') }}">
     <template rx-if="auth.check">
       <rx-sidebar-link route="dashboard" label="{{ t('nav.dashboard') }}" icon="layout-dashboard" :active="route_is('dashboard')"/>

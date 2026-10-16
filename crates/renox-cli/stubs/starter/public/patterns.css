@@ -153,6 +153,8 @@ a.app-card:hover .app-card__icon { transform: scale(1.06); }
 .app-empty__text { margin: 0; max-width: 28rem; font: var(--rx-type-note); color: var(--rx-secondary-label); }
 .app-empty .rx-button { margin-top: var(--rx-space-2); }
 .app-panel { padding: var(--rx-space-2) var(--rx-space-4); border: var(--rx-surface-border); border-radius: var(--rx-radius); background: var(--rx-surface); box-shadow: var(--rx-shadow); }
+/* A panel taking the height left (`rx-fill`, in `<rx-shell fill>`): what it holds sits in its middle. */
+.app-panel.rx-fill { display: grid; align-content: center; }
 
 /* ---------- a page's title with an icon (`page_title`) ---------- */
 

@@ -28,12 +28,15 @@ pub fn entries() -> Vec<Explanation> {
         flow: Flow::BackOffice,
         features: &[
             Feature {
-                api: "UI kit: sidebar + rx-shell",
+                api: "UI kit: sidebar + <rx-shell fill>",
                 why: "The back office's frame: navigation down the side (a scrolling bar \
                       on phones), and on top the store switcher, the bell and the account \
                       menu, all from the kit (`sidebar`, `sidebar_link`, `navbar`, \
                       `rx-shell`). Each link shows only with the permission it needs \
-                      (`can('…')`), so nobody sees a door that answers 403.",
+                      (`can('…')`), so nobody sees a door that answers 403. `fill` is the \
+                      standard for dashboard apps: on a large screen the window never \
+                      scrolls, the sidebar and the page scroll on their own and a grid \
+                      takes the height left; tablets and phones scroll the page.",
             },
             Feature {
                 api: "Routes::require_permission",

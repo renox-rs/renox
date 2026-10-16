@@ -213,9 +213,14 @@ More about the template:
   - `{{ toasts() }}`, for actions and edits that answer with a `Toast`.
 
 > [!IMPORTANT]
-> The grid needs the element around it to have a height, or it has nothing to fill. Put
-> `rx-page--fill` on `<body>` (this makes the page as tall as the screen, with its `<main>`
-> taking the rest under the kit's `navbar`) and `rx-grid-fill` on the `<main>`.
+> The grid needs the element around it to have a height, or it has nothing to fill. In a
+> dashboard app that is the shell's job: with `<rx-shell fill>` (the standard for dashboard
+> apps, [docs/ui.md](ui.md#the-dashboard-standard-rx-shell-fill)) a `<rx-grid>` written straight
+> in `main.rx-shell__content` takes the height left under the page header on a desktop screen,
+> only its rows scroll, and on tablets and phones the page scrolls and the grid keeps a minimum
+> height. In the navbar layout, put `rx-page--fill` on `<body>` (this makes the page as tall as
+> the screen, with its `<main>` taking the rest under the kit's `navbar`) and `rx-grid-fill` on
+> the `<main>`.
 
 ### Sparklines
 

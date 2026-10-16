@@ -3,7 +3,8 @@
     brand, the blocks and Motion), the store switcher (permissions here count
     the store being worked in, src/app/staff/admin.rs), a way back to the
     staff side, and the "About this page" panel, which explains each
-    resource's list, form and view page (src/app/staff/explain.rs). -#}
+    resource's list, form and view page (src/app/staff/explain.rs). The
+    shell is the dashboard standard, `<rx-shell fill>`. -#}
 <!doctype html>
 <html lang="{{ app.locale }}">
 <head>
@@ -12,7 +13,8 @@
   <rx-outlet stack="head"/>
 </head>
 <rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
-<body class="rx-page rx-shell{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+<body class="rx-page{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+  <rx-shell fill>
   <rx-sidebar :brand="tx(admin.title)" :href="admin.home" :label="t('admin_panel.navigation')">
     <rx-sidebar-link :href="admin.home" :label="t('admin_panel.dashboard')" :active="admin.dashboard"/>
     <template rx-for="group in admin.nav">
@@ -40,6 +42,7 @@
       <rx-block name="content"/>
     </main>
   </div>
+  </rx-shell>
   {#- "About this page": docked beside the page on wide screens, a sheet on
       narrower ones (<app-about-dock>, <app-about-panel>). -#}
   <template rx-if="about">

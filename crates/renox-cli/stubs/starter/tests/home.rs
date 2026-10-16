@@ -44,7 +44,8 @@ async fn pages_that_are_not_there_are_in_the_layout() {
     app.get("/nowhere")
         .await
         .assert_not_found()
-        .assert_see("rx-shell");
+        // The dashboard standard: the shell fills the screen on a large one.
+        .assert_see("rx-shell rx-shell--fill");
 }
 
 #[renox::test]
@@ -115,7 +116,9 @@ async fn the_dashboard_is_for_verified_users() {
         .assert_ok()
         .assert_see("Welcome back,")
         .assert_see("<em>Anna.</em>")
-        .assert_see("Your recent activity");
+        .assert_see("Your recent activity")
+        // The activity is the pane that takes the height left.
+        .assert_see("rx-pane rx-fill");
 }
 
 #[renox::test]

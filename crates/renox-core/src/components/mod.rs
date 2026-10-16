@@ -169,6 +169,27 @@ mod tests {
     }
 
     #[test]
+    fn the_dashboard_shell_is_rx_shell_with_fill() {
+        assert_eq!(
+            compile(
+                "a.html",
+                "<rx-shell fill>\n<main></main></rx-shell>",
+                &builtin()
+            )
+            .unwrap(),
+            "<div class=\"rx-shell rx-shell--fill\">\n<main></main></div>"
+        );
+        assert_eq!(
+            compile("a.html", "<rx-shell :fill=\"wide\"></rx-shell>", &builtin()).unwrap(),
+            "<div class=\"rx-shell{% if (wide) %} rx-shell--fill{% endif %}\"></div>"
+        );
+        assert_eq!(
+            compile("a.html", "<rx-shell></rx-shell>", &builtin()).unwrap(),
+            "<div class=\"rx-shell\"></div>"
+        );
+    }
+
+    #[test]
     fn macro_components_call_the_kit() {
         let out = compile(
             "a.html",

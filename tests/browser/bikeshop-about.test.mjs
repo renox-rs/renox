@@ -148,7 +148,8 @@ for (const csp of ['relaxed', 'strict']) {
         await page.click('form button[type=submit]');
         await page.waitFor(() => location.pathname !== '/login');
         await page.goto(`${app.url}/staff`);
-        assert.ok(await page.eval(() => document.body.classList.contains('rx-shell')));
+        // The dashboard standard (#24): the fill shell inside the docked body.
+        assert.ok(await page.eval(() => !!document.querySelector('body.rx-page > .rx-shell.rx-shell--fill')));
         assert.ok(await fitsWidth(page));
         await revealed(page);
         await shot(page, `staff-desktop-${csp}`);

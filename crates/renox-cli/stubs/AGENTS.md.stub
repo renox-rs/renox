@@ -95,7 +95,8 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   Form tags: `<rx-repeater>` gives its content `row` and `prefix` (`name="{{ prefix }}[qty]"`);
   `<rx-wizard id=…>` takes its steps from `<rx-wizard-step key=… title=…>` children.
   Navigation: `<rx-navbar>`, `<rx-sidebar>`, `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
-  `<rx-tabs id=…>` takes its tabs from `<rx-tab key=… label=…>` children; `<rx-shell>` is a `div.rx-shell`.
+  `<rx-tabs id=…>` takes its tabs from `<rx-tab key=… label=…>` children; `<rx-shell>` is a `div.rx-shell`
+  (`<rx-shell fill>` adds `rx-shell--fill`: the dashboard standard, below).
   `<rx-chart kind=…>` calls the `chart(...)` function; `<rx-grid :page=…>` has `row` and `column` in its content.
   Plugin templates are compiled when added with `renox::view::add_template`; a plugin's tags come from `Registry::component`.
 - Live components (`#[renox::live_component]`, `rx-click`/`rx-model`, docs/live.md): action names
@@ -239,8 +240,23 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   `authorize` (403 before the rules), `after` (database checks, errors shown on the field).
   Rules include `alpha_dash`, `uuid`, `ip`, `size`, `starts_with`, `required_without`,
   `prohibited_if`, and `v.distinct(…)` for lists.
+- **The standard mechanism of a Renox dashboard application** (this app's signed-in pages, a
+  back office, an admin panel, any daily workspace with a sidebar and many modules): the
+  layout is `<rx-shell fill>` (`layouts/app.html` already is; docs/ui.md "The dashboard
+  standard"). On a desktop screen **the document never scrolls**: the sidebar, the navbar and
+  the page header stay in place. **Every panel scrolls on its own**: the sidebar, the content,
+  a grid's rows, each `rx-pane`. **The screen real estate is filled completely**: a
+  `<rx-grid>` written straight in the content, or one `rx-fill` element (`<div class="rx-panes
+  rx-fill">` holding `<section class="rx-pane">` panels side by side, `--rx-panes: 2fr 1fr`
+  for their widths, or one `<section class="rx-pane rx-fill">`), takes the remaining height;
+  no panel is left empty or as blank space (a panel without data holds `<rx-empty>`, shown in
+  its middle). On tablets and phones the same pages switch by themselves to document scroll,
+  and each `rx-fill` element keeps a minimum height (`--rx-fill-min`) so it has room to
+  breathe. Don't give pages fixed heights or write viewport CSS per page: the shell does it.
+  Public pages (`layouts/public.html`: the home page) are not dashboards and scroll as a
+  document.
 - Pages are built from the UI kit (`renox/ui.html`, docs/ui.md), not from your own markup and
-  CSS, as tags: `<rx-navbar>`/`<rx-nav-link>` (or `<rx-sidebar>` + `rx-shell` for a back office),
+  CSS, as tags: `<rx-navbar>`/`<rx-nav-link>` (or `<rx-sidebar>` in `<rx-shell fill>` for a dashboard app),
   `<rx-page-header>`, `<rx-card>`, the fields (`<rx-input>`, `<rx-select>`, `<rx-toolbar>` for
   filters), `<rx-button>`/`<rx-link-button>`, `<rx-table>` + `<rx-row-actions>`, `<rx-list>`,
   `<rx-card-grid>` + `<rx-media-card>`, `<rx-link-tabs>`, `<rx-sheet>`/`<rx-action-sheet>`/

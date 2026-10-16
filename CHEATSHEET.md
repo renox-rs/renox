@@ -314,7 +314,7 @@ and `rnx view:check` names a wrong one with its file and line.
 
 ```html
 {# layout: {{ renox_head() }}{{ renox_ui() }} in <head>, <body class="rx-page">, {{ toasts() }} #}
-{# The page's frame (rnx new's layout uses rx-navbar; a back office uses rx-sidebar + rx-shell) #}
+{# The page's frame: public pages use rx-navbar; a dashboard app (rnx new's signed-in layout) uses rx-sidebar in <rx-shell fill> #}
 {# Spacing: kit parts have no outer margin, their container spaces them. Start a page with <rx-stack>,
    put buttons in <rx-row> (<rx-row end> for the right), fields in rx-card / rx-form-grid / rx-stack;
    main.rx-container and <rx-form> add no space (docs/ui.md#spacing-put-siblings-in-rx-stack-or-rx-row) #}
@@ -329,8 +329,12 @@ and `rnx view:check` names a wrong one with its file and line.
    <rx-nav-search><form role="search">…</form></rx-nav-search> = search behind a button there; rx-hide-narrow leaves the phone's bar #}
 {# Icons (Lucide, docs/ui.md#icons): <rx-icon name="bike"/> <rx-icon name="truck" size="16"/>;
    hidden from screen readers unless <rx-icon name="lock" label="Private"/>; the same names in icon="…" on buttons and menus #}
-{# A back office: <body class="rx-page rx-shell">, then <rx-sidebar brand="{{ app.name }}"><rx-sidebar-section title="Sales"/><rx-sidebar-link route="…" label="…"/></rx-sidebar>
-   and <div class="rx-shell__main"><rx-navbar width="full" :skip="false"/><main class="rx-shell__content" id="main">…</main></div>.
+{# A dashboard app (the standard: docs/ui.md#the-dashboard-standard-rx-shell-fill): <body class="rx-page"><rx-shell fill>,
+   then <rx-sidebar brand="{{ app.name }}"><rx-sidebar-section title="Sales"/><rx-sidebar-link route="…" label="…"/></rx-sidebar>
+   and <div class="rx-shell__main"><rx-navbar width="full" :skip="false"/><main class="rx-shell__content" id="main">…</main></div></rx-shell>.
+   On a desktop the window never scrolls, each panel does, and the page's work fills the screen: <rx-grid> straight in the
+   content takes the height left; else <div class="rx-panes rx-fill"><section class="rx-pane">…</section>…</div>
+   (--rx-panes: 2fr 1fr) or one <section class="rx-pane rx-fill">; an empty one holds <rx-empty>. Tablets and phones scroll the page.
    <rx-thumbnail :src="p.image"/>, <rx-columns count="2">, <rx-menu-button hx-get="{{ url }}">Edit</rx-menu-button> in a menu,
    <rx-action-group>, <rx-wizard-action> + <rx-wizard-step>, <rx-import-action route="…">, <rx-event-stream/>.
    Tabs from data: <rx-tabs id="t" :items="[['a', 'A']]"><rx-tab-panel rx-for=… id="t" :key=… :selected=…>; <rx-link-tabs><rx-link-tab rx-for="v in views" :href :current>label</rx-link-tab></rx-link-tabs>.
@@ -339,7 +343,7 @@ and `rnx view:check` names a wrong one with its file and line.
    Mails: <rx-mail subject="…"> + <rx-mail-button :url label/>, <rx-mail-panel>, <rx-mail-table :rows :head :total/>, <rx-mail-divider/>
    (<rx-slot name="footer"> replaces the footer). hide-label on rx-input, rx-textarea,
    rx-select or rx-checkbox (label kept for screen readers; the other fields don't take it),
-   <body class="rx-page rx-page--fill"> for a page that fills the window.
+   <body class="rx-page rx-page--fill"> for a navbar page that fills the window (a full-screen grid).
    Themes: the editorial default (teal, cream, pill buttons; Inter + Poppins, served by Renox);
    data-rx-theme="warm" (indigo, before 1.1) or "classic" (the first look) on <html>; tokens
    --rx-accent-2, --rx-tint, --rx-accent-soft, --rx-ink, --rx-type-hero, --rx-type-section; your CSS uses the type scale: font: var(--rx-type-heading) (also -display,

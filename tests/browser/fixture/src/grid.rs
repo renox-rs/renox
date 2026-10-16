@@ -134,6 +134,8 @@ impl Module for Orders {
             .name("orders.index")
             .get("/grid/regions", regions)
             .name("orders.regions")
+            .get("/grid/shell", shell)
+            .name("orders.shell")
             .get("/grid/follow-up", follow_up)
             .name("orders.follow_up")
             .get("/grid/orders/{id}", show)
@@ -437,6 +439,12 @@ fn avatar(name: &str) -> String {
         .replace('>', "%3E")
         .replace(' ', "%20");
     format!("data:image/svg+xml,{encoded}")
+}
+
+/// The orders grid in the dashboard shell (`<rx-shell fill>`, #24).
+async fn shell(request: GridRequest) -> Result<View> {
+    let orders = orders_grid(false).page(Order::query(), &request).await?;
+    Ok(view("grid/shell.html", context! { orders }))
 }
 
 async fn regions(request: GridRequest) -> Result<Response> {
