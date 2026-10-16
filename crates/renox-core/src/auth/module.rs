@@ -28,6 +28,7 @@ const MIGRATIONS: &[Migration] = &[
     ),
     crate::db::framework_migration!("auth", "00010101000006_create_revoked_sessions_table"),
     crate::db::framework_migration!("auth", "00010101000007_create_device_tokens_table"),
+    crate::db::framework_migration!("auth", "00010101000008_create_one_time_codes_table"),
 ];
 
 pub(crate) struct Settings {
@@ -37,6 +38,7 @@ pub(crate) struct Settings {
     pub(super) verify_email: bool,
     rules: Option<RulesFn>,
     pub(super) on_registered: Option<RegisteredFn>,
+    pub(super) passwordless: super::passwordless::Passwordless,
 }
 
 type RulesFn = Arc<dyn Fn(&Registration, &mut Validator) + Send + Sync>;
@@ -115,6 +117,7 @@ pub struct Auth {
     notifications: bool,
     rules: Option<RulesFn>,
     on_registered: Option<RegisteredFn>,
+    passwordless: super::passwordless::Passwordless,
 }
 
 impl Auth {
@@ -129,7 +132,76 @@ impl Auth {
             notifications: false,
             rules: None,
             on_registered: None,
+            passwordless: super::passwordless::Passwordless {
+                magic_link: None,
+                same_browser: false,
+                codes: None,
+                register_on_first_use: false,
+                sent: Default::default(),
+            },
         }
+    }
+
+    /// Turns on login by magic link: `/login/link` (route
+    /// `login.link.request`) asks for an email address and mails a link that
+    /// logs in once, for 15 minutes ([`Auth::magic_link_ttl`]), without a
+    /// password. Opening the link shows a "Log in as …?" page whose button
+    /// does the login, so mail scanners that open links don't use it up.
+    /// The login page lists the option. The second login step, the login
+    /// throttle and the audit log work as for passwords; see
+    /// [`passwordless`](super::passwordless) for the details.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # let _ =
+    /// App::new().module(Auth::new().magic_link().same_browser())
+    /// # ;
+    /// ```
+    pub fn magic_link(mut self) -> Self {
+        self.passwordless.magic_link = Some(super::passwordless::MagicLink {
+            ttl: std::time::Duration::from_secs(15 * 60),
+        });
+        self
+    }
+
+    /// How long a magic link works; 15 minutes by default. Turns magic links
+    /// on.
+    pub fn magic_link_ttl(mut self, ttl: std::time::Duration) -> Self {
+        self.passwordless.magic_link = Some(super::passwordless::MagicLink { ttl });
+        self
+    }
+
+    /// Makes a magic link work only in the browser that asked for it. Off by
+    /// default, because people read mail on another device; turn it on when
+    /// that would be a risk. (Login codes always work only in the browser
+    /// that asked for them.)
+    pub fn same_browser(mut self) -> Self {
+        self.passwordless.same_browser = true;
+        self
+    }
+
+    /// Turns on login by one-time code: `/login/code` (routes
+    /// `login.code.request`, `login.code.send`, `login.code.verify`,
+    /// `login.code.resend`; see [`passwordless`](super::passwordless)). See [`LoginCodes`](super::LoginCodes) for the
+    /// channel (mail, or SMS and WhatsApp through `App::channel`), digits,
+    /// lifetime, tries and how a phone number finds its account.
+    pub fn login_codes(mut self, mut codes: super::LoginCodes) -> Self {
+        if codes.channels.is_empty() {
+            codes = codes.channel("mail");
+        }
+        self.passwordless.codes = Some(codes);
+        self
+    }
+
+    /// Makes an account (no password, the address counted as verified, the
+    /// `on_registered` hook run) for an email address that proves it owns
+    /// it with a magic link or a code sent by mail, instead of refusing
+    /// unknown addresses. Needs registration to be open. Visitors can't tell
+    /// the difference between a known and an unknown address before proving
+    /// it. See [`register_verified`](super::register_verified).
+    pub fn register_on_first_use(mut self) -> Self {
+        self.passwordless.register_on_first_use = true;
+        self
     }
 
     /// Turns on the in-app notification list for the UI kit's
@@ -242,6 +314,7 @@ impl Auth {
             verify_email: self.verify_email,
             rules: self.rules.clone(),
             on_registered: self.on_registered.clone(),
+            passwordless: self.passwordless.clone(),
         }
     }
 }
@@ -282,8 +355,9 @@ impl Module for Auth {
             |_args, state| async move {
                 let day = std::time::Duration::from_secs(24 * 60 * 60);
                 let pruned = super::prune_expired_tokens(&state.db, day).await?
-                    + super::DeviceToken::prune_expired(&state.db, day).await?;
-                println!("Deleted {pruned} expired API tokens.");
+                    + super::DeviceToken::prune_expired(&state.db, day).await?
+                    + super::prune_expired_codes(&state.db).await?;
+                println!("Deleted {pruned} expired API tokens and login codes.");
                 Ok(())
             },
         );
@@ -344,6 +418,9 @@ impl Module for Auth {
             .merge(verification)
             .merge(confirm)
             .merge(Routes::new().post("/logout", destroy).name("logout"));
+        if self.passwordless.magic_link.is_some() || self.passwordless.codes.is_some() {
+            routes = routes.merge(self.passwordless_routes());
+        }
         if self.account {
             routes = routes.merge(super::account::routes());
         }
@@ -351,6 +428,38 @@ impl Module for Auth {
             routes = routes.merge(super::inbox::routes());
         }
         routes.route_layer(Extension(settings))
+    }
+}
+
+impl Auth {
+    /// The magic link and login code pages, for guests.
+    fn passwordless_routes(&self) -> Routes {
+        use super::passwordless as p;
+        let mut routes = Routes::new();
+        if self.passwordless.magic_link.is_some() {
+            routes = routes
+                .get("/login/link", p::show_link_request)
+                .name("login.link.request")
+                .post("/login/link", p::send_link)
+                .name("login.link.send")
+                .get("/login/link/{token}", p::show_link)
+                .name("login.link.show")
+                .post("/login/link/{token}", p::consume_link)
+                .name("login.link.consume");
+        }
+        if self.passwordless.codes.is_some() {
+            routes = routes
+                .get("/login/code", p::show_code_request)
+                .name("login.code.request")
+                .post("/login/code", p::send_code)
+                .name("login.code.send")
+                .get("/login/code/verify", p::show_code_verify)
+                .post("/login/code/verify", p::check_code)
+                .name("login.code.verify")
+                .post("/login/code/resend", p::resend_code)
+                .name("login.code.resend");
+        }
+        routes.guest_only()
     }
 }
 
@@ -369,7 +478,7 @@ pub(super) fn texts(lang: &Lang) -> Value {
 }
 
 /// A built-in message (e.g. `auth.failed`), translated if the app's lang file has it.
-fn message(lang: &Lang, key: &str, params: &[(&str, String)]) -> String {
+pub(super) fn message(lang: &Lang, key: &str, params: &[(&str, String)]) -> String {
     let template = crate::validation::template_for(Some(&lang.texts()), key);
     crate::i18n::format(&template, params, None)
 }
@@ -394,7 +503,12 @@ pub(super) fn go(htmx: &Htmx, to: String) -> Response {
 async fn show_login(Extension(settings): Extension<Arc<Settings>>, lang: Lang) -> View {
     view(
         "renox/auth/login.html",
-        context! { registration => settings.registration, text => texts(&lang) },
+        context! {
+            registration => settings.registration,
+            magic_link => settings.passwordless.magic_link.is_some(),
+            login_codes => settings.passwordless.codes.is_some(),
+            text => texts(&lang),
+        },
     )
 }
 
@@ -477,7 +591,14 @@ async fn store_login(
         && (second.required)(user.clone(), state.clone()).await?
     {
         let to = after_login(&state, &settings, &session);
-        super::second_factor::begin(&session, &user, &form.email, form.remember.is_some(), to)?;
+        super::second_factor::begin(
+            &session,
+            &user,
+            &form.email,
+            form.remember.is_some(),
+            to,
+            "password",
+        )?;
         let challenge = state.url(&second.challenge, &[])?;
         return Ok(go(&htmx, challenge));
     }
@@ -492,6 +613,7 @@ async fn store_login(
     let event = LoggedIn {
         user_id: user.id,
         ip: address,
+        via: "password".into(),
     };
     announce(&state, event).await;
     Ok(go(&htmx, after_login(&state, &settings, &session)))
@@ -608,7 +730,7 @@ async fn store_register(
         && (second.required)(user.clone(), state.clone()).await?
     {
         let to = after_login(&state, &settings, &session);
-        super::second_factor::begin(&session, &user, &user.email, false, to)?;
+        super::second_factor::begin(&session, &user, &user.email, false, to, "password")?;
         announce(&state, event).await;
         let challenge = state.url(&second.challenge, &[])?;
         return Ok(go(&htmx, challenge));
@@ -637,7 +759,7 @@ async fn destroy(
 /// Words on the built-in pages (English; apps translate them with
 /// `renox.auth.*` keys in their lang files).
 pub(super) fn text() -> Value {
-    json!({
+    let mut text = json!({
         "login_title": "Log in",
         "register_title": "Create an account",
         "name": "Name",
@@ -693,5 +815,50 @@ pub(super) fn text() -> Value {
         "confirm_title": "Confirm your password",
         "confirm_intro": "This is a secure area. Please confirm your password to continue.",
         "confirm_button": "Confirm",
+    });
+    if let (Value::Object(base), Value::Object(more)) = (&mut text, passwordless_text()) {
+        base.extend(more);
+    }
+    text
+}
+
+/// Words on the passwordless login pages and mails.
+fn passwordless_text() -> Value {
+    json!({
+        "login_via_link": "Email me a login link",
+        "login_via_code": "Log in with a code",
+        "login_link_title": "Log in with a link",
+        "login_link_intro": "Enter your email address and we'll send you a link that logs you in. No password needed.",
+        "login_link_button": "Email me a link",
+        "login_link_sent": "If that address can log in, a link is on its way.",
+        "login_link_invalid": "This login link is invalid or has expired.",
+        "login_link_confirm_title": "Log in",
+        "login_link_confirm_intro": "You are about to log in as",
+        "login_link_confirm_button": "Log in",
+        "mail_link_subject": "Your login link",
+        "mail_link_intro": "Use the button below to log in. No password needed.",
+        "mail_link_outro": "The link works once and expires in :minutes minutes. If you didn't ask for it, ignore this email.",
+        "login_code_title": "Log in with a code",
+        "login_code_identifier": "Email or phone number",
+        "login_code_intro": "Enter how we know you and we'll send you a one-time code.",
+        "login_code_channel": "Send it by",
+        "login_code_button": "Send me a code",
+        "login_code_sent": "If that account can log in, a code is on its way.",
+        "login_code_verify_title": "Enter your code",
+        "login_code_verify_intro": "We sent a code by :channel. It expires in :minutes minutes.",
+        "login_code_input": "Code",
+        "login_code_verify_button": "Log in",
+        "login_code_wrong": "That code is wrong or has expired.",
+        "login_code_burned": "Too many wrong codes. Request a new one.",
+        "login_code_expired": "That code has expired. Request a new one.",
+        "login_code_resend": "Send a new code",
+        "login_code_other_way": "Send it another way:",
+        "login_code_message": "Your :app login code is :code. It expires in :minutes minutes.",
+        "mail_code_subject": "Your login code",
+        "mail_code_intro": "Your login code is:",
+        "mail_code_outro": "It expires in :minutes minutes. If you didn't ask for it, ignore this email.",
+        "channel_mail": "Email",
+        "channel_sms": "SMS",
+        "channel_whatsapp": "WhatsApp",
     })
 }

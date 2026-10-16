@@ -66,7 +66,7 @@ the queue workers and the scheduler.
 | `route:list` | Every route with its name, module and guards. |
 | `ui:publish [--force]` | Copies the UI kit into the app (`resources/views/components/ui.html`, `public/css/renox-ui.css`), so you can change it there. |
 | `down [--secret S] [--retry N]`, `up` | Maintenance mode. |
-| `tokens:prune`, `notifications:prune [--days N]` | Added by the `Auth` module: deletes expired API tokens and read notifications. |
+| `tokens:prune`, `notifications:prune [--days N]` | Added by the `Auth` module: deletes expired API tokens (and device tokens, and expired login codes and links) and read notifications. |
 | `audit:prune [--days N]` | Added by the `Audit` module. |
 | `permissions:prune [--days N]` | Added by the `Permissions` module: deletes role assignments that ended more than N days ago (30). |
 
@@ -468,7 +468,9 @@ depends on it. Without it:
   verification links);
 - the app's encrypted cookies (`SetCookie::encrypted`, read with `Cookies::get_encrypted`) read
   as missing;
-- maintenance bypass cookies stop letting people through.
+- maintenance bypass cookies stop letting people through;
+- login links and codes that were sent but not used yet stop working (`one_time_codes` keeps
+  keyed hashes; users ask for a new one).
 
 > [!IMPORTANT]
 > Some data is lost for good without the old key: `Encrypted<T>` model fields, values the app
@@ -630,6 +632,7 @@ commands, so it calls the function.)
 | `cache` (database store) | expired entries | itself, at most once an hour per process; `cache:prune` (`state.cache.prune()`) when you ask |
 | `personal_access_tokens` | expired API tokens | `tokens:prune` (Auth module): tokens that expired more than a day ago (`renox::auth::prune_expired_tokens(&state.db, grace)`) |
 | `device_tokens` | expired device tokens (kiosks, tills) | `tokens:prune` too (`renox::auth::DeviceToken::prune_expired(&state.db, grace)`) |
+| `one_time_codes` | expired login codes and magic links (`renox::auth::OneTimeCode`) | issuing a code deletes the expired ones; `tokens:prune` too (`renox::auth::prune_expired_codes(&state.db)`) |
 | `audit_logs` | every audited action (Audit module) | `audit:prune --days 365` (`renox::audit::prune(&state.db, age)`) |
 | `role_user` | role assignments with an end date (`assign_role_in(…).until(…)`, Permissions module) | `permissions:prune --days 30` (`renox::auth::permissions::prune_ended_assignments(&state.db, age)`); ended ones already don't count |
 | `revoked_sessions` | logouts | itself, on each logout |

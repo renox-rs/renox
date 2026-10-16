@@ -521,7 +521,7 @@ impl AppState {
         Ok(())
     }
 
-    fn channel(&self, name: &str) -> Result<ChannelFn> {
+    pub(crate) fn channel(&self, name: &str) -> Result<ChannelFn> {
         self.channels.get(name).cloned().ok_or_else(|| {
             anyhow!("no `{name}` notification channel: register it with `App::channel`").into()
         })

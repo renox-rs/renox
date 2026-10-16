@@ -1406,6 +1406,35 @@ fn back_office() -> Auth {
         .redirect_to("/dashboard") // after login, when no page asked for one
 }
 
+// Passwordless login (docs/authorization.md): a link by mail, a code by mail/SMS/WhatsApp.
+// Single use, expiring, throttled; the second step and the audit log apply; `LoggedIn::via`.
+fn passwordless() -> Auth {
+    Auth::new()
+        .magic_link()                  // /login/link: 15 minutes; opening the link logs nobody in, its button does
+        .same_browser()                // links work only in the browser that asked (codes always do)
+        .register_on_first_use()       // an unknown address that proves it gets an account
+        .login_codes(                  // /login/code: bound to the asking browser, burned after max_attempts
+            renox::auth::LoginCodes::new()
+                .channels(["sms", "mail"])                       // App::channel names; the form lets users pick
+                .digits(6)
+                .ttl(std::time::Duration::from_secs(300))
+                .max_attempts(5)
+                .identify(|state, phone: String| async move {   // who a phone number belongs to
+                    Ok(renox::db::sql("SELECT * FROM users WHERE phone = ?")
+                        .bind(phone.trim())
+                        .fetch_optional_as::<User>(&state.db)
+                        .await?)
+                })
+                .deliver(|_state, delivery| async move {         // optional: your own messaging layer
+                    let _ = (delivery.channel, delivery.address, delivery.code, delivery.locale);
+                    Ok(())
+                }),
+        )
+}
+// Tests: `app.last_login_link().await` / `last_login_code().await` (runs the queued delivery).
+// Codes for any other action: `renox::auth::OneTimeCode::issue(&state, "payout", &subject, ttl, 5)`
+// and `verify(..) -> CodeCheck::{Valid, Wrong { tries_left }, Missing}`.
+
 #[derive(serde::Deserialize)]
 struct Login { email: String, password: String }
 

@@ -401,6 +401,16 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#42, passwordless login**: `Auth::magic_link()` / `same_browser()` / `magic_link_ttl()` /
+  `login_codes(LoginCodes)` / `register_on_first_use()`; routes `login.link.request|send|show|consume`
+  and `login.code.request|send|verify|resend`; `auth/passwordless.rs` (handlers, the encrypted
+  `renox.send-login-secret` job, `LoginCodes`, `LoginCodeDelivery`), `auth/one_time.rs`
+  (`OneTimeCode`, `CodeCheck`, the `one_time_codes` table, framework migration `…000008`);
+  `LoggedIn::via` (`password`, `magic_link`, `code`, `external`; kept in the pending second-step
+  login); `TestApp::last_login_link/last_login_code[_on]` read a debug-mode log of what was
+  delivered; the login page lists the options (`magic_link`/`login_codes` in its context, no
+  `login_options.html` so it doesn't clash with renox-oauth's). Tests: tests/it/passwordless.rs,
+  tests/browser/passwordless.test.mjs; guide: docs/authorization.md.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

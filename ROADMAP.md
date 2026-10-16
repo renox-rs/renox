@@ -2031,6 +2031,21 @@ Notes:
   stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
   rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
 
+- **Passwordless login** (#42, Renoxium's notes of 2026-10-16): `Auth::new().magic_link()` and
+  `.login_codes(LoginCodes::new()..)` are Auth's own login flow (renox-core `auth/passwordless.rs`),
+  not a plugin crate: no new dependency, delivery goes through the existing mail and
+  `App::channel` channels. A magic link is consumed by a POST (the GET shows "Log in as …?"),
+  because mail scanners open links. Browser binding: on for codes, off for links
+  (`.same_browser()` turns it on). Codes and tokens live in `one_time_codes` (HMAC keyed with
+  `APP_KEY`; a try is used up atomically before the comparison, the right code is deleted in
+  the step that accepts it; after `max_attempts` the code is burned and a new one must be
+  requested, account lockout stays with `LoginThrottle`). `auth::OneTimeCode` / `CodeCheck`
+  is that primitive, public for other confirmations. Unknown accounts store a code too and only
+  skip the queued delivery (`SendLoginSecret`, encrypted payload), so answers and work are the
+  same. `LoggedIn` has a `via` field. Deviations from the issue: the delivery hook is
+  `.deliver(|state, LoginCodeDelivery| ..)` (one struct instead of five arguments); no
+  `.json()` paths (the example uses a `phone` column and raw SQL, as the notes said).
+
 ## Not planned
 
 Kept out on purpose, so the framework stays small; some are good candidates for separate crates:

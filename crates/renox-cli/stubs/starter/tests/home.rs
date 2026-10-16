@@ -207,3 +207,23 @@ async fn every_view_compiles() {
     let app = TestApp::new({{crate_name}}::app()).await;
     app.assert_views_compile();
 }
+
+#[renox::test]
+async fn members_can_log_in_with_a_link_sent_by_mail() {
+    let app = TestApp::new({{crate_name}}::app()).await;
+    let anna = person(&app, "anna@example.com", MEMBER).await;
+    app.get("/login")
+        .await
+        .assert_ok()
+        .assert_see("Email me a login link");
+    app.post("/login/link", &[("email", "anna@example.com")])
+        .await
+        .assert_redirect("/login/link");
+    let link = app.last_login_link().await.expect("a link was mailed");
+    let path = &link[link.find("/login/link/").unwrap()..];
+    // Opening the link logs nobody in; its button does.
+    app.get(path).await.assert_ok().assert_see("anna@example.com");
+    app.assert_guest();
+    app.post(path, &[]).await.assert_redirect("/dashboard");
+    app.assert_authenticated(Some(&anna));
+}

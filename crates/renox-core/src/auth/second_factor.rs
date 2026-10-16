@@ -132,6 +132,13 @@ struct Stored {
     at: i64,
     /// Where the user goes once logged in.
     to: String,
+    /// How they proved who they are (`LoggedIn::via`).
+    #[serde(default = "password_via")]
+    via: String,
+}
+
+fn password_via() -> String {
+    "password".into()
 }
 
 /// A login that had the right password and waits for its second step; from
@@ -147,6 +154,7 @@ pub struct PendingLogin {
     pub remember: bool,
     hash: String,
     to: String,
+    via: String,
 }
 
 impl PendingLogin {
@@ -175,6 +183,7 @@ pub(crate) fn begin(
     email: &str,
     remember: bool,
     to: String,
+    via: &str,
 ) -> Result {
     let stored = Stored {
         user_id: user.id,
@@ -183,6 +192,7 @@ pub(crate) fn begin(
         hash: fingerprint(&user.password),
         at: crate::clock::unix_secs(),
         to,
+        via: via.to_owned(),
     };
     session.put(PENDING, stored)
 }
@@ -206,6 +216,7 @@ pub fn pending_login(session: &Session) -> Option<PendingLogin> {
         remember: stored.remember,
         hash: stored.hash,
         to: stored.to,
+        via: stored.via,
     })
 }
 
@@ -236,6 +247,7 @@ pub async fn complete_login(
     let event = LoggedIn {
         user_id: user.id,
         ip: ip.map(|ip| ip.to_string()),
+        via: pending.via.clone(),
     };
     announce(state, event).await;
     Ok(Some(pending.to.clone()))

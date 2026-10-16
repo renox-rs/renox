@@ -1,0 +1,25 @@
+{#- Passwordless login: the page that takes the code. `page`: channel label,
+    minutes, others (other channels to send a new code on); `intro` is the
+    sentence about where the code went. Replace it with
+    resources/views/renox/auth/login-code-verify.html in your app. -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ text.login_code_verify_title }} · {{ app.name }}</rx-slot>
+<rx-form :action="route('login.code.verify')" hx-post="{{ route('login.code.verify') }}">
+  <rx-card title="{{ text.login_code_verify_title }}" subtitle="{{ intro }}">
+    <rx-alert rx-if="flash.status" kind="success">{{ flash.status }}</rx-alert>
+    <rx-input name="code" label="{{ text.login_code_input }}" required autocomplete="one-time-code" inputmode="numeric" autofocus/>
+    <rx-button label="{{ text.login_code_verify_button }}" block/>
+  </rx-card>
+</rx-form>
+<form method="post" action="{{ route('login.code.resend') }}" class="rx-auth__alt">
+  {{ csrf_field() }}
+  <button class="rx-button rx-button--plain rx-button--small" type="submit">{{ text.login_code_resend }}</button>
+  {% if page.others %}
+  <span>{{ text.login_code_other_way }}</span>
+  {% for other in page.others %}
+  <button class="rx-button rx-button--plain rx-button--small" type="submit" name="channel" value="{{ other.name }}">{{ other.label }}</button>
+  {% endfor %}
+  {% endif %}
+</form>
+<p class="rx-auth__alt"><a class="rx-link" href="{{ route('login.code.request') }}">{{ text.back_to_login }}</a></p>
+</rx-page>

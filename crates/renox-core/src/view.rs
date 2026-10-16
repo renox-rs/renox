@@ -110,6 +110,38 @@ pub(crate) const BUILTIN: &[(&str, &str)] = &[
         "renox/mail/auth/verify-email.txt",
         include_str!("../views/mail/auth/verify-email.txt"),
     ),
+    (
+        "renox/auth/login-link.html",
+        include_str!("../views/auth/login-link.html"),
+    ),
+    (
+        "renox/auth/login-link-confirm.html",
+        include_str!("../views/auth/login-link-confirm.html"),
+    ),
+    (
+        "renox/auth/login-code.html",
+        include_str!("../views/auth/login-code.html"),
+    ),
+    (
+        "renox/auth/login-code-verify.html",
+        include_str!("../views/auth/login-code-verify.html"),
+    ),
+    (
+        "renox/mail/auth/login-link.html",
+        include_str!("../views/mail/auth/login-link.html"),
+    ),
+    (
+        "renox/mail/auth/login-link.txt",
+        include_str!("../views/mail/auth/login-link.txt"),
+    ),
+    (
+        "renox/mail/auth/login-code.html",
+        include_str!("../views/mail/auth/login-code.html"),
+    ),
+    (
+        "renox/mail/auth/login-code.txt",
+        include_str!("../views/mail/auth/login-code.txt"),
+    ),
 ];
 
 /// The template engine (MiniJinja), reading from `VIEWS_PATH`.

@@ -1,0 +1,15 @@
+{#- Passwordless login: asks for an email address and mails a login link
+    (`Auth::new().magic_link()`). Replace it with
+    resources/views/renox/auth/login-link.html in your app. -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ text.login_link_title }} · {{ app.name }}</rx-slot>
+<rx-form :action="route('login.link.send')" hx-post="{{ route('login.link.send') }}">
+  <rx-card title="{{ text.login_link_title }}" subtitle="{{ text.login_link_intro }}">
+    <rx-alert rx-if="flash.status" kind="success">{{ flash.status }}</rx-alert>
+    <rx-alert rx-if="flash.error" kind="error">{{ flash.error }}</rx-alert>
+    <rx-input name="email" label="{{ text.email }}" type="email" required autocomplete="username" autofocus/>
+    <rx-button label="{{ text.login_link_button }}" block/>
+  </rx-card>
+</rx-form>
+<p class="rx-auth__alt"><a class="rx-link" href="{{ route('login') }}">{{ text.back_to_login }}</a></p>
+</rx-page>

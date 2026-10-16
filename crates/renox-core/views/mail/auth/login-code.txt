@@ -1,0 +1,5 @@
+{{ text.mail_code_intro }}
+
+{{ code }}
+
+{{ outro }}

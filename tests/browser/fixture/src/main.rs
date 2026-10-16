@@ -393,7 +393,15 @@ fn main() -> Result {
         // The grid pages' tables (orders, customers, notes).
         .migrations(renox::migrations!())
         // Accounts (a login rotates the CSRF token) and the bell.
-        .module(Auth::new().notifications())
+        // Passwordless login (passwordless.test.mjs): any address that proves
+        // it owns its mailbox gets in, by link or by code.
+        .module(
+            Auth::new()
+                .notifications()
+                .magic_link()
+                .register_on_first_use()
+                .login_codes(renox::auth::LoginCodes::new()),
+        )
         // The data grid's pages (src/grid.rs), and their `db:seed`.
         .module(grid::Orders)
         .seeder(grid::seed)

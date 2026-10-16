@@ -354,6 +354,15 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   code, imported only when a page has it; Web Animations, no library). Guide:
   [docs/blocks.md](docs/blocks.md); used in examples/bikeshop (every page with a block, and
   `/about/blocks`); browser tests tests/browser/blocks.test.mjs.
+- Passwordless login (#42): `Auth::new().magic_link()` and `.login_codes(LoginCodes::new()..)`
+  (renox-core `auth/passwordless.rs`: the routes `login.link.*` / `login.code.*`, the queued
+  `SendLoginSecret` job, `LoginCodes`, `LoginCodeDelivery`; views `views/auth/login-link*.html`,
+  `login-code*.html`, mails `views/mail/auth/login-link|login-code`). Built on
+  `auth::OneTimeCode` / `CodeCheck` (`auth/one_time.rs`, the `one_time_codes` table: keyed hashes,
+  expiry, atomic tries). `LoggedIn::via` says how a user logged in. `TestApp::last_login_link()` /
+  `last_login_code()`. Guide: the "Passwordless login" part of
+  [docs/authorization.md](docs/authorization.md); tests crates/renox/tests/it/passwordless.rs,
+  browser tests tests/browser/passwordless.test.mjs.
 - `crates/renox-oauth`: the optional social login plugin crate (same version as `renox`): the
   `OAuth` module (`lib.rs`: the buttons' `oauth_providers`, the account card, events to the
   audit log), the routes (`handlers.rs`: redirect with `state` + PKCE, callback, unlink;

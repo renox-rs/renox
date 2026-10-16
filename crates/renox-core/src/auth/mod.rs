@@ -39,6 +39,8 @@ mod external;
 mod inbox;
 pub(crate) mod module;
 pub mod notifications;
+pub mod one_time;
+pub mod passwordless;
 mod passwords;
 pub mod permissions;
 pub mod second_factor;
@@ -68,6 +70,8 @@ pub use notifications::{
     Channel, DatabaseMessage, DatabaseNotification, Notification, Recipient,
     prune_read_notifications,
 };
+pub use one_time::{CodeCheck, OneTimeCode, prune_expired_codes};
+pub use passwordless::{LoginCodeDelivery, LoginCodes};
 pub(crate) use permissions::Grants;
 pub use permissions::Permissions;
 pub use second_factor::{PendingLogin, complete_login, pending_login};

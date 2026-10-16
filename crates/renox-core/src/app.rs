@@ -592,6 +592,8 @@ impl App {
         self.registry.job::<crate::mail::SendMailVia>();
         self.registry
             .job::<crate::auth::notifications::SendToChannel>();
+        self.registry
+            .job::<crate::auth::passwordless::SendLoginSecret>();
         self.registry.job::<crate::webhook::ProcessWebhook>();
         #[cfg(feature = "server-events")]
         self.registry.job::<crate::analytics::ServerEvent>();

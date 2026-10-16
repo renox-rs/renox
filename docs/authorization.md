@@ -15,8 +15,9 @@ In this guide:
 - [API tokens and abilities](#api-tokens-and-abilities): limits for programs that call your API
 - [Tenants](#tenants-rows-that-belong-to-a-team): keeping each team's data apart
 - [Sensitive actions](#sensitive-actions-and-the-audit-trail), a
-  [second login step](#a-second-login-step-two-factor-authentication) and
-  [testing](#testing-authorization)
+  [second login step](#a-second-login-step-two-factor-authentication),
+  [passwordless login](#passwordless-login-magic-links-and-one-time-codes) (magic links and
+  codes by mail, SMS or WhatsApp) and [testing](#testing-authorization)
 - [The `Auth` module's routes](#the-auth-modules-routes): every page and address it adds
 
 Want the short version of every API? See the [cheat-sheet](../CHEATSHEET.md) (the parts "Auth,
@@ -816,6 +817,137 @@ The login, register and confirm-password pages include `renox/auth/login_options
 module provides it (with `page` set to `login`, `register` or `confirm`), for its buttons.
 The `renox-oauth` crate is built on these ([oauth.md](oauth.md)).
 
+## Passwordless login: magic links and one-time codes
+
+Some users rarely log in, or have no email address (customers in a portal, field workers with
+only a phone number). They can log in with a **link** sent by email or a short **code** sent
+through any notification channel, expiring and single-use, with the second login step, the
+login throttle and the audit log working as for passwords. Both are options of `Auth`:
+
+```rust
+use std::time::Duration;
+use renox::auth::LoginCodes;
+use renox::prelude::*;
+
+# async fn demo() {
+let app = App::new()
+    // An SMS channel (see notifications): a provider adapter is the app's or a plugin's job.
+    .channel("sms", |to, message, _state| async move {
+        let _ = (to.address("sms"), message["text"].as_str()); // call the provider here
+        Ok(())
+    })
+    .module(
+        Auth::new()
+            .magic_link() // /login/link: email in, link out (15 minutes, once)
+            .login_codes(
+                LoginCodes::new()
+                    .channel("sms") // any `App::channel`; "mail" works too
+                    .digits(6)
+                    .ttl(Duration::from_secs(300))
+                    .max_attempts(5)
+                    // Who a phone number (or any identifier) belongs to. `phone` is a column
+                    // the app added to `users` with its own migration.
+                    .identify(|state, input: String| async move {
+                        Ok(renox::db::sql("SELECT * FROM users WHERE phone = ?")
+                            .bind(input.trim())
+                            .fetch_optional_as::<User>(&state.db)
+                            .await?)
+                    }),
+            ),
+    );
+# let _ = app;
+# }
+```
+
+The login page lists the options that are on. Delivery goes through the **queue**
+(`queue:work`, which `serve` runs by default), so the answer doesn't wait for the provider.
+
+**Magic links.** `/login/link` (`login.link.request`) asks for an email address and mails a link
+to `/login/link/{token}`. The link opens a "Log in as …?" page; only its button, a CSRF-protected
+`POST` (`login.link.consume`), logs in and burns the token, because mail scanners open every link.
+A token works once, for 15 minutes (`.magic_link_ttl(..)`), and a newer link replaces an older
+one. It works in any browser by default, since people read mail on another device;
+`.magic_link().same_browser()` makes it work only in the browser that asked for it (a try from
+another browser is refused and doesn't burn it).
+
+**Login codes.** `/login/code` (`login.code.request`, its form `login.code.send`) asks for an
+identifier, and `/login/code/verify` (`login.code.verify`) takes the code. A code is valid only in
+the browser session that asked for it, so a forwarded SMS alone isn't enough. After `max_attempts`
+wrong codes the code is **burned**: a new one must be requested, and the right code is refused
+until then. Locking out an account stays with the login throttle (5 wrong tries per identifier and
+IP a minute, as for passwords; they fire `LoginFailed` and `LockedOut`). Without `identify`, the
+identifier is an email address.
+
+- **Several channels:** `.channels(["sms", "whatsapp", "mail"])` adds a choice to the request form
+  and "send it another way" to the verify page (`login.code.resend`).
+- **Your own delivery:** `.deliver(|state, delivery| async move { .. })` replaces the built-in
+  message on every channel, for apps with a messaging layer of their own (templates, language,
+  delivery logs, providers that require pre-approved authentication templates). `delivery` has
+  the `user`, `channel`, `address` (what was typed), `code`, `expires_in`, `locale` (the language
+  of the request) and the built-in `text`. Without it, mail gets `renox/mail/auth/login-code`
+  and a custom channel gets `{"kind": "login_code", "code", "text", "expires_in"}`.
+- **`register_on_first_use()`** makes an account (no password, the address verified, then
+  `on_registered`) for an unknown email address that proves it owns it with a link or a code sent
+  by mail, through `register_verified`; it needs open registration.
+- **`LoggedIn::via`** says how: `"password"`, `"magic_link"`, `"code"` or `"external"` (a module
+  that called `sign_in`). The audit log's `auth.login` entries carry it in `data.via`. Logging in
+  by link or code sent by mail also marks the address verified.
+
+**What an attacker sees.** Asking for a link or code answers the same whether the account exists
+or not, and does the same work: a code is stored for unknown identifiers too (only the queued
+delivery is skipped), and a wrong code is as wrong for a stranger as for a user. Sending is
+limited per identifier (5 in 15 minutes; over it nothing is sent, and the page still answers as
+always) and per IP address (20, then `429`). Only keyed hashes (HMAC with `APP_KEY`) are stored in
+`one_time_codes`, the delivery job's payload is stored encrypted, and `rnx tokens:prune` deletes
+expired rows. Someone who can type your user's phone number can cost them a pending code (a new
+request replaces it) but can't log in.
+
+**`OneTimeCode`** is the same primitive for anything else you confirm with a code:
+
+```rust
+use std::time::Duration;
+use renox::auth::{CodeCheck, OneTimeCode};
+use renox::prelude::*;
+
+async fn start(state: &AppState, user: &User) -> Result<String> {
+    // Six digits, 5 minutes, 5 tries; the code is returned once, only its hash is stored.
+    OneTimeCode::issue(state, "payout", &user.id.to_string(), Duration::from_secs(300), 5).await
+}
+
+async fn confirm(state: &AppState, user: &User, typed: &str) -> Result<bool> {
+    Ok(match OneTimeCode::verify(state, "payout", &user.id.to_string(), typed).await? {
+        CodeCheck::Valid => true, // used up
+        CodeCheck::Wrong { tries_left: _ } => false,
+        CodeCheck::Missing => false, // expired, used, or burned by wrong tries
+    })
+}
+```
+
+Each check first uses up a try in one statement, so parallel guesses can't exceed the limit, and
+the right code is deleted in the step that accepts it, so two requests can't both use it. It
+needs the `Auth` module (it owns the `one_time_codes` table).
+
+**Testing.** `TestApp::last_login_link()` and `last_login_code()` (or `last_login_code_on("sms")`)
+run the queued jobs and return what Renox was asked to deliver (kept in memory in debug mode, which
+`TestApp` is). Travel in time with `app.travel(..)`:
+
+```rust
+# use renox::prelude::*;
+# use renox::testing::TestApp;
+# async fn demo(app: TestApp) {
+app.post("/login/link", &[("email", "ana@example.com")]).await;
+let link = app.last_login_link().await.unwrap();
+let path = &link[link.find("/login/").unwrap()..];
+app.get(path).await.assert_ok(); // opening the link logs nobody in
+app.post(path, &[]).await.assert_redirect("/"); // the button does
+# }
+```
+
+Replace the pages with files of the same name: `renox/auth/login-link.html`,
+`login-link-confirm.html`, `login-code.html` and `login-code-verify.html`, and the mails
+`renox/mail/auth/login-link` and `login-code` (`.html` and `.txt`). Texts are the `renox.auth.*`
+keys (`login_link_*`, `login_code_*`, `mail_link_*`, `mail_code_*`, `channel_<name>`).
+
 ## The `Auth` module's routes
 
 `.module(Auth::new())` adds these pages and addresses. Each has a **name**, so you can link to
@@ -835,6 +967,20 @@ address. Where one name covers two methods, the `GET` shows a page and the `POST
 | GET | `/verify-email` | `verification.notice` | "Check your email" for a user who hasn't verified yet. Logged-in users only. |
 | GET | `/verify-email/{id}/{hash}` | `verification.verify` | The signed link from the mail: marks the email verified. Logged-in users only. |
 | POST | `/email/verification-notification` | `verification.send` | Mails the verification link again. Logged-in users only. |
+
+`.magic_link()` and `.login_codes(..)` add the [passwordless](#passwordless-login-magic-links-and-one-time-codes)
+pages. All of them are for guests only:
+
+| Method | Address | Name | What it does |
+|---|---|---|---|
+| GET | `/login/link` | `login.link.request` | Asks for an email address. |
+| POST | `/login/link` | `login.link.send` | Mails a login link (the same answer for any address). |
+| GET | `/login/link/{token}` | `login.link.show` | "Log in as …?" Opening it uses nothing up. |
+| POST | `/login/link/{token}` | `login.link.consume` | Logs in and burns the token. |
+| GET | `/login/code` | `login.code.request` | Asks for an identifier (and a channel, with several). |
+| POST | `/login/code` | `login.code.send` | Sends a code. |
+| GET, POST | `/login/code/verify` | `login.code.verify` | The page that takes the code, and checking it. |
+| POST | `/login/code/resend` | `login.code.resend` | A new code, perhaps on another channel. |
 
 The verification routes are always there. `.verify_email()` makes Renox send the mail when
 someone registers; `.require_verified()` on your routes sends unverified users to
