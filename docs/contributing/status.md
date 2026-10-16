@@ -514,3 +514,10 @@
   framework's. A virtual workspace is supported (`--register`, `renox.workspace = true`).
   `--resource` reuses `scaffold::resource` with the package as target. `--with admin` errors until
   `Registry::contribute` (#31) exists. Guide: docs/development.md "Packages".
+- **#35, `rnx new --from`**: `renox-cli/src/template.rs` (`Config` for `renox-template.toml` with
+  unknown keys rejected, `Source` = `Path` | `Git`, the copy walker, `parse_set`/`answers`) and
+  `new::run_from` (the same `make_app` body as `rnx new`, with a prepared template instead of the
+  stubs). The template is resolved, its config read and its questions answered before anything is
+  written; a failure afterwards removes the folder. Git goes through `tools::git_clone` (shallow, no
+  submodules, no `ext::`); nothing from the template is executed. There is no built-in `Source`:
+  the stubs stay on the old path. Guide: docs/development.md "Start from your own template".

@@ -1929,8 +1929,19 @@ Notes:
 - [x] Docs (development.md "Packages"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
 - [ ] `--with admin` (an `AdminResource` contributed through `Registry::contribute`, after #31)
 
+### Start from your own template (#35)
+- [x] `rnx new <name> --from <dir | git+url#ref> [--set key=value]`: the template's text files get
+  the known placeholders filled (other `{{ }}` untouched), `renox-template.toml` (`replace`, `drop`,
+  `[[ask]]`), a new `APP_KEY` in `.env`, no `.git`, nothing executed
+- [x] Docs (development.md "Start from your own template"), CHEATSHEET.md, llms.txt
+- [ ] Updating an app from a newer template version, templates from crates.io (out of scope)
+
 ## Decisions
 
+- **`--from` is a new option, not a value for `--starter`** (#35), which stays a boolean; it
+  conflicts with `--starter`, `--notifications` and `--tailwind`. Templates fill only exact
+  `{{key}}` names (no spaces), so a template's own `{{ app.locale }}` survives, and a ref is a tag or
+  branch (`git clone --branch` takes no SHA).
 - **Packages use timestamped migration names with the package name** (#34), never the `0001…`
   prefix, which is reserved for the framework; `--with admin` errors until `Registry::contribute`
   exists, rather than writing code that doesn't build.

@@ -17,6 +17,9 @@ business ([llms.txt](llms.txt) maps its files).
 ```bash
 rnx new shop                         # or: --database postgres, --tailwind (Tailwind CSS, no Node)
 rnx new desk --starter               # the starter kit: verification, roles, dashboard, users, activity log
+rnx new acme --from ../tpl          # from your template: a directory or git+<url>#<tag or branch>; fills {{name}} {{title}}
+                                     # {{crate_name}} {{database_url}} {{renox_dependency}} {{app_key}} (only .env) and each
+                                     # [[ask]] of renox-template.toml (--set key=value in scripts); nothing is executed
 rnx key:generate                     # APP_KEY into .env (made from .env.example if missing); --show only prints it
 rnx doctor                           # checks Rust, linker, sccache, .env, APP_KEY, database, migrations
 rnx serve                            # run, rebuild and reload on changes

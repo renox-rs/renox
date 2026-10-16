@@ -203,7 +203,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   tables to prune, maintenance mode.
 - [docs/development.md](docs/development.md): faster builds, and `rnx doctor` (profiles, linker, features to drop,
   sccache, the cargo-chef Dockerfile); "Packages": `rnx make:package` writes a reusable module crate
-  (migrations named after the package, views the app can override, texts, tests), joined to the workspace.
+  (migrations named after the package, views the app can override, texts, tests), joined to the workspace;
+  "Start from your own template": `rnx new <name> --from <dir | git+url#tag-or-branch>` copies a template
+  repository, fills `{{name}}`-style placeholders (exact keys only, other `{{ }}` untouched), asks the
+  `[[ask]]` questions of its `renox-template.toml` (`--set key=value`), and executes nothing from it.
 - [docs/types.md](docs/types.md): every Rust field type with its form input and its SQLite and
   PostgreSQL column (`DbEnum`, `Json<T>`, dates and times, money, UUID).
 - Check models against the schema (`App::model`, `rnx db:check`, `assert_models_match_schema`):

@@ -316,7 +316,9 @@ crates/renox-billing/      the subscriptions plugin (#155, Laravel's Cashier): B
                            as `{gateway}:{id}`), handlers.rs (billing.* pages), guard.rs
                            (SubscriptionRoutes); its own tests/ on FakeHttp + signed
                            webhooks; guide docs/billing.md (doctested from lib.rs `Guide`)
-crates/renox-cli/          `rnx`: main.rs (key:generate, forwarding), new.rs, serve.rs, make.rs +
+crates/renox-cli/          `rnx`: main.rs (key:generate, forwarding), new.rs, template.rs (`new --from`:
+                           renox-template.toml, the `Source` enum (path / git+url#ref), the copy
+                           walker, `--set` answers), serve.rs, make.rs +
                            generate.rs (make:*), scaffold.rs (make:module --resource --fields),
                            deploy.rs (build, make:deploy), tailwind.rs (the pinned
                            standalone CLI: download via curl + SHA-256 check, build/watch; used by
