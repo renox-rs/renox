@@ -38,7 +38,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px 10px 16px;
+  padding-block: 10px; padding-inline: 16px 12px;
   border-bottom: 1px solid var(--rx-separator);
   flex: none;
 }
@@ -81,7 +81,7 @@
 }
 .rx-grid__chip {
   display: inline-flex; align-items: center; gap: 4px;
-  padding: 3px 4px 3px 10px; border-radius: 999px;
+  padding-block: 3px; padding-inline: 10px 4px; border-radius: 999px;
   background: color-mix(in srgb, var(--rx-accent) 14%, transparent);
   color: var(--rx-label); font-size: var(--rx-text-footnote);
 }
@@ -169,10 +169,15 @@ th[aria-sort] .rx-grid__sort { color: var(--rx-accent-text); }
 /* Frozen columns: sticky, with a shadow on the edge once content passes under. */
 .rx-grid__table [data-pin] { position: sticky; z-index: 1; }
 .rx-grid__table thead [data-pin] { z-index: 4; }
-.rx-grid__edge-left { box-shadow: inset -1px 0 0 var(--rx-separator); }
-.rx-grid__edge-right { box-shadow: inset 1px 0 0 var(--rx-separator); }
-.rx-grid--scrolled-left .rx-grid__edge-left { box-shadow: inset -1px 0 0 var(--rx-separator), 6px 0 8px -6px rgba(0, 0, 0, 0.18); }
-.rx-grid--scrolled-right .rx-grid__edge-right { box-shadow: inset 1px 0 0 var(--rx-separator), -6px 0 8px -6px rgba(0, 0, 0, 0.18); }
+/* `-left` and `-right` are the start and end sides; a shadow's offset can't be
+   logical, so it is multiplied by --rx-flip (-1 when reading right to left). */
+.rx-grid { --rx-flip: 1; }
+.rx-grid:dir(rtl) { --rx-flip: -1; }
+[dir="rtl"] .rx-grid { --rx-flip: -1; }
+.rx-grid__edge-left { box-shadow: inset calc(-1px * var(--rx-flip)) 0 0 var(--rx-separator); }
+.rx-grid__edge-right { box-shadow: inset calc(1px * var(--rx-flip)) 0 0 var(--rx-separator); }
+.rx-grid--scrolled-left .rx-grid__edge-left { box-shadow: inset calc(-1px * var(--rx-flip)) 0 0 var(--rx-separator), calc(6px * var(--rx-flip)) 0 8px -6px rgba(0, 0, 0, 0.18); }
+.rx-grid--scrolled-right .rx-grid__edge-right { box-shadow: inset calc(1px * var(--rx-flip)) 0 0 var(--rx-separator), calc(-6px * var(--rx-flip)) 0 8px -6px rgba(0, 0, 0, 0.18); }
 
 /* Cells */
 .rx-grid__tag {
@@ -193,7 +198,7 @@ th[aria-sort] .rx-grid__sort { color: var(--rx-accent-text); }
   cursor: col-resize; touch-action: none;
 }
 .rx-grid__resize::after {
-  content: ""; position: absolute; top: 25%; bottom: 25%; left: 4px; width: 1px;
+  content: ""; position: absolute; top: 25%; bottom: 25%; inset-inline-start: 4px; width: 1px;
   background: var(--rx-separator);
 }
 .rx-grid__resize:hover::after, .rx-grid__resize:focus-visible::after, .rx-grid--resizing .rx-grid__resize::after { background: var(--rx-accent); width: 2px; }
@@ -201,8 +206,8 @@ th[aria-sort] .rx-grid__sort { color: var(--rx-accent-text); }
 .rx-grid__table td.rx-grid__sized, .rx-grid__table th.rx-grid__sized { overflow: hidden; text-overflow: ellipsis; }
 .rx-grid--moving, .rx-grid--moving * { cursor: grabbing !important; user-select: none; }
 .rx-grid__table th.rx-grid__moving { opacity: 0.5; }
-.rx-grid__table th.rx-grid__drop-before { box-shadow: inset 3px 0 0 var(--rx-accent); }
-.rx-grid__table th.rx-grid__drop-after { box-shadow: inset -3px 0 0 var(--rx-accent); }
+.rx-grid__table th.rx-grid__drop-before { box-shadow: inset calc(3px * var(--rx-flip)) 0 0 var(--rx-accent); }
+.rx-grid__table th.rx-grid__drop-after { box-shadow: inset calc(-3px * var(--rx-flip)) 0 0 var(--rx-accent); }
 
 /* Cell kinds. */
 .rx-grid__table td.rx-grid__wrap { white-space: normal; min-width: 14rem; }
@@ -237,7 +242,7 @@ th[aria-sort] .rx-grid__sort { color: var(--rx-accent-text); }
   background: linear-gradient(var(--rx-fill-strong), var(--rx-fill-strong)) var(--rx-surface) !important;
   padding-top: 6px !important; padding-bottom: 6px !important; font-weight: 600;
 }
-.rx-grid__group-head { display: inline-flex; align-items: center; gap: 10px; position: sticky; left: 12px; }
+.rx-grid__group-head { display: inline-flex; align-items: center; gap: 10px; position: sticky; inset-inline-start: 12px; }
 .rx-grid__fold {
   display: inline-flex; align-items: center; gap: 6px;
   border: 0; background: none; padding: 2px 4px; font: inherit; color: var(--rx-label); cursor: pointer; border-radius: 6px;
@@ -345,7 +350,7 @@ tr[aria-busy="true"] > td { opacity: 0.6; }
 /* Footer: always at the bottom of the grid, never scrolled away. */
 .rx-grid__foot {
   display: flex; align-items: center; gap: 12px 20px; flex-wrap: wrap;
-  padding: 8px 12px 8px 16px;
+  padding-block: 8px; padding-inline: 16px 12px;
   border-top: 1px solid var(--rx-separator);
   background: var(--rx-material-thick);
   flex: none;
@@ -433,7 +438,7 @@ calendar-month::part(outside) { color: var(--rx-tertiary-label); }
 
 @media (max-width: 767px) {
   .rx-grid { border-radius: 0; border-inline: 0; }
-  .rx-grid__bar { padding: 8px 8px 8px 12px; }
+  .rx-grid__bar { padding-block: 8px; padding-inline: 12px 8px; }
   .rx-grid__table th, .rx-grid__table td { padding: 9px 10px; }
   .rx-grid__foot { gap: 8px; padding-inline: 8px 8px; }
   .rx-grid__range { display: none; }
