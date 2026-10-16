@@ -967,6 +967,12 @@ async fn a_counter_sale_follows_the_same_rules() {
     assert_eq!(order.channel, Channel::Counter);
     assert_eq!(order.status, OrderStatus::Completed);
     assert_eq!(level(&app, w.helmet.id, w.north.id).await, (1, 0));
+    // The receipt number comes from the store's gapless sequence for the year.
+    assert!(
+        order.number.ends_with("-000001") && order.number.starts_with(&format!("R{}-", w.north.id)),
+        "{}",
+        order.number
+    );
     let payment = Payment::query()
         .where_(Payment::PAYABLE_ID.eq(order.id))
         .first(db)

@@ -135,7 +135,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | Rental counter, walk-ins (`renox::select`), pick-up and return with damage photos, receipts (`Morph`) | `/staff/rentals`, `/staff/rentals/{rental}` | [src/app/rentals/counter.rs](src/app/rentals/counter.rs) |
 | Fleet board: `renox::grid` with `poll`, `cards_on_mobile`, badges, related columns | `/staff/fleet` | [src/app/rentals/fleet.rs](src/app/rentals/fleet.rs) |
 | Workshop board: the `kanban` block (drag or keyboard), the bench, parts from stock | `/staff/workshop`, `/staff/workshop/{order}` | [src/app/workshop/board.rs](src/app/workshop/board.rs), [src/app/workshop/order.rs](src/app/workshop/order.rs) |
-| Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
+| Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`), gapless receipt numbers (`Sequence`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
 | Orders: ready, handed over, cancelled, returned (`action_sheet`) | `/staff/orders` | [src/app/sales/staff.rs](src/app/sales/staff.rs) |
 | Stock: one ledger (`stock_movements`, `Morph` to its cause), a database view as a model, stock takes | `/staff/stock`, `/staff/stock/{level}`, `/staff/stock/take` | [src/app/stock/levels.rs](src/app/stock/levels.rs), [src/app/stock/ledger.rs](src/app/stock/ledger.rs), [src/app/stock/take.rs](src/app/stock/take.rs) |
 | Consignment shipments between stores | `/staff/consignments` | [src/app/stock/consignment.rs](src/app/stock/consignment.rs) |

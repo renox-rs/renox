@@ -316,7 +316,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   progress, the dashboard, testing jobs; mapped to Laravel's.
 - [docs/relations.md](docs/relations.md): relations without N+1 (`belongs_to`, `has_many`, `Pivot`
   with pivot columns, polymorphic `Morph`), keys other than integers (`Pivot<Ulid, i64>`), joins
-  with `fetch_as` and `#[derive(FromRow)]`, the query builder mapped to Laravel's.
+  with `fetch_as` and `#[derive(FromRow)]`, numbering documents with no gaps
+  (`renox::db::Sequence`, `Period`, `NumberFormat`; `sequence:list`), the query builder mapped to
+  Laravel's.
 - [docs/search.md](docs/search.md): full-text search with one API on SQLite FTS5 and
   PostgreSQL `tsvector`: `#[model(search = "title, body", search_language = "…")]`,
   `renox::db::search::migration::<M>(name)` (the index: FTS5 table + triggers, or a generated

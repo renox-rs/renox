@@ -458,6 +458,12 @@
   (derefs to the transaction and is an `Executor`, so closures written for `&mut Transaction`
   compile unchanged). Not done: mapping columns in the browser (a follow-up); `ImportTx` has no
   `delete`.
+- **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
+  `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
+  nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on
+  the caller's transaction (row lock on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), so rollbacks
+  give numbers back. The bike shop's counter sales number their receipts with it. Tests:
+  tests/it/sequences.rs.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social
