@@ -115,6 +115,7 @@ pub struct App {
     mailers: Vec<(String, MailerSettings)>,
     mailer_limits: HashMap<String, crate::queue::Limit>,
     xsrf_cookie: bool,
+    settings_seed: Option<std::path::PathBuf>,
 }
 
 /// How `App::mailer` gets a mailer's settings once the configuration is loaded.
@@ -149,6 +150,7 @@ impl App {
             mailers: Vec::new(),
             mailer_limits: HashMap::new(),
             xsrf_cookie: false,
+            settings_seed: None,
         }
     }
 
@@ -427,6 +429,32 @@ impl App {
         self
     }
 
+    /// Declares a group of settings kept in the database; see
+    /// [`crate::settings`] and [`Registry::settings`]. Needs
+    /// `App::module(Settings)`.
+    pub fn settings<T: crate::settings::SettingsGroup>(mut self) -> Self {
+        self.registry.settings::<T>();
+        self
+    }
+
+    /// Declares a group of settings like [`App::settings`] and gives every
+    /// view its values as `settings.<key>` (`settings.company.name`); see
+    /// [`Registry::settings_in_views`].
+    pub fn settings_in_views<T: crate::settings::SettingsGroup>(mut self) -> Self {
+        self.registry.settings_in_views::<T>();
+        self
+    }
+
+    /// Seeds declared settings groups from a JSON file of groups
+    /// (`{"company": {"name": "Acme"}}`) the first time each is read: a
+    /// deploy tool drops the file, and the app starts with those values.
+    /// Values already in the table win, and a missing file seeds nothing.
+    /// The seeded values are validated like any save.
+    pub fn settings_from(mut self, path: impl Into<std::path::PathBuf>) -> Self {
+        self.settings_seed = Some(path.into());
+        self
+    }
+
     /// Adds a command the app binary runs: `my-app <name> [args]`, e.g. to
     /// create the first admin or run an import. See [`crate::command`].
     pub fn command<F, Fut>(mut self, name: &str, about: &str, run: F) -> Self
@@ -660,7 +688,7 @@ impl App {
             commands,
             templates,
             components,
-            shares,
+            mut shares,
             channels,
             channel_limits,
             reporters,
@@ -674,7 +702,34 @@ impl App {
             seeders,
             models,
             view_data,
+            settings_groups,
+            settings_module,
         } = self.registry;
+        if !settings_groups.is_empty() && !settings_module {
+            return Err(anyhow!(
+                "settings groups are declared (`App::settings`), but the `Settings` module isn't \
+                 on: add `.module(renox::settings::Settings)`"
+            )
+            .into());
+        }
+        let mut seen = std::collections::HashSet::new();
+        for group in &settings_groups {
+            if !seen.insert(group.key) {
+                return Err(anyhow!("two settings groups have the key `{}`", group.key).into());
+            }
+        }
+        let settings_seed = match &self.settings_seed {
+            Some(path) => crate::settings::read_seed(path)?,
+            None => None,
+        };
+        if settings_groups.iter().any(|group| group.shared) {
+            shares.push((
+                "settings".to_owned(),
+                crate::view::share_fn(|ctx: crate::view::ViewContext| async move {
+                    ctx.state.settings_for_views().await
+                }),
+            ));
+        }
         // The app's own `App::provide` values win over the modules'.
         module_provided.extend(self.provided);
         check_assets(&static_assets)?;
@@ -920,6 +975,7 @@ impl App {
             disks: Arc::new(disks),
             http: crate::http::Http::default(),
             fakes: Arc::default(),
+            settings_store: Arc::new(crate::settings::Store::new(settings_groups, settings_seed)),
             translator: Arc::new(match embedded {
                 Some(files) => crate::i18n::Translator::embedded(files.lang)?,
                 None => crate::i18n::Translator::load(&config.lang_path, config.debug)?,

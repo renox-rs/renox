@@ -78,7 +78,7 @@ fn config(dir: &std::path::Path) -> Config {
     config
 }
 
-fn shared_database(dir: &std::path::Path) -> String {
+pub(crate) fn shared_database(dir: &std::path::Path) -> String {
     let file = format!("sqlite://{}", dir.join("app.db").display());
     let Some(url) = std::env::var("TEST_DATABASE_URL")
         .ok()
@@ -101,12 +101,12 @@ fn shared_database(dir: &std::path::Path) -> String {
 }
 
 /// Creates the PostgreSQL schema `shared_database` names (nothing on SQLite).
-async fn make_schema(dir: &std::path::Path) {
+pub(crate) async fn make_schema(dir: &std::path::Path) {
     on_schema(dir, "CREATE SCHEMA IF NOT EXISTS").await;
 }
 
 /// Drops it again at the end of the test.
-async fn drop_schema(dir: &std::path::Path) {
+pub(crate) async fn drop_schema(dir: &std::path::Path) {
     on_schema(dir, "DROP SCHEMA IF EXISTS").await;
 }
 
@@ -192,6 +192,51 @@ async fn the_binarys_commands_run_through_run_args() {
     );
 
     assert!(run(&["no-such-command"]).await.is_err());
+    drop_schema(dir.path()).await;
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Validate, Default, Clone)]
+struct Shop {
+    #[validate(required, max(10))]
+    name: String,
+    open: bool,
+}
+
+impl renox::settings::SettingsGroup for Shop {
+    const KEY: &'static str = "shop";
+}
+
+/// #29: `settings:set|get|list` on the app binary; `set` validates, and what
+/// it saved is what a later boot of the same database reads.
+#[renox::test]
+async fn the_settings_commands_run_on_the_app_binary() {
+    let dir = tempfile::tempdir().unwrap();
+    make_schema(dir.path()).await;
+    let with_settings = || {
+        app(dir.path())
+            .module(renox::settings::Settings)
+            .settings::<Shop>()
+    };
+    let run = |args: &'static [&'static str]| with_settings().run_args(args.iter().copied());
+    run(&["migrate"]).await.unwrap();
+    run(&["settings:set", "shop.name", "Corner"]).await.unwrap();
+    run(&["settings:set", "shop.open", "true"]).await.unwrap();
+    run(&["settings:get", "shop"]).await.unwrap();
+    run(&["settings:get", "shop.name"]).await.unwrap();
+    run(&["settings:list"]).await.unwrap();
+    // Invalid values are refused and nothing changes.
+    assert!(run(&["settings:set", "shop.name", ""]).await.is_err());
+    assert!(
+        run(&["settings:set", "shop.name", "far too long a name"])
+            .await
+            .is_err()
+    );
+    assert!(run(&["settings:set", "shop.open", "maybe"]).await.is_err());
+    assert!(run(&["settings:get"]).await.is_err(), "needs a group");
+
+    let kernel = with_settings().boot().await.unwrap();
+    let shop = kernel.state().settings::<Shop>().await.unwrap();
+    assert_eq!((shop.name.as_str(), shop.open), ("Corner", true));
     drop_schema(dir.path()).await;
 }
 
