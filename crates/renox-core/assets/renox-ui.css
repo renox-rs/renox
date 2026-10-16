@@ -437,6 +437,47 @@
   .rx-shell__content { padding: var(--rx-space-4); }
 }
 
+/* The standard for dashboard apps, `<rx-shell fill>` (`rx-shell--fill`).
+   On a large screen the shell is as tall as the screen and the window never
+   scrolls: the sidebar, the content under the navbar and each `rx-pane`
+   scroll on their own, and a `rx-fill` element (a data grid, a row of
+   panes, a panel) takes the height that is left, so the panels cover the
+   whole screen. On tablets and phones the page scrolls as a document, as a
+   plain `rx-shell` does, and a `rx-fill` element keeps a minimum height
+   (`--rx-fill-min`) so it has room to breathe. Printing is a document too. */
+.rx-pane {
+  display: flex; flex-direction: column; gap: var(--rx-space-3); min-width: 0;
+  padding: var(--rx-space-4) var(--rx-space-5);
+  background: var(--rx-surface); border: var(--rx-surface-border); border-radius: var(--rx-radius); box-shadow: var(--rx-shadow);
+}
+.rx-pane > * { flex-shrink: 0; }
+/* A pane with nothing in it but its empty state shows it in its middle. */
+.rx-pane > .rx-empty:only-child { margin-block: auto; }
+/* The pane is the list's surface. */
+.rx-pane .rx-list { background: none; border: 0; border-radius: 0; box-shadow: none; margin-inline: calc(-1 * var(--rx-space-4)); }
+/* Panes side by side (one column on tablets and phones); `--rx-panes` sets
+   their widths, e.g. `2fr 1fr`. */
+.rx-panes { display: grid; gap: var(--rx-space-4); grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.rx-shell--fill .rx-fill, .rx-shell--fill .rx-shell__content > .rx-grid { min-height: var(--rx-fill-min, max(24rem, 60svh)); }
+@media screen and (min-width: 64rem) {
+  .rx-panes { grid-template-columns: var(--rx-panes, none); grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+}
+@media screen and (min-width: 64rem) and (min-height: 36rem) {
+  .rx-shell--fill { height: 100vh; height: 100dvh; grid-template-rows: minmax(0, 1fr); overflow: hidden; }
+  .rx-shell--fill > .rx-sidebar { position: static; height: auto; }
+  .rx-shell--fill > .rx-shell__main { min-height: 0; }
+  .rx-shell--fill .rx-shell__content {
+    flex: 1 1 auto; min-height: 0; max-width: none; overflow-y: auto; overscroll-behavior: contain;
+    display: flex; flex-direction: column;
+  }
+  .rx-shell--fill .rx-shell__content > * { flex-shrink: 0; }
+  /* What takes the rest of the height; on a short screen it keeps a floor
+     and the content scrolls instead. */
+  .rx-shell--fill .rx-shell__content > :is(.rx-fill, .rx-grid) { flex: 1 1 0; min-height: var(--rx-fill-floor, 16rem); }
+  .rx-shell--fill .rx-panes { grid-template-rows: minmax(0, 1fr); }
+  .rx-shell--fill .rx-pane { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
+
 /* A page's title row: the title (and a way back) on one side, its buttons on the other. */
 .rx-page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--rx-space-3); }
 .rx-page-header__text { display: grid; gap: 2px; min-width: 0; }

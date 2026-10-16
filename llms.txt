@@ -19,6 +19,21 @@
   (`rnx db:check`, `rnx view:check`, `rnx make:migration --auto`, `rnx doctor`, `rnx view:data`);
   moving a 1.0 template over: [docs/ui.md](docs/ui.md#upgrading-from-10). Copy from
   `examples/hello` (the guestbook) and `examples/bikeshop` first.
+- **The standard mechanism of a Renox dashboard application** (a back office, an admin panel,
+  any app used as a daily workspace with a sidebar and many modules): the layout is
+  `<rx-shell fill>` ([docs/ui.md](docs/ui.md#the-dashboard-standard-rx-shell-fill); `rnx new`'s
+  signed-in layout, renox-admin and the bike shop's staff side use it). On a desktop screen:
+  **the document never scrolls** (the sidebar, the navbar and the page header stay in place);
+  **every panel scrolls on its own** (the sidebar, the content, a grid's rows, each `rx-pane`);
+  **the screen real estate is filled completely**: a `<rx-grid>` written straight in the
+  content, or one `rx-fill` element (`<div class="rx-panes rx-fill">` with `rx-pane`s side by
+  side, or a `<section class="rx-pane rx-fill">`), takes the remaining height, and no panel is
+  left empty or as blank space (a panel without data holds `<rx-empty>`, shown in its middle).
+  On tablets and phones the same pages switch by themselves to document scroll, and each
+  `rx-fill` element keeps a minimum height (`--rx-fill-min`) so it has room to breathe. Don't
+  give pages fixed heights or write viewport CSS per page: the shell does it. Public pages (a
+  home page, a shop, a blog) are not dashboards: they use the navbar layout and scroll as a
+  document.
 - [CHEATSHEET.md](CHEATSHEET.md): the common patterns, 5–20 lines each and compiled as doctests:
   `rnx` commands; modules, routes, path parameters, route groups and guards (auth, verified,
   guest, throttle); views, template globals and overriding built-in pages; `App::share` and
@@ -231,8 +246,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `Grid::export_as`;
   `date_picker` with `disabled_dates`/`closed_weekdays`; `icon(name)` (Lucide line icons);
   the page's frame: `navbar`/`nav_links`/`nav_link` (`tabs=[…]`: a bottom tab bar on phones,
-  `nav_search`: the search behind a button there), `sidebar` + `rx-shell` for back
-  offices, `page_header`, `toolbar`, `row_actions`, `list`, `card_grid`/`media_card`,
+  `nav_search`: the search behind a button there), `sidebar` + `<rx-shell fill>` for
+  dashboard apps (the standard: `rx-fill`, `rx-pane`, `rx-panes`, `--rx-fill-min`), `page_header`, `toolbar`, `row_actions`, `list`, `card_grid`/`media_card`,
   `link_tabs`, `thumbnail`, `progress`, `rx-page--fill`: build pages from these, not app CSS;
   themes and the type scale: the warm default, `data-rx-theme="classic"`, `--rx-type-*`),
   the filters `number`, `money` (`APP_CURRENCY`), `date`, `since`, `words`, `markdown`,

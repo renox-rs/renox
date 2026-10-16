@@ -2346,7 +2346,10 @@ pub(crate) static BUILTIN: &[Contract] = &[
             tag: "div",
             class: "rx-shell",
         },
-        props: &[],
+        props: &[flag(
+            "fill",
+            "The dashboard standard: on a large screen the shell fills the screen, the window never scrolls and each panel scrolls on its own; tablets and phones scroll the page.",
+        )],
         slots: &[DEFAULT_SLOT],
         events: &[],
         route_prop: None,

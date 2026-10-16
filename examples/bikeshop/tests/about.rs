@@ -419,7 +419,7 @@ async fn the_skeleton_pages_answer() {
         .await
         .assert_ok()
         .assert_view("staff/dashboard.html")
-        .assert_see("rx-shell")
+        .assert_see("rx-shell rx-shell--fill")
         .assert_see("rx-sidebar");
 }
 

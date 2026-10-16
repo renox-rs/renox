@@ -320,6 +320,16 @@ impl Module for Pages {
             })
             .get("/nav", || async { view("nav.html", context! {}) })
             .get("/shell", || async { view("shell.html", context! {}) })
+            // The dashboard standard, `<rx-shell fill>` (#24).
+            .get("/shell-fill", || async {
+                view("shell_fill.html", context! { tall => false })
+            })
+            .get("/shell-fill/tall", || async {
+                view("shell_fill.html", context! { tall => true })
+            })
+            .get("/shell-fill/more", || async {
+                Html(r#"<li id="loaded">More orders</li>"#)
+            })
             // The bell: a page with it, and a notification for the user.
             .get("/inbox", || async { view("inbox.html", context! {}) })
             .post(

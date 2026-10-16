@@ -673,20 +673,24 @@ public pages work this way:
   ("Sections", the kit text `ui.sections`).
 - Without `tabs`, `navbar` is as before.
 
-A back office puts its sections down the side instead:
+A back office puts its sections down the side instead, in the kit's app shell, `<rx-shell>`.
+A dashboard app writes it `<rx-shell fill>`: that is the standard for dashboard apps
+([below](#the-dashboard-standard-rx-shell-fill)).
 
 ```html
-<body class="rx-page rx-shell">
-  <rx-sidebar :brand="company.name">
-    <rx-sidebar-link route="home" label="Dashboard" :active="route_is('home')"/>
-    <rx-sidebar-link route="invoices.index" label="Invoices" :active="route_is('invoices.*')"/>
-    <rx-sidebar-section title="Admin"/>
-    <rx-sidebar-link rx-if="can('staff.manage')" route="staff.index" label="Staff" :active="route_is('staff.*')"/>
-  </rx-sidebar>
-  <div class="rx-shell__main">
-    <rx-navbar width="full" :skip="false"><span class="rx-spacer"></span><rx-notification-bell :count="unread_notifications"/></rx-navbar>
-    <main class="rx-shell__content" id="main">…</main>
-  </div>
+<body class="rx-page">
+  <rx-shell fill>
+    <rx-sidebar :brand="company.name">
+      <rx-sidebar-link route="home" label="Dashboard" :active="route_is('home')"/>
+      <rx-sidebar-link route="invoices.index" label="Invoices" :active="route_is('invoices.*')"/>
+      <rx-sidebar-section title="Admin"/>
+      <rx-sidebar-link rx-if="can('staff.manage')" route="staff.index" label="Staff" :active="route_is('staff.*')"/>
+    </rx-sidebar>
+    <div class="rx-shell__main">
+      <rx-navbar width="full" :skip="false"><span class="rx-spacer"></span><rx-notification-bell :count="unread_notifications"/></rx-navbar>
+      <main class="rx-shell__content" id="main">…</main>
+    </div>
+  </rx-shell>
 </body>
 ```
 
@@ -694,12 +698,86 @@ The sidebar lists Dashboard and Invoices, then an "Admin" heading. The "Staff" l
 to people allowed to manage staff (`can('staff.manage')`). Next to the sidebar, a thin bar on
 top holds the notification bell, and the page's content goes under it.
 
+#### The dashboard standard: `<rx-shell fill>`
+
+This is the standard mechanism of a Renox dashboard application: a back office, an admin
+panel, any app people use as a daily workspace with a sidebar and many modules. Its layout is
+`<rx-shell fill>`. On a desktop screen (at least 64rem, 1024 px, wide and 36rem tall):
+
+- **The document never scrolls.** The shell is exactly as tall as the window. The sidebar, the
+  navbar and the page header stay where they are.
+- **Every panel scrolls on its own.** The sidebar, the content under the navbar, a data grid's
+  rows and each `rx-pane` have their own scroll bar, and scrolling one leaves the others alone.
+- **The panels fill the whole screen.** The content has no maximum width, and the element that
+  holds the page's work takes the height that is left: a `<rx-grid>` written straight in the
+  content does it by itself, any other element takes the class `rx-fill`. No panel is left as an
+  empty box: a panel with nothing to show holds its empty state (`<rx-empty>`), which sits in
+  its middle.
+
+On tablets and phones the same pages switch by themselves to normal document scroll, as a
+plain `<rx-shell>` does: nothing scrolls inside something else on a touch screen. There a
+`rx-fill` element (and the grid) keeps a minimum height, `--rx-fill-min` (24rem, or 60% of the
+screen's height if that is more), so a grid filtered down to two rows is not a flat box.
+Printing is a document too.
+
+Don't give pages fixed heights or write viewport CSS per page: the shell does it. Public pages
+(a home page, a shop, a blog) are not dashboards: they use the navbar layout and scroll as a
+document.
+
+```html
+<rx-page layout="layouts/app.html" title="Orders">
+  <rx-page-header title="Orders"/>
+  {#- The grid takes the height left; only its rows scroll. -#}
+  <rx-grid :page="orders"/>
+</rx-page>
+```
+
+A page with panels side by side puts them in `rx-panes` and makes that the `rx-fill` element.
+Each `rx-pane` is a panel (the kit's surface, with padding) that scrolls on its own:
+
+```html
+<rx-page layout="layouts/app.html" title="Order 1042">
+  <rx-page-header title="Order 1042"/>
+  <div class="rx-panes rx-fill" style="--rx-panes: 2fr 1fr 1fr">
+    <section class="rx-pane" aria-label="Items">
+      <h2 class="rx-title">Items</h2>
+      <rx-list label="Items"><li rx-for="item in order.items">{{ item.name }}</li></rx-list>
+    </section>
+    <section class="rx-pane" aria-label="History">…</section>
+    <section class="rx-pane" aria-label="Notes">
+      <rx-empty rx-if="not notes" title="No notes yet" message="Notes on the order show here."/>
+    </section>
+  </div>
+</rx-page>
+```
+
+| Class or property | What it does |
+|---|---|
+| `fill` on `<rx-shell>` (`rx-shell--fill`) | The dashboard standard described above. |
+| `rx-fill` | On a desktop screen, takes the height left in the content (put it on an element written straight in `main.rx-shell__content`); when the screen is short it keeps 16rem (`--rx-fill-floor`) and the content scrolls instead. On tablets and phones, at least `--rx-fill-min` tall. A `<rx-grid>` in the content behaves like this without the class. |
+| `rx-pane` | A panel that scrolls on its own on a desktop screen and grows with what it holds on smaller ones. A list in it uses the pane as its surface; an empty state alone in it sits in its middle. Use it as the `rx-fill` element, or in `rx-panes`. |
+| `rx-panes` | Panes side by side from 64rem up, each as tall as the row; one column below. `--rx-panes` sets the columns' widths (`2fr 1fr`); by default they share the width. |
+
+`rx-fill` and `rx-pane` work in `<rx-shell fill>` only; a page with the navbar layout that must
+fill the screen (a data grid as the whole page) uses `rx-page--fill` instead
+([More classes and options](#more-classes-and-options)).
+
+With the content as the scroller, the rest works as before: a link to `#anchor` scrolls the
+panel that holds it, focus on the first wrong field after a failed form scrolls it into view,
+`hx-trigger="revealed"` fires when a pane or the content scrolls the element into view (htmx
+listens to the window, so the kit passes the shell's scrolling on to it), and htmx's history
+brings back where the content and each pane were. Toasts and sheets sit over the whole window.
+A data grid's column headings stick to the top of its rows on a desktop screen; on tablets and
+phones, where the page scrolls, they scroll with the page (the grid's sideways-scrolling area is
+what they stick to), and `Grid::cards_on_mobile` shows rows as cards with their labels.
+
 | Component | What it is |
 |---|---|
 | `<rx-navbar brand href="/" logo mark width="narrow" label skip tabs tabs-label>` | The bar on top: see-through, it stays at the top while you scroll ("sticky"), with a hairline under it. `brand` links to `href` (`none` for no brand). `logo` is an image URL; `mark=true` shows the name's first letter in the accent colour. `width` matches the page: `narrow` (`rx-container`), `wide` (`rx-container--wide`) or `full`. It starts with a "Skip to content" link to `#main`, for keyboard users. `tabs`: a tab bar at the bottom on phones ([above](#tabs-at-the-bottom-on-phones)). |
 | `<rx-nav-search label id>` | A search form in the bar; on phones behind a search button that opens it on a row under the bar. |
 | `<rx-nav-links>` with `<rx-nav-link href label :active badge>` | The bar's sections. `active` (usually `route_is('….*')`) marks the current one, with `aria-current` for screen readers. `badge` shows a count. On phones the links get a row of their own that scrolls sideways (with `tabs`, the tab bar replaces them). |
-| `<rx-sidebar brand href="/" logo mark label skip>` + `<rx-sidebar-link href label active badge icon>` + `<rx-sidebar-section title>` | Sections down the side, for back offices. The page is built like this: `rx-shell` on `<body>`, the sidebar, then `rx-shell__main` holding a full-width `navbar` and `<main class="rx-shell__content">`. On phones the sidebar becomes a bar of links on top. |
+| `<rx-shell fill>` | The app shell: the sidebar and the main column beside it. `fill` is the standard for dashboard apps ([above](#the-dashboard-standard-rx-shell-fill)). |
+| `<rx-sidebar brand href="/" logo mark label skip>` + `<rx-sidebar-link href label active badge icon>` + `<rx-sidebar-section title>` | Sections down the side, for back offices. The page is built like this: `<rx-shell fill>` in `<body class="rx-page">`, the sidebar, then `rx-shell__main` holding a full-width `navbar` and `<main class="rx-shell__content">`. On phones the sidebar becomes a bar of links on top. |
 | `<rx-page-header title subtitle back back-label badge badge-kind>` | A page's heading: the title (with a badge), a line under it, a link back (`back`), and the call block's buttons at the end of the row (under the title on phones). |
 | `<rx-toolbar>` | Filter fields side by side. They wrap onto more lines on narrow screens, and line up with their buttons. There are no "(optional)" marks, since filters are all optional. Put it inside the `<form>`. |
 | `<rx-row-actions>` | A table row's buttons, at the end of the row. On phones only the icons show (the labels stay for screen readers). |
@@ -741,7 +819,9 @@ and rename options), like `<rx-select options-url editable>`.
 Some things are classes or options, not macros:
 
 - `rx-page--fill` on `<body>` makes the page as tall as the screen, with `<main>` taking the
-  rest. Use it for a data grid that fills the screen (`rx-grid-fill`).
+  rest. Use it for a data grid that fills the screen (`rx-grid-fill`) in the navbar layout. In
+  a dashboard app the shell does this: `<rx-shell fill>`, with `rx-fill`, `rx-pane` and
+  `rx-panes` ([the dashboard standard](#the-dashboard-standard-rx-shell-fill)).
 - `rx-image` is a picture as wide as its column.
 - `input`, `textarea`, `select` and `checkbox` take `hide-label`. The label is hidden on
   screen but stays for screen readers (for example a quantity field in a table row).
@@ -1400,7 +1480,7 @@ A 1.0 template keeps working: its `{% from "renox/ui.html" import … %}` and `{
 | `rx-mail-text` | a text mail written with `{% for %}` / `{% if %}` |
 | `?name="expr"` | `{{ ' name="…"' \| safe if expr }}` inside a start tag |
 | `rx-sheet`, `rx-open-button`, `rx-action-sheet`, `rx-notification-bell` | `sheet`, `open_button`, `action_sheet`, `notification_bell` |
-| `rx-shell` | none: a `div.rx-shell` |
+| `rx-shell` | none: a `div.rx-shell` (`fill` adds `rx-shell--fill`) |
 | `rx-stack`, `rx-row` | none: a `div` with the kit's class |
 | `rx-block` | `{% block name %}…{% endblock %}` |
 | `rx-pagination` | `pagination(page)` or `simple_pagination(page)` of `renox/pagination.html` |
@@ -1431,23 +1511,27 @@ and gives each panel an id built from its own `id` (like `rx-wizard`):
   </rx-menu>
 </rx-navbar>
 
-<div class="rx-shell">  {# or <rx-shell> #}
+<rx-shell fill>
   <rx-sidebar brand="Back office">
     <rx-sidebar-section title="Sales"/>
     <rx-sidebar-link route="orders.index" label="Orders" icon="receipt"/>
   </rx-sidebar>
-  <main>
-    <rx-tabs id="order-tabs" selected="items">
-      <rx-tab key="items" label="Items">…</rx-tab>
-      <rx-tab key="history" label="History">…</rx-tab>
-    </rx-tabs>
-    <rx-open-button id="note" label="Add note" variant="primary"/>
-    <rx-sheet id="note" title="Note">…</rx-sheet>
-  </main>
-</div>
+  <div class="rx-shell__main">
+    <rx-navbar width="full" :skip="false"/>
+    <main class="rx-shell__content" id="main">
+      <rx-tabs id="order-tabs" selected="items">
+        <rx-tab key="items" label="Items">…</rx-tab>
+        <rx-tab key="history" label="History">…</rx-tab>
+      </rx-tabs>
+      <rx-open-button id="note" label="Add note" variant="primary"/>
+      <rx-sheet id="note" title="Note">…</rx-sheet>
+    </main>
+  </div>
+</rx-shell>
 ```
 
-`<rx-shell>` is the same element as `<div class="rx-shell">`. `<rx-sheet>` and
+`<rx-shell>` is a `<div class="rx-shell">`, and `<rx-shell fill>` a
+`<div class="rx-shell rx-shell--fill">`, the standard for dashboard apps. `<rx-sheet>` and
 `<rx-action-sheet>` take the sheet events (`@closed` and others) like any component.
 
 A dashboard written with tags. `rx-chart` calls the `chart(...)` function, so it takes the same

@@ -2021,6 +2021,15 @@ Notes:
   `"{var}" isn't a field of {Type}`. It doesn't follow `extends`, `include` or macros, so a
   variable used only in a layout or a partial is not checked (accepted false negatives).
   `context!` views stay as they are. Shown on the bike shop's supplier list.
+- **The dashboard standard** (#24, Renoxium, 2026-10-15): a dashboard app (a back office, an
+  admin panel, a daily workspace with a sidebar) uses `<rx-shell fill>`. On a desktop screen
+  the document never scrolls, every panel scrolls on its own, and the panels fill the screen
+  (a grid or one `rx-fill` element takes the height left; an empty panel holds its empty
+  state). Tablets and phones scroll the page, and `rx-fill` keeps a minimum height there.
+  It extends `rx-shell` with an opt-in prop rather than adding a second shell: the structure
+  is the same and only what scrolls changes, so the phone layout, the theme and the sidebar
+  stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
+  rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
 
 ## Not planned
 

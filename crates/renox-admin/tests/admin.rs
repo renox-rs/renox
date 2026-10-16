@@ -351,7 +351,12 @@ async fn the_dashboard_counts_what_the_user_may_see() {
         .assert_see("Shop")
         // Categories' policy lets only the owner see them.
         .assert_dont_see("Categories");
-    assert!(page.text().contains("rx-shell"), "{}", page.text());
+    // The dashboard standard: the shell fills the screen on a large one.
+    assert!(
+        page.text().contains("rx-shell rx-shell--fill"),
+        "{}",
+        page.text()
+    );
 
     let owner = user(&app, "owner@example.com").await;
     app.acting_as(&owner);

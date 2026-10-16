@@ -279,6 +279,20 @@
   cssparser and dtoa-short (MPL-2.0) as cargo-deny license exceptions (#7; a Dependabot bump to
   4.2.1, inside the advisories, was undone by #15). The workspace, its nine `=` pins, the landing page's badge and
   terminal and the README name 1.1.1.
+- **#24, the dashboard standard** (Renoxium, 2026-10-15): `<rx-shell fill>` (`rx-shell--fill`,
+  a `flag` on the `rx-shell` contract) is the standard mechanism of a Renox dashboard
+  application. From 64rem wide and 36rem tall (screen only) the shell is `100dvh` with
+  `overflow: hidden`, `rx-shell__content` becomes a flex column without `max-width` that
+  scrolls on its own, and a `rx-fill` element or a `.rx-grid` written straight in it takes the
+  height left (`flex: 1 1 0`, a `--rx-fill-floor` of 16rem); `rx-pane` (a surface that scrolls
+  on its own) and `rx-panes` (panes side by side, `--rx-panes`) are new. Below that the page
+  scrolls as a plain `rx-shell` and `rx-fill` keeps `--rx-fill-min` (`max(24rem, 60svh)`).
+  renox-ui.js passes a scroll inside the shell on to the window (htmx 2.0.11's `revealed`
+  listens to the window only) and keeps the content's and panes' places in htmx's history
+  (`data-rx-scroll`, set on `htmx:beforeHistorySave`). `rnx new`'s signed-in layout,
+  renox-admin's layout and the bike shop's staff and admin layouts use it, with the tag in
+  `<body class="rx-page">` (the docs taught `rx-shell` on `<body>` before). Rule text in
+  llms.txt "Start here" and AGENTS.md.stub; tests/browser/ui-shell.test.mjs.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 

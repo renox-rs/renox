@@ -60,7 +60,7 @@
      public page, the staff shell, the sign-in pages) is left as it is. */
   body.bs-docked { --bs-dock-now: var(--bs-dock-w); padding-inline-end: var(--bs-dock-now); }
   /* A back office (the staff shell) has a sidebar too: a little narrower. */
-  body.rx-shell.bs-docked { --bs-dock-now: var(--bs-dock-w-shell); }
+  body.bs-docked:has(> .rx-shell) { --bs-dock-now: var(--bs-dock-w-shell); }
   body.bs-docked.bs-docked--rail { --bs-dock-now: var(--bs-dock-rail); }
   .bs-docked .bs-dock {
     display: block; position: fixed; z-index: 25; inset-block: 0; inset-inline-end: 0; width: var(--bs-dock-now);

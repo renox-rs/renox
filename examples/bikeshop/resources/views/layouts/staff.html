@@ -7,9 +7,14 @@
 </head>
 {#- The staff layout: the kit's back-office shell. `rx-shell` is a CSS grid
     (the sidebar, then the main column); the main column has a full-width
-    `navbar` for the store switcher, "About this page" and the account menu. -#}
+    `navbar` for the store switcher, "About this page" and the account menu.
+    `fill` makes it the dashboard standard: on a large screen the window
+    never scrolls, the sidebar and the page scroll on their own, and a grid
+    (or an `rx-fill` element) takes the height left; tablets and phones
+    scroll the page. -#}
 <rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
-<body class="rx-page rx-shell{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+<body class="rx-page{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
+  <rx-shell fill>
   <rx-sidebar :brand="t('shop.name')" :href="route('staff.dashboard')">
     {#- --- Staff navigation (one line per area; append yours, behind the
         permission it needs: rx-if="can('…')") --- -#}
@@ -69,6 +74,7 @@
       <rx-block name="content"/>
     </main>
   </div>
+  </rx-shell>
   {#- "About this page": docked beside the page on wide screens, a sheet on
       narrower ones (components/about_dock.html, components/about_panel.html). -#}
   <template rx-if="about">

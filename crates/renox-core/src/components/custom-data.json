@@ -3833,7 +3833,20 @@
       "name": "rx-sidebar-section"
     },
     {
-      "attributes": [],
+      "attributes": [
+        {
+          "description": "The dashboard standard: on a large screen the shell fills the screen, the window never scrolls and each panel scrolls on its own; tablets and phones scroll the page.",
+          "name": "fill",
+          "values": [
+            {
+              "name": "true"
+            },
+            {
+              "name": "false"
+            }
+          ]
+        }
+      ],
       "description": "The frame of a back office: a sidebar and the main column beside it.",
       "name": "rx-shell"
     },

@@ -1,0 +1,50 @@
+{#- The dashboard standard, `<rx-shell fill>` (#24): a sidebar longer than
+    the screen, a page header, then panes side by side that take the height
+    left (`rx-panes rx-fill`): a long list ending in an `hx-trigger="revealed"`
+    row and a link to an anchor far down it, a long text, and an empty pane.
+    `/shell-fill/tall` puts a long block above the panes, so the content scrolls and
+    the panes keep their floor. tests/browser/ui-shell.test.mjs drives it. -#}
+<!doctype html>
+<html lang="{{ app.locale }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Workspace</title>
+  <rx-head/>
+  <rx-ui/>
+</head>
+<body class="rx-page">
+  <rx-shell fill>
+    <rx-sidebar brand="Fixture" href="/shell-fill">
+      <rx-sidebar-link href="/shell-fill" label="Workspace" :active="true"/>
+      <rx-sidebar-link rx-for="n in range(40)" href="/shell-fill?section={{ n + 1 }}" label="Section {{ n + 1 }}"/>
+    </rx-sidebar>
+    <div class="rx-shell__main">
+      <rx-navbar width="full" :skip="false"/>
+      <main class="rx-shell__content" id="main">
+        <rx-page-header title="Workspace"/>
+        <div rx-if="tall" id="tall">
+          <p rx-for="n in range(40)">A line above the panes, {{ n + 1 }}.</p>
+        </div>
+        <div class="rx-panes rx-fill" id="panes">
+          <section class="rx-pane" id="list-pane" aria-label="Orders">
+            <h2 class="rx-title">Orders</h2>
+            <a href="#row-50" id="jump">Go to order 50</a>
+            <rx-list label="Orders">
+              <li rx-for="n in range(60)" id="row-{{ n + 1 }}">Order {{ n + 1 }}</li>
+              <li id="more" hx-get="/shell-fill/more" hx-trigger="revealed" hx-swap="outerHTML">Loading more…</li>
+            </rx-list>
+          </section>
+          <section class="rx-pane" id="detail-pane" aria-label="Details">
+            <h2 class="rx-title">Details</h2>
+            <p rx-for="n in range(50)">A line of the order's details, {{ n + 1 }}.</p>
+          </section>
+          <section class="rx-pane" id="empty-pane" aria-label="Notes">
+            <rx-empty title="No notes yet" message="Notes on the order show here."/>
+          </section>
+        </div>
+      </main>
+    </div>
+  </rx-shell>
+</body>
+</html>
