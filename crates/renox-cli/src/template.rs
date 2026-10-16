@@ -9,10 +9,13 @@
 #![allow(dead_code)]
 
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
+
+use crate::tools;
 
 /// The file name of the optional template configuration (never copied).
 pub const CONFIG_FILE: &str = "renox-template.toml";
@@ -214,9 +217,273 @@ fn walk(
     Ok(())
 }
 
+/// Where `rnx new` takes its files from.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Source {
+    /// Renox's own stubs, compiled in.
+    Builtin {
+        /// `--starter`.
+        starter: bool,
+        /// `--notifications`.
+        notifications: bool,
+    },
+    /// A template directory on this machine.
+    Path(PathBuf),
+    /// A template repository: `git+<url>#<ref>`.
+    Git {
+        /// The repository URL.
+        url: String,
+        /// A tag or branch; `None` is the default branch.
+        git_ref: Option<String>,
+    },
+}
+
+impl Source {
+    /// Reads the value of `--from`: `git+<url>[#<ref>]` is a repository,
+    /// anything else a local path.
+    pub fn parse(from: &str) -> Result<Source> {
+        let Some(rest) = from.strip_prefix("git+") else {
+            return Ok(Source::Path(PathBuf::from(from)));
+        };
+        let (url, git_ref) = match rest.split_once('#') {
+            Some((url, git_ref)) => (url, Some(git_ref)),
+            None => (rest, None),
+        };
+        if url.is_empty() {
+            bail!("--from {from}: the repository URL is empty (git+<url>#<ref>)");
+        }
+        if url.starts_with('-') {
+            bail!("--from {from}: the repository URL must not start with `-`");
+        }
+        if git_ref == Some("") {
+            bail!(
+                "--from {from}: the ref after `#` is empty (use a tag or branch, or drop the `#`)"
+            );
+        }
+        Ok(Source::Git {
+            url: url.to_string(),
+            git_ref: git_ref.map(str::to_string),
+        })
+    }
+
+    /// Makes the template files available as a directory: a path is checked,
+    /// a repository is cloned into a temporary directory that is removed when
+    /// the result is dropped. `Builtin` has no directory and is an error.
+    pub fn resolve(&self) -> Result<Resolved> {
+        match self {
+            Source::Builtin { .. } => bail!("the built-in starter is not a template directory"),
+            Source::Path(path) => {
+                if !path.is_dir() {
+                    bail!("--from {}: not a directory", path.display());
+                }
+                Ok(Resolved {
+                    dir: path.clone(),
+                    temp: None,
+                })
+            }
+            Source::Git { url, git_ref } => {
+                let temp = TempDir::create()?;
+                let dir = temp.0.join("template");
+                match tools::git_clone(url, git_ref.as_deref(), &dir) {
+                    Ok(()) => Ok(Resolved {
+                        dir,
+                        temp: Some(temp),
+                    }),
+                    Err(tools::CloneError::NoGit) => {
+                        bail!("`git` was not found on PATH; install git to use --from git+...")
+                    }
+                    Err(tools::CloneError::Failed(why)) => {
+                        let hint = match git_ref {
+                            Some(r) if looks_like_sha(r) => {
+                                " (a commit SHA is not supported; use a tag or branch)"
+                            }
+                            _ => "",
+                        };
+                        let at = git_ref
+                            .as_deref()
+                            .map(|r| format!("#{r}"))
+                            .unwrap_or_default();
+                        bail!("could not clone {url}{at}: {why}{hint}")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Seven or more hex digits and nothing else: probably a commit SHA.
+fn looks_like_sha(text: &str) -> bool {
+    (7..=64).contains(&text.len()) && text.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// A template directory ready to read.
+#[derive(Debug)]
+pub struct Resolved {
+    /// The directory holding the template files.
+    pub dir: PathBuf,
+    /// The temporary clone, deleted on drop.
+    temp: Option<TempDir>,
+}
+
+impl Resolved {
+    /// Whether the files come from a temporary clone.
+    pub fn is_clone(&self) -> bool {
+        self.temp.is_some()
+    }
+}
+
+/// A fresh directory under the system temp dir, removed on drop.
+#[derive(Debug)]
+struct TempDir(PathBuf);
+
+impl TempDir {
+    fn create() -> Result<TempDir> {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        let dir = std::env::temp_dir().join(format!(
+            "rnx-template-{}-{}",
+            std::process::id(),
+            COUNT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&dir).with_context(|| {
+            format!("could not create the temporary directory {}", dir.display())
+        })?;
+        Ok(TempDir(dir))
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn git(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    /// A repo with tag `v1` and branch `side` at the first commit, and a later
+    /// commit on the default branch. `None` when git is not installed.
+    fn repo() -> Option<tempfile::TempDir> {
+        tools::find("git")?;
+        let dir = tempfile::tempdir().unwrap();
+        git(dir.path(), &["init", "--quiet"]);
+        write(dir.path(), "name.txt", b"one {{name}}");
+        git(dir.path(), &["add", "."]);
+        git(dir.path(), &["commit", "--quiet", "-m", "one"]);
+        git(dir.path(), &["tag", "v1"]);
+        git(dir.path(), &["branch", "side"]);
+        write(dir.path(), "name.txt", b"two {{name}}");
+        git(dir.path(), &["commit", "--quiet", "-am", "two"]);
+        Some(dir)
+    }
+
+    #[test]
+    fn parses_sources() {
+        assert_eq!(
+            Source::parse("../t").unwrap(),
+            Source::Path(PathBuf::from("../t"))
+        );
+        assert_eq!(
+            Source::parse("git+https://x.test/a.git#v3").unwrap(),
+            Source::Git {
+                url: "https://x.test/a.git".into(),
+                git_ref: Some("v3".into())
+            }
+        );
+        assert_eq!(
+            Source::parse("git+file:///r").unwrap(),
+            Source::Git {
+                url: "file:///r".into(),
+                git_ref: None
+            }
+        );
+        assert!(Source::parse("git+").is_err());
+        assert!(Source::parse("git+https://x.test/a.git#").is_err());
+        assert!(Source::parse("git+-oevil").is_err());
+    }
+
+    #[test]
+    fn a_missing_path_is_an_error() {
+        let err = Source::Path(PathBuf::from("/no/such/template"))
+            .resolve()
+            .unwrap_err();
+        assert!(err.to_string().contains("not a directory"), "{err}");
+    }
+
+    #[test]
+    fn clones_a_tag_a_branch_and_the_default() {
+        let Some(repo) = repo() else {
+            eprintln!("skipped: git is not installed");
+            return;
+        };
+        let url = format!("file://{}", repo.path().display());
+        for (git_ref, want) in [(Some("v1"), "one"), (Some("side"), "one"), (None, "two")] {
+            let source = Source::Git {
+                url: url.clone(),
+                git_ref: git_ref.map(str::to_string),
+            };
+            let resolved = source.resolve().unwrap();
+            assert!(resolved.is_clone());
+            let text = fs::read_to_string(resolved.dir.join("name.txt")).unwrap();
+            assert!(text.starts_with(want), "{git_ref:?}: {text}");
+            let temp = resolved.dir.clone();
+            drop(resolved);
+            assert!(!temp.exists(), "the clone is removed");
+        }
+    }
+
+    #[test]
+    fn an_unknown_ref_and_a_sha_are_clear_errors() {
+        let Some(repo) = repo() else {
+            eprintln!("skipped: git is not installed");
+            return;
+        };
+        let url = format!("file://{}", repo.path().display());
+        let unknown = Source::Git {
+            url: url.clone(),
+            git_ref: Some("nope".into()),
+        };
+        let err = unknown.resolve().unwrap_err().to_string();
+        assert!(
+            err.contains("could not clone") && err.contains("#nope"),
+            "{err}"
+        );
+        let sha = Source::Git {
+            url,
+            git_ref: Some("0123456789abcdef".into()),
+        };
+        let err = sha.resolve().unwrap_err().to_string();
+        assert!(err.contains("commit SHA is not supported"), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_clone_does_not_run_template_hooks() {
+        use std::os::unix::fs::PermissionsExt;
+        let Some(repo) = repo() else {
+            eprintln!("skipped: git is not installed");
+            return;
+        };
+        // Hooks are not cloned; this also proves the clone never runs ours.
+        let marker = repo.path().join("hook-ran");
+        let hook = repo.path().join(".git/hooks/post-checkout");
+        fs::write(&hook, format!("#!/bin/sh\ntouch {}\n", marker.display())).unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o755)).unwrap();
+        let url = format!("file://{}", repo.path().display());
+        Source::Git { url, git_ref: None }.resolve().unwrap();
+        assert!(!marker.exists());
+    }
 
     fn acme(_: &str, text: &str) -> String {
         text.replace("{{name}}", "ACME")
