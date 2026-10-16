@@ -2099,6 +2099,17 @@ Notes:
   foreign key stops a delete, and takes an optional `can_undo` veto. A dry run runs the real
   closures and rolls back; it records nothing. The report's check step and error files are in
   the kit (`data:` links up to 1 MiB, so no server-side storage of uploads).
+- **Arabic-aware search** (#49): `#[model(search = "…", normalize = "arabic")]` and
+  `renox::text` (`normalize_arabic`, `transliterate`, `match_key`), no dependency. The rules
+  live in one table in `text.rs`; `db::search::arabic_sql` builds the SQLite `replace(…)` chain
+  and the PostgreSQL `translate(…)` from it, and a test runs both against the Rust function. On
+  SQLite the FTS5 table can't read the table as external content (a `rebuild` would index the
+  text as written), so a normalising model's table keeps its own copy and the triggers delete by
+  rowid; models without `normalize` keep the old index. Arabic-Indic and Persian digits and the
+  Persian ک/ی fold too (the maintainer's note on the issue). The match key column is the app's
+  (migration + `saving` hook); no macro attribute for it. `match_key` ignores spaces so that
+  "Abd Allah" and "Abdullah" agree. Not configurable per rule (yet): a rule that must stay
+  (say ta marbuta) means a model-level option later, without changing the default.
 
 ## Not planned
 

@@ -426,6 +426,12 @@
   flattens its `Mail`, so old payloads still decode) and the job returns
   `Middleware::rate_limited("channel:<name>" | "mailer:<name>", …)`. Unknown names fail at boot.
   Tests: tests/it/rate_limits.rs.
+- **#49, Arabic-aware search**: `normalize = "arabic"` on `#[model(search)]`, `renox::text`
+  (`normalize_arabic`, `transliterate`, `match_key`) and `db::search::arabic_sql`. One rule
+  table (`text.rs`) feeds the Rust function and both databases' SQL. A normalising model's
+  SQLite FTS5 table has its own content (no `content=`), so `rebuild` refills it with
+  `DELETE` + `INSERT … SELECT`. Tests in tests/it/search.rs (the PostgreSQL run needs
+  TEST_DATABASE_URL, as for the rest of that file). See ROADMAP "Decisions".
 - **#29, typed settings in the database** (`renox::settings`, docs/settings.md): the opt-in
   `Settings` module (migration `00010101000400_create_settings_table`, commands `settings:get|set|
   list`), `SettingsGroup` (`KEY`, `ENCRYPTED`) for a plain struct with defaults and `Validate`

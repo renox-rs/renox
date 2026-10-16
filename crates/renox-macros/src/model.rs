@@ -40,6 +40,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
     let mut typed_columns = true;
     let mut search: Option<LitStr> = None;
     let mut search_language: Option<LitStr> = None;
+    let mut search_normalize: Option<LitStr> = None;
     let mut index_specs: Vec<(bool, Vec<syn::Ident>)> = Vec::new();
     let mut form = false;
     for attr in input.attrs.iter().filter(|a| a.path().is_ident("model")) {
@@ -68,6 +69,9 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             } else if meta.path.is_ident("search_language") {
                 search_language = Some(meta.value()?.parse::<LitStr>()?);
                 Ok(())
+            } else if meta.path.is_ident("normalize") {
+                search_normalize = Some(meta.value()?.parse::<LitStr>()?);
+                Ok(())
             } else if meta.path.is_ident("index") || meta.path.is_ident("unique") {
                 let unique = meta.path.is_ident("unique");
                 let mut cols = Vec::new();
@@ -84,7 +88,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else {
                 Err(meta.error(
-                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"` or `search_language = \"...\"`, `form`, `index(col, …)` or `unique(col, …)`",
+                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `index(col, …)` or `unique(col, …)`",
                 ))
             }
         })?;
@@ -268,6 +272,28 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         None => None,
     };
 
+    let normalize_const = match &search_normalize {
+        Some(lit) => {
+            if lit.value() != "arabic" {
+                return Err(Error::new_spanned(
+                    lit,
+                    "`normalize` is `\"arabic\"` (the only normalisation so far)",
+                ));
+            }
+            if searchable.is_empty() {
+                return Err(Error::new_spanned(
+                    lit,
+                    "`normalize` needs `search = \"…\"` too",
+                ));
+            }
+            Some(quote! {
+                const SEARCH_NORMALIZE: ::core::option::Option<::renox::db::search::Normalize> =
+                    ::core::option::Option::Some(::renox::db::search::Normalize::Arabic);
+            })
+        }
+        None => None,
+    };
+
     let from_row = fields.iter().map(|f| {
         let (ident, name) = (&f.ident, &f.name);
         if f.skip {
@@ -379,6 +405,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             const SOFT_DELETES: bool = #soft_deletes;
             #search_const
             #language_const
+            #normalize_const
 
             type Key = #key_type;
 

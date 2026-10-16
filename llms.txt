@@ -322,7 +322,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `renox::db::search::migration::<M>(name)` (the index: FTS5 table + triggers, or a generated
   column + GIN index), `Model::search`, `Query::search`/`where_search`/`order_by_relevance`,
   what matches (every word, prefixes, stemming; user input safe), ranking, `rebuild`, the
-  grid's search box on a searchable model; mapped to Laravel Scout.
+  grid's search box on a searchable model; Arabic text (`normalize = "arabic"`: marks and
+  spelling variants ignored, `renox::text::{normalize_arabic, transliterate, match_key}` for
+  names in both scripts and duplicate checks); mapped to Laravel Scout.
 - [docs/stability.md](docs/stability.md): what semver covers, which types may grow
   (`#[non_exhaustive]`), public dependencies (axum yes, sqlx only through escape hatches).
 - `rnx make:deploy` writes `deploy/README.md` (Docker, systemd, Litestream backups).
