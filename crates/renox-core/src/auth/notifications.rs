@@ -423,11 +423,18 @@ pub(crate) struct SendToChannel {
     channel: String,
     to: Recipient,
     message: Value,
+    /// `App::channel_rate_limit` when this was queued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<crate::queue::Limit>,
 }
 
 impl Job for SendToChannel {
     const NAME: &'static str = "renox.send-to-channel";
     const MAX_ATTEMPTS: u32 = 5;
+
+    fn middleware(&self) -> Vec<crate::queue::Middleware> {
+        crate::queue::Limit::middleware(self.limit, format!("channel:{}", self.channel))
+    }
 
     async fn handle(self, ctx: JobContext) -> Result {
         let send = ctx.state.channel(&self.channel)?;
@@ -604,6 +611,7 @@ impl AppState {
                         channel: name.to_owned(),
                         to: to.clone(),
                         message,
+                        limit: self.channel_limits.get(name).copied(),
                     })
                     .await?;
                 }

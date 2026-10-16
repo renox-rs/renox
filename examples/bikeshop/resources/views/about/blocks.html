@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['history', 'history'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['history', 'history'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -110,11 +110,32 @@ kanban_card(card)</app-about-signature>
   </rx-card>
   </div>
 
+  <div id="week">
+  <rx-card title="week_calendar" :subtitle="t('blocks.page.week')">
+    <rx-week-calendar id="demo-week" :resources="bays" :events="bookings" :start="week_start" :days="5" :from="8" :to="18" :step="60" :slot-url="route('about.blocks.week')" label="Workshop bays"/>
+    <app-about-signature>week_calendar(resources, events=[], start=none, days=7, from=8, to=18, step=30,
+              slot_url=none, slot_target=none, slot_swap=none, label=none, id="rx-week")
+  resources: [{id, label, note?}]
+  events: [{resource, start, end, label, tone?, href?}]  (RFC 3339)</app-about-signature>
+  </rx-card>
+  </div>
+
   <div id="history">
   <rx-card title="history" :subtitle="t('blocks.page.history')">
     <rx-history :items="timeline" label="Service history of City 3" date-format="%H:%M"/>
     <app-about-signature>history(items, label=none, date_format="%Y-%m-%d %H:%M", id=none)
   items: [{time, title, body?, kind?, by?, when?}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="stepper">
+  <rx-card title="status_stepper" :subtitle="t('blocks.page.stepper')">
+    <div class="rx-stack">
+      <rx-status-stepper :steps="steps" current="working" label="Job 104"/>
+      <rx-status-stepper :steps="abandoned_steps" current="abandoned" orientation="vertical" label="Job 105"/>
+    </div>
+    <app-about-signature>status_stepper(steps, current=none, orientation="horizontal", label=none, id=none)
+  steps: [{key, label, tone?, terminal?}]</app-about-signature>
   </rx-card>
   </div>
 

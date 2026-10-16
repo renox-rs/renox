@@ -17,6 +17,7 @@ const PARTS = [
   ["kanban", "[data-rx-kanban]"],
   ["datetime", "[data-rx-datetime-range]"],
   ["history", "[data-rx-history]"],
+  ["week", "[data-rx-week]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

@@ -208,6 +208,32 @@ impl Middleware {
     }
 }
 
+/// A cap on how many jobs run per window, kept in a job's payload so its
+/// [`Job::middleware`] can return [`Middleware::rate_limited`]
+/// (`App::channel_rate_limit`, `App::mailer_rate_limit`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub(crate) struct Limit {
+    max: u32,
+    per_secs: u64,
+}
+
+impl Limit {
+    pub(crate) fn new(max: u32, per: Duration) -> Self {
+        Self {
+            max,
+            per_secs: per.as_secs(),
+        }
+    }
+
+    /// The middleware for jobs sharing `key`, when a limit is set.
+    pub(crate) fn middleware(limit: Option<Self>, key: String) -> Vec<Middleware> {
+        limit
+            .map(|l| Middleware::rate_limited(key, l.max, Duration::from_secs(l.per_secs)))
+            .into_iter()
+            .collect()
+    }
+}
+
 /// What a job gets when it runs.
 #[non_exhaustive]
 pub struct JobContext {
