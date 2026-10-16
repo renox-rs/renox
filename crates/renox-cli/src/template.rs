@@ -332,6 +332,84 @@ impl Resolved {
     }
 }
 
+/// Splits repeated `--set key=value` arguments. The value may be empty or
+/// contain `=`.
+pub fn parse_set(args: &[String]) -> Result<Vec<(String, String)>> {
+    args.iter()
+        .map(|arg| match arg.split_once('=') {
+            Some((key, value)) if !key.is_empty() => Ok((key.to_string(), value.to_string())),
+            _ => bail!("--set expects key=value, got `{arg}`"),
+        })
+        .collect()
+}
+
+/// Collects the answer for every `[[ask]]` of the template: `--set` first,
+/// then (when `interactive`) a prompt on `output` read from `input`, where an
+/// empty line takes the default. Without a TTY a missing answer is an error
+/// naming `--set key=value`. A `--set` key that no prompt declares is an
+/// error. Returns `(key, answer)` pairs in the order of the config.
+pub fn answers(
+    asks: &[Ask],
+    set: &[(String, String)],
+    interactive: bool,
+    input: &mut impl std::io::BufRead,
+    output: &mut impl std::io::Write,
+) -> Result<Vec<(String, String)>> {
+    for (key, _) in set {
+        if !asks.iter().any(|ask| &ask.key == key) {
+            let known: Vec<&str> = asks.iter().map(|ask| ask.key.as_str()).collect();
+            if known.is_empty() {
+                bail!("--set {key}: the template asks no questions");
+            }
+            bail!(
+                "--set {key}: the template has no such question (known: {})",
+                known.join(", ")
+            );
+        }
+    }
+    let mut out = Vec::new();
+    for ask in asks {
+        // The last `--set` for a key wins.
+        if let Some((_, value)) = set.iter().rev().find(|(key, _)| key == &ask.key) {
+            out.push((ask.key.clone(), value.clone()));
+            continue;
+        }
+        if !interactive {
+            match &ask.default {
+                Some(default) => out.push((ask.key.clone(), default.clone())),
+                None => bail!(
+                    "the template asks \"{}\" and there is no terminal to answer: pass --set {}=<value>",
+                    ask.question,
+                    ask.key
+                ),
+            }
+            continue;
+        }
+        match &ask.default {
+            Some(default) => write!(output, "{} [{default}] ", ask.question),
+            None => write!(output, "{} ", ask.question),
+        }?;
+        output.flush()?;
+        let mut line = String::new();
+        input.read_line(&mut line)?;
+        let line = line.trim_end_matches(['\r', '\n']);
+        let answer = if line.trim().is_empty() {
+            match &ask.default {
+                Some(default) => default.clone(),
+                None => bail!(
+                    "no answer for \"{}\" (pass --set {}=<value>)",
+                    ask.question,
+                    ask.key
+                ),
+            }
+        } else {
+            line.trim().to_string()
+        };
+        out.push((ask.key.clone(), answer));
+    }
+    Ok(out)
+}
+
 /// A fresh directory under the system temp dir, removed on drop.
 #[derive(Debug)]
 struct TempDir(PathBuf);
@@ -386,6 +464,86 @@ mod tests {
         write(dir.path(), "name.txt", b"two {{name}}");
         git(dir.path(), &["commit", "--quiet", "-am", "two"]);
         Some(dir)
+    }
+
+    fn ask(key: &str, default: Option<&str>) -> Ask {
+        Ask {
+            key: key.into(),
+            question: format!("{key}?"),
+            default: default.map(String::from),
+        }
+    }
+
+    fn run(
+        asks: &[Ask],
+        set: &[(&str, &str)],
+        tty: bool,
+        typed: &str,
+    ) -> (Result<Vec<(String, String)>>, String) {
+        let set: Vec<(String, String)> = set
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        let mut out = Vec::new();
+        let result = answers(asks, &set, tty, &mut typed.as_bytes(), &mut out);
+        (result, String::from_utf8(out).unwrap())
+    }
+
+    #[test]
+    fn parses_set_arguments() {
+        let args = ["a=1".to_string(), "b=x=y".to_string(), "c=".to_string()];
+        assert_eq!(
+            parse_set(&args).unwrap(),
+            vec![
+                ("a".into(), "1".into()),
+                ("b".into(), "x=y".into()),
+                ("c".into(), "".into())
+            ]
+        );
+        assert!(parse_set(&["nokey".to_string()]).is_err());
+        assert!(parse_set(&["=v".to_string()]).is_err());
+    }
+
+    #[test]
+    fn asks_on_a_terminal_and_takes_defaults() {
+        let asks = [ask("company", None), ask("city", Some("Oslo"))];
+        let (result, shown) = run(&asks, &[], true, "Acme Inc\n\n");
+        assert_eq!(
+            result.unwrap(),
+            vec![
+                ("company".into(), "Acme Inc".into()),
+                ("city".into(), "Oslo".into())
+            ]
+        );
+        assert!(shown.contains("company? ") && shown.contains("city? [Oslo] "));
+        // An empty answer without a default is an error.
+        assert!(run(&asks, &[], true, "\n").0.is_err());
+    }
+
+    #[test]
+    fn set_answers_without_prompting() {
+        let asks = [ask("company", None)];
+        let (result, shown) = run(&asks, &[("company", "A"), ("company", "B")], true, "");
+        assert_eq!(result.unwrap(), vec![("company".into(), "B".into())]);
+        assert!(shown.is_empty());
+    }
+
+    #[test]
+    fn without_a_terminal_a_missing_answer_names_set() {
+        let asks = [ask("company", None), ask("city", Some("Oslo"))];
+        let err = run(&asks, &[], false, "").0.unwrap_err().to_string();
+        assert!(err.contains("--set company=<value>"), "{err}");
+        let (result, _) = run(&asks, &[("company", "A")], false, "");
+        assert_eq!(result.unwrap()[1], ("city".into(), "Oslo".into()));
+    }
+
+    #[test]
+    fn set_for_an_unknown_key_is_an_error() {
+        let asks = [ask("company", None)];
+        let err = run(&asks, &[("nope", "x")], true, "").0.unwrap_err();
+        assert!(err.to_string().contains("nope") && err.to_string().contains("company"));
+        let err = run(&[], &[("nope", "x")], true, "").0.unwrap_err();
+        assert!(err.to_string().contains("no questions"));
     }
 
     #[test]
