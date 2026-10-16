@@ -69,6 +69,7 @@ mod secrets;
 mod security;
 mod send_handlers;
 mod seo;
+mod sequences;
 mod services;
 mod sessions;
 mod settings;

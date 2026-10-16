@@ -242,6 +242,8 @@ breaking anyone.
   `into_conn` makes of them, for several statements).
 - `db::relations::ForeignKey` is sealed: only a key type or an `Option` of one.
 - `db::Comparable` (which values a typed `Col` accepts) is implemented by Renox only.
+- `db::Period` and `db::SequenceRow` (numbering, `db::Sequence`) are `#[non_exhaustive]`: a
+  `Period` may get more variants (a week, a quarter), so `match` it with a `_` arm.
 
 ### Why `Dialect` isn't on the list
 

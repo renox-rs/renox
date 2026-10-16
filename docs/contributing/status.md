@@ -470,6 +470,12 @@
   PDF size check). The bike shop attaches an invitation to a reservation's confirmation and
   prints the counter's receipt with the block. Guides: docs/mail.md "Calendar invitations",
   docs/blocks.md "Printing".
+- **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
+  `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
+  nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on
+  the caller's transaction (row lock on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), so rollbacks
+  give numbers back. The bike shop's counter sales number their receipts with it. Tests:
+  tests/it/sequences.rs.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social
