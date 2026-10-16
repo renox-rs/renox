@@ -100,7 +100,7 @@ Paths are relative to this folder.
 | Cart (session for guests, a table for customers), `View::also`, toasts | `/cart` | [src/app/sales/cart.rs](src/app/sales/cart.rs) |
 | Checkout: the kit's `wizard`, `#[derive(Validate)]`, live validation, stock reserved in one transaction | `/checkout` | [src/app/sales/checkout.rs](src/app/sales/checkout.rs) |
 | Payment: Midtrans through `state.http` and its webhook (`renox::webhook`), a demo gateway without keys | `/pay/{payment}` | [src/app/sales/gateway.rs](src/app/sales/gateway.rs), [src/app/sales/payments.rs](src/app/sales/payments.rs) |
-| Orders and invoices (signed links for guests, print styles) | `/orders/{order}` | [src/app/sales/orders.rs](src/app/sales/orders.rs) |
+| Orders and invoices (signed links for guests, print styles); a counter sale's receipt is the `receipt` block (80 mm, #48) | `/orders/{order}` | [src/app/sales/orders.rs](src/app/sales/orders.rs) |
 | Renting: `datetime_range` and `availability` blocks, two overlap checks (form hook + `Db::begin_immediate` + `lock_for_update`) | `/rent`, `/rentals`, `/rentals/{code}` | [src/app/rentals/reserve.rs](src/app/rentals/reserve.rs), [src/app/rentals/booking.rs](src/app/rentals/booking.rs), [src/app/rentals/pricing.rs](src/app/rentals/pricing.rs) |
 | ID check: `Upload`, `Encrypted<String>`, reviewed by staff | `/rentals/identity` | [src/app/rentals/identity.rs](src/app/rentals/identity.rs) |
 | My bikes and their service history (`has_many`, the `history` block) | `/bikes`, `/bikes/{bike}` | [src/app/workshop/bikes.rs](src/app/workshop/bikes.rs) |
@@ -108,12 +108,12 @@ Paths are relative to this folder.
 | Approving extra work from a signed, single-use link | `/service/approve/{extra}` | [src/app/workshop/approval.rs](src/app/workshop/approval.rs) |
 | Service plans with renox-billing (Stripe, Xendit, a demo gateway), the `compare_plans` and `month_calendar` blocks | `/plans`, `/plans/subscribe`, `/plans/mine`, `/plans/mine/{subscription}` | [src/app/plans/](src/app/plans/) |
 | Accounts: Renox's `Auth` (login, register, reset, verification), account sections (`Registry::account_section`), language, privacy (download, delete) | `/login`, `/register`, `/account` | [src/app/accounts/](src/app/accounts/) |
-| Notifications: the bell, `DatabaseMessage`, live over Server-Sent Events | `/notifications` | [src/app/accounts/preferences.rs](src/app/accounts/preferences.rs), each area's `notify.rs` |
+| Notifications: the bell, `DatabaseMessage`, live over Server-Sent Events; a reservation's confirmation mail carries a calendar file (`Mail::attach_ics`, #48) | `/notifications` | [src/app/accounts/preferences.rs](src/app/accounts/preferences.rs), each area's `notify.rs`, [src/app/rentals/reserve.rs](src/app/rentals/reserve.rs) |
 | Social login (renox-oauth) and two-factor login (renox-2fa) | `/login`, `/two-factor/setup` | [src/lib.rs](src/lib.rs), [src/app/staff/two_factor.rs](src/app/staff/two_factor.rs) |
 | A walk-in customer claiming their record (signed URL) | `/claim/{customer}/{email}` | [src/app/accounts/claim.rs](src/app/accounts/claim.rs) |
 | Personal API tokens with abilities | `/account/api-tokens` | [src/app/api/tokens.rs](src/app/api/tokens.rs) |
 | Each store's own page on its own host: `Routes::domain`, `DomainParams`, a domain `fallback` | `north.localhost:3000/` | [src/app/home/stores.rs](src/app/home/stores.rs), [resources/views/home/store.html](resources/views/home/store.html), [layouts/store.html](resources/views/layouts/store.html) |
-| Every form input ↔ Rust ↔ SQLite ↔ PostgreSQL, a form that tries them all (files public and private, `Uuid` keys, the editors, live validation), read back on an infolist | `/about/fields` | [src/app/about/fields.rs](src/app/about/fields.rs), [resources/views/components/about_fields_form.html](resources/views/components/about_fields_form.html), [tests/fields.rs](tests/fields.rs) |
+| Every form input ↔ Rust ↔ SQLite ↔ PostgreSQL, a form that tries them all (files public and private, a photo resized with a thumbnail by the upload pipeline (`renox::upload::images`), `Uuid` keys, the editors, live validation), read back on an infolist | `/about/fields` | [src/app/about/fields.rs](src/app/about/fields.rs), [resources/views/components/about_fields_form.html](resources/views/components/about_fields_form.html), [tests/fields.rs](tests/fields.rs) |
 | htmx recipes, live: a modal form, out-of-band swaps (`.also`), `HxRetarget`/`HxReswap`, inline edit, Alpine tabs, `HxRefresh`/`HxRedirect`, toasts, infinite scroll | `/about/htmx` | [src/app/about/htmx.rs](src/app/about/htmx.rs), [resources/views/about/htmx.html](resources/views/about/htmx.html), [tests/htmx.rs](tests/htmx.rs) |
 | The same checklist as a live component: a struct and a method per action, `rx-click`, `rx-model`, `rx-submit`, a signed snapshot | `/about/htmx/live` | [src/app/about/live.rs](src/app/about/live.rs), [resources/views/about/live/_checklist.html](resources/views/about/live/_checklist.html), [tests/htmx.rs](tests/htmx.rs) |
 
@@ -135,7 +135,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | Rental counter, walk-ins (`renox::select`), pick-up and return with damage photos, receipts (`Morph`) | `/staff/rentals`, `/staff/rentals/{rental}` | [src/app/rentals/counter.rs](src/app/rentals/counter.rs) |
 | Fleet board: `renox::grid` with `poll`, `cards_on_mobile`, badges, related columns | `/staff/fleet` | [src/app/rentals/fleet.rs](src/app/rentals/fleet.rs) |
 | Workshop board: the `kanban` block (drag or keyboard), the bench, parts from stock | `/staff/workshop`, `/staff/workshop/{order}` | [src/app/workshop/board.rs](src/app/workshop/board.rs), [src/app/workshop/order.rs](src/app/workshop/order.rs) |
-| Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
+| Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`), gapless receipt numbers (`Sequence`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
 | Orders: ready, handed over, cancelled, returned (`action_sheet`) | `/staff/orders` | [src/app/sales/staff.rs](src/app/sales/staff.rs) |
 | Stock: one ledger (`stock_movements`, `Morph` to its cause), a database view as a model, stock takes | `/staff/stock`, `/staff/stock/{level}`, `/staff/stock/take` | [src/app/stock/levels.rs](src/app/stock/levels.rs), [src/app/stock/ledger.rs](src/app/stock/ledger.rs), [src/app/stock/take.rs](src/app/stock/take.rs) |
 | Consignment shipments between stores | `/staff/consignments` | [src/app/stock/consignment.rs](src/app/stock/consignment.rs) |
@@ -259,7 +259,7 @@ its category (`content::product_photo`: photo `(id % n) + 1`); migration
 The epic's rule was that a missing basic component stops the page and goes to the Renox team.
 **The owner decided otherwise for this example** (2026-10-06, a comment on #231): the components
 the kit didn't have were built here first, as **blocks**, written like a small library so they
-could move to a crate. They since have (#347): eleven of them are the
+could move to a crate. They since have (#347): twelve of them are the
 [renox-blocks](../../crates/renox-blocks) plugin (guide: [docs/blocks.md](../../docs/blocks.md)),
 which the app adds with `.module(renox_blocks::Blocks::new())` and a page uses like a kit
 component (a tag such as `<rx-gallery …/>`). Their classes are `rx-` ones
@@ -284,6 +284,7 @@ with `disabled_dates` and `closed_weekdays`. Form blocks send plain fields, so `
 | `swatches(name, label, options, selected, kind, attrs)` | Size or colour chips as radios | product page |
 | `history(items, label, date_format)` | A vertical timeline | a bike's service history |
 | `compare_plans(plans, features, highlight, …)` | Pricing cards and a comparison table | service plans |
+| `receipt(lines, totals, width, title, header, number, date, footer, …)` | An 80 mm or 58 mm till receipt that prints alone, with a code slot (#48) | a counter sale's receipt |
 
 ## The JSON API (#241)
 

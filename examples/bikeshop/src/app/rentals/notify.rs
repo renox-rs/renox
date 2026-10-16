@@ -19,6 +19,7 @@
 
 use renox::auth::permissions;
 use renox::auth::{Channel, DatabaseMessage, Notification, Recipient};
+use renox::calendar::Ics;
 use renox::mail::Mail;
 use renox::prelude::*;
 use serde::Serialize;
@@ -61,6 +62,9 @@ pub struct Notice {
     /// For a customer: which of their notification preferences decides the
     /// channels (set by [`customer`]). `None` for staff.
     pub topic: Option<Kind>,
+    /// A calendar file to attach to the mail (`Mail::attach_ics`), so the
+    /// pick-up lands in the customer's calendar.
+    pub calendar: Option<Ics>,
 }
 
 impl Notice {
@@ -78,7 +82,14 @@ impl Notice {
             mail: true,
             view: "mail/rentals/notice",
             topic: None,
+            calendar: None,
         }
+    }
+
+    /// Attaches a calendar file to the mail.
+    pub fn calendar(mut self, ics: Ics) -> Self {
+        self.calendar = Some(ics);
+        self
     }
 
     /// A value for `:name` in the title and the sentence.
@@ -170,7 +181,7 @@ impl Notification for Notice {
                 value: value.clone(),
             })
             .collect();
-        state.mail_view(
+        let mail = state.mail_view(
             to.email().unwrap_or_default(),
             self.text(state, self.title),
             self.view,
@@ -182,7 +193,11 @@ impl Notification for Notice {
                 url => self.url,
                 action => lang.t(self.action, &[]),
             },
-        )
+        )?;
+        Ok(match &self.calendar {
+            Some(ics) => mail.attach_ics(ics),
+            None => mail,
+        })
     }
 
     fn to_database(&self, _to: &Recipient, state: &AppState) -> Result<renox::serde_json::Value> {

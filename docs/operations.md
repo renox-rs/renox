@@ -58,6 +58,7 @@ the queue workers and the scheduler.
 | `queue:work [--queue a,b] [--workers N] [--once]` | Runs workers in a process of their own. |
 | `queue:failed`, `queue:retry <id\|all>`, `queue:forget <id>`, `queue:flush`, `queue:prune-failed [--hours N]`, `queue:prune-batches [--hours N]` | Failed jobs and finished batches (see Failed jobs). |
 | `webhook:failed`, `webhook:retry <id>` | Failed webhook calls (see Failed webhook calls). |
+| `sequence:list` | Lists the numbering series (`Sequence`, docs/relations.md "Numbering documents") and the last number of each. |
 | `cache:prune`, `session:prune` | Deletes expired cache rows and database sessions. |
 | `import:prune [--days N]` | Deletes the records of imports whose undo window ended more than N days ago (0): `renox::import::prune(&state, age)`. |
 | `schedule:list`, `schedule:run <task>`, `schedule:work` | The scheduler (`schedule:work` runs it alone, when `serve` runs with `SCHEDULER=false`). |
@@ -307,6 +308,55 @@ reads its own settings, starting with the prefix you give:
   default `STORAGE_PATH/backups`), `BACKUPS_BUCKET` and `BACKUPS_URL`;
 - `BACKUPS_REGION`, `BACKUPS_ENDPOINT`, `BACKUPS_ACCESS_KEY_ID` and
   `BACKUPS_SECRET_ACCESS_KEY`, which fall back to the `S3_*` settings when unset.
+
+### Scanning uploads with ClamAV
+
+`renox::upload::ClamAv` (see [Uploads](validation.md#steps-before-storing-scanning-images-encryption))
+asks ClamAV's daemon, `clamd`, about each uploaded file. Renox links no ClamAV library; it speaks
+`clamd`'s `INSTREAM` protocol on a socket.
+
+```text
+# Debian/Ubuntu
+sudo apt install clamav-daemon clamav-freshclam   # freshclam keeps the signatures current
+# /etc/clamav/clamd.conf: listen on TCP (or keep the default Unix socket and use ClamAv::unix)
+TCPSocket 3310
+TCPAddr 127.0.0.1
+StreamMaxLength 25M      # at least UPLOAD_MAX_SIZE, or larger files are refused
+```
+
+```text
+App::new().uploads(Pipeline::new().step(ClamAv::tcp("127.0.0.1:3310")))
+```
+
+- Bind `clamd` to `127.0.0.1` (or a private network): the protocol has no authentication.
+- **A daemon that can't scan means the upload is refused** (it fails closed): `clamd` down, over
+  `StreamMaxLength`, or silent for longer than the step's timeout (10 seconds; `.timeout(..)`).
+  Renox logs a warning with the reason, so alert on it. `.fail_open()` accepts such files instead.
+- `clamd` needs a few hundred MB of memory for its signatures and starts slowly; with Docker,
+  `clamav/clamav` runs it as a service for the app to reach.
+- In tests, point the step at a fake daemon that answers `stream: OK` or
+  `stream: Eicar-Test-Signature FOUND` (crates/renox/tests/it/upload_pipeline.rs has one).
+
+### Encrypted files and rotating `APP_KEY`
+
+Files stored with `Upload::store_encrypted` or `Storage::put_encrypted` are sealed with
+AES-256-GCM, each under its own data key; that key is sealed with a key derived from `APP_KEY` and
+kept in the file's header. So **without the `APP_KEY` the files are unreadable**: keep it with
+the backups (see [Backups](#backups)).
+
+To rotate the key without losing the files, only the headers need re-sealing, not the contents:
+
+1. Keep the old value, set the new `APP_KEY` (`rnx key:generate`).
+2. Run a one-off command (an `AppCommand`, or a scheduled task) that calls
+   `state.storage.rewrap_encrypted("", &old_app_key).await?` for the disk (and each
+   `state.disk_named(..)` that holds encrypted files). It returns how many files it re-sealed,
+   skips files that aren't encrypted or are already under the new key, and can be run again if it
+   stops half-way.
+3. Remove the old key once the count is 0 and the files read back.
+
+Until step 2 has finished, files not yet re-sealed can't be read. Take a backup of the
+bucket or folder first. Other things sealed with `APP_KEY` (sessions, signed links,
+`Encrypted<T>` columns) are covered in [Backups](#backups).
 
 ## `/health`
 

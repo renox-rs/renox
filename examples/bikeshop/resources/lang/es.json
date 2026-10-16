@@ -2346,6 +2346,12 @@
       "included": "Incluido",
       "not_included": "No incluido"
     },
+    "receipt": {
+      "label": "Recibo",
+      "item": "Artículo",
+      "amount": "Importe",
+      "print": "Imprimir recibo"
+    },
     "page": {
       "title": "Bloques de la tienda",
       "lead": "Las piezas de interfaz que el kit de Renox no tiene, del crate renox-blocks (y una propia de la tienda), como macros sobre los tokens del kit. Cada una funciona aquí, con su firma.",
@@ -2374,6 +2380,7 @@
       "week": "Los puestos del taller durante una semana: una franja libre envía su puesto y sus horas con htmx; las flechas se mueven entre las celdas.",
       "week_booked": "Reservado :resource de :from a :to (una demostración: no se guarda nada).",
       "plans": "Los planes de servicio, uno junto a otro y comparados.",
+      "receipt": "El recibo de caja del mostrador a 80 mm y a 58 mm. Imprime la página: solo se imprime el recibo, al ancho del rollo.",
       "variant": "Precio y stock",
       "in_stock": ":n en stock",
       "out_of_stock": "Agotado",
@@ -3168,6 +3175,10 @@
       "location_store": "ubicación",
       "yes": "Puedes",
       "no": "Tú no"
+    },
+    "calendar": {
+      "summary": "Alquiler de bici :code",
+      "description": "Código de reserva :code. Muéstralo en :store al recoger la bici."
     },
     "mail": {
       "open": "Abrir",

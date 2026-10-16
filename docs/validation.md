@@ -1028,6 +1028,99 @@ Some things to know:
 - The size of the whole request is capped by `UPLOAD_MAX_SIZE`. Above it, the answer is a
   `413` ("too large").
 
+### Steps before storing: scanning, images, encryption
+
+Rules say whether a file is acceptable. Some jobs belong between receiving a file and storing it
+instead: a malware scan, shrinking a photo, dropping its GPS position, encrypting an identity
+document. Give the app an upload pipeline once, and every form that takes an `Upload` gets the
+same treatment:
+
+```rust
+use renox::prelude::*;
+use renox::upload::{ClamAv, Pipeline, StepOutcome, UploadContext, UploadStep};
+use renox::upload::BoxFuture;
+use std::time::Duration;
+
+/// Your own step: any `impl UploadStep`.
+struct NoExecutables;
+
+impl UploadStep for NoExecutables {
+    fn process<'a>(
+        &'a self,
+        file: &'a mut Upload,
+        ctx: &'a UploadContext,
+    ) -> BoxFuture<'a, Result<StepOutcome>> {
+        Box::pin(async move {
+            Ok(if file.bytes().starts_with(b"MZ") {
+                // Becomes an error on the field the file came from (`ctx.field()`).
+                StepOutcome::Reject("Programs can't be uploaded.".into())
+            } else {
+                StepOutcome::Keep
+            })
+        })
+    }
+}
+
+fn app() -> App {
+    let uploads = Pipeline::new()
+        .step(ClamAv::tcp("127.0.0.1:3310").timeout(Duration::from_secs(20)))
+        .step(NoExecutables);
+    # #[cfg(feature = "images")]
+    let uploads = uploads.step(
+        renox::upload::images::Images::new() // feature `images`
+            .max_dimensions(2560, 2560)
+            .strip_metadata()
+            .thumbnail("thumb", 320, 320),
+    );
+    App::new().uploads(uploads)
+}
+
+/// An identity document: encrypted at rest, read back decrypted.
+async fn keep(state: AppState, id_card: Upload) -> Result<Vec<u8>> {
+    let key = id_card.store_encrypted(&state.storage, "ids").await?;
+    Ok(state.storage.get_decrypted(&key).await?.unwrap_or_default().to_vec())
+}
+```
+
+- **When it runs.** `Valid<T>` runs the steps on every file of a multipart form **after** the
+  form's rules (and `after`) passed, so a file the rules refuse is never scanned. A step that
+  returns `StepOutcome::Reject(message)` puts the message on the form field the file came from
+  (`ctx.field()`: `photo`, `scans`, `documents.0.file`): a plain post is sent back with the error
+  and old input, an HTMX or JSON request gets a `422`, like any rule. The handler receives the
+  files as the steps left them. Live validation (`data-live-validate`) does not run the steps.
+- **Outside a form**, call `file.process(&state).await?` (a refusal is a validation error on
+  `file`; `process_field` names another field). The pipeline is `App::uploads`; there is one
+  per app.
+- **Writing a step.** The trait is object-safe (`BoxFuture`, as Renox's other callbacks). Change
+  the file with `file.set_bytes(..)`, `set_content_type`, `set_file_name`; return
+  `StepOutcome::Derived(name, upload)` (or call `file.derive(name, upload)`) for an extra file such
+  as a thumbnail. `store`, `store_public` and `store_encrypted` write derived files next to the
+  original, at `Upload::derived_key(&key, "thumb")` (`public/products/abc.jpg` becomes
+  `public/products/abc.thumb.jpg`). An `Err` from a step is a 500; a step that must fail closed
+  returns `Reject` instead.
+- **`ClamAv`** streams the file to `clamd` (`INSTREAM`, over TCP or `ClamAv::unix(path)`); no
+  library is linked. It **fails closed**: a daemon that is down, too slow (10 seconds unless
+  `timeout`) or answers with an error refuses the file with "could not be checked for malware",
+  and logs why. `.fail_open()` lets such files through. Setting up the daemon:
+  [Operations](operations.md#scanning-uploads-with-clamav).
+- **`Images`** (feature `images`, pure Rust, JPEG, PNG and WebP): `max_dimensions` shrinks (never
+  enlarges), the EXIF orientation is applied to the pixels, `strip_metadata()` re-encodes so no
+  EXIF, GPS position or comment is left, `thumbnail(name, w, h)` derives a smaller copy in the
+  same format. A file that claims to be an image but can't be decoded, or is over 16,384 pixels a
+  side or 100 megapixels, is refused. Other types pass through untouched, so keep `image()` in the
+  rules. **HEIC and AVIF are not decoded**: write an `UploadStep` that calls an external converter
+  (`heif-convert`, `magick`, or a service) and sets the result with `set_bytes`,
+  `set_content_type("image/jpeg")` and `set_file_name("photo.jpg")`; put it before `Images`.
+- **Encrypted files.** `store_encrypted` (and `storage.put_encrypted(key, bytes)`) seal each file
+  with AES-256-GCM under a fresh data key, which is itself sealed with a key derived from
+  `APP_KEY` and kept in the file's header (`RNXE`, a version, the sealed key, the nonce, then the
+  ciphertext). `storage.get_decrypted(&key)` and `Download::decrypted(&storage, &key, name)` read
+  them. A local disk's `temporary_url` and `/_renox/files` decrypt on the fly for the request
+  that holds the signature. On S3 a presigned link serves what is stored, the ciphertext: send
+  the file through your own route with `Download::decrypted`. Keep encrypted files out of
+  `public/` (`/storage` serves files as stored). Rotating `APP_KEY`:
+  [Operations](operations.md#encrypted-files-and-rotating-app_key).
+
 ## Validating outside a request
 
 Sometimes you want to check data that didn't come from a form, for example in a command that

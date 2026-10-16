@@ -157,6 +157,44 @@ async fn files_round_trip_through_s3() {
     assert!(storage.list(&dir).await.unwrap().is_empty());
 }
 
+/// Encrypted files (#43): the object in the bucket is ciphertext, and
+/// `get_decrypted` reads it back.
+#[renox::test]
+async fn encrypted_files_round_trip_through_s3() {
+    let Some(app) = s3_app(App::new()).await else {
+        return;
+    };
+    let storage = &app.state().storage;
+    let dir = format!(
+        "encrypted/{}",
+        renox::generate_key().replace(['/', '+', '='], "")
+    );
+    let card = Upload::new("card.txt", "text/plain", b"card 4242".to_vec());
+    let key = card.store_encrypted(storage, &dir).await.unwrap();
+    let raw = storage.get(&key).await.unwrap().unwrap();
+    assert!(raw.starts_with(b"RNXE") && !raw.windows(4).any(|w| w == b"4242"));
+    assert_eq!(
+        &storage.get_decrypted(&key).await.unwrap().unwrap()[..],
+        b"card 4242"
+    );
+    assert_eq!(
+        storage
+            .rewrap_encrypted(&dir, &renox::generate_key())
+            .await
+            .unwrap(),
+        0
+    );
+    // A presigned link serves what is stored: the ciphertext.
+    let link = storage
+        .temporary_url(app.state(), &key, Duration::from_secs(60))
+        .await
+        .unwrap();
+    let (status, body) = http_get(&link).await;
+    assert_eq!(status, 200);
+    assert_eq!(body, raw.to_vec());
+    assert_eq!(storage.delete_all(&dir).await.unwrap(), 1);
+}
+
 #[derive(serde::Deserialize)]
 struct AvatarForm {
     avatar: Upload,

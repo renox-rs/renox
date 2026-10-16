@@ -23,6 +23,7 @@ pub(crate) mod schema_check;
 pub(crate) mod schema_diff;
 pub(crate) mod schema_sql;
 pub mod search;
+mod sequence;
 mod value;
 
 use std::str::FromStr;
@@ -51,6 +52,8 @@ pub use paginate::{CursorPage, Page, Paginated, SimplePage};
 pub use query::{Number, Query};
 pub use query_log::capture_queries;
 pub use schema::{ColumnKind, ColumnType, ModelColumn, ModelIndex};
+pub(crate) use sequence::MIGRATION as SEQUENCE_MIGRATION;
+pub use sequence::{NumberFormat, Period, Sequence, SequenceRow};
 /// sqlx, for what Renox's own API doesn't cover: `Db::sqlite()`, `Db::postgres()`,
 /// `Row::sqlite()`, `Row::postgres()` and `DbError::sqlx()` hand out its types.
 /// sqlx may move to a new version in a minor Renox release; see docs/stability.md.

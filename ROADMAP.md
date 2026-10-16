@@ -1581,6 +1581,23 @@ Notes from M34:
 - [x] renox-admin: `Admin::settings::<T>(label)` and `AdminSettings` (fields, a policy, read-only
   fields, sealed groups never printed)
 - [ ] Settings pages contributed by a module through `Registry::contribute` (after #31)
+### Gapless sequences (#40)
+- [x] `renox::db::Sequence` (series, scope, period): `next(&mut tx)` takes the number in the
+      caller's transaction, `peek`, `last`, `set_start`, `list`, `next_allowing_gaps(&db)`;
+      `Period` (`None`, `Year`, `Month`), `Sequence::format` and `NumberFormat` (named tokens)
+- [x] Framework migration `00010101000420_create_sequences_table` (SQLite and PostgreSQL),
+      `sequence:list`
+- [x] Docs (relations.md "Numbering documents"), CHEATSHEET, llms.txt; the bike shop's counter
+      sales get gapless receipt numbers
+
+Notes from #40:
+- `next` takes `&mut Transaction` only: a number taken outside the transaction that stores the
+  document could be lost, which is the gap the API prevents. Series where gaps are fine use
+  `next_allowing_gaps`, which commits at once and does not hold the row.
+- Named tokens are substituted in one pass and never rescanned, so a value containing `{` is
+  safe; an unknown `{name}` stays as written.
+- The 50-task test uses a file database with eight connections (SQLite's `BEGIN IMMEDIATE`
+  and the busy timeout queue the writers); on PostgreSQL the row lock does it.
 
 ### Plugins (separate crates, after M18)
 - [x] `renox-2fa` (TOTP and recovery codes): #146 (#169–#173), docs/two-factor.md
@@ -1882,6 +1899,28 @@ Notes:
 - The large seed is fast enough to run in every CI test job (~7 s on SQLite, ~27 s on
   PostgreSQL for the query walk), so nothing is `#[ignore]`d.
 
+### The upload pipeline (#43)
+
+Steps between receiving an upload and storing it, so every upload path gets the same protection.
+
+- [x] `renox::upload::{Pipeline, UploadStep, StepOutcome, UploadContext}`, `App::uploads`; steps run
+  inside `Valid<T>` after the rules (a rejection is an error on the file's field: redirect back
+  or `422`), or by hand with `Upload::process`.
+- [x] `ClamAv::tcp` / `ClamAv::unix`: clamd `INSTREAM` with no dependency; fails closed, with a
+  timeout (`.timeout`, `.fail_open`). Tested against a fake clamd (EICAR).
+- [x] `images` feature: `Images` (resize, EXIF orientation, metadata stripped, thumbnails) with the
+  `image` crate (JPEG, PNG, WebP); `cargo tree -p hello -i image` is empty in CI.
+- [x] Encrypted files: `Upload::store_encrypted`, `Storage::put_encrypted`/`get_decrypted`/
+  `rewrap_encrypted`, `Download::decrypted`; local temporary URLs and `/_renox/files` decrypt.
+- [x] Docs (validation.md, operations.md, development.md), CHEATSHEET.md, llms.txt, the new apps'
+  AGENTS.md; bikeshop's `/about/fields` shows the thumbnail.
+- [ ] Later: decrypting S3 presigned links (they serve ciphertext), HEIC through a documented
+  external converter recipe only.
+
+Notes:
+- Derived files (thumbnails) are stored at `Upload::derived_key(key, name)` (the name before the
+  extension); the app deletes them with the original.
+
 ## Decisions
 
 - **Rate limits for queued channel and mail sends are separate methods** (#46):
@@ -1889,6 +1928,13 @@ Notes:
   returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in
   the job payload because `Job::middleware` has no `AppState`; it reuses
   `Middleware::rate_limited` (a fixed window). A sliding window or token bucket stays a follow-up.
+- **The upload pipeline** (#43): steps are `Arc<dyn UploadStep>` returning `BoxFuture` (no
+  `async_trait`). `Valid<T>` runs them after the rules and `after`, then reads the form again with
+  the changed files, so a handler sees the processed upload. Encrypted files use
+  `aes-gcm` (pure Rust, the version `cookie` already pulls in): a data key per file wrapped under
+  the key `cookie::Key` derives from `APP_KEY`, header `RNXE` + version 1. Rotating `APP_KEY`
+  re-wraps headers (`rewrap_encrypted`). HEIC/AVIF decoding is not in Renox (no mature pure-Rust
+  decoder; libheif is C and LGPL).
 - **`rx-*` tags are the default way to write pages** in `rnx new`, the docs and the examples (owner, 2026-10-11, #384); kit macros stay supported and are what the tags compile to.
 - **Browser tests on Node's own test runner and raw CDP** (#262, 2026-10): `tests/browser/`
   drives headless Chrome over the DevTools protocol with Node 24's `node:test` and global
@@ -2110,6 +2156,17 @@ Notes:
   (migration + `saving` hook); no macro attribute for it. `match_key` ignores spaces so that
   "Abd Allah" and "Abdullah" agree. Not configurable per rule (yet): a rule that must stay
   (say ta marbuta) means a model-level option later, without changing the default.
+- **Calendar files and the receipt** (#48, 2026-10): `renox::calendar` writes iCalendar by hand
+  (no dependency), UTC only: a `TZID` with `APP_TIMEZONE` would need a `VTIMEZONE` block, and
+  all-day and repeating events are left out; the method follows the events (`CANCEL` if one is
+  cancelled, `REQUEST` with attendees, else `PUBLISH`) unless `Ics::method` says otherwise, and
+  the content type carries the same `method`. Validation is golden files plus a structural check
+  in the tests (CI has no network). The receipt is a block in renox-blocks, not the kit; its
+  code slot takes markup because Renox has no QR generator (no library added). `@page` has no
+  `auto` height (`size: 80mm auto` is not valid CSS and Chrome drops the rule), so the receipt
+  uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
+  where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
+  A PDF receipt (#30) and ESC/POS printing stay out.
 - **Passwordless login** (#42, Renoxium's notes of 2026-10-16): `Auth::new().magic_link()` and
   `.login_codes(LoginCodes::new()..)` are Auth's own login flow (renox-core `auth/passwordless.rs`),
   not a plugin crate: no new dependency, delivery goes through the existing mail and

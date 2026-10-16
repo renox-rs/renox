@@ -60,6 +60,8 @@ pub struct Storage {
     disk: Disk,
     /// `None` for `state.storage`, the name for `App::disk`'s disks.
     name: Option<std::sync::Arc<str>>,
+    /// `APP_KEY`, for the encrypted files (`put_encrypted`).
+    key: Option<cookie::Key>,
 }
 
 /// Rejects keys that could escape the storage root.
@@ -120,7 +122,102 @@ impl Storage {
         Ok(Self {
             disk,
             name: name.map(Into::into),
+            key: None,
         })
+    }
+
+    /// The disk with `APP_KEY` set, which `put_encrypted` and
+    /// `get_decrypted` need.
+    pub(crate) fn with_key(mut self, key: cookie::Key) -> Self {
+        self.key = Some(key);
+        self
+    }
+
+    fn app_key(&self) -> Result<&cookie::Key> {
+        self.key.as_ref().ok_or_else(|| {
+            anyhow::anyhow!("encrypted files need an APP_KEY (`rnx key:generate`)").into()
+        })
+    }
+
+    /// Encrypts `bytes` with AES-256-GCM and writes them to `key`. Each file
+    /// gets its own random data key, sealed with a key derived from `APP_KEY`
+    /// and kept in the file's header (`RNXE`, a version, the sealed key, the
+    /// nonce, the ciphertext). Read it back with [`get_decrypted`]; local
+    /// temporary URLs and `Download::decrypted` decrypt on the fly. A private
+    /// key (not under `public/`) is what you want: `/storage` serves files as
+    /// stored.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # async fn demo(state: AppState) -> Result {
+    /// state.storage.put_encrypted("ids/passport.jpg", vec![1, 2, 3].into()).await?;
+    /// let plain = state.storage.get_decrypted("ids/passport.jpg").await?;
+    /// assert_eq!(plain.as_deref(), Some(&[1u8, 2, 3][..]));
+    /// # Ok(()) }
+    /// ```
+    ///
+    /// [`get_decrypted`]: Storage::get_decrypted
+    pub async fn put_encrypted(&self, key: &str, bytes: Bytes) -> Result {
+        let sealed = crate::crypto::encrypt_file(self.app_key()?, &bytes)?;
+        self.put(key, sealed.into()).await
+    }
+
+    /// The decrypted content of a file written with [`put_encrypted`], or
+    /// `None` if there is no such key. Fails for a file that isn't encrypted,
+    /// was changed, or was sealed with another `APP_KEY`.
+    ///
+    /// [`put_encrypted`]: Storage::put_encrypted
+    pub async fn get_decrypted(&self, key: &str) -> Result<Option<Bytes>> {
+        let app_key = self.app_key()?;
+        match self.get(key).await? {
+            None => Ok(None),
+            Some(sealed) => Ok(Some(
+                crate::crypto::decrypt_file(app_key, &sealed)
+                    .with_context(|| format!("could not decrypt `{key}`"))?
+                    .into(),
+            )),
+        }
+    }
+
+    /// The file as a person may read it: decrypted when it is an encrypted
+    /// file this disk's `APP_KEY` opens, else as stored.
+    pub(crate) async fn get_readable(&self, key: &str) -> Result<Option<Bytes>> {
+        let Some(bytes) = self.get(key).await? else {
+            return Ok(None);
+        };
+        if let Some(app_key) = &self.key
+            && crate::crypto::is_encrypted_file(&bytes)
+            && let Ok(plain) = crate::crypto::decrypt_file(app_key, &bytes)
+        {
+            return Ok(Some(plain.into()));
+        }
+        Ok(Some(bytes))
+    }
+
+    /// Re-seals the encrypted files under `prefix` (`""` for the whole disk)
+    /// with this disk's `APP_KEY`, after the key was rotated: `old_app_key` is
+    /// the previous `APP_KEY` value. Only each file's header changes. Files
+    /// that aren't encrypted, or were already re-sealed, are skipped; the
+    /// count of files changed is returned.
+    pub async fn rewrap_encrypted(&self, prefix: &str, old_app_key: &str) -> Result<usize> {
+        let new = self.app_key()?;
+        let old = crate::crypto::parse_key(old_app_key)?;
+        let mut changed = 0;
+        for file in self.list(prefix).await? {
+            let Some(bytes) = self.get(&file.key).await? else {
+                continue;
+            };
+            if !crate::crypto::is_encrypted_file(&bytes)
+                || crate::crypto::decrypt_file(new, &bytes).is_ok()
+            {
+                continue;
+            }
+            let moved = crate::crypto::rewrap_file(&old, new, &bytes)
+                .with_context(|| format!("could not re-seal `{}`", file.key))?;
+            self.put(&file.key, moved.into()).await?;
+            changed += 1;
+        }
+        Ok(changed)
     }
 
     /// The disk's name: `None` for `state.storage`.
@@ -678,7 +775,8 @@ async fn disk_file(
 }
 
 async fn file_response(storage: &Storage, key: &str) -> Result<Response> {
-    let bytes = storage.get(key).await?.ok_or(Error::NotFound)?;
+    // An encrypted file is decrypted for the (authorized) request.
+    let bytes = storage.get_readable(key).await?.ok_or(Error::NotFound)?;
     let upload = crate::upload::Upload::new(key, "", bytes.clone());
     let content_type = upload.sniffed_type().unwrap_or("application/octet-stream");
     Ok((

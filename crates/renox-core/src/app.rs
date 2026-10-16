@@ -57,6 +57,7 @@ Commands:
   webhook:failed            List webhook calls whose processing failed
   webhook:retry <id>        Process a stored webhook call again
   ui:publish [--force]      Copy the UI kit (renox/ui.html and its CSS) into the app to change it
+  sequence:list             List the numbering series (`Sequence`) and their last numbers
   cache:prune               Delete expired rows of the database cache store
   session:prune             Delete expired sessions (SESSION_DRIVER=database)
   import:prune [--days N]   Delete the records of imports whose undo window ended N days ago (default 0)
@@ -112,6 +113,7 @@ pub struct App {
     limiters: HashMap<String, crate::rate_limit::LimitRule>,
     detect_locale: bool,
     disks: Vec<(String, DiskSettings)>,
+    uploads: crate::upload::Pipeline,
     mailers: Vec<(String, MailerSettings)>,
     mailer_limits: HashMap<String, crate::queue::Limit>,
     xsrf_cookie: bool,
@@ -147,6 +149,7 @@ impl App {
             limiters: HashMap::new(),
             detect_locale: false,
             disks: Vec::new(),
+            uploads: crate::upload::Pipeline::new(),
             mailers: Vec::new(),
             mailer_limits: HashMap::new(),
             xsrf_cookie: false,
@@ -615,6 +618,23 @@ impl App {
         self
     }
 
+    /// The steps every uploaded file passes after the form's rules and
+    /// before the handler sees it: a malware scan, image processing, your own
+    /// [`UploadStep`](crate::upload::UploadStep)s. See [`crate::upload`].
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::upload::{ClamAv, Pipeline};
+    ///
+    /// # let _ =
+    /// App::new().uploads(Pipeline::new().step(ClamAv::tcp("127.0.0.1:3310")))
+    /// # ;
+    /// ```
+    pub fn uploads(mut self, pipeline: crate::upload::Pipeline) -> Self {
+        self.uploads = pipeline;
+        self
+    }
+
     /// Makes `value` available everywhere the app runs: `Provided<T>` in
     /// handlers, `state.provided::<T>()` in jobs, listeners, commands and
     /// scheduled tasks. One value per type; a second one replaces the first,
@@ -674,6 +694,7 @@ impl App {
         migrations.push(crate::grid::MIGRATION);
         migrations.push(crate::import::MIGRATION);
         migrations.extend(crate::webhook::MIGRATIONS);
+        migrations.push(crate::db::SEQUENCE_MIGRATION);
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());
@@ -887,7 +908,7 @@ impl App {
         }
         let routes = Arc::new(routes);
 
-        let storage = crate::storage::Storage::from_config(&config)?;
+        let storage = crate::storage::Storage::from_config(&config)?.with_key(key.clone());
         let mut disks = HashMap::new();
         for (name, settings) in &self.disks {
             let valid = !name.is_empty()
@@ -900,7 +921,8 @@ impl App {
                 )
                 .into());
             }
-            let disk = crate::storage::Storage::named(&config, name, &settings(&config)?)?;
+            let disk = crate::storage::Storage::named(&config, name, &settings(&config)?)?
+                .with_key(key.clone());
             if disks.insert(name.clone(), disk).is_some() {
                 return Err(anyhow!("two disks are named `{name}` (App::disk)").into());
             }
@@ -975,6 +997,7 @@ impl App {
             cache: crate::cache::Cache::new(config.cache_store, db.clone())?,
             storage,
             disks: Arc::new(disks),
+            uploads: self.uploads.clone(),
             http: crate::http::Http::default(),
             fakes: Arc::default(),
             settings_store: Arc::new(crate::settings::Store::new(settings_groups, settings_seed)),
@@ -1308,6 +1331,18 @@ impl App {
                 "Deleted {} expired session(s).",
                 crate::Session::prune_expired(&kernel.state.db).await?
             ),
+            "sequence:list" => {
+                let rows = crate::db::Sequence::list(&kernel.state.db).await?;
+                if rows.is_empty() {
+                    println!("No numbering series.");
+                }
+                for row in rows {
+                    println!(
+                        "  {}  scope={:?} period={:?}  last={}",
+                        row.series, row.scope, row.period, row.last
+                    );
+                }
+            }
             "cache:prune" => println!(
                 "Deleted {} expired cache row(s).",
                 kernel.state.cache.prune().await?
@@ -1432,6 +1467,7 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "queue:prune-batches",
     "webhook:failed",
     "webhook:retry",
+    "sequence:list",
     "cache:prune",
     "session:prune",
     "import:prune",

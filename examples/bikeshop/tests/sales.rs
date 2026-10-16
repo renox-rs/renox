@@ -574,7 +574,9 @@ async fn a_guest_order_is_reserved_then_paid_by_the_signed_webhook() {
     app.get(&format!("/orders/{}/invoice", order.id))
         .await
         .assert_ok()
-        .assert_see("Print");
+        .assert_see("Print")
+        // An online order stays an invoice on a sheet, not a till receipt.
+        .assert_dont_see("rx-receipt");
     // Someone else's browser doesn't see it.
     app.logout();
     app.get(&format!("/orders/{}", order.id))
@@ -967,6 +969,12 @@ async fn a_counter_sale_follows_the_same_rules() {
     assert_eq!(order.channel, Channel::Counter);
     assert_eq!(order.status, OrderStatus::Completed);
     assert_eq!(level(&app, w.helmet.id, w.north.id).await, (1, 0));
+    // The receipt number comes from the store's gapless sequence for the year.
+    assert!(
+        order.number.ends_with("-000001") && order.number.starts_with(&format!("R{}-", w.north.id)),
+        "{}",
+        order.number
+    );
     let payment = Payment::query()
         .where_(Payment::PAYABLE_ID.eq(order.id))
         .first(db)
@@ -983,7 +991,15 @@ async fn a_counter_sale_follows_the_same_rules() {
         .assert_see("Receipt")
         .assert_see("Change to give")
         // $200.50 handed over for $180.00: the change is in cents too.
-        .assert_see("$20.50");
+        .assert_see("$20.50")
+        // The counter's receipt is the `receipt` block (#48): 80 mm, the
+        // order's number in its code slot, and the total of $180.00.
+        .assert_see(r#"class="rx-receipt rx-receipt--w80" id="counter-receipt""#)
+        .assert_see(&format!(
+            r#"<span class="bs-receipt__code">{}</span>"#,
+            order.number
+        ))
+        .assert_see(r#"<th scope="row">Total</th><td>$180.00</td>"#);
 }
 
 #[renox::test]

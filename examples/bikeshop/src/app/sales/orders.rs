@@ -360,14 +360,18 @@ fn progress(state: &AppState, steps: &[Step]) -> Vec<renox::serde_json::Value> {
 /// `GET /orders/{order}/invoice` (`orders.invoice`): the printable invoice
 /// (or the counter's receipt).
 pub async fn invoice(
-    State(db): State<Db>,
+    State(state): State<AppState>,
     session: Session,
     user: Option<AuthUser>,
     Path(id): Path<i64>,
 ) -> Result<View> {
-    let order = visible(&db, &session, user.as_deref(), id).await?;
-    let page = page_data(&db, order).await?;
-    Ok(view("sales/orders/invoice.html", context! { page }))
+    let order = visible(&state.db, &session, user.as_deref(), id).await?;
+    let page = page_data(&state.db, order).await?;
+    let receipt = receipt(&state, &page.view);
+    Ok(view(
+        "sales/orders/invoice.html",
+        context! { page, receipt },
+    ))
 }
 
 /// `GET /orders/{order}/view?signature=…` (`orders.signed`): the link in
@@ -378,6 +382,59 @@ pub async fn signed(_: ValidSignature, session: Session, Path(id): Path<i64>) ->
     Ok(Redirect::to(&format!("/orders/{id}")))
 }
 // [/explain:orders.invoice.handler]
+
+/// What the counter's till receipt (the `receipt` block, 80 mm) prints: the
+/// lines with their quantity and price, the totals, the store's lines and the
+/// shop's thanks, in the language of the person looking at it.
+fn receipt(state: &AppState, order: &OrderView) -> renox::serde_json::Value {
+    let lang = state.current_lang();
+    let lines: Vec<_> = order
+        .lines
+        .iter()
+        .map(|line| {
+            json!({
+                "name": line.name,
+                "note": line.variant,
+                "quantity": line.item.quantity,
+                "price": line.item.unit_price,
+                "total": line.item.total,
+            })
+        })
+        .collect();
+    let mut totals = vec![json!({
+        "label": lang.t("sales.orders.subtotal", &[]),
+        "amount": order.order.subtotal,
+    })];
+    if order.order.discount > 0 {
+        totals.push(json!({
+            "label": lang.t("sales.orders.discount", &[]),
+            "amount": -order.order.discount,
+        }));
+    }
+    if order.delivery {
+        totals.push(json!({
+            "label": lang.t("sales.checkout.delivery_fee", &[]),
+            "amount": order.order.delivery_fee,
+        }));
+    }
+    totals.push(json!({
+        "label": lang.t("sales.orders.total", &[]),
+        "amount": order.order.total,
+        "strong": true,
+    }));
+    let header: Vec<String> = order
+        .store
+        .iter()
+        .flat_map(|store| [store.name.clone(), store.phone.clone()])
+        .filter(|line| !line.is_empty())
+        .collect();
+    json!({
+        "lines": lines,
+        "totals": totals,
+        "header": header,
+        "footer": [lang.t("sales.invoice.footer", &[("days", &14)])],
+    })
+}
 
 /// One step of the order's progress, for the page's history.
 #[derive(Serialize, Debug, Clone)]

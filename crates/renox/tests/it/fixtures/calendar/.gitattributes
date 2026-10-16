@@ -1,0 +1,2 @@
+# The golden files keep their CRLF line endings (RFC 5545) on every platform.
+*.ics -text

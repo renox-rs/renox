@@ -282,6 +282,11 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   (docs/grid.md) and render it with `renox/grid.html` rather than a hand-made table. Excel
   exports need the `xlsx` feature (`renox = { …, features = ["xlsx"] }`); CSV and the print
   page work without it.
+- Steps every uploaded file must pass (a malware scan, resizing photos, stripping EXIF, encrypting
+  identity documents) go in one `App::uploads(Pipeline::new().step(..))` with `renox::upload`'s
+  `ClamAv`, `Images` (needs `features = ["images"]`) or your own `UploadStep`, not in each handler;
+  a refused file becomes an error on its form field. `upload.store_encrypted(&state.storage, dir)`
+  seals a file with `APP_KEY` (read it with `storage.get_decrypted`). docs/validation.md "Uploads".
 - A script or `<meta>` a page or component needs goes through the layout's stacks:
   `<rx-push stack="scripts" once="chart">…</rx-push>`, drawn by `<rx-outlet stack="scripts"/>`
   (and `<rx-outlet stack="head"/>`) in the layout.

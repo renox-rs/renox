@@ -38,7 +38,7 @@ rnx make:component price_tag         # --ui copies the UI kit into the app
 rnx migrate                          # migrate:status, migrate:fresh --seed, db:seed
 rnx migrate:rollback --step 2        # the last 2 batches (default 1)
 rnx db:check                         # every App::model against the tables the migrations build; exits 1 on a mismatch
-rnx route:list                       # db:shell, schedule:list, schedule:run NAME, cache:prune, session:prune
+rnx route:list                       # db:shell, schedule:list, schedule:run NAME, cache:prune, session:prune, sequence:list
 rnx queue:work --queue mail --workers 2  # --once: run what is queued, then stop
 rnx queue:failed                     # queue:retry <id|all>, queue:forget <id>, queue:flush (deletes them)
 rnx queue:prune-failed --hours 168   # failed jobs older than that (the default); queue:prune-batches [--hours 24]
@@ -1966,6 +1966,28 @@ waits for the transaction and fails with "database is locked"). Queries fail wit
 `renox::db::DbError` (`is_unique_violation()`, `is_foreign_key_violation()`, `is_row_not_found()`,
 `is_timeout()`); a duplicate that slips past a `unique` rule answers 409.
 
+Numbered documents with no gaps (invoices, receipts), details in
+[docs/relations.md](docs/relations.md) "Numbering documents":
+
+```rust
+use renox::db::{NumberFormat, Period, Sequence};
+use renox::prelude::*;
+
+async fn issue(db: Db, company_id: i64) -> Result<String> {
+    let today = renox::db::now().date_naive();
+    let seq = Sequence::new("invoice").scope(company_id).period(Period::of_year(today));
+    let mut tx = db.begin().await?;
+    let n = seq.next(&mut tx).await?; // 1, 2, 3…; a rollback gives the number back
+    let number = Sequence::format("INV-{yyyy}-{0000}", n, today); // INV-2026-0042
+    tx.commit().await?;
+    let _next = seq.peek(&db).await?;          // the next number, not taken
+    seq.set_start(&db, 1200).await?;           // continue from an old system: next is 1201
+    let _loose = seq.next_allowing_gaps(&db).await?; // own transaction, gaps possible
+    let _custom = NumberFormat::new("{prefix}-{0000}").token("prefix", "ACM").render(n, today);
+    Ok(number)
+}
+```
+
 Migrations run in a transaction each. A migration with `CREATE INDEX CONCURRENTLY` or its own
 `BEGIN … COMMIT` runs without one, as does one with a `-- renox:no-transaction` line. Two
 `migrate` runs at once wait for each other; `migrate:status` flags edited and missing files.
@@ -2115,6 +2137,21 @@ async fn send_invoice(state: &AppState, pdf: Vec<u8>) -> Result {
     Ok(())
 }
 
+/// A calendar invitation (RFC 5545): UTC times, folded and escaped for you. The same UID with a
+/// higher sequence changes it; `Status::Cancelled` makes the file `METHOD:CANCEL`.
+fn invitation(starts: renox::chrono::DateTime<renox::chrono::Utc>, ends: renox::chrono::DateTime<renox::chrono::Utc>) -> Mail {
+    use renox::calendar::{Event, Ics, Status};
+    let ics = Ics::new("-//Acme//Bookings//EN").event(
+        Event::new("booking-42@acme.test", starts, ends)
+            .summary("Service at Acme").location("Bay 3").description("Bring the key.")
+            .organizer("bookings@acme.test").attendee("ben@example.com")
+            .alarm_before(std::time::Duration::from_secs(3600))
+            .sequence(0).status(Status::Confirmed),
+    );
+    // invite.ics as `text/calendar; method=REQUEST; charset=UTF-8`; Download::ics(&ics, "booking.ics")
+    Mail::new("ben@example.com", "Your booking", "See you on Tuesday.").attach_ics(&ics)
+}
+
 struct OrderShipped { order_id: i64 }
 
 /// One message, sent through every channel that `channels` returns.
@@ -2250,7 +2287,8 @@ async fn invoice(State(state): State<AppState>) -> Result<Download> {
     let pdf = state.storage.get("invoices/1.pdf").await?.unwrap_or_default();
     Ok(Download::bytes("INV-001.pdf", "application/pdf", pdf).inline()) // or attachment (default)
     // Download::file(path, name).await (streamed), Download::from_storage(&storage, key, name),
-    // Download::stream(name, type, stream) for a CSV written row by row
+    // Download::stream(name, type, stream) for a CSV written row by row,
+    // Download::ics(&ics, "booking.ics") for a calendar file (renox::calendar::Ics)
 }
 ```
 
@@ -2314,6 +2352,48 @@ impl Validate for PhotoForm {
 async fn upload(State(state): State<AppState>, Valid(form): Valid<PhotoForm>) -> Result<String> {
     let key = form.photo.store_public(&state.storage, "photos").await?;
     Ok(state.storage.url(&key)) // {{ storage_url(key) }} in templates
+}
+```
+
+Steps every upload passes after the form's rules (`App::uploads`); a refusal is an error on the
+file's field (plain post and HTMX `422`). `store_encrypted` seals a file with `APP_KEY`:
+
+```rust
+use renox::prelude::*;
+use renox::upload::{ClamAv, Pipeline, StepOutcome, UploadContext, UploadStep};
+use renox::upload::BoxFuture;
+
+struct Shout; // any `impl UploadStep`: refuse, change the file, or derive another
+
+impl UploadStep for Shout {
+    fn process<'a>(
+        &'a self,
+        file: &'a mut Upload,
+        ctx: &'a UploadContext,
+    ) -> BoxFuture<'a, Result<StepOutcome>> {
+        Box::pin(async move {
+            Ok(if file.size() == 0 {
+                StepOutcome::Reject(format!("{} is empty.", ctx.field()))
+            } else {
+                StepOutcome::Keep
+            })
+        })
+    }
+}
+
+fn app() -> App {
+    // ClamAV fails closed (`.timeout(..)`, `.fail_open()`); `Images::new().max_dimensions(2560, 2560)
+    // .strip_metadata().thumbnail("thumb", 320, 320)` with renox's `images` feature.
+    App::new().uploads(Pipeline::new().step(ClamAv::tcp("127.0.0.1:3310")).step(Shout))
+}
+
+async fn keep(State(state): State<AppState>, mut id: Upload) -> Result<Vec<u8>> {
+    id.process(&state).await?; // outside `Valid`: run the steps by hand
+    let key = id.store_encrypted(&state.storage, "ids").await?; // AES-256-GCM, a data key per file
+    let thumb = Upload::derived_key(&key, "thumb"); // where a derived file is stored
+    let _ = thumb;
+    Ok(state.storage.get_decrypted(&key).await?.unwrap_or_default().to_vec())
+    // Download::decrypted(&state.storage, &key, "id.jpg"); storage.rewrap_encrypted("", &old_app_key)
 }
 ```
 

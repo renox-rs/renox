@@ -32,6 +32,8 @@ postgres = ["renox-core/postgres"]
 uuid = ["renox-core/uuid"]
 # Excel exports of data grids (`Grid::exports`, `export=xlsx`).
 xlsx = ["renox-core/xlsx"]
+# Image processing steps for uploads (`renox::upload::images::Images`: resize, orientation, thumbnails).
+images = ["renox-core/images"]
 
 [dependencies]
 renox-core.workspace = true

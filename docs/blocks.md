@@ -2,16 +2,16 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds thirteen such components, as template macros
+of cards to drag. The `renox-blocks` crate adds fourteen such components, as template macros
 built on the kit:
 
-| Input | Showing data | Scheduling and work |
-|---|---|---|
-| [`quantity`](#quantity): a stepper | [`gallery`](#gallery): photos in a carousel | [`month_calendar`](#month_calendar): a month of events |
-| [`range_slider`](#range_slider): two handles on one track | [`history`](#history): a timeline | [`availability`](#availability): resources against hours |
-| [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`week_calendar`](#week_calendar): resources against a week, click to book |
-| [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns |
-| [`datetime_range`](#datetime_range): a start and an end, with times | | |
+| Input | Showing data | Scheduling and work | Printing |
+|---|---|---|---|
+| [`quantity`](#quantity): a stepper | [`gallery`](#gallery): photos in a carousel | [`month_calendar`](#month_calendar): a month of events | [`receipt`](#receipt): a till receipt for a thermal printer |
+| [`range_slider`](#range_slider): two handles on one track | [`history`](#history): a timeline | [`availability`](#availability): resources against hours | |
+| [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`week_calendar`](#week_calendar): resources against a week, click to book | |
+| [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns | |
+| [`datetime_range`](#datetime_range): a start and an end, with times | | | |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
 blocks' script only when it has a block, and then only the code of the blocks it has.
@@ -25,6 +25,7 @@ In this guide:
 - [Input blocks](#input-blocks)
 - [Showing data](#showing-data)
 - [Scheduling and work](#scheduling-and-work)
+- [Printing](#printing)
 - [Texts in other languages](#texts-in-other-languages)
 - [Changing the look](#changing-the-look)
 - [How the files load](#how-the-files-load)
@@ -586,6 +587,81 @@ After the server answered, the board sends `rx:kanban-moved` with
 `kanban_card(card)` prints one card, for a fragment that adds a card to a board already on the
 page; the board sets it up when htmx swaps it in.
 
+## Printing
+
+### receipt
+
+A till receipt for a thermal printer, on screen and on a roll of 80 mm or 58 mm paper. It is the
+page a counter sale ends on: the lines, the totals, a place for a code, a footer and a "Print"
+button.
+
+```html
+{% call receipt(lines, totals=totals, title="Bike Shop", header=["Calle Mayor 12", "+34 600 000 000"],
+                number="R-1042", date="2026-10-16 10:32", footer="Thank you!") %}
+  {{ order.number }}
+{% endcall %}
+```
+
+Or as a tag, where the tag's content is the code slot:
+
+```html
+<rx-receipt width="58mm" title="Bike Shop" :header="store.lines" number="R-1042"
+            :lines="lines" :totals="totals" :footer="['Thank you!']">
+  <svg>…</svg>
+</rx-receipt>
+```
+
+The data is plain lists, with amounts in the currency's smallest unit (cents), as the `money`
+filter takes them:
+
+- `lines`: `{name, quantity?, price?, total?, note?}`. A line with a quantity other than 1 shows
+  "2 × $49.00" under its name; `total` defaults to `quantity * price` (give `total` alone for
+  a line with no unit price, such as a repair).
+- `totals`: `{label, amount, strong?}`, under the lines; mark the amount due `strong`. A
+  discount is a negative `amount`.
+- `header` and `footer` are lists of lines of text (a single text works too).
+
+What is between `call` and `endcall` (or inside the tag) is printed under the totals, centred:
+the **code slot**. Renox has no QR or barcode generator, so put markup of your own there: an
+`<svg>` from a QR library, an `<img>`, a barcode font, or just the receipt number as text, as the
+bike shop does.
+
+| Option | Default | What it does |
+|---|---|---|
+| `lines` | | the items, as above |
+| `totals` | `[]` | the rows under them |
+| `width` | `"80mm"` | the roll: `"80mm"` or `"58mm"` |
+| `title` | | the shop's name, in capitals at the top |
+| `header`, `footer` | `[]` | lines of text above and below |
+| `number`, `date` | | one line under the header: the receipt's number and its date |
+| `print_button` | `true` | the "Print receipt" button (not printed itself) |
+| `print_label` | "Print receipt" | its text |
+| `label` | the title, else "Receipt" | the receipt's name for screen readers |
+| `id` | `"rx-receipt"` | the frame's id (give each receipt on a page its own) |
+
+**Printing.** The paper is always white with black monospace text, whatever the theme, and has
+the roll's width on screen too (80 mm is about 302 pixels, 58 mm about 219). When the page is
+printed, everything except the receipt is dropped (the navigation, the other cards, the
+buttons) and the paper starts at the corner of the page, so a counter page needs no print
+stylesheet of its own. The page size is set with CSS named pages:
+
+```css
+@page rx-receipt-80 { size: 80mm 297mm; margin: 0; }
+@page rx-receipt-58 { size: 58mm 297mm; margin: 0; }
+```
+
+CSS has no "auto" height for `size`, so the page is as long as an A4 sheet and a roll printer
+cuts after the content; a shop that prints longer receipts, or sets the paper in the printer's
+driver, can override these two rules in its own stylesheet. Named pages are supported by
+Chrome, Edge and Firefox; where they aren't (Safari), the receipt keeps its width on the page
+the browser picks. The button calls `window.print()` from the blocks' script (no inline
+handler, so it works under `CSP=strict`); without JavaScript the browser's own Print command
+prints the same receipt.
+
+> [!NOTE]
+> Printing straight to a printer (ESC/POS commands, opening a cash drawer) is not part of
+> Renox. The browser prints, and the printer's driver does the rest.
+
 ## Texts in other languages
 
 The blocks' texts are English unless your app's lang files have them, under the same keys
@@ -617,7 +693,7 @@ JavaScript module. The module looks at the page (and at whatever htmx swaps in l
 imports a block's code only when the page has that block: a product page with a gallery and a
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
 `status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
-`week.js` for its keyboard.
+`week.js` for its keyboard, and `receipt` has a few lines, for its Print button.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

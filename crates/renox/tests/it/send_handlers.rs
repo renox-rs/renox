@@ -154,6 +154,25 @@ async fn queries(State(state): State<AppState>) -> Result<String> {
     Ok(format!("{seen} {cached} {helped} {}", names.len()))
 }
 
+/// Gapless numbering: every `Sequence` call, inside a routed handler.
+async fn numbering(State(db): State<Db>) -> Result<String> {
+    use renox::db::{NumberFormat, Period, Sequence};
+    let seq = Sequence::new("send").scope(1).period(Period::Year(2026));
+    let mut tx = db.begin().await?;
+    let n = seq.next(&mut tx).await?;
+    seq.set_start(&mut tx, n + 10).await?;
+    let peeked = seq.peek(&mut tx).await?;
+    tx.commit().await?;
+    let loose = seq.next_allowing_gaps(&db).await?;
+    let last = seq.last(&db).await?;
+    let rows = Sequence::list(&db).await?;
+    let date = renox::db::now().date_naive();
+    let text = NumberFormat::new("{p}-{0000}")
+        .token("p", "X")
+        .render(n, date);
+    Ok(format!("{n} {peeked} {loose} {last} {} {text}", rows.len()))
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -827,6 +846,37 @@ async fn grid(request: renox::grid::GridRequest, State(db): State<Db>) -> Result
     Ok(format!("{} {all}", page.total()))
 }
 
+/// The upload pipeline's storage APIs: encrypted files, derived files,
+/// `Upload::process`, `Download::decrypted`.
+async fn uploaded(State(state): State<AppState>) -> Result<String> {
+    let mut file = Upload::new("scan.txt", "text/plain", b"private".to_vec());
+    file.process(&state).await?;
+    file.derive(
+        "copy",
+        Upload::new("scan.txt", "text/plain", b"copy".to_vec()),
+    );
+    let key = file.store_encrypted(&state.storage, "ids").await?;
+    let plain = state.storage.get_decrypted(&key).await?;
+    let copy = state
+        .storage
+        .get_decrypted(&Upload::derived_key(&key, "copy"))
+        .await?;
+    state
+        .storage
+        .put_encrypted("ids/direct.txt", b"direct".to_vec().into())
+        .await?;
+    renox::Download::decrypted(&state.storage, "ids/direct.txt", "direct.txt").await?;
+    let moved = state
+        .storage
+        .rewrap_encrypted("ids", &renox::generate_key())
+        .await?;
+    Ok(format!(
+        "{} {} {moved}",
+        plain.is_some_and(|p| &p[..] == b"private"),
+        copy.is_some_and(|p| &p[..] == b"copy")
+    ))
+}
+
 impl Module for Handlers {
     fn name(&self) -> &'static str {
         "handlers"
@@ -837,6 +887,7 @@ impl Module for Handlers {
             .get("/relations", relations)
             .get("/queries", queries)
             .get("/typed", typed)
+            .get("/numbering", numbering)
             .get("/more", more)
             .get("/access", access)
             .get("/trends", trends)
@@ -854,6 +905,7 @@ impl Module for Handlers {
             .get("/import-more", import_more)
             .get("/search", search)
             .get("/live", live)
+            .get("/uploaded", uploaded)
             .get("/one-time", one_time)
     }
 }
@@ -898,6 +950,10 @@ async fn data_apis_work_in_routed_handlers() {
         .assert_see("1 1 0 0 [1]");
     app.get("/queries").await.assert_ok().assert_see("2 2 2 2");
     app.get("/typed").await.assert_ok();
+    app.get("/numbering")
+        .await
+        .assert_ok()
+        .assert_see("1 12 12 12 1 X-0001");
     app.get("/more")
         .await
         .assert_ok()
@@ -933,6 +989,10 @@ async fn data_apis_work_in_routed_handlers() {
         .assert_ok()
         .assert_see("1 1 1 1 true 0");
     app.get("/search").await.assert_ok().assert_see("1 1 1");
+    app.get("/uploaded")
+        .await
+        .assert_ok()
+        .assert_see("true true 0");
     app.get("/one-time")
         .await
         .assert_ok()

@@ -90,7 +90,7 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/error.rs             Error enum, IntoResponse, error pages (the app's errors/{status}.html,
                            errors/default.html with the page globals, else renox/error.html),
                            Debug for main(), panic_message
-  src/crypto.rs            APP_KEY parsing/generation, random tokens, constant_time_eq
+  src/crypto.rs            APP_KEY parsing/generation, seal/open, encrypted files (RNXE), random tokens, constant_time_eq
   src/signed.rs            signed URLs (HMAC-SHA256) + ValidSignature extractor
   src/db/                  conn.rs (Db/Transaction/Row/sql(), Executor, SchemaEpoch, savepoints,
                            the key for Encrypted columns), key.rs (ModelKey, Ulid), encrypted.rs
@@ -173,6 +173,8 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/counters.rs          counters in the cache table (renox:count:…) for shared throttles/login lock
   src/provided.rs          App::provide values: Provided<T> extractor, AppState::provided
   src/cookies.rs           Cookies extractor (plain / encrypted), SetCookie response part
+  src/calendar.rs          Ics/Event: iCalendar (RFC 5545) files, UTC, folding, escaping; Mail::attach_ics
+                           and Download::ics
   src/download.rs          Download: bytes, streamed file, Storage key, stream; safe Content-Disposition
   src/command.rs           app commands: Args, Command; App::command / Registry::command, Kernel::call;
                            AppCommand (a clap Parser) + App::typed_command (renox::clap re-exported)
@@ -188,6 +190,9 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/maintenance.rs       down/up/status + middleware (bypass cookie)
   src/health.rs            GET /health
   src/upload.rs            Upload (multipart file field), sniffing, store/store_public, token registry
+  src/upload/pipeline.rs  Pipeline, UploadStep, StepOutcome, UploadContext (App::uploads, run by Valid)
+  src/upload/clamav.rs     ClamAv step (clamd INSTREAM over TCP/Unix, fails closed)
+  src/upload/images.rs     Images step, behind the `images` feature (the `image` crate)
   src/storage.rs           Storage (local disk; S3 with the `s3` feature), temporary URLs, /_renox/files,
                            list/copy/rename/size/delete_all; named disks (App::disk,
                            state.disk_named, StorageConfig::from_env) served at /_renox/disks/<name>
@@ -251,7 +256,8 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
                            datetime_range, gallery, history, compare_plans, status_stepper,
-                           month_calendar, availability, week_calendar, kanban + kanban_card; `rx-` classes,
+                           month_calendar, availability, week_calendar, kanban + kanban_card,
+                           receipt; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
                            assets/blocks.css, assets/blocks.js (the loader: imports
                            assets/parts/<block>.js only when a page has that block; Web

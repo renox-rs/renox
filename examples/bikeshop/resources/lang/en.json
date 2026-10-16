@@ -446,6 +446,12 @@
       "included": "Included",
       "not_included": "Not included"
     },
+    "receipt": {
+      "label": "Receipt",
+      "item": "Item",
+      "amount": "Amount",
+      "print": "Print receipt"
+    },
     "page": {
       "title": "Bike shop blocks",
       "lead": "The UI pieces Renox's kit doesn't have, from the renox-blocks crate (and one of the shop's own), as macros on the kit's tokens. Each one works here, with its signature.",
@@ -474,6 +480,7 @@
       "week": "The workshop's bays across a week: a free slot posts its bay and times with htmx, the arrow keys move between cells.",
       "week_booked": "Booked :resource from :from to :to (a demo: nothing is saved).",
       "plans": "The service plans, side by side and compared.",
+      "receipt": "The counter's till receipt at 80 mm and 58 mm. Print the page: only the receipt is printed, on the roll's width.",
       "variant": "Price and stock",
       "in_stock": ":n in stock",
       "out_of_stock": "Out of stock",
@@ -1268,6 +1275,10 @@
       "location_store": "location",
       "yes": "You may",
       "no": "Not you"
+    },
+    "calendar": {
+      "summary": "Bike rental :code",
+      "description": "Reservation code :code. Show it at :store when you pick the bike up."
     },
     "mail": {
       "open": "Open",

@@ -28,13 +28,13 @@ use std::time::Duration;
 const HOUR: Duration = Duration::from_secs(60 * 60);
 const MINUTE: Duration = Duration::from_secs(60);
 
-/// A 1×1 PNG, for the ID photo and damage photos.
+/// A valid 1×1 PNG (the upload pipeline decodes it), for the ID photo and damage photos.
 const PNG: &[u8] = &[
     0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
-    0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00, 0x01, 0x00, 0x00,
-    0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE,
-    0x42, 0x60, 0x82,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41, 0x54, 0x78, 0xDA, 0x63, 0xF8, 0xCF, 0xC0, 0x00,
+    0x00, 0x03, 0x01, 0x01, 0x00, 0xF7, 0x03, 0x41, 0x43, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+    0x44, 0xAE, 0x42, 0x60, 0x82,
 ];
 
 /// The shop for a test: three stores, a cashier at North and at South, a
@@ -294,6 +294,42 @@ async fn reserving_online_shows_the_price_then_holds_the_bike_once_paid() {
             .any(|m| m.subject.contains(&rental.reservation_code.to_string())),
         "the confirmation mail carries the code"
     );
+    // ... and a calendar file (#48): the rental's period, one UID per rental,
+    // the customer invited, the content type of a REQUEST.
+    let confirmation = mails
+        .iter()
+        .find(|m| m.subject.contains(&rental.reservation_code.to_string()))
+        .unwrap();
+    let invite = confirmation
+        .attachments
+        .iter()
+        .find(|a| a.filename == "invite.ics")
+        .expect("the confirmation attaches invite.ics");
+    assert_eq!(
+        invite.content_type,
+        "text/calendar; method=REQUEST; charset=UTF-8"
+    );
+    let ics = String::from_utf8(invite.data.clone()).unwrap();
+    assert!(
+        ics.starts_with("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"),
+        "{ics}"
+    );
+    assert!(ics.contains(&format!("UID:rental-{}@", rental.id)), "{ics}");
+    assert!(
+        ics.contains(&format!(
+            "DTSTART:{}\r\n",
+            rental.starts_at.format("%Y%m%dT%H%M%SZ")
+        )),
+        "{ics}"
+    );
+    assert!(
+        ics.contains(&format!(
+            "DTEND:{}\r\n",
+            rental.due_at.format("%Y%m%dT%H%M%SZ")
+        )),
+        "{ics}"
+    );
+    assert!(ics.contains("mailto:"), "{ics}");
 
     // Someone else's reservation doesn't exist for them.
     w.app.acting_as(&other);

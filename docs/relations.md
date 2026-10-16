@@ -9,6 +9,7 @@ without surprises.
 - how to get the related rows of **one** row (a product's category);
 - how to get the related rows of a **whole page** of rows, without running one query per row;
 - many-to-many links, extra data on a link, and rows that can belong to several tables;
+- numbering documents (invoices, receipts) with no gaps and no duplicates;
 - plain SQL when a join or a report is the clearest way;
 - a long table of query-builder methods, with their Laravel names.
 
@@ -424,6 +425,74 @@ Filters and order go on either query.
 
 > [!NOTE]
 > **Coming from Laravel:** this is `hasManyThrough`.
+
+## Numbering documents: invoices and receipts without gaps
+
+Some documents must carry consecutive numbers: the law or your accountant expects invoice 41,
+then 42, never 43 before 42 exists. A counter in a variable, or the table's `id`, can skip a
+number when a transaction rolls back, or give one twice when two requests race. A `Sequence`
+takes the number **inside your transaction**, so a rollback gives it back:
+
+```rust
+use renox::db::{Period, Sequence};
+use renox::prelude::*;
+
+# async fn demo(db: Db, company_id: i64) -> Result {
+let today = renox::db::now().date_naive(); // the app's clock, which tests can move
+let mut tx = db.begin().await?;
+let n = Sequence::new("invoice")
+    .scope(company_id)               // one series per company
+    .period(Period::of_year(today))  // starting again at 1 each year
+    .next(&mut tx)
+    .await?;                         // 1, 2, 3… for that company and year
+let number = Sequence::format("INV-{yyyy}-{0000}", n, today); // "INV-2026-0042"
+// …insert the invoice with `number` through `&mut tx`…
+tx.commit().await?; // had anything failed before this, `n` would be issued again
+# let _ = number; Ok(()) }
+```
+
+What's going on:
+
+- A series is a `series` name, a `scope` (anything with `ToString`: a company id, a branch
+  code) and a `period` (`Period::None`, `Year(2026)` or `Month(2026, 10)`). Every combination
+  counts from 1 on its own, in the `sequences` table (a framework migration every app gets).
+- `next` takes `&mut Transaction` only, on purpose. It runs one `INSERT … ON CONFLICT DO
+  UPDATE … RETURNING`, so the row stays locked until you commit: on PostgreSQL concurrent
+  issuers queue on the row, on SQLite the write lock does the same. Fifty tasks get 1 to 50
+  exactly.
+- `peek(&db)` shows the number `next` would give, without taking it (for a form's preview).
+  Another request may take it first. `last(&db)` is the last number issued.
+- `set_start(&db, 1200)` continues from an old system: the next number is 1201. Use it once,
+  when importing.
+- `rnx sequence:list` shows every series and its last number.
+
+The pattern for `format` has `{yyyy}`, `{yy}`, `{mm}` and `{0000}` (the number, zero-padded to
+as many digits as there are zeros); everything else is literal text. A pattern kept in settings
+can carry names of its own, which are filled in without any risk of clashing with the other
+tokens:
+
+```rust
+use renox::db::NumberFormat;
+
+# fn demo() {
+let date = renox::db::now().date_naive();
+let number = NumberFormat::new("{prefix}-{yyyy}-{0000}") // from the company's settings
+    .token("prefix", "ACM-INV")
+    .render(42, date); // "ACM-INV-2026-0042"
+# let _ = number; }
+```
+
+> [!WARNING]
+> Gapless means one issuer at a time per series: a second transaction waits until the first
+> commits or rolls back. Keep the transaction short (take the number late, commit soon). For a
+> series where gaps are fine and many inserts would queue on one row (ticket references), use
+> `Sequence::next_allowing_gaps(&db)`: it takes the number in a transaction of its own and
+> commits at once, so a number is lost when your own work fails afterwards. When you need only a
+> unique id, not an ordered number, use the table's primary key instead.
+
+> [!NOTE]
+> **Coming from Laravel:** Laravel has no built-in for this. People write a `lockForUpdate`
+> counter row by hand; `Sequence` is that row, done once.
 
 ## Joins and reports: SQL read into structs
 
