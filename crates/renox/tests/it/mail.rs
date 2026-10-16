@@ -194,9 +194,7 @@ async fn mail_views_take_dir_from_the_recipients_locale() {
     let kernel = kernel_with(config(dir.path())).await;
     let state = kernel.state();
 
-    let english = state
-        .mail_view("a@b.test", "Hi", "mail/where", ())
-        .unwrap();
+    let english = state.mail_view("a@b.test", "Hi", "mail/where", ()).unwrap();
     let html = english.html.as_deref().unwrap();
     assert!(html.contains(r#"<html lang="en" dir="ltr">"#), "{html}");
     assert!(html.contains("<p>en:ltr</p>"), "{html}");

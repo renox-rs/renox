@@ -2232,8 +2232,16 @@ pub(crate) static BUILTIN: &[Contract] = &[
             module: Module::Ui,
             name: "nav_links",
         },
-        props: &[],
-        slots: &[DEFAULT_SLOT],
+        props: &[text(
+            "menu",
+            false,
+            "A menu's name: the links modules and the app added with `App::nav`, for this user.",
+        )],
+        slots: &[Slot {
+            optional: true,
+            doc: "Links written by hand, after the menu's.",
+            ..DEFAULT_SLOT
+        }],
         events: &[],
         route_prop: None,
         attrs: false,
@@ -2298,8 +2306,17 @@ pub(crate) static BUILTIN: &[Contract] = &[
                 "skip",
                 "Whether the skip link shows (`:skip=\"false\"` hides it).",
             ),
+            text(
+                "menu",
+                false,
+                "A menu's name: the links modules and the app added with `App::nav`, grouped, for this user.",
+            ),
         ],
-        slots: &[DEFAULT_SLOT],
+        slots: &[Slot {
+            optional: true,
+            doc: "Links written by hand, after the menu's.",
+            ..DEFAULT_SLOT
+        }],
         events: &[],
         route_prop: None,
         attrs: false,

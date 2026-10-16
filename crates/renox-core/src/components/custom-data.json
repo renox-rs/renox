@@ -3680,7 +3680,13 @@
       "name": "rx-navbar"
     },
     {
-      "attributes": [],
+      "attributes": [
+        {
+          "description": "A menu's name: the links modules and the app added with `App::nav`, for this user.",
+          "name": "menu",
+          "values": []
+        }
+      ],
       "description": "The navbar's links, kept together (a row that scrolls on phones).",
       "name": "rx-nav-links"
     },
@@ -3778,6 +3784,11 @@
               "name": "false"
             }
           ]
+        },
+        {
+          "description": "A menu's name: the links modules and the app added with `App::nav`, grouped, for this user.",
+          "name": "menu",
+          "values": []
         }
       ],
       "description": "Navigation down the side, for back offices.",

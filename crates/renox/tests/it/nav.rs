@@ -118,6 +118,42 @@ async fn nav_lists_the_menu_in_templates_and_builds_it_only_when_named() {
 }
 
 #[renox::test]
+async fn rx_sidebar_and_rx_nav_links_draw_a_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).unwrap();
+    write(
+        "invoices.html",
+        "<rx-sidebar brand=\"Shop\" menu=\"staff\"><rx-sidebar-link href=\"/by-hand\" label=\"By hand\"/></rx-sidebar>\
+         <rx-nav-links menu=\"staff\"></rx-nav-links>",
+    );
+    write("plain.html", "plain page");
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Pages)
+            .nav(
+                "staff",
+                NavLink::route("invoices.index", "Invoices")
+                    .group("Billing")
+                    .icon("receipt"),
+            )
+            .nav("staff", NavLink::url("/docs", "Docs").key("docs")),
+        move |c| c.views_path = path,
+    )
+    .await;
+    app.get("/invoices")
+        .await
+        .assert_ok()
+        .assert_see(r#"<p class="rx-sidebar__section">Billing</p>"#)
+        .assert_see(r#"<a class="rx-sidebar__link" href="/invoices" aria-current="page">"#)
+        .assert_see(r#"<a class="rx-sidebar__link" href="/docs"><span>Docs</span></a>"#)
+        .assert_see(r#"<a class="rx-sidebar__link" href="/by-hand">"#)
+        .assert_see(
+            r#"<a class="rx-navbar__link" href="/invoices" aria-current="page"><span>Invoices</span></a>"#,
+        );
+}
+
+#[renox::test]
 async fn the_same_key_in_two_menus_is_fine() {
     let app = App::with_config(Config::default())
         .nav("staff", NavLink::route("home", "Home"))

@@ -608,9 +608,14 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
 <div class="rx-navbar__search" id="{{ id }}">{{ caller() }}</div>
 {%- endmacro %}
 
-{#- The navigation bar's links, kept together (on phones, a row that scrolls). -#}
-{% macro nav_links() -%}
-<div class="rx-navbar__links">{{ caller() }}</div>
+{#- The navigation bar's links, kept together (on phones, a row that scrolls).
+    `menu`: the links modules and the app contributed to that menu
+    (`App::nav`), the ones the user may see; the content comes after them. -#}
+{% macro nav_links(menu=none) -%}
+<div class="rx-navbar__links">
+  {%- if menu %}{% for group in nav(menu) %}{% for item in group["items"] %}{{ nav_link(item.url, item.label, active=item.active, badge=item.badge) }}{% endfor %}{% endfor %}{% endif -%}
+  {%- if caller is defined %}{{ caller() }}{% endif -%}
+</div>
 {%- endmacro %}
 
 {#- One link of a `navbar` or `sidebar`; `active` (e.g. `route_is('orders.*')`)
@@ -624,12 +629,20 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
     width="full", skip=false)` for the account menu and `<main
     class="rx-shell__content" id="main">`. On phones it becomes a bar on top
     whose links scroll sideways. The brand takes `logo` and `mark` as in
-    `navbar` (`mark` on by default). -#}
-{% macro sidebar(brand, href="/", logo=none, mark=true, label=none, skip=true) -%}
+    `navbar` (`mark` on by default). `menu`: the links modules and the app
+    contributed to that menu (`App::nav`), grouped and filtered for the user;
+    hand-written links in the content come after them. -#}
+{% macro sidebar(brand, href="/", logo=none, mark=true, label=none, skip=true, menu=none) -%}
 {%- if skip %}<a class="rx-skip" href="#main">{{ t('ui.skip') }}</a>{% endif %}
 <nav class="rx-sidebar" aria-label="{{ label or t('ui.main_navigation') }}">
   {%- if brand %}<a class="rx-sidebar__brand" href="{{ href }}">{{ _brand_mark(brand, logo, mark) }}<span>{{ brand }}</span></a>{% endif %}
-  <div class="rx-sidebar__links">{{ caller() }}</div>
+  <div class="rx-sidebar__links">
+    {%- if menu %}{% for group in nav(menu) %}
+    {%- if group.label %}{{ sidebar_section(group.label) }}{% endif %}
+    {%- for item in group["items"] %}{{ sidebar_link(item.url, item.label, active=item.active, badge=item.badge, icon=item.icon) }}{% endfor %}
+    {%- endfor %}{% endif -%}
+    {%- if caller is defined %}{{ caller() }}{% endif -%}
+  </div>
 </nav>
 {%- endmacro %}
 
