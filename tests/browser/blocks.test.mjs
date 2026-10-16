@@ -659,6 +659,44 @@ describe('renox-blocks', () => {
       page.assertClean({ allow: [/422/] });
     }));
 
+  test('right-to-left: the gallery keys, arrows and slide direction follow the text, and the keypad stays left to right', () =>
+    browser.with(async (page) => {
+      await page.goto(`${app.url}${PAGE}`);
+      await page.waitFor(() => !!document.querySelector('#demo-gallery[data-rx-blocks-ready]'));
+      await page.eval(() => {
+        document.documentElement.dir = 'rtl';
+      });
+      const index = () => page.eval(() => document.querySelector('#demo-gallery').dataset.rxGalleryIndex);
+      await page.focus('#demo-gallery [data-rx-gallery-viewport]');
+      await page.press('Home');
+      // In right-to-left text the next photo is to the left.
+      await page.press('ArrowLeft');
+      assert.equal(await index(), '1');
+      await page.press('ArrowRight');
+      assert.equal(await index(), '0');
+      await page.press('ArrowLeft');
+      await page.waitFor(() => {
+        const width = document.querySelector('[data-rx-gallery-viewport]').clientWidth;
+        return document.querySelector('[data-rx-gallery-track]').style.transform === `translateX(${width}px)`;
+      });
+      const sides = await page.eval(() => {
+        const mid = (selector) => {
+          const r = document.querySelector(selector).getBoundingClientRect();
+          return r.left + r.width / 2;
+        };
+        const stage = document.querySelector('#demo-gallery .rx-gallery__stage');
+        const r = stage.getBoundingClientRect();
+        return { prev: mid('#demo-gallery [data-rx-gallery-prev]'), next: mid('#demo-gallery [data-rx-gallery-next]'), centre: r.left + r.width / 2 };
+      });
+      assert.ok(sides.prev > sides.centre && sides.next < sides.centre, `the arrows swap sides: ${JSON.stringify(sides)}`);
+      const keypad = await page.eval(() => {
+        const key = (k) => document.querySelector(`.rx-keypad [data-rx-keypad-key="${k}"]`).getBoundingClientRect().left;
+        return { one: key('1'), three: key('3') };
+      });
+      assert.ok(keypad.one < keypad.three, `the keypad keeps 1-2-3 from the left: ${JSON.stringify(keypad)}`);
+      page.assertClean();
+    }));
+
   test('kanban on a phone: the columns scroll, a card moves by keyboard', () =>
     browser.with(async (page) => {
       await page.goto(`${app.url}${PAGE}`);

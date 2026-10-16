@@ -5,6 +5,10 @@
 var kit = window.Renox._kit;
 
 // ---------- Charts (chart(…)) ----------
+//
+// Charts are left to right in every language: the CSS makes `.rx-chart__frame` an
+// LTR isolate, so the physical coordinates below (`left`, `rect.left`,
+// `point.left`) are right in right-to-left pages too.
 
 // A crosshair and one tooltip for every series at the nearest label (line,
 // area), or per band (bar) and slice (pie); arrow keys move it too.

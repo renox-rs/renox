@@ -644,6 +644,11 @@
 .rx-select:dir(rtl), .rx-combobox__box.rx-tags:dir(rtl) { background-position: left 14px center; }
 [dir="rtl"] .rx-select, [dir="rtl"] .rx-combobox__box.rx-tags { background-position: left 14px center; }
 .rx-input::placeholder, .rx-textarea::placeholder { color: var(--rx-tertiary-label); }
+/* Phone numbers, e-mail addresses and URLs are left-to-right whatever the page's
+   language; in a right-to-left page they sit against the end (right) edge. */
+.rx-input[type="tel"], .rx-input[type="email"], .rx-input[type="url"] { direction: ltr; }
+:dir(rtl) .rx-input[type="tel"], :dir(rtl) .rx-input[type="email"], :dir(rtl) .rx-input[type="url"] { text-align: end; }
+[dir="rtl"] .rx-input[type="tel"], [dir="rtl"] .rx-input[type="email"], [dir="rtl"] .rx-input[type="url"] { text-align: end; }
 .rx-input:hover, .rx-select:hover, .rx-textarea:hover { border-color: var(--rx-tertiary-label); }
 .rx-input:focus-visible, .rx-select:focus-visible, .rx-textarea:focus-visible {
   outline: none;
@@ -1196,7 +1201,11 @@
 .rx-chart__key--dot { width: 10px; height: 10px; border-radius: 50%; }
 .rx-chart__axis-title { margin: 0; font-size: 11px; line-height: 1.3; color: var(--rx-secondary-label); }
 .rx-chart__axis-title--x { text-align: center; margin-top: calc(-1 * var(--rx-space-2)); }
-.rx-chart__frame { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: var(--rx-chart-h, 240px) auto; column-gap: var(--rx-space-2); }
+/* Charts are drawn left to right in every language: the x axis runs with time
+   and the series' order, and the plot is positioned in physical coordinates (here
+   and in renox-ui-chart.js), so the frame is an LTR isolate. Legend and titles
+   follow the page's direction. */
+.rx-chart__frame { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: var(--rx-chart-h, 240px) auto; column-gap: var(--rx-space-2); direction: ltr; unicode-bidi: isolate; }
 .rx-chart__y { position: relative; min-width: 2rem; font-size: 11px; color: var(--rx-secondary-label); font-variant-numeric: tabular-nums; }
 .rx-chart__y span { position: absolute; right: 0; transform: translateY(50%); white-space: nowrap; line-height: 1; }
 .rx-chart__plot { position: relative; min-width: 0; border-radius: 2px; touch-action: pan-y; }
