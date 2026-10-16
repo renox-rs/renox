@@ -52,6 +52,10 @@ pub struct AppStateInner {
     pub db: Db,
     /// Sends mail (`MAIL_MAILER`).
     pub mailer: Mailer,
+    /// Limits on queued deliveries per channel (`App::channel_rate_limit`).
+    pub(crate) channel_limits: Arc<std::collections::HashMap<String, crate::queue::Limit>>,
+    /// Limits on queued mail per mailer (`App::mailer_rate_limit`).
+    pub(crate) mailer_limits: Arc<std::collections::HashMap<String, crate::queue::Limit>>,
     /// The app's other mailers (`App::mailer`), by name.
     pub(crate) mailers: Arc<std::collections::HashMap<String, Mailer>>,
     /// Dispatches jobs.

@@ -123,7 +123,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   for kiosks and a mobile app (device tokens for kiosks, token abilities, `throttle_by`, CORS, `Ulid` codes); the
   kit's dashboard, charts, wizard, action sheets, repeater, infolists; renox-blocks for what the
   kit lacks (gallery, range slider, quantity, keypad, kanban, month calendar, availability,
-  date-time range, swatches, history, plan comparison; the closed-days date picker is still
+  week calendar, status stepper, date-time range, swatches, history, plan comparison; the closed-days date picker is still
   the shop's own in resources/views/blocks/), Motion (motion.dev, vendored) on `transform`; English and Spanish;
   `CSP=strict`; `App::report`; `make:deploy` files; tests in Rust (SQLite and PostgreSQL),
   in headless Chrome (tests/browser/bikeshop-*.test.mjs) and as a process.
@@ -277,7 +277,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/blocks.md](docs/blocks.md): the renox-blocks crate (`Blocks::new()`, macros from
   `renox-blocks/blocks.html`): `quantity`, `range_slider`, `keypad`, `swatches`,
   `datetime_range` (plain fields for `Valid<T>`), `gallery`, `history`, `compare_plans`,
-  `month_calendar`, `availability`, `kanban` (+ `kanban_card`, htmx POST per move,
+  `month_calendar`, `availability`, `week_calendar` (resources against a week, hx-post from a
+  free slot, grid keys), `status_stepper` (a record's statuses), `kanban` (+ `kanban_card`, htmx POST per move,
   `rx:kanban-moved`); each block's options, keyboard use, translations (`renox_blocks::TEXTS`,
   `blocks.*` keys), how the files load.
 - [docs/grid.md](docs/grid.md): data grids (`renox::grid` + `renox/grid.html`): columns and their
@@ -293,7 +294,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   responses, middleware and guards, rate limits, sessions, CSRF, cookies, signed URLs,
   maintenance mode.
 - [docs/mail.md](docs/mail.md): mail (drivers, views, attachments, queued mail, the preview) and
-  notifications (mail, database, custom channels, `DatabaseMessage`, the in-app inbox and the
+  notifications (mail, database, custom channels with `App::channel_rate_limit`, queued mail
+  caps with `App::mailer_rate_limit`, `DatabaseMessage`, the in-app inbox and the
   kit's live notification bell (`Auth::new().notifications()`, Server-Sent Events), pruning,
   testing), and the app's own live events over that stream (`state.broadcast`,
   `broadcast_to`, `event_stream()`, and their limits).
@@ -360,7 +362,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `OAuth` module (`lib.rs`: the buttons' `oauth_providers`, the account card, events to the
   audit log), the routes (`handlers.rs`: redirect with `state` + PKCE, callback, unlink;
   linking by verified email), the `Provider` trait with `Profile`, `Token`, `Credentials`
-  (`provider.rs`), `google.rs`, `github.rs`, `OAuthAccount` (`model.rs`, `oauth_accounts`).
+  (`provider.rs`, with `Refused` and `Provider::with_config`), `google.rs` (`hosted_domain`),
+  `github.rs`, `microsoft.rs` (tenant-checked ID token, no JWT crate), `OAuth::allow_domains`,
+  `OAuthRefused`, `OAuthAccount` (`model.rs`, `oauth_accounts`).
   Logs in through `renox::auth::sign_in` / `register_verified` / `confirm_identity`
   (renox-core `auth/external.rs`). Guide: [docs/oauth.md](docs/oauth.md); used in
   examples/bikeshop.

@@ -1588,6 +1588,9 @@ Notes from M34:
   `confirm_identity`, `User::has_password` (passwordless users: an empty `password`; the
   account page lets them set one and confirms them another way), and the login pages'
   `renox/auth/login_options.html`; used in examples/teams
+- [x] `renox-oauth` company sign-in: #51, docs/oauth.md; `Microsoft` (`tenant`, `MICROSOFT_TENANT`),
+  `Google::hosted_domain`, `OAuth::allow_domains`, `Refused` from `Provider::profile`,
+  `Provider::with_config`, the `OAuthRefused` event (`oauth.refused`)
 - [x] `renox-admin` (resource tables and forms): #148, docs/admin.md;
   `Admin::new().path(…).title(…).authorize(…)/gate(…).resource(…)`, the `AdminResource`
   trait (`Model`, `Form`, `label`, `plural_label`, `slug`, `navigation_group`,
@@ -1889,6 +1892,11 @@ Notes:
 
 ## Decisions
 
+- **Rate limits for queued channel and mail sends are separate methods** (#46):
+  `App::channel_rate_limit(name, …)` and `App::mailer_rate_limit(name, …)`, not a builder
+  returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in
+  the job payload because `Job::middleware` has no `AppState`; it reuses
+  `Middleware::rate_limited` (a fixed window). A sliding window or token bucket stays a follow-up.
 - **The upload pipeline** (#43): steps are `Arc<dyn UploadStep>` returning `BoxFuture` (no
   `async_trait`). `Valid<T>` runs them after the rules and `after`, then reads the form again with
   the changed files, so a handler sees the processed upload. Encrypted files use
@@ -2059,6 +2067,21 @@ Notes:
   is the same and only what scrolls changes, so the phone layout, the theme and the sidebar
   stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
   rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
+- **Display blocks: status stepper and week calendar** (#55, part 3 of #32): `status_stepper` and
+  `week_calendar` in renox-blocks, with tags `<rx-status-stepper>` and `<rx-week-calendar>`. The
+  stepper is CSS only; its terminal steps are alternative endings that never count as done unless
+  current. The week calendar's layout (cells, lanes for overlapping events, free slots, RFC 3339
+  times for a slot) is worked out in Rust (`renox_week_grid`, a template function), not in the
+  template, and reads times through the `date` filter, so it follows `APP_TIMEZONE`: there is
+  no per-request time zone in Renox. A free slot posts with `hx-post` and a static `hx-vals`
+  JSON, not `hx-vals='js:…'` (CSP strict). Drag-to-reschedule stays out of scope.
+
+- **Company sign-in in `renox-oauth`** (#51): the ID token of `Microsoft` is read from the token
+  endpoint's answer and its signature is not verified (OpenID Connect Core §3.1.3.7: received
+  directly over TLS), so no JWT/RSA crate is added; `iss`, `aud`, `exp` and `tid` are checked.
+  Personal Microsoft accounts are always refused, and the email is verified only for a specific
+  tenant. Group/role mapping, SAML and a per-installation resolver for the settings (as in #44)
+  are follow-ups.
 
 ## Not planned
 

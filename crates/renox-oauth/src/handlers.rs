@@ -11,8 +11,8 @@ use renox::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::events::{AccountLinked, AccountUnlinked, LoggedInWith};
-use crate::{OAuthAccount, Profile, Provider, Providers, TokenRequest};
+use crate::events::{AccountLinked, AccountUnlinked, LoggedInWith, OAuthRefused};
+use crate::{OAuthAccount, Profile, Provider, Providers, Refused, TokenRequest};
 
 /// Where the started sign-in waits in the session.
 const STARTED: &str = "_oauth";
@@ -241,6 +241,10 @@ async fn callback(
     let profile = match fetch_profile(&state, provider.clone(), request).await {
         Ok(profile) => profile,
         Err(err) => {
+            if let Some(refused) = refusal(&err) {
+                let (reason, message) = (refused.reason(), refused.message());
+                return refuse(&state, back, &name, reason, message, None).await;
+            }
             // For the app's operators; the visitor only sees "try again".
             tracing::warn!(provider = %name, error = ?err, "a social login failed");
             return Ok(fail(
@@ -249,6 +253,12 @@ async fn callback(
             ));
         }
     };
+    if !providers.allows(profile.verified_email()) {
+        let domains = providers.domains().join(", ");
+        let message = format!("Only accounts of {domains} can sign in here.");
+        let email = profile.email.clone();
+        return refuse(&state, back, &name, "domain", &message, email).await;
+    }
     match (started.intent, user) {
         (Intent::Login, None) => {
             log_in(
@@ -269,6 +279,34 @@ async fn callback(
         // `user_id` matched above, so the intent fits who is logged in.
         _ => Ok(fail(back, "Try again.")),
     }
+}
+
+/// The refusal a provider's `profile` returned, if that is what failed.
+fn refusal(err: &Error) -> Option<&Refused> {
+    match err {
+        Error::Internal(err) => err.downcast_ref::<Refused>(),
+        _ => None,
+    }
+}
+
+/// Turns the account away: logged for the operators, announced (so the
+/// activity log has it), and the visitor is told why.
+async fn refuse(
+    state: &AppState,
+    back: String,
+    provider: &str,
+    reason: &str,
+    message: &str,
+    email: Option<String>,
+) -> Result<Response> {
+    tracing::warn!(provider = %provider, reason = %reason, "a social login was refused");
+    let event = OAuthRefused {
+        provider: provider.to_owned(),
+        reason: reason.to_owned(),
+        email,
+    };
+    state.emit(event).await?;
+    Ok(fail(back, message))
 }
 
 /// Exchanges the code and reads the profile.

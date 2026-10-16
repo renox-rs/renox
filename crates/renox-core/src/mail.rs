@@ -573,14 +573,25 @@ fn message(from: &Mailbox, mail: &Mail) -> Result<Message> {
 
 /// Sends a mail from the queue; see `AppState::queue_mail`.
 #[derive(Serialize, Deserialize)]
-pub(crate) struct SendMail(pub Mail);
+pub(crate) struct SendMail {
+    // Flattened, so mail queued before limits existed still decodes.
+    #[serde(flatten)]
+    mail: Mail,
+    /// `App::mailer_rate_limit("default", …)` when this was queued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    limit: Option<crate::queue::Limit>,
+}
 
 impl Job for SendMail {
     const NAME: &'static str = "renox.send-mail";
     const MAX_ATTEMPTS: u32 = 5;
 
+    fn middleware(&self) -> Vec<crate::queue::Middleware> {
+        crate::queue::Limit::middleware(self.limit, "mailer:default".to_owned())
+    }
+
     async fn handle(self, ctx: JobContext) -> Result {
-        ctx.state.mailer.send(self.0).await
+        ctx.state.mailer.send(self.mail).await
     }
 }
 
@@ -590,11 +601,18 @@ impl Job for SendMail {
 pub(crate) struct SendMailVia {
     pub mailer: String,
     pub mail: Mail,
+    /// `App::mailer_rate_limit` when this was queued.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<crate::queue::Limit>,
 }
 
 impl Job for SendMailVia {
     const NAME: &'static str = "renox.send-mail-via";
     const MAX_ATTEMPTS: u32 = 5;
+
+    fn middleware(&self) -> Vec<crate::queue::Middleware> {
+        crate::queue::Limit::middleware(self.limit, format!("mailer:{}", self.mailer))
+    }
 
     async fn handle(self, ctx: JobContext) -> Result {
         // A mailer removed since the mail was queued won't come back.
@@ -651,7 +669,11 @@ impl AppState {
 
     /// Sends `mail` from a queue worker, retrying up to five times.
     pub async fn queue_mail(&self, mail: Mail) -> Result<i64> {
-        self.dispatch(SendMail(mail)).await
+        self.dispatch(SendMail {
+            mail,
+            limit: self.mailer_limits.get("default").copied(),
+        })
+        .await
     }
 
     /// A mailer the app added with [`App::mailer`](crate::App::mailer), e.g.
@@ -670,6 +692,7 @@ impl AppState {
         self.dispatch(SendMailVia {
             mailer: mailer.to_owned(),
             mail,
+            limit: self.mailer_limits.get(mailer).copied(),
         })
         .await
     }

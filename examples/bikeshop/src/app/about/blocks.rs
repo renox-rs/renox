@@ -16,7 +16,10 @@
 //! - `GET /about/blocks/variant`: the price and stock of a variant, the
 //!   fragment the variant chips ask for with htmx;
 //! - `POST /about/blocks/kanban`: a card moved on the demo board (nothing is
-//!   saved: the answer only says whether the move is allowed).
+//!   saved: the answer only says whether the move is allowed);
+//! - `POST /about/blocks/week`: a free slot clicked on the week calendar
+//!   (`resource`, `start` and `end` as RFC 3339 times; nothing is saved, the
+//!   answer is a toast).
 
 use crate::explain::NotAPage;
 use renox::chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
@@ -35,6 +38,8 @@ pub fn routes() -> Routes {
         .name("about.blocks.variant")
         .post("/about/blocks/kanban", move_card)
         .name("about.blocks.move")
+        .post("/about/blocks/week", book_slot)
+        .name("about.blocks.week")
 }
 
 /// The GET routes here that aren't pages.
@@ -155,6 +160,101 @@ fn board() -> Vec<renox::minijinja::Value> {
         .collect()
 }
 
+/// The workshop's bays, as `week_calendar` takes its resources.
+const BAYS: [(&str, &str, &str); 3] = [
+    ("bay-1", "Bay 1", "Stand"),
+    ("bay-2", "Bay 2", "Stand"),
+    ("bay-3", "Paint booth", "Frames"),
+];
+
+/// A job's statuses, as `status_stepper` takes its steps: the ending is
+/// `terminal`.
+fn steps() -> Vec<renox::minijinja::Value> {
+    vec![
+        context! { key => "received", label => "Received" },
+        context! { key => "quoted", label => "Quoted" },
+        context! { key => "working", label => "In the stand", tone => "info" },
+        context! { key => "ready", label => "Ready for pickup", tone => "success" },
+        context! { key => "collected", label => "Collected", tone => "success", terminal => true },
+    ]
+}
+
+/// The statuses of a job that ended another way: the steps it went through,
+/// then its own ending.
+fn abandoned_steps() -> Vec<renox::minijinja::Value> {
+    vec![
+        context! { key => "received", label => "Received" },
+        context! { key => "quoted", label => "Quoted" },
+        context! { key => "working", label => "In the stand", tone => "info" },
+        context! { key => "abandoned", label => "Abandoned", tone => "error", terminal => true },
+    ]
+}
+
+/// The demo week's bookings, from `monday` (the shop's date this week), as
+/// RFC 3339 times in `APP_TIMEZONE`. Two overlap on Wednesday, and one
+/// crosses midnight.
+fn bookings(config: &renox::Config, monday: NaiveDate) -> Vec<renox::minijinja::Value> {
+    let at = |day: i64, hour: u32, minute: u32| -> String {
+        let local = (monday + Duration::days(day))
+            .and_hms_opt(hour, minute, 0)
+            .unwrap_or_default();
+        let unix = config
+            .timezone
+            .resolve(local)
+            .unwrap_or_else(|| local.and_utc().timestamp());
+        renox::chrono::DateTime::from_timestamp(unix, 0)
+            .unwrap_or_default()
+            .to_rfc3339()
+    };
+    let job = |resource: &str, from: String, to: String, label: &str, tone: Option<&str>| {
+        context! { resource, start => from, end => to, label, tone }
+    };
+    vec![
+        job(
+            "bay-1",
+            at(0, 9, 0),
+            at(0, 10, 30),
+            "Tune-up · Ana R.",
+            Some("info"),
+        ),
+        job(
+            "bay-1",
+            at(1, 13, 0),
+            at(1, 15, 0),
+            "Brake bleed · Budi S.",
+            None,
+        ),
+        job(
+            "bay-1",
+            at(2, 10, 0),
+            at(2, 12, 0),
+            "Full service · Carla M.",
+            Some("success"),
+        ),
+        job(
+            "bay-1",
+            at(2, 11, 0),
+            at(2, 13, 0),
+            "Fork seals · Dewi K.",
+            Some("warning"),
+        ),
+        job(
+            "bay-2",
+            at(3, 8, 0),
+            at(3, 17, 0),
+            "Wheel build · Eko P.",
+            Some("info"),
+        ),
+        job(
+            "bay-3",
+            at(0, 14, 0),
+            at(1, 10, 0),
+            "Frame paint, curing overnight",
+            Some("success"),
+        ),
+    ]
+}
+
 /// `?month=2026-10` (the calendar), `?price_min=…&price_max=…` (the price
 /// filter) and `?slot=…` (a free slot of the availability timeline).
 #[derive(Debug, Default, Deserialize)]
@@ -250,6 +350,13 @@ async fn page(State(state): State<AppState>, Query(query): Query<PageQuery>) -> 
         context! { time => at(16, 2), title => "Ready for pickup", body => "A text message went to the customer.", kind => "info" },
     ];
 
+    let monday = today - Duration::days(i64::from(today.weekday().num_days_from_monday()));
+    let bays: Vec<_> = BAYS
+        .iter()
+        .map(|(id, label, note)| context! { id, label, note })
+        .collect();
+    let bookings = bookings(&state.config, monday);
+
     let photo = |file: &str, alt: &str, caption: Option<&str>| {
         context! { src => format!("/blocks/demo/{file}.svg"), alt, caption }
     };
@@ -324,6 +431,11 @@ async fn page(State(state): State<AppState>, Query(query): Query<PageQuery>) -> 
             events,
             hours,
             rows,
+            bays,
+            bookings,
+            week_start => monday.to_string(),
+            steps => steps(),
+            abandoned_steps => abandoned_steps(),
             timeline,
             photos,
             plans,
@@ -428,6 +540,60 @@ async fn variant(Query(query): Query<VariantQuery>) -> View {
     let colour = query.colour.unwrap_or_else(|| "teal".into());
     let (price, stock) = variant_of(&size, &colour);
     view("about/_variant.html", context! { price, stock })
+}
+
+/// A free slot of the week calendar, as the slot's `hx-post` sends it.
+#[derive(Debug, Deserialize)]
+pub struct SlotForm {
+    /// The bay's id.
+    pub resource: Option<String>,
+    /// The slot's start, RFC 3339 with the zone's offset.
+    pub start: Option<renox::chrono::DateTime<renox::chrono::Utc>>,
+    /// The slot's end.
+    pub end: Option<renox::chrono::DateTime<renox::chrono::Utc>>,
+}
+
+impl Validate for SlotForm {
+    fn rules(&self, v: &mut Validator) {
+        let ids: Vec<&str> = BAYS.iter().map(|b| b.0).collect();
+        v.field("resource", &self.resource).required().one_of(&ids);
+        v.field("start", &self.start).required();
+        v.field("end", &self.end)
+            .required()
+            .gt("start", &self.start);
+    }
+}
+
+/// A clicked slot: the calendar posts `resource`, `start` and `end` with
+/// `hx-post` and static `hx-vals`, and this handler checks them like any form
+/// (a real shop would also check the bay is free, and save). The answer is a
+/// toast on a `204`: nothing to swap.
+async fn book_slot(
+    State(state): State<AppState>,
+    lang: Lang,
+    Valid(slot): Valid<SlotForm>,
+) -> (Toast, StatusCode) {
+    let bay = BAYS
+        .iter()
+        .find(|b| Some(b.0) == slot.resource.as_deref())
+        .map_or("", |b| b.1);
+    let shown = |t: Option<renox::chrono::DateTime<renox::chrono::Utc>>| {
+        // Shown in the shop's time zone, as the calendar shows them.
+        t.map(|t| {
+            let local = state.config.timezone.local(t.timestamp());
+            local.format("%a %H:%M").to_string()
+        })
+        .unwrap_or_default()
+    };
+    let message = lang.t(
+        "blocks.page.week_booked",
+        &[
+            ("resource", &bay.to_owned()),
+            ("from", &shown(slot.start)),
+            ("to", &shown(slot.end)),
+        ],
+    );
+    (Toast::success(message), StatusCode::NO_CONTENT)
 }
 
 /// A card moved on the demo board.
