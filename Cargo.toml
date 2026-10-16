@@ -28,6 +28,7 @@ renox-blocks = { path = "crates/renox-blocks", version = "=1.1.1" }
 renox-admin = { path = "crates/renox-admin", version = "=1.1.1" }
 renox-oauth = { path = "crates/renox-oauth", version = "=1.1.1" }
 renox-billing = { path = "crates/renox-billing", version = "=1.1.1" }
+renox-pdf = { path = "crates/renox-pdf", version = "=1.1.1" }
 
 # Password hashing (Argon2) is deliberately slow, and far slower unoptimised:
 # every login, registration and auth test paid for it. Optimise just these
