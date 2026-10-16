@@ -1,8 +1,10 @@
 use std::sync::LazyLock;
 
 use axum::Router;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
 use crate::AppState;
@@ -335,6 +337,7 @@ pub(crate) fn router() -> Router<AppState> {
         router = router.route(url, get(move || async move { js(body) }));
     }
     router
+        .route("/_renox/theme/{file}", get(theme))
         .route(
             ui_css,
             get(|| async { asset("text/css; charset=utf-8", UI_CSS) }),
@@ -352,6 +355,25 @@ pub(crate) fn router() -> Router<AppState> {
         .route(alpine, get(|| async { js(ALPINE) }))
         .route(renox, get(|| async { js(RENOX) }))
         .route(alpine_csp, get(|| async { js(ALPINE_CSP) }))
+}
+
+/// `/_renox/theme/{hash}.css`: a brand theme the app handed out. The hash is
+/// in the URL, so the answer never changes.
+async fn theme(State(state): State<AppState>, Path(file): Path<String>) -> Response {
+    match file
+        .strip_suffix(".css")
+        .and_then(|hash| state.themes.css(hash))
+    {
+        Some(css) => (
+            [
+                (CONTENT_TYPE, "text/css; charset=utf-8"),
+                (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            css.to_string(),
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// The files modules serve (`Registry::asset`), cached like Renox's own.

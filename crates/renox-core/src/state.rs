@@ -58,6 +58,8 @@ pub struct AppStateInner {
     pub(crate) mailer_limits: Arc<std::collections::HashMap<String, crate::queue::Limit>>,
     /// The app's other mailers (`App::mailer`), by name.
     pub(crate) mailers: Arc<std::collections::HashMap<String, Mailer>>,
+    /// The themes the app can serve at `/_renox/theme/{hash}.css`.
+    pub(crate) themes: crate::theme::ThemeRegistry,
     /// Dispatches jobs.
     pub queue: Queue,
     /// The cache (`CACHE_STORE`).

@@ -7,8 +7,9 @@
 //! from one or two brand colours and refuse colours that cannot reach readable
 //! contrast. No I/O.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use sha2::{Digest, Sha256};
 
@@ -310,6 +311,50 @@ impl Theme {
     }
 }
 
+/// Every theme the app can serve, by content hash.
+///
+/// Filled when the app sets a theme and when a per-request chooser returns
+/// one, so `/_renox/theme/{hash}.css` can answer any hash a page was given.
+/// Cloning shares the map.
+#[derive(Clone, Default)]
+pub(crate) struct ThemeRegistry(Arc<RwLock<HashMap<String, Arc<str>>>>);
+
+impl ThemeRegistry {
+    /// Remembers `theme`'s stylesheet under its hash and returns its URL.
+    /// A theme already known is not copied again.
+    #[allow(dead_code)] // used by `App::theme` (next step of #36)
+    pub(crate) fn register(&self, theme: &Theme) -> String {
+        let known = self
+            .0
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .contains_key(theme.hash());
+        if !known {
+            self.0
+                .write()
+                .unwrap_or_else(PoisonError::into_inner)
+                .entry(theme.hash().to_owned())
+                .or_insert_with(|| theme.css().into());
+        }
+        theme_url(theme.hash())
+    }
+
+    /// The stylesheet registered under `hash`.
+    pub(crate) fn css(&self, hash: &str) -> Option<Arc<str>> {
+        self.0
+            .read()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(hash)
+            .cloned()
+    }
+}
+
+/// The URL of the stylesheet for a theme hash.
+#[allow(dead_code)] // used by `App::theme` (next step of #36)
+pub(crate) fn theme_url(hash: &str) -> String {
+    format!("/_renox/theme/{hash}.css")
+}
+
 fn sanitize_family(name: &str) -> Option<String> {
     let clean: String = name
         .chars()
@@ -345,6 +390,19 @@ fn hash_css(css: &str) -> String {
 #[cfg(test)]
 mod theme_tests {
     use super::*;
+
+    #[test]
+    fn registry_serves_what_it_handed_out() {
+        let registry = ThemeRegistry::default();
+        let theme = Theme::from_brand(&Brand::new("#1E3A5F")).unwrap();
+        let url = registry.register(&theme);
+        assert_eq!(url, format!("/_renox/theme/{}.css", theme.hash()));
+        assert_eq!(registry.register(&theme), url);
+        assert_eq!(&*registry.css(theme.hash()).unwrap(), theme.css());
+        assert!(registry.css("0000000000000000").is_none());
+        // A clone shares the map.
+        assert!(registry.clone().css(theme.hash()).is_some());
+    }
 
     fn rgb(t: &BTreeMap<&'static str, String>, k: &str) -> Rgb {
         Rgb::parse_hex(&t[k]).unwrap_or_else(|| panic!("{k} is not a hex colour: {}", t[k]))
