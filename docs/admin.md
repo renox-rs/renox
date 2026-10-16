@@ -18,7 +18,7 @@ panel authorized by permission, with a column of its own and the Markdown editor
 - filters, actions (also ones that ask for input), soft deletes and the trash, exports;
 - what runs after a save, child rows managed from a record (relation managers), and resources
   that are only edited;
-- the view page, the routes, words in another language, and adding to or replacing the panel's
+- settings pages, the view page, the routes, words in another language, and adding to or replacing the panel's
   pages;
 - how it maps to Laravel's Filament.
 
@@ -644,6 +644,61 @@ fn entries() -> Vec<Entry> {
 The formats are the kit's `entry` formats: `date`, `datetime`, `since`, `money`, `number`,
 `bool`, `color`, `image` and `markdown`. Return no entries for a resource without a view page:
 its rows open the edit page instead.
+
+## Settings pages
+
+A form for a group of [settings kept in the database](settings.md) (a company's name, a gateway's
+keys) is not a resource: there is one record, with no list. `Admin::settings::<T>(label)` adds a
+page for the group `T`, under a "Settings" heading of the navigation. `T` says which fields the
+form has and who may change it:
+
+```rust
+use renox::prelude::*;
+use renox::settings::{Settings, SettingsGroup};
+use renox_admin::{Admin, AdminSettings, Field};
+
+#[derive(serde::Serialize, serde::Deserialize, Validate, Default, Clone)]
+struct Company {
+    #[validate(required, max(120))]
+    name: String,
+    tax_number: Option<String>,
+}
+
+impl SettingsGroup for Company {
+    const KEY: &'static str = "company";
+}
+
+impl AdminSettings for Company {
+    fn fields() -> Vec<Field> {
+        vec![
+            Field::text("name", "Company name").required(),
+            // Shown, but its stored value is kept whatever is sent.
+            Field::text("tax_number", "Tax number").readonly_on_edit(),
+        ]
+    }
+
+    // "view" opens the page, "update" saves it; the panel's own gate comes first.
+    fn allows(user: &AuthUser, ability: &str) -> bool {
+        ability == "view" || user.has_role("owner")
+    }
+}
+
+fn app() -> App {
+    App::new()
+        .module(Auth::new())
+        .module(Settings) // the group's table; the page declares the group
+        .module(Admin::new().authorize(|user| user.has_role("staff")).settings::<Company>("Company"))
+}
+```
+
+The page is `GET /admin/settings/company` and `PUT` to the same path (routes
+`admin.settings.company.show` and `.update`). Saving runs the group's `#[validate]` rules (errors
+show under the fields, like a resource's form) and goes through `AppState::save_settings`, so it
+is audited and emits `SettingsChanged`. A user who may `view` but not `update` sees the form
+disabled without a button. A group marked `ENCRYPTED` never prints its values: its fields start
+empty with a note "Set, last changed …" (or "Not set yet."), and a field left empty keeps its
+stored value. The page is `renox-admin/settings.html`; the words are `renox.admin.sealed_set`
+and `renox.admin.sealed_unset`.
 
 ## Routes
 

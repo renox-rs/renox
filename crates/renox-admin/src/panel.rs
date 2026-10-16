@@ -15,6 +15,7 @@ use serde::Serialize;
 
 use crate::field::{FieldKind, plain_name};
 use crate::resource::{ActionInput, BoxFuture, SaveContext};
+use crate::settings::SettingsPage;
 use crate::texts::{Texts, lower};
 use crate::{AdminAction, AdminResource, Field};
 
@@ -36,6 +37,7 @@ pub(crate) struct Panel {
     pub(crate) title: String,
     pub(crate) access: Option<Access>,
     pub(crate) resources: Vec<Arc<dyn Listed>>,
+    pub(crate) settings: Vec<Arc<dyn SettingsPage>>,
 }
 
 impl Panel {
@@ -58,20 +60,35 @@ impl Panel {
         texts: &Texts,
     ) -> Frame {
         let mut nav: Vec<NavGroup> = Vec::new();
+        let mut add = |title: Option<String>, item: NavItem| match nav
+            .iter_mut()
+            .find(|group| group.title == title)
+        {
+            Some(group) => group.items.push(item),
+            None => nav.push(NavGroup {
+                title,
+                items: vec![item],
+            }),
+        };
         for resource in self.resources.iter().filter(|r| r.visible(user)) {
             let item = NavItem {
                 label: texts.label(resource.slug(), resource.plural()),
                 url: format!("{}/{}", self.path, resource.slug()),
                 active: current == Some(resource.slug()),
             };
-            let title = resource.group().map(|group| texts.label("nav", group));
-            match nav.iter_mut().find(|group| group.title == title) {
-                Some(group) => group.items.push(item),
-                None => nav.push(NavGroup {
-                    title,
-                    items: vec![item],
-                }),
-            }
+            add(
+                resource.group().map(|group| texts.label("nav", group)),
+                item,
+            );
+        }
+        // Settings pages share one group, after the resources' own.
+        for page in self.settings.iter().filter(|p| p.visible(user)) {
+            let item = NavItem {
+                label: texts.label("settings", page.label()),
+                url: format!("{}/settings/{}", self.path, page.key()),
+                active: current == Some(format!("settings/{}", page.key()).as_str()),
+            };
+            add(Some(texts.label("nav", "Settings")), item);
         }
         // Ungrouped resources first, then the groups in the order they appear.
         nav.sort_by_key(|group| group.title.is_some());
@@ -172,6 +189,9 @@ pub(crate) fn routes(panel: Arc<Panel>) -> Routes {
         .require_auth();
     for resource in &panel.resources {
         inner = inner.merge(resource.routes(panel.clone()));
+    }
+    for page in &panel.settings {
+        inner = inner.merge(page.routes(panel.clone()));
     }
     Routes::new().group(&panel.path, "admin.", inner)
 }
@@ -664,11 +684,40 @@ pub(crate) async fn form_fields<R: AdminResource>(
     texts: &Texts,
     hidden: &[&str],
 ) -> Result<Vec<FieldView>> {
+    fields_view(
+        resource.fields(),
+        state,
+        record,
+        texts,
+        resource.slug(),
+        hidden,
+    )
+    .await
+}
+
+/// The names of the money fields among `fields`.
+pub(crate) fn money_names(fields: &[Field]) -> Vec<String> {
+    fields
+        .iter()
+        .filter(|field| field.kind() == FieldKind::Money)
+        .map(|field| field.name().to_owned())
+        .collect()
+}
+
+/// `fields` as a form draws them (see [`form_fields`]); `slug` scopes the
+/// translations of their words.
+pub(crate) async fn fields_view(
+    fields: Vec<Field>,
+    state: &AppState,
+    record: Option<&Value>,
+    texts: &Texts,
+    slug: &str,
+    hidden: &[&str],
+) -> Result<Vec<FieldView>> {
     let (db, decimals) = (&state.db, money_decimals(state));
     let creating = record.is_none();
-    let slug = resource.slug();
     let mut views = Vec::new();
-    for mut field in resource.fields() {
+    for mut field in fields {
         if !field.shown(creating) || hidden.contains(&field.name()) {
             continue;
         }
