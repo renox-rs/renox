@@ -2,10 +2,471 @@
 //!
 //! This part holds the building blocks the theme derivation uses: sRGB and
 //! OKLCH conversion, hex parsing, the WCAG 2.x contrast ratio, mixing, and a
-//! lightness search that finds the nearest colour passing a check. It has no
-//! dependency and no I/O.
+//! lightness search that finds the nearest colour passing a check. On top of
+//! it, [`Brand`] and [`Theme`] derive the kit's accent tokens (light and dark)
+//! from one or two brand colours and refuse colours that cannot reach readable
+//! contrast. No I/O.
 
-#[allow(dead_code)] // used by the theme derivation added on top of this core
+use std::collections::BTreeMap;
+use std::fmt;
+
+use sha2::{Digest, Sha256};
+
+use self::color::{Oklch, Rgb, nearest_passing};
+
+/// The kit's light page background (`--rx-bg`), one of the colours text is checked on.
+const LIGHT_BG: Rgb = Rgb::new(0xf6, 0xf1, 0xe8);
+/// The kit's light card surface (`--rx-surface`).
+const LIGHT_SURFACE: Rgb = Rgb::new(0xff, 0xfd, 0xf9);
+/// The kit's dark page background.
+const DARK_BG: Rgb = Rgb::new(0x15, 0x14, 0x12);
+/// The kit's dark card surface.
+const DARK_SURFACE: Rgb = Rgb::new(0x1d, 0x1b, 0x18);
+const WHITE: Rgb = Rgb::new(255, 255, 255);
+const NEAR_BLACK: Rgb = Rgb::new(0x1f, 0x24, 0x21);
+/// Contrast for text (WCAG AA).
+const TEXT_RATIO: f64 = 4.5;
+/// Contrast for button labels and chart marks (WCAG AA for large text and graphics).
+const LARGE_RATIO: f64 = 3.0;
+/// How far (OKLCH lightness) a brand colour may move to become a readable
+/// text colour before the brand is refused. Dark mode may lighten further:
+/// a very dark brand colour (black, navy) is a normal choice there.
+const MAX_SHIFT: f64 = 0.3;
+const MAX_SHIFT_DARK: f64 = 0.7;
+
+/// A brand: one colour, an optional second one and an optional display font.
+///
+/// ```
+/// use renox::theme::{Brand, Theme};
+///
+/// let brand = Brand::new("#0F766E").second("#B8532E").display_font("Poppins");
+/// let theme = Theme::from_brand(&brand).unwrap();
+/// assert!(theme.css().contains("--rx-accent"));
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Brand {
+    color: String,
+    second: Option<String>,
+    display_font: Option<String>,
+}
+
+impl Brand {
+    /// A brand with this colour, `#rgb` or `#rrggbb`.
+    pub fn new(color: impl Into<String>) -> Self {
+        Self {
+            color: color.into(),
+            second: None,
+            display_font: None,
+        }
+    }
+
+    /// Sets the second brand colour (`--rx-accent-2`).
+    #[must_use]
+    pub fn second(mut self, color: impl Into<String>) -> Self {
+        self.second = Some(color.into());
+        self
+    }
+
+    /// Sets the display font family (`--rx-font-display`). The name is reduced
+    /// to letters, digits, spaces, `-` and `_`; the font itself is not loaded.
+    #[must_use]
+    pub fn display_font(mut self, family: impl Into<String>) -> Self {
+        self.display_font = Some(family.into());
+        self
+    }
+}
+
+/// What went wrong in [`Theme::from_brand`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ContrastErrorKind {
+    /// The text is not a `#rgb` / `#rrggbb` colour.
+    InvalidColor,
+    /// The colour cannot reach readable contrast.
+    LowContrast,
+}
+
+/// A brand colour that is malformed or cannot reach readable contrast.
+///
+/// For [`ContrastErrorKind::LowContrast`] the `suggestion` is the nearest
+/// colour that [`Theme::from_brand`] accepts, so a settings form can show it.
+///
+/// ```
+/// use renox::theme::{Brand, Theme};
+///
+/// let err = Theme::from_brand(&Brand::new("#FFF59D")).unwrap_err();
+/// assert!(Theme::from_brand(&Brand::new(err.suggestion.as_str())).is_ok());
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContrastError {
+    /// What went wrong.
+    pub kind: ContrastErrorKind,
+    /// The colour as given.
+    pub color: String,
+    /// The nearest passing colour as `#rrggbb`; empty for an invalid colour.
+    pub suggestion: String,
+}
+
+impl fmt::Display for ContrastError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.kind {
+            ContrastErrorKind::InvalidColor => {
+                write!(f, "`{}` is not a colour like #0f766e", self.color)
+            }
+            ContrastErrorKind::LowContrast => write!(
+                f,
+                "`{}` cannot reach readable contrast; try {}",
+                self.color, self.suggestion
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ContrastError {}
+
+/// The accent tokens of a brand for one colour scheme.
+#[derive(Debug, Clone)]
+struct Scheme {
+    accent: Rgb,
+    hover: Rgb,
+    pressed: Rgb,
+    text: Rgb,
+    on_accent: Rgb,
+    soft: Rgb,
+    focus: String,
+    chart: Rgb,
+    second: Option<(Rgb, Rgb)>,
+}
+
+impl Scheme {
+    /// Derives the tokens for `brand` on `bg`/`surface`; `None` when no text
+    /// colour within [`MAX_SHIFT`] (or [`MAX_SHIFT_DARK`]) reaches [`TEXT_RATIO`].
+    fn derive(brand: Rgb, second: Option<Rgb>, bg: Rgb, surface: Rgb, dark: bool) -> Option<Self> {
+        let shift = if dark { MAX_SHIFT_DARK } else { MAX_SHIFT };
+        let readable = |c: Rgb| c.contrast(bg) >= TEXT_RATIO && c.contrast(surface) >= TEXT_RATIO;
+        let text = nearest_passing(brand, shift, readable)?;
+        let second = match second {
+            Some(c) => Some((c, nearest_passing(c, shift, readable)?)),
+            None => None,
+        };
+        let (white, black) = (brand.contrast(WHITE), brand.contrast(NEAR_BLACK));
+        let on_accent = if white >= TEXT_RATIO || white >= black {
+            WHITE
+        } else {
+            NEAR_BLACK
+        };
+        if brand.contrast(on_accent) < LARGE_RATIO {
+            return None;
+        }
+        // Hover and pressed move so the label keeps (or gains) contrast.
+        let step = |by: f64| {
+            let o = brand.to_oklch();
+            let l = if on_accent == WHITE {
+                o.l - by
+            } else {
+                o.l + by
+            };
+            Oklch { l, ..o }.to_rgb()
+        };
+        let chart =
+            nearest_passing(brand, shift, |c| c.contrast(surface) >= LARGE_RATIO).unwrap_or(brand);
+        let soft = surface.mix(brand, if dark { 0.22 } else { 0.14 });
+        let (focus_base, alpha) = if dark { (text, 0.45) } else { (brand, 0.35) };
+        Some(Self {
+            accent: brand,
+            hover: step(0.03),
+            pressed: step(0.06),
+            text,
+            on_accent,
+            soft,
+            focus: format!(
+                "rgba({}, {}, {}, {alpha})",
+                focus_base.r, focus_base.g, focus_base.b
+            ),
+            chart,
+            second,
+        })
+    }
+
+    fn tokens(&self) -> BTreeMap<&'static str, String> {
+        let mut t = BTreeMap::new();
+        t.insert("--rx-accent", self.accent.to_hex());
+        t.insert("--rx-accent-hover", self.hover.to_hex());
+        t.insert("--rx-accent-pressed", self.pressed.to_hex());
+        t.insert("--rx-accent-text", self.text.to_hex());
+        t.insert("--rx-on-accent", self.on_accent.to_hex());
+        t.insert("--rx-accent-soft", self.soft.to_hex());
+        t.insert("--rx-focus", self.focus.clone());
+        t.insert("--rx-chart-1", self.chart.to_hex());
+        if let Some((c, text)) = self.second {
+            t.insert("--rx-accent-2", c.to_hex());
+            t.insert("--rx-accent-2-text", text.to_hex());
+        }
+        t
+    }
+}
+
+/// The accent tokens derived from a [`Brand`], for light and dark mode.
+///
+/// Build it with [`Theme::from_brand`]; [`Theme::css`] is the stylesheet,
+/// [`Theme::tokens`] and [`Theme::dark_tokens`] the values as data.
+#[derive(Debug, Clone)]
+pub struct Theme {
+    light: BTreeMap<&'static str, String>,
+    dark: BTreeMap<&'static str, String>,
+    css: String,
+    hash: String,
+}
+
+impl Theme {
+    /// Derives the kit's accent tokens from `brand`.
+    ///
+    /// Text colours must reach 4.5:1 on the kit's background and surface in
+    /// both colour schemes, the label on the accent 3:1. The brand colour
+    /// itself is kept; only the text variants move in lightness. When that is
+    /// not enough, the error carries the nearest colour that works.
+    ///
+    /// ```
+    /// use renox::theme::{Brand, Theme};
+    ///
+    /// assert!(Theme::from_brand(&Brand::new("#1E3A5F")).is_ok());
+    /// assert!(Theme::from_brand(&Brand::new("#FFF59D")).is_err());
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`ContrastError`] for a malformed colour or one that cannot reach
+    /// readable contrast.
+    pub fn from_brand(brand: &Brand) -> Result<Self, ContrastError> {
+        let invalid = |c: &str| ContrastError {
+            kind: ContrastErrorKind::InvalidColor,
+            color: c.to_string(),
+            suggestion: String::new(),
+        };
+        let low = |color: &str, suggestion: String| ContrastError {
+            kind: ContrastErrorKind::LowContrast,
+            color: color.to_string(),
+            suggestion,
+        };
+        let main = Rgb::parse_hex(&brand.color).ok_or_else(|| invalid(&brand.color))?;
+        let second = match &brand.second {
+            Some(c) => Some(Rgb::parse_hex(c).ok_or_else(|| invalid(c))?),
+            None => None,
+        };
+        let derive = |main: Rgb, second: Option<Rgb>| {
+            let light = Scheme::derive(main, second, LIGHT_BG, LIGHT_SURFACE, false)?;
+            let dark = Scheme::derive(main, second, DARK_BG, DARK_SURFACE, true)?;
+            Some((light, dark))
+        };
+        // The suggestion is searched over the whole lightness range, and is
+        // checked with the same derivation, so it always passes.
+        if derive(main, None).is_none() {
+            let nearest = nearest_passing(main, 1.0, |c| derive(c, None).is_some());
+            return Err(low(&brand.color, nearest.unwrap_or(main).to_hex()));
+        }
+        if let (Some(c), Some(raw)) = (second, &brand.second)
+            && derive(main, Some(c)).is_none()
+        {
+            let nearest = nearest_passing(c, 1.0, |x| derive(main, Some(x)).is_some());
+            return Err(low(raw, nearest.unwrap_or(c).to_hex()));
+        }
+        let (light, dark) = derive(main, second).expect("checked above");
+        let mut light_tokens = light.tokens();
+        if let Some(font) = brand.display_font.as_deref().and_then(sanitize_family) {
+            light_tokens.insert("--rx-font-display", format!("\"{font}\", var(--rx-font)"));
+        }
+        let dark_tokens = dark.tokens();
+        let css = render_css(&light_tokens, &dark_tokens);
+        let hash = hash_css(&css);
+        Ok(Self {
+            light: light_tokens,
+            dark: dark_tokens,
+            css,
+            hash,
+        })
+    }
+
+    /// The stylesheet: a `:root` block for light mode and the kit's two dark
+    /// selectors (`prefers-color-scheme: dark` and `[data-theme="dark"]`).
+    /// Load it after the kit's CSS.
+    pub fn css(&self) -> &str {
+        &self.css
+    }
+
+    /// A short content hash of [`Theme::css`] (16 hex digits), the key of the
+    /// theme's cacheable stylesheet URL.
+    pub fn hash(&self) -> &str {
+        &self.hash
+    }
+
+    /// The derived tokens for light mode, such as `--rx-accent` => `#0f766e`.
+    pub fn tokens(&self) -> BTreeMap<&'static str, String> {
+        self.light.clone()
+    }
+
+    /// The derived tokens for dark mode.
+    pub fn dark_tokens(&self) -> BTreeMap<&'static str, String> {
+        self.dark.clone()
+    }
+}
+
+fn sanitize_family(name: &str) -> Option<String> {
+    let clean: String = name
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '-' | '_'))
+        .collect();
+    let clean = clean.trim().to_string();
+    (!clean.is_empty()).then_some(clean)
+}
+
+fn declarations(tokens: &BTreeMap<&'static str, String>) -> String {
+    tokens.iter().map(|(k, v)| format!("{k}:{v};")).collect()
+}
+
+fn render_css(
+    light: &BTreeMap<&'static str, String>,
+    dark: &BTreeMap<&'static str, String>,
+) -> String {
+    let dark = declarations(dark);
+    format!(
+        ":root{{{}}}\n@media (prefers-color-scheme:dark){{:root:not([data-theme=\"light\"]){{{dark}}}}}\n:root[data-theme=\"dark\"]{{{dark}}}\n",
+        declarations(light)
+    )
+}
+
+fn hash_css(css: &str) -> String {
+    Sha256::digest(css.as_bytes())
+        .iter()
+        .take(8)
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+#[cfg(test)]
+mod theme_tests {
+    use super::*;
+
+    fn rgb(t: &BTreeMap<&'static str, String>, k: &str) -> Rgb {
+        Rgb::parse_hex(&t[k]).unwrap_or_else(|| panic!("{k} is not a hex colour: {}", t[k]))
+    }
+
+    fn assert_ratios(brand: &str) {
+        let theme = Theme::from_brand(&Brand::new(brand).second("#b8532e")).expect(brand);
+        for (t, bg, surface) in [
+            (theme.tokens(), LIGHT_BG, LIGHT_SURFACE),
+            (theme.dark_tokens(), DARK_BG, DARK_SURFACE),
+        ] {
+            for key in ["--rx-accent-text", "--rx-accent-2-text"] {
+                let c = rgb(&t, key);
+                assert!(c.contrast(bg) >= 4.5, "{brand} {key} on bg");
+                assert!(c.contrast(surface) >= 4.5, "{brand} {key} on surface");
+            }
+            let accent = rgb(&t, "--rx-accent");
+            assert!(
+                rgb(&t, "--rx-on-accent").contrast(accent) >= 3.0,
+                "{brand} label"
+            );
+            for key in [
+                "--rx-accent-hover",
+                "--rx-accent-pressed",
+                "--rx-accent-soft",
+                "--rx-chart-1",
+            ] {
+                assert!(t.contains_key(key), "{key}");
+            }
+            assert!(t["--rx-focus"].starts_with("rgba("));
+        }
+    }
+
+    #[test]
+    fn accepted_colours_meet_the_ratios_in_both_modes() {
+        for c in [
+            "#0b6e66", "#1E3A5F", "#0F766E", "#b8532e", "#7c3aed", "#000", "#333",
+        ] {
+            assert_ratios(c);
+        }
+    }
+
+    #[test]
+    fn the_kit_default_accent_is_kept() {
+        let t = Theme::from_brand(&Brand::new("#0b6e66")).unwrap().tokens();
+        assert_eq!(t["--rx-accent"], "#0b6e66");
+        assert_eq!(t["--rx-on-accent"], "#ffffff");
+        assert_eq!(t["--rx-accent-text"], "#0b6e66");
+    }
+
+    #[test]
+    fn pale_yellow_is_refused_with_a_passing_suggestion() {
+        let err = Theme::from_brand(&Brand::new("#FFF59D")).unwrap_err();
+        assert_eq!(err.kind, ContrastErrorKind::LowContrast);
+        assert!(err.to_string().contains(&err.suggestion));
+        assert_ne!(err.suggestion, "#fff59d");
+        assert_ratios(&err.suggestion);
+    }
+
+    #[test]
+    fn a_failing_second_colour_is_refused_and_named() {
+        let err = Theme::from_brand(&Brand::new("#0f766e").second("#fff59d")).unwrap_err();
+        assert_eq!(err.color, "#fff59d");
+        Theme::from_brand(&Brand::new("#0f766e").second(err.suggestion.as_str())).unwrap();
+    }
+
+    #[test]
+    fn malformed_hex_is_a_distinct_error() {
+        for bad in ["", "red", "#12", "#ggg"] {
+            let err = Theme::from_brand(&Brand::new(bad)).unwrap_err();
+            assert_eq!(err.kind, ContrastErrorKind::InvalidColor, "{bad}");
+            assert!(err.suggestion.is_empty());
+        }
+        let err = Theme::from_brand(&Brand::new("#0f766e").second("nope")).unwrap_err();
+        assert_eq!(err.kind, ContrastErrorKind::InvalidColor);
+    }
+
+    #[test]
+    fn second_colour_and_display_font_are_optional_tokens() {
+        let plain = Theme::from_brand(&Brand::new("#0f766e")).unwrap().tokens();
+        assert!(!plain.contains_key("--rx-accent-2"));
+        assert!(!plain.contains_key("--rx-font-display"));
+        let theme = Theme::from_brand(
+            &Brand::new("#0f766e")
+                .second("#b8532e")
+                .display_font("Poppins\";}body{x:y"),
+        )
+        .unwrap();
+        let t = theme.tokens();
+        assert_eq!(t["--rx-accent-2"], "#b8532e");
+        assert_eq!(t["--rx-font-display"], "\"Poppinsbodyxy\", var(--rx-font)");
+        // The font only goes into light mode (dark inherits it).
+        assert!(!theme.dark_tokens().contains_key("--rx-font-display"));
+    }
+
+    #[test]
+    fn css_has_the_kits_three_selector_blocks() {
+        let css = Theme::from_brand(&Brand::new("#1e3a5f"))
+            .unwrap()
+            .css()
+            .to_string();
+        assert!(css.starts_with(":root{--rx-accent:"));
+        assert!(
+            css.contains("@media (prefers-color-scheme:dark){:root:not([data-theme=\"light\"]){")
+        );
+        assert!(css.contains(":root[data-theme=\"dark\"]{"));
+        // No `:where` on the generated selectors, so the brand is at least as
+        // specific as the kit's `data-rx-theme` blocks and, loaded later, wins.
+        assert!(!css.contains(":where"));
+    }
+
+    #[test]
+    fn hash_follows_the_content() {
+        let a = Theme::from_brand(&Brand::new("#1e3a5f")).unwrap();
+        let b = Theme::from_brand(&Brand::new("#1E3A5F")).unwrap();
+        let c = Theme::from_brand(&Brand::new("#0f766e")).unwrap();
+        assert_eq!(a.hash(), b.hash());
+        assert_ne!(a.hash(), c.hash());
+        assert_eq!(a.hash().len(), 16);
+    }
+}
+
 pub(crate) mod color {
     //! sRGB, OKLCH and WCAG contrast math.
 
