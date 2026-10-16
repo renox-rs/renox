@@ -135,6 +135,49 @@ impl TestApp {
         self.kernel.mailer().sent()
     }
 
+    /// The newest passwordless login link (`Auth::magic_link`) the app
+    /// sent, as an absolute URL. It runs the queued jobs first, since
+    /// delivery is queued. `None` when none was sent (an unknown address
+    /// gets none).
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # use renox::testing::TestApp;
+    /// # async fn demo() {
+    /// let app = TestApp::new(App::new().module(Auth::new().magic_link())).await;
+    /// // …ask for a link at /login/link…
+    /// let link = app.last_login_link().await;
+    /// # let _ = link; }
+    /// ```
+    pub async fn last_login_link(&self) -> Option<String> {
+        self.run_jobs().await;
+        crate::auth::passwordless::all_sent(self.state())
+            .into_iter()
+            .rev()
+            .find_map(|sent| sent.link)
+    }
+
+    /// The newest login code (`Auth::login_codes`) the app sent, on any
+    /// channel; `last_login_code_on` picks the channel. It runs the queued
+    /// jobs first. A channel's own handler (`App::channel`) is still called
+    /// as in production; this reads what Renox asked it to deliver.
+    pub async fn last_login_code(&self) -> Option<String> {
+        self.run_jobs().await;
+        crate::auth::passwordless::all_sent(self.state())
+            .into_iter()
+            .rev()
+            .find_map(|sent| sent.code)
+    }
+
+    /// [`TestApp::last_login_code`] for one channel (`"sms"`).
+    pub async fn last_login_code_on(&self, channel: &str) -> Option<String> {
+        self.run_jobs().await;
+        crate::auth::passwordless::all_sent(self.state())
+            .into_iter()
+            .rev()
+            .find_map(|sent| sent.code.filter(|_| sent.channel == channel))
+    }
+
     /// Runs the jobs queued so far; returns how many ran.
     pub async fn run_jobs(&self) -> usize {
         self.at_travelled_time(self.kernel.run_jobs())

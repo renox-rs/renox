@@ -68,7 +68,16 @@ impl Module for Audit {
 
     fn register(&self, app: &mut Registry) {
         app.listen(|e: Registered, s| log(s, Entry::new("auth.registered").user(e.user_id)))
-            .listen(|e: LoggedIn, s| log(s, Entry::new("auth.login").user(e.user_id).ip_text(e.ip)))
+            .listen(|e: LoggedIn, s| {
+                let data = json!({ "via": e.via });
+                log(
+                    s,
+                    Entry::new("auth.login")
+                        .user(e.user_id)
+                        .data(data)
+                        .ip_text(e.ip),
+                )
+            })
             .listen(|e: LoginFailed, s| {
                 let data = json!({ "email": e.email });
                 log(s, Entry::new("auth.login_failed").data(data).ip_text(e.ip))

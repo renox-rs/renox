@@ -31,6 +31,7 @@ pub fn app() -> renox::App {
                 .verify_email() // a link by mail before the dashboard opens
                 .account() // /account: name, email, password, devices
                 .notifications() // the bell and /notifications
+                .magic_link() // "Email me a login link" on the login page: no password needed
                 .redirect_to("/dashboard")
                 // Everyone who signs up is a member.
                 .on_registered(|user, _form, state| async move {

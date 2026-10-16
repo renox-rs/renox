@@ -1,0 +1,19 @@
+{#- What a magic link opens: "Log in as …?" with a button. Opening the link
+    changes nothing (mail scanners open links); the button's POST logs in
+    and burns the token. `page`: token, email, valid. -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ text.login_link_confirm_title }} · {{ app.name }}</rx-slot>
+{% if page.valid %}
+<rx-form :action="route('login.link.consume', page.token)">
+  <rx-card title="{{ text.login_link_confirm_title }}">
+    <p>{{ text.login_link_confirm_intro }} <strong data-login-link-email>{{ page.email }}</strong>.</p>
+    <rx-button label="{{ text.login_link_confirm_button }}" block/>
+  </rx-card>
+</rx-form>
+{% else %}
+<rx-card title="{{ text.login_link_confirm_title }}">
+  <rx-alert kind="error">{{ text.login_link_invalid }}</rx-alert>
+  <rx-link-button :href="route('login.link.request')" label="{{ text.login_link_button }}" block/>
+</rx-card>
+{% endif %}
+</rx-page>

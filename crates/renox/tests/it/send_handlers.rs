@@ -812,6 +812,24 @@ async fn live(ctx: renox::live_component::LiveContext) -> Result<String> {
     Ok(ctx.mount(Counter::default()).await?.snapshot)
 }
 
+/// #42: one-time codes, the primitive passwordless login is built on.
+async fn one_time(State(state): State<AppState>) -> Result<String> {
+    use renox::auth::{CodeCheck, OneTimeCode};
+    let ttl = Duration::from_secs(60);
+    let code = OneTimeCode::issue(&state, "send", "1", ttl, 2).await?;
+    let wrong = OneTimeCode::verify(&state, "send", "1", "not a code").await?;
+    let right = OneTimeCode::verify(&state, "send", "1", &code).await?;
+    let again = OneTimeCode::issue_digits(&state, "send", "1", 8, ttl, 2).await?;
+    let discarded = OneTimeCode::discard(&state, "send", "1").await?;
+    Ok(format!(
+        "{} {} {} {} {discarded}",
+        matches!(wrong, CodeCheck::Wrong { tries_left: 1 }),
+        right == CodeCheck::Valid,
+        again.len(),
+        renox::auth::prune_expired_codes(&state.db).await?
+    ))
+}
+
 struct Handlers;
 
 /// M27a: a data grid's page and its filtered query.
@@ -888,6 +906,7 @@ impl Module for Handlers {
             .get("/search", search)
             .get("/live", live)
             .get("/uploaded", uploaded)
+            .get("/one-time", one_time)
     }
 }
 
@@ -895,6 +914,7 @@ impl Module for Handlers {
 async fn data_apis_work_in_routed_handlers() {
     let app = TestApp::new(
         App::new()
+            .module(Auth::new())
             .module(Handlers)
             .module(renox::settings::Settings)
             .settings::<Prefs>()
@@ -973,4 +993,8 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true true 0");
+    app.get("/one-time")
+        .await
+        .assert_ok()
+        .assert_see("true true 8 0 true");
 }

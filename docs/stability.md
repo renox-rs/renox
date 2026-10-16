@@ -183,6 +183,8 @@ field for you.
   `import::UndoReport`, `import::TemplateColumn` (use its constructors), `auth::permissions::Assignment`
   (`auth::permissions::Scope` has private fields: make one with `Scope::of`, `of_id`, `new`
   or `global`; `Scopes` stays `All` / `Only`, so a `match` on it needs no `_` arm)
+- `auth::LoginCodeDelivery` (read its fields; Renox builds it), `auth::OneTimeCode` (a namespace of
+  functions; `auth::CodeCheck` stays `Valid` / `Wrong` / `Missing`, so a `match` on it needs no `_` arm)
 - `AppStateInner`: what an `AppState` holds, read as the state's fields
   (`state.db`, `state.config`) through `Deref`; only Renox builds one (#334)
 

@@ -172,6 +172,11 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   its fields their own `id`. Icon-only buttons are `<rx-icon-button icon label>` (the label
   is the accessible name); shortcuts are `key="mod+s"`; a button that can't be used yet
   takes `disabled-reason="…"`.
+  Passwordless login: `Auth::new().magic_link()` (a mailed link; opening it logs nobody in, its
+  button does) and `.login_codes(LoginCodes::new().channel("sms").identify(..))` (a one-time code
+  by mail or any `App::channel`, bound to the browser that asked); both need the queue running
+  (`serve` does) and tests read them with `app.last_login_link().await` / `last_login_code()`.
+  `renox::auth::OneTimeCode` is the same code primitive for confirming anything else.
   In-app notifications: `to_database` returns `Ok(DatabaseMessage…into())` (title, body, url), and
   `Auth::new().notifications()` + `<rx-notification-bell :count="unread_notifications"/>` in the
   layout gives the list, the badge and live updates (SSE: behind nginx, `proxy_buffering off`).

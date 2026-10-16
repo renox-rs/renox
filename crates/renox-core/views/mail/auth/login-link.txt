@@ -1,0 +1,5 @@
+{{ text.mail_link_intro }}
+
+{{ link }}
+
+{{ outro }}

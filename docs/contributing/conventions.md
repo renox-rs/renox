@@ -78,12 +78,13 @@ A setting that takes one of a few words (`SESSION_DRIVER=database`) is an enum m
 Durations are `Duration` fields even when `.env` has minutes or seconds.
 
 ## 4.5 Migrations owned by the framework
-Names start with `0001…` so they sort before app migrations (`2026…`). There are twenty-two:
+Names start with `0001…` so they sort before app migrations (`2026…`). There are twenty-three:
 - Auth module (`auth/module.rs` `MIGRATIONS`): `00010101000000_create_users_table`,
   `…000001_create_password_reset_tokens_table`, `…000002_create_personal_access_tokens_table`,
   `…000003_create_notifications_table`, `…000004_add_sessions_revoked_at_to_users`,
   `…000005_add_abilities_to_personal_access_tokens`, `…000006_create_revoked_sessions_table`,
-  `…000007_create_device_tokens_table` (tokens owned by a device, `auth/device.rs`).
+  `…000007_create_device_tokens_table` (tokens owned by a device, `auth/device.rs`),
+  `…000008_create_one_time_codes_table` (hashed login codes and magic links, `auth/one_time.rs`).
 - Permissions module (`auth/permissions.rs`): `00010101000500_create_roles_and_permissions_tables`
   (roles, permissions, permission_role, role_user) and `00010101000510_add_scope_to_role_user`
   (scope_type/scope_id, '' for global, and starts_at/ends_at; SQLite rebuilds the table to

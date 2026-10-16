@@ -1,0 +1,23 @@
+{#- Passwordless login: asks for an identifier and sends a one-time code
+    (`Auth::new().login_codes(…)`). `channels`: name and label of each
+    way to send it; `multiple` when the user may choose. Replace it with
+    resources/views/renox/auth/login-code.html in your app. -#}
+<rx-page layout="renox/auth/layout.html">
+<rx-slot name="title">{{ text.login_code_title }} · {{ app.name }}</rx-slot>
+<rx-form :action="route('login.code.send')" hx-post="{{ route('login.code.send') }}">
+  <rx-card title="{{ text.login_code_title }}" subtitle="{{ text.login_code_intro }}">
+    <rx-alert rx-if="flash.error" kind="error">{{ flash.error }}</rx-alert>
+    <rx-input name="identifier" label="{{ text.login_code_identifier }}" required autocomplete="username" autofocus/>
+    {% if multiple %}
+    <fieldset class="rx-field">
+      <legend class="rx-label">{{ text.login_code_channel }}</legend>
+      {% for channel in channels %}
+      <label class="rx-check"><input type="radio" name="channel" value="{{ channel.name }}"{% if loop.first %} checked{% endif %}> <span>{{ channel.label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+    <rx-button label="{{ text.login_code_button }}" block/>
+  </rx-card>
+</rx-form>
+<p class="rx-auth__alt"><a class="rx-link" href="{{ route('login') }}">{{ text.back_to_login }}</a></p>
+</rx-page>

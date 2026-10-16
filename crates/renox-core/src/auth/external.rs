@@ -126,6 +126,18 @@ pub async fn sign_in(
     remember: bool,
     ip: Option<IpAddr>,
 ) -> Result<String> {
+    sign_in_via(state, session, user, remember, ip, "external").await
+}
+
+/// [`sign_in`], saying in `LoggedIn::via` how the user proved who they are.
+pub(super) async fn sign_in_via(
+    state: &AppState,
+    session: &Session,
+    user: &User,
+    remember: bool,
+    ip: Option<IpAddr>,
+    via: &str,
+) -> Result<String> {
     let to = match &state.auth {
         Some(settings) => after_login(state, settings, session),
         None => intended(
@@ -136,7 +148,7 @@ pub async fn sign_in(
     if let Some(second) = &state.second_factor
         && (second.required)(user.clone(), state.clone()).await?
     {
-        super::second_factor::begin(session, user, &user.email, remember, to)?;
+        super::second_factor::begin(session, user, &user.email, remember, to, via)?;
         return state.url(&second.challenge, &[]);
     }
     // A login that waited for its second step is over: this one replaces it.
@@ -147,6 +159,7 @@ pub async fn sign_in(
     let event = LoggedIn {
         user_id: user.id,
         ip: ip.map(|ip| ip.to_string()),
+        via: via.to_owned(),
     };
     announce(state, event).await;
     Ok(to)

@@ -45,6 +45,10 @@ pub struct LoggedIn {
     pub user_id: i64,
     /// The client's IP address (`ClientIp`), if known.
     pub ip: Option<String>,
+    /// How they proved who they are: `"password"` (the login page),
+    /// `"magic_link"` or `"code"` (passwordless login), or `"external"`
+    /// (a module that called `auth::sign_in`, such as a social login).
+    pub via: String,
 }
 
 /// A wrong email or password on the login page.

@@ -13,6 +13,12 @@
     <p class="rx-auth__alt"><a class="rx-link" href="{{ route('password.request') }}">{{ text.forgot_link }}</a></p>
   {% endcall %}
 </form>
+{% if magic_link or login_codes %}
+<div class="rx-stack rx-passwordless">
+  {% if magic_link %}<a class="rx-button rx-button--secondary rx-button--block" href="{{ route('login.link.request') }}" data-passwordless="link"><span class="rx-button__label">{{ text.login_via_link }}</span></a>{% endif %}
+  {% if login_codes %}<a class="rx-button rx-button--secondary rx-button--block" href="{{ route('login.code.request') }}" data-passwordless="code"><span class="rx-button__label">{{ text.login_via_code }}</span></a>{% endif %}
+</div>
+{% endif %}
 {% with page="login" %}{% include "renox/auth/login_options.html" ignore missing %}{% endwith %}
 {% if registration %}
 <p class="rx-auth__alt">{{ text.no_account }} <a class="rx-link" href="{{ route('register') }}">{{ text.register_button }}</a></p>
