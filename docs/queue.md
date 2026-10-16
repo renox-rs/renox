@@ -356,6 +356,11 @@ What's going on:
 - `rate_limited("supplier-api", 60, 60 s)` allows at most 60 attempts a minute, shared by every
   job that uses the key `supplier-api`.
 
+Renox's own queued sends can be capped the same way, without writing a job:
+`App::channel_rate_limit("sms", 20, 1 s)` for a notification channel and
+`App::mailer_rate_limit("bulk", 100, 60 s)` for queued mail. See
+[mail.md, Notifications](mail.md#notifications).
+
 ## Encrypted payloads
 
 Some jobs carry personal data or secrets. Add `const ENCRYPTED: bool = true` to such a job, and

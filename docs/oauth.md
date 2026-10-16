@@ -1,6 +1,6 @@
 # Social login
 
-Social login lets people sign in with an account they already have, such as Google or GitHub,
+Social login lets people sign in with an account they already have, such as Google, Microsoft or GitHub,
 instead of making up another password. Renox's `renox-oauth` crate adds "Continue with Google"
 and "Continue with GitHub" to the login and register pages, linked to your app's `users`
 table, with one module. [examples/bikeshop](../examples/bikeshop) offers it to its customers.
@@ -10,6 +10,7 @@ In this guide:
 - [Add it to your app](#add-it-to-your-app)
 - [What your users see](#what-your-users-see)
 - [Which account a sign-in logs into](#which-account-a-sign-in-logs-into)
+- [Company sign-in: Microsoft and allowed domains](#company-sign-in-microsoft-and-allowed-domains)
 - [Users without a password](#users-without-a-password)
 - [Its routes](#its-routes)
 - [Events and the activity log](#events-and-the-activity-log)
@@ -28,6 +29,7 @@ In this guide:
 | **redirect URI** (callback URL) | Where the provider sends the browser back: `APP_URL/auth/google/callback`. You enter it in the provider's console. |
 | **state** | A random value sent to the provider and checked when the browser comes back, so a sign-in can't be started by someone else. |
 | **PKCE** | "Proof Key for Code Exchange" (RFC 7636): a second random value, of which only a hash goes to the provider, so a stolen code is useless. |
+| **tenant** | A company's Microsoft Entra ID directory (Microsoft's name for an organisation). Work and school accounts belong to one; personal accounts (outlook.com) belong to a shared consumer tenant. |
 | **linked account** | A provider account (one Google account) tied to one of your users: a row in `oauth_accounts`. |
 
 > [!NOTE]
@@ -121,6 +123,70 @@ New accounts go through your `Auth::on_registered` hook, which can read `name`, 
 after their password, a social login asks for it too: the login waits at the challenge, as after
 the password.
 
+## Company sign-in: Microsoft and allowed domains
+
+For an app used by a company's staff, sign in with their Microsoft work account or their Google
+Workspace account, and let in only the company's own accounts:
+
+```rust
+use renox::prelude::*;
+use renox_oauth::{Google, Microsoft, OAuth};
+
+/// Staff sign in with Contoso's Microsoft accounts or Example's Google Workspace.
+pub fn app() -> App {
+    App::new().module(Auth::new().account()).module(
+        OAuth::new()
+            // MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET
+            .provider(Microsoft::from_config().tenant("contoso.onmicrosoft.com"))
+            // GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+            .provider(Google::from_config().hosted_domain("example.com"))
+            // Whatever the provider, the verified address must be at one of these.
+            .allow_domains(&["contoso.com", "example.com"]),
+    )
+}
+```
+
+**Microsoft** (`OAuth::new().microsoft()` for the defaults). In the Entra admin center, App
+registrations → New registration, with the redirect URI `APP_URL/auth/microsoft/callback`
+(platform "Web"), and make a client secret under Certificates & secrets. The settings:
+
+```sh
+MICROSOFT_CLIENT_ID=…
+MICROSOFT_CLIENT_SECRET=…
+MICROSOFT_TENANT=contoso.onmicrosoft.com   # a tenant id, its domain, or organizations (the default)
+```
+
+`Microsoft::tenant(..)` in code wins over `MICROSOFT_TENANT`. The tenant is **checked when the
+browser comes back**, not only in the URL (anyone can edit a URL): the ID token's `tid` must be the
+configured tenant (a domain is resolved to its id once, from Microsoft's discovery document, and
+kept). With `organizations`, any work or school account is accepted. **Personal Microsoft
+accounts are always refused**, whatever the tenant setting.
+
+Entra doesn't always verify the `email` claim, and any tenant can claim any address. So the
+address counts as **verified only when a specific tenant is configured**. With `organizations`,
+an account already linked still logs in, but nobody is linked or made by an address (and
+`allow_domains` refuses it, having no verified address): give a tenant for company sign-in. The
+account's id is its `oid` (prefixed with the tenant for `organizations`, where `oid`s of two
+tenants could meet).
+
+The ID token is taken from the token endpoint's answer (a direct TLS call from your server),
+whose signature isn't verified, as OpenID Connect Core §3.1.3.7 allows; `iss`, `aud` (your client
+id), `exp` and `tid` are checked. No JWT or RSA library is involved.
+
+**Google Workspace.** `Google::hosted_domain("example.com")` sends `hd=example.com`, so Google
+offers that domain's accounts. That is only a hint, so the callback checks the `hd` of Google's
+userinfo answer too: a gmail.com account, which has none, is refused even if `hd` is removed from
+the URL.
+
+**Any provider.** `OAuth::allow_domains(&["example.com"])` accepts only accounts whose
+**verified** email address is at one of the domains (the domain itself, not its subdomains;
+letter case doesn't matter), for logging in, linking and confirming.
+
+A refused account is sent back to the login page with a message ("Only accounts of example.com
+can sign in here."), nothing is linked or made, and `OAuthRefused` is announced (the activity
+log's `oauth.refused`). Group or role mapping, SAML and calls to Microsoft Graph or Google's APIs
+are not part of this: tokens aren't stored.
+
 ## Users without a password
 
 A user made by a social login has no password: their `password` column is empty, which no
@@ -163,6 +229,7 @@ long as with "remember me". `oauth.unlink` needs a logged-in user. A link in you
 | `AccountLinked` | a provider account was linked to a user (on the account page, or at a first sign-in) | `user_id`, `provider` |
 | `AccountUnlinked` | a user unlinked one | `user_id`, `provider` |
 | `LoggedInWith` | a user logged in with a provider | `user_id`, `provider`, `second_step` |
+| `OAuthRefused` | an account was turned away (another tenant, a personal account, another domain) | `provider`, `reason`, `email` |
 
 `second_step` is `true` when the login waits for a second step (two-factor authentication). The
 `Auth` module's own events fire too: `Registered` for a new account, and `LoggedIn` once the
@@ -186,7 +253,8 @@ pub fn app() -> App {
 ```
 
 When your app has the `Audit` module, they're also written to the activity log as
-`oauth.linked`, `oauth.unlinked` and `oauth.login` (with the provider in `data`).
+`oauth.linked`, `oauth.unlinked`, `oauth.login` and `oauth.refused` (with the provider in `data`,
+and the `reason` and `email` of a refusal).
 
 ## How it keeps accounts safe
 
@@ -207,12 +275,17 @@ When your app has the `Audit` module, they're also written to the activity log a
 - **A provider account links to one user**, and a user has one account per provider (the
   table's unique keys).
 - **Unlinking never locks a user out** (see above).
+- **Refusals are explicit.** An account of another tenant, a personal Microsoft account or a
+  domain that isn't allowed is turned away with a clear message and an event (see [Company
+  sign-in](#company-sign-in-microsoft-and-allowed-domains)).
 - **Failures say little.** The visitor sees "try again"; the reason is logged at `warn`.
 
 ## Another provider
 
 Adding a provider is one impl of the `Provider` trait: its name, its endpoints, its scopes and
-how to read the profile. The authorization URL, `state`, PKCE and the code exchange (the
+how to read the profile (`Err(Refused::new(reason, message).into())` from `profile` turns an
+account away). `Provider::with_config` lets one resolve settings besides the credentials, as
+Microsoft does for `MICROSOFT_TENANT`. The authorization URL, `state`, PKCE and the code exchange (the
 standard request; override `Provider::exchange` for one that differs) are done for you.
 
 ```rust
