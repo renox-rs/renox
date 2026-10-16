@@ -53,6 +53,7 @@ const BLOCKS = [
   '.rx-swatches--colour',
   '.rx-history',
   '.rx-plans',
+  '[data-rx-receipt][data-rx-blocks-ready]',
 ];
 
 /** Waits until every block's code has set it up (the loader imports it). */

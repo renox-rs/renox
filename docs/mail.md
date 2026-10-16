@@ -24,6 +24,7 @@ travel through your own channels such as WhatsApp or SMS.
 - [Configuration](#configuration): choose how mail leaves the app.
 - [Sending a mail](#sending-a-mail): build a mail and send it, now or through the queue.
 - [Mail views](#mail-views): make mails from templates, with ready-made buttons and tables.
+- [Calendar invitations](#calendar-invitations): a booking that lands in the customer's calendar.
 - [Localized mail](#localized-mail): send a mail in another language.
 - [The preview page](#the-preview-page): see the mails your app sent while you develop.
 - [Notifications](#notifications): one message, several channels.
@@ -294,6 +295,106 @@ What you can use:
 To start a new mail, let `rnx` write the files: `rnx make:mail order_shipped` writes
 `resources/views/mail/order_shipped.html` (on the layout, with a button) and
 `order_shipped.txt`.
+
+## Calendar invitations
+
+A booking confirmation is more useful when it can be added to the customer's calendar with one
+click. `renox::calendar` writes the file for that: an **iCalendar** file (`.ics`, RFC 5545),
+with no extra dependency.
+
+```rust
+use std::time::Duration;
+use renox::calendar::{Event, Ics, Status};
+use renox::chrono::{DateTime, Utc};
+use renox::mail::Mail;
+use renox::prelude::*;
+
+/// The confirmation of a booking, with the booking in a calendar file.
+async fn confirm(
+    state: &AppState,
+    id: i64,
+    starts_at: DateTime<Utc>,
+    ends_at: DateTime<Utc>,
+) -> Result {
+    let ics = Ics::new("-//Acme//Bookings//EN").event(
+        Event::new(format!("booking-{id}@acme.test"), starts_at, ends_at)
+            .summary("Service at Acme")
+            .location("Bay 3")
+            .description("Bring the key, please.\nWe close at 6 pm.")
+            .organizer("bookings@acme.test")
+            .attendee("ben@example.com")
+            .alarm_before(Duration::from_secs(3600)) // a reminder an hour before
+            .status(Status::Confirmed),
+    );
+    let mail = Mail::new("ben@example.com", "Your booking", "See you on Tuesday.").attach_ics(&ics);
+    state.queue_mail(mail).await?;
+    Ok(())
+}
+```
+
+What the pieces are:
+
+- `Ics::new(prodid)` is the calendar. The product id says which app made the file, in the form
+  `-//Company//Product//EN`. `.event(…)` adds an event; a file can hold several.
+- `Event::new(uid, starts, ends)` takes the **UID**, a name for this event that never changes
+  (`booking-42@acme.test`), and the start and end as `DateTime<Utc>`. The setters are
+  `.summary`, `.description`, `.location`, `.url`, `.organizer` / `.organizer_named`,
+  `.attendee` / `.attendee_named` (call it again for more people), `.alarm_before(duration)`,
+  `.status(…)` and `.sequence(n)`.
+- `Mail::attach_ics(&ics)` attaches it as `invite.ics` (`cancellation.ics` for a cancellation)
+  with the content type `text/calendar; method=REQUEST; charset=UTF-8`. Mail apps read the
+  `method` and offer "Add to calendar" or "Yes / No" instead of showing a plain attachment.
+- `Download::ics(&ics, "booking.ics")` is the same file as a download, for an "Add to calendar"
+  link on the booking page.
+
+### Changing or cancelling a booking
+
+A calendar app knows an event by its UID. To **change** a booking, send the event again with the
+same UID and a higher `.sequence(n)`: the first version is 0, the next 1, and so on. A calendar
+ignores a message whose sequence is not higher than the one it has. To **cancel** it, send the
+same UID with a higher sequence and `Status::Cancelled`; the file then says `METHOD:CANCEL`, and
+the event disappears from the customer's calendar.
+
+```rust
+use renox::calendar::{Event, Ics, Status};
+use renox::chrono::{DateTime, Utc};
+use renox::mail::Mail;
+
+/// The mail that takes booking 42 out of the customer's calendar again.
+fn cancellation(starts_at: DateTime<Utc>, ends_at: DateTime<Utc>) -> Mail {
+    let ics = Ics::new("-//Acme//Bookings//EN").event(
+        Event::new("booking-42@acme.test", starts_at, ends_at) // the same UID
+            .organizer("bookings@acme.test")
+            .attendee("ben@example.com")
+            .sequence(2) // higher than the last one sent
+            .status(Status::Cancelled),
+    );
+    Mail::new("ben@example.com", "Your booking is cancelled", "Sorry about that.").attach_ics(&ics)
+}
+```
+
+Without `.method(Method::…)`, the file's `METHOD` follows its events: `CANCEL` when one is
+cancelled, `REQUEST` when one has attendees, `PUBLISH` otherwise (a plain download).
+
+### What the file looks like
+
+- Lines end in CRLF and are **folded** at 75 bytes (a longer line continues on the next one,
+  which starts with a space); a multi-byte character is never cut in two.
+- Text is **escaped**: `\`, `;` and `,` get a backslash, and a newline in a description becomes
+  `\n`. Control characters are dropped, so a value can never start another line.
+- Every event has `UID`, `DTSTAMP`, `DTSTART` and `DTEND`. `DTSTAMP` is when the event was made,
+  read from Renox's clock (so `TestApp::travel` moves it); `.stamp(time)` sets it for a file that
+  must come out the same every time.
+- **Times are UTC** (`20261103T090000Z`); calendar apps show them in the reader's zone. Local
+  times with a `TZID` (the `APP_TIMEZONE`) would need a `VTIMEZONE` block, which isn't written
+  yet: convert a local time to UTC first (`config.timezone.resolve(local)` gives the Unix
+  time of a wall-clock time in `APP_TIMEZONE`). All-day events and repeating events aren't
+  supported yet either.
+
+In a test, the memory mailer keeps the attachment:
+`kernel.mailer().sent()[0].attachments[0]` has the `filename`, the `content_type` and the file's
+`data`. examples/bikeshop attaches an invitation to its rental confirmation
+([src/app/rentals/reserve.rs](../examples/bikeshop/src/app/rentals/reserve.rs)).
 
 ## Localized mail
 

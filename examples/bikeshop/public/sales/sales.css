@@ -89,6 +89,8 @@
 .bs-invoice__head p, .bs-invoice__head h1 { margin: 0; }
 .bs-invoice__meta { display: grid; justify-items: end; gap: var(--rx-space-1); }
 .bs-invoice__shop { font: var(--rx-type-heading); }
+/* The counter's receipt (the `receipt` block): the number in the code slot, as text. */
+.bs-receipt__code { font: 700 16px/1.2 var(--rx-mono); letter-spacing: 0.12em; }
 /* [explain:orders.invoice.print] */
 @media print {
   .rx-navbar, .bs-footer, .bs-print-actions, .rx-toasts, .rx-skip, [data-rx-open="about-page"] { display: none !important; }

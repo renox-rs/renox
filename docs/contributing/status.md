@@ -401,6 +401,18 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#48, calendar files and the receipt print layout**: `renox::calendar` (`Ics`, `Event`,
+  `Method`, `Status`; RFC 5545: CRLF, folding at 75 octets without splitting a character,
+  escaping, UTC times, `DTSTAMP` from `clock`; no dependency), `Mail::attach_ics` (`invite.ics`
+  or `cancellation.ics`, `text/calendar; method=…; charset=UTF-8`) and `Download::ics`; a change
+  or a cancellation is the same UID with a higher `SEQUENCE` (`Status::Cancelled` makes the file
+  `METHOD:CANCEL`). In renox-blocks, the `receipt` macro / `<rx-receipt>` tag (twelfth block; a
+  new `receipt.js` part for the Print button) with named `@page` rules for 80 mm and 58 mm.
+  Tests: it/calendar.rs (golden files in `it/fixtures/calendar/` plus a structural RFC check),
+  it/mail.rs (SMTP), renox-blocks tests, tests/browser/receipt.test.mjs (print emulation and a
+  PDF size check). The bike shop attaches an invitation to a reservation's confirmation and
+  prints the counter's receipt with the block. Guides: docs/mail.md "Calendar invitations",
+  docs/blocks.md "Printing".
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['history', 'history'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['history', 'history'], ['receipt', 'receipt'], ['plans', 'compare_plans']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -115,6 +115,27 @@ kanban_card(card)</app-about-signature>
     <rx-history :items="timeline" label="Service history of City 3" date-format="%H:%M"/>
     <app-about-signature>history(items, label=none, date_format="%Y-%m-%d %H:%M", id=none)
   items: [{time, title, body?, kind?, by?, when?}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="receipt">
+  <rx-card title="receipt" :subtitle="t('blocks.page.receipt')">
+    <div class="bs-showcase__pair">
+      <rx-receipt id="demo-receipt-80" title="Bike Shop" :header="['Calle Mayor 12', '+34 600 000 000']" number="R-1042" date="2026-10-16 10:32"
+        :lines="[{'name': 'Trail helmet', 'note': 'M, black', 'quantity': 1, 'price': 8900}, {'name': 'Inner tube 700c', 'quantity': 2, 'price': 650}, {'name': 'Brake pads, front', 'quantity': 1, 'price': 1800}]"
+        :totals="[{'label': 'Subtotal', 'amount': 12000}, {'label': 'Total', 'amount': 12000, 'strong': true}]"
+        :footer="['Thank you for riding with us.']">
+        <span class="bs-showcase__receipt-code">R-1042</span>
+      </rx-receipt>
+      <rx-receipt id="demo-receipt-58" width="58mm" title="Bike Shop" number="R-1043" date="2026-10-16 10:40"
+        :lines="[{'name': 'Bell', 'quantity': 1, 'price': 800}]"
+        :totals="[{'label': 'Total', 'amount': 800, 'strong': true}]"
+        :footer="['Thank you!']"/>
+    </div>
+    <app-about-signature>receipt(lines, totals=[], width="80mm", title=none, header=[], number=none, date=none,
+        footer=[], print_button=true, print_label=none, label=none, id="rx-receipt")
+  lines: [{name, quantity?, price?, total?, note?}]   totals: [{label, amount, strong?}]
+  the tag's content (or a macro call block) is the code slot: a QR code, a barcode, the number</app-about-signature>
   </rx-card>
   </div>
 

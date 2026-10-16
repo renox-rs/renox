@@ -58,6 +58,22 @@ impl Download {
         }
     }
 
+    /// A calendar file ([`calendar::Ics`](crate::calendar::Ics)) named
+    /// `filename`, as `text/calendar`: a browser hands it to the calendar app.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::Download;
+    /// use renox::calendar::Ics;
+    ///
+    /// async fn feed() -> Download {
+    ///     Download::ics(&Ics::new("-//Acme//Bookings//EN"), "bookings.ics")
+    /// }
+    /// ```
+    pub fn ics(ics: &crate::calendar::Ics, filename: impl Into<String>) -> Self {
+        Self::bytes(filename, ics.content_type(), ics.to_bytes())
+    }
+
     /// A file on disk, streamed; its type comes from its extension. A
     /// missing file is a 404.
     pub async fn file(path: impl AsRef<Path>, filename: impl Into<String>) -> Result<Self> {

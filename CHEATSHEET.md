@@ -1983,6 +1983,21 @@ async fn send_invoice(state: &AppState, pdf: Vec<u8>) -> Result {
     Ok(())
 }
 
+/// A calendar invitation (RFC 5545): UTC times, folded and escaped for you. The same UID with a
+/// higher sequence changes it; `Status::Cancelled` makes the file `METHOD:CANCEL`.
+fn invitation(starts: renox::chrono::DateTime<renox::chrono::Utc>, ends: renox::chrono::DateTime<renox::chrono::Utc>) -> Mail {
+    use renox::calendar::{Event, Ics, Status};
+    let ics = Ics::new("-//Acme//Bookings//EN").event(
+        Event::new("booking-42@acme.test", starts, ends)
+            .summary("Service at Acme").location("Bay 3").description("Bring the key.")
+            .organizer("bookings@acme.test").attendee("ben@example.com")
+            .alarm_before(std::time::Duration::from_secs(3600))
+            .sequence(0).status(Status::Confirmed),
+    );
+    // invite.ics as `text/calendar; method=REQUEST; charset=UTF-8`; Download::ics(&ics, "booking.ics")
+    Mail::new("ben@example.com", "Your booking", "See you on Tuesday.").attach_ics(&ics)
+}
+
 struct OrderShipped { order_id: i64 }
 
 /// One message, sent through every channel that `channels` returns.
@@ -2113,7 +2128,8 @@ async fn invoice(State(state): State<AppState>) -> Result<Download> {
     let pdf = state.storage.get("invoices/1.pdf").await?.unwrap_or_default();
     Ok(Download::bytes("INV-001.pdf", "application/pdf", pdf).inline()) // or attachment (default)
     // Download::file(path, name).await (streamed), Download::from_storage(&storage, key, name),
-    // Download::stream(name, type, stream) for a CSV written row by row
+    // Download::stream(name, type, stream) for a CSV written row by row,
+    // Download::ics(&ics, "booking.ics") for a calendar file (renox::calendar::Ics)
 }
 ```
 

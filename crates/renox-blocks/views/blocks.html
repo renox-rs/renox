@@ -6,6 +6,7 @@
     Input:          quantity, range_slider, keypad, swatches, datetime_range
     Showing data:   gallery, history, compare_plans
     Scheduling:     month_calendar, availability, kanban (+ kanban_card)
+    Printing:       receipt (a till receipt, 80 mm or 58 mm)
 
     The form blocks send plain fields, so `Valid<T>` reads them as any
     other. Every block prints the stylesheet and the script once per page;
@@ -664,5 +665,89 @@
     </ul>
   </section>
   {%- endfor %}
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    receipt: a till receipt for a thermal printer, on screen and on a roll
+    of 80 mm or 58 mm paper.
+
+    {% call receipt(lines, totals=totals, title="Bike Shop", header=["Calle Mayor 12", "+34 600 000 000"],
+                    number="R-1042", date="2026-10-16 10:32", footer="Thank you!") %}
+      {{ order.number }}
+    {% endcall %}
+
+    `lines` are `{name, quantity, price, total, note}` (amounts in the
+    currency's smallest unit, like the `money` filter; `total` defaults to
+    `quantity * price`); `totals` are `{label, amount, strong}` rows
+    (the last, `strong`, is the total due). `header` and `footer` are
+    lists of lines (a single text works too). What is between `call` and
+    `endcall` is printed under the totals, centred: Renox has no QR
+    generator, so put your own SVG, an `<img>`, a barcode font or just the
+    receipt number as text there. `width` is "80mm" (the default) or
+    "58mm". A "Print" button calls the browser's print dialog.
+
+    When the page is printed, everything but the receipt is dropped, the
+    paper is the receipt's width and the text is black on white
+    monospace, whatever the theme. It uses CSS named pages (`@page`), so
+    the paper size is set in Chrome, Edge and Firefox; elsewhere the
+    receipt keeps its width on the browser's page. Without JavaScript the
+    receipt shows, and the browser's own print command prints it.
+    ====================================================================== -#}
+{% macro receipt(lines, totals=[], width="80mm", title=none, header=[], number=none, date=none, footer=[], print_button=true, print_label=none, label=none, id=none) -%}
+{{- _assets() }}
+{%- set id = id or "rx-receipt" %}
+{%- set size = "58" if width == "58mm" else "80" %}
+{%- set footer = [footer] if footer is string else (footer or []) %}
+{%- set header = [header] if header is string else (header or []) %}
+{%- set label = label or title or renox_blocks_t('blocks.receipt.label') %}
+<div class="rx-receipt rx-receipt--w{{ size }}" id="{{ id }}" data-rx-receipt>
+  <article class="rx-receipt__paper" aria-label="{{ label }}">
+    <header class="rx-receipt__head">
+      {%- if title %}<p class="rx-receipt__title">{{ title }}</p>{% endif %}
+      {%- for text in header %}<p class="rx-receipt__text">{{ text }}</p>{% endfor %}
+      {%- if number or date %}
+      <p class="rx-receipt__meta">{% if number %}<span>{{ number }}</span>{% endif %}{% if date %}<span>{{ date }}</span>{% endif %}</p>
+      {%- endif %}
+    </header>
+    <table class="rx-receipt__lines">
+      <caption class="rx-visually-hidden">{{ label }}</caption>
+      <thead class="rx-visually-hidden"><tr><th scope="col">{{ renox_blocks_t('blocks.receipt.item') }}</th><th scope="col">{{ renox_blocks_t('blocks.receipt.amount') }}</th></tr></thead>
+      <tbody>
+        {%- for line in lines %}
+        {%- set quantity = line.quantity | default(1) %}
+        {%- set price = line.price | default(none) %}
+        {%- set note = line.note | default("") %}
+        {%- set amount = line.total | default(none) %}
+        {%- if amount is none %}{% set amount = (price or 0) * quantity %}{% endif %}
+        <tr class="rx-receipt__row">
+          <th scope="row">{{ line.name }}
+            {%- if price is not none and (quantity != 1 or note) %}<span class="rx-receipt__note">{{ quantity }} × {{ price | money }}{% if note %} · {{ note }}{% endif %}</span>
+            {%- elif note %}<span class="rx-receipt__note">{{ note }}</span>{% endif -%}
+          </th>
+          <td>{{ amount | money }}</td>
+        </tr>
+        {%- endfor %}
+      </tbody>
+      {%- if totals %}
+      <tfoot>
+        {%- for row in totals %}
+        <tr class="rx-receipt__sum{% if row.strong %} rx-receipt__sum--strong{% endif %}"><th scope="row">{{ row.label }}</th><td>{{ row.amount | money }}</td></tr>
+        {%- endfor %}
+      </tfoot>
+      {%- endif %}
+    </table>
+    {%- if caller is defined %}
+    <div class="rx-receipt__code">{{ caller() }}</div>
+    {%- endif %}
+    {%- if footer %}
+    <footer class="rx-receipt__foot">{% for text in footer %}<p class="rx-receipt__text">{{ text }}</p>{% endfor %}</footer>
+    {%- endif %}
+  </article>
+  {%- if print_button %}
+  <div class="rx-receipt__actions">
+    {{ button(print_label or renox_blocks_t('blocks.receipt.print'), variant="primary", type="button", attrs={"data-rx-receipt-print": ""}) }}
+  </div>
+  {%- endif %}
 </div>
 {%- endmacro %}

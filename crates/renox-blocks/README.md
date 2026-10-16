@@ -26,7 +26,9 @@ The blocks:
 - showing data: `gallery` (a carousel), `history` (a timeline), `compare_plans` (pricing cards
   and a comparison table);
 - scheduling and work: `month_calendar`, `availability` (resources against hours), `kanban`
-  (cards dragged or moved by keyboard, each move sent with htmx).
+  (cards dragged or moved by keyboard, each move sent with htmx);
+- printing: `receipt` (an 80 mm or 58 mm till receipt that prints alone, with a code slot and a
+  Print button).
 
 The input blocks send plain form fields, so `Valid<T>` reads them; every block works with the
 keyboard, says its states in words, follows `prefers-reduced-motion`, works under

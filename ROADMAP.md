@@ -2030,6 +2030,17 @@ Notes:
   is the same and only what scrolls changes, so the phone layout, the theme and the sidebar
   stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
   rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
+- **Calendar files and the receipt** (#48, 2026-10): `renox::calendar` writes iCalendar by hand
+  (no dependency), UTC only: a `TZID` with `APP_TIMEZONE` would need a `VTIMEZONE` block, and
+  all-day and repeating events are left out; the method follows the events (`CANCEL` if one is
+  cancelled, `REQUEST` with attendees, else `PUBLISH`) unless `Ics::method` says otherwise, and
+  the content type carries the same `method`. Validation is golden files plus a structural check
+  in the tests (CI has no network). The receipt is a block in renox-blocks, not the kit; its
+  code slot takes markup because Renox has no QR generator (no library added). `@page` has no
+  `auto` height (`size: 80mm auto` is not valid CSS and Chrome drops the rule), so the receipt
+  uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
+  where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
+  A PDF receipt (#30) and ESC/POS printing stay out.
 
 ## Not planned
 

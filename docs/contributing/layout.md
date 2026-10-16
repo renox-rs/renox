@@ -165,6 +165,8 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/counters.rs          counters in the cache table (renox:count:…) for shared throttles/login lock
   src/provided.rs          App::provide values: Provided<T> extractor, AppState::provided
   src/cookies.rs           Cookies extractor (plain / encrypted), SetCookie response part
+  src/calendar.rs          Ics/Event: iCalendar (RFC 5545) files, UTC, folding, escaping; Mail::attach_ics
+                           and Download::ics
   src/download.rs          Download: bytes, streamed file, Storage key, stream; safe Content-Disposition
   src/command.rs           app commands: Args, Command; App::command / Registry::command, Kernel::call;
                            AppCommand (a clap Parser) + App::typed_command (renox::clap re-exported)
@@ -241,7 +243,7 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
                            datetime_range, gallery, history, compare_plans, month_calendar,
-                           availability, kanban + kanban_card; `rx-` classes,
+                           availability, kanban + kanban_card, receipt; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
                            assets/blocks.css, assets/blocks.js (the loader: imports
                            assets/parts/<block>.js only when a page has that block; Web
