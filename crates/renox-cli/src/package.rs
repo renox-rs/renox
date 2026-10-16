@@ -182,11 +182,27 @@ fn placeholder(text: &str) -> Option<&str> {
     None
 }
 
-/// Writes the package under `root` and adds it to the workspace `members`.
-/// Everything is rendered first, so a failure leaves nothing behind.
+/// Writes the package under `root`, adds it to the workspace `members` and
+/// registers it in the app. Everything is rendered first, so a failure
+/// leaves nothing behind.
 pub(crate) fn write(root: &Path, plan: &Plan, now: chrono::DateTime<chrono::Utc>) -> Result<()> {
     let version = crate::make::next_version(&root.join(&plan.path).join("migrations"), now);
     let files = render(plan, &version)?;
+    // The app's manifest with the path dependency, worked out before writing.
+    let app = match &plan.register {
+        None => None,
+        Some(dir) => {
+            let file = root.join(dir).join("Cargo.toml");
+            let current = if dir == Path::new(".") {
+                plan.manifest.clone()
+            } else {
+                std::fs::read_to_string(&file)
+                    .with_context(|| format!("could not read {}", file.display()))?
+            };
+            let path = package_path(dir, &plan.path);
+            Some((dir, file, add_dependency(&current, &plan.crate_name, &path)))
+        }
+    };
     let base = root.join(&plan.path);
     for (path, text) in files {
         let target = base.join(&path);
@@ -198,14 +214,77 @@ pub(crate) fn write(root: &Path, plan: &Plan, now: chrono::DateTime<chrono::Utc>
             .with_context(|| format!("could not write {}", target.display()))?;
         println!("Created {}", plan.path.join(&path).display());
     }
-    std::fs::write(root.join("Cargo.toml"), &plan.manifest)
-        .context("could not update Cargo.toml")?;
+    let manifest = match &app {
+        Some((dir, _, updated)) if *dir == Path::new(".") => updated,
+        _ => &plan.manifest,
+    };
+    std::fs::write(root.join("Cargo.toml"), manifest).context("could not update Cargo.toml")?;
     println!("Updated Cargo.toml (workspace members)");
+    if let Some((dir, file, updated)) = &app {
+        if *dir != Path::new(".") {
+            std::fs::write(file, updated)
+                .with_context(|| format!("could not update {}", file.display()))?;
+        }
+        println!(
+            "Updated {} (dependency {})",
+            file.display(),
+            plan.crate_name
+        );
+        let app_root = root.join(dir);
+        crate::generate::register_in_main(
+            &crate::generate::app_file(&app_root),
+            &format!("{}::{}", plan.lib_name, plan.struct_name),
+        )?;
+    }
     Ok(())
 }
 
-/// `rnx make:package`. Registering the package in the app comes with the
-/// next steps.
+/// The `path = "…"` of the package as seen from the crate in `from`
+/// (both relative to the workspace root).
+fn package_path(from: &Path, package: &Path) -> String {
+    let depth = from
+        .components()
+        .filter(|c| matches!(c, Component::Normal(_)))
+        .count();
+    let rel = package.to_string_lossy().replace('\\', "/");
+    format!("{}{rel}", "../".repeat(depth))
+}
+
+/// Add `name = { path = "…" }` to `[dependencies]` of a manifest (creating
+/// the section when missing); unchanged when the dependency is there.
+pub(crate) fn add_dependency(manifest: &str, name: &str, path: &str) -> String {
+    let line = format!("{name} = {{ path = \"{path}\" }}");
+    let mut lines: Vec<String> = manifest.lines().map(str::to_owned).collect();
+    let mut section = String::new();
+    let mut last = None;
+    for (i, l) in lines.iter().enumerate() {
+        let t = l.trim();
+        if t.starts_with('[') {
+            section = t.to_owned();
+            if t == "[dependencies]" {
+                last = Some(i);
+            }
+        } else if section == "[dependencies]" {
+            if t.starts_with(&format!("{name} ")) || t.starts_with(&format!("{name}=")) {
+                return manifest.to_owned();
+            }
+            if !t.is_empty() {
+                last = Some(i);
+            }
+        }
+    }
+    match last {
+        Some(i) => lines.insert(i + 1, line),
+        None => {
+            lines.push(String::new());
+            lines.push("[dependencies]".to_owned());
+            lines.push(line);
+        }
+    }
+    lines.join("\n") + "\n"
+}
+
+/// `rnx make:package`.
 pub(crate) fn run(
     root: &Path,
     name: &str,
@@ -505,6 +584,12 @@ mod tests {
     fn writes_the_package_tree() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "fn app() {\n    App::new()\n        .module(Home)\n        .run();\n}\n",
+        )
+        .unwrap();
         let plan = plan(dir.path(), "my-pkg", None, &[], None).unwrap();
         let now = chrono::DateTime::parse_from_rfc3339("2026-10-16T10:00:00Z")
             .unwrap()
@@ -556,6 +641,9 @@ mod tests {
         assert!(sql.contains("\"my_pkg_entries\""));
         let root = std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap();
         assert!(root.contains("members = [\".\", \"crates/my-pkg\"]"));
+        assert!(root.contains("my-pkg = { path = \"crates/my-pkg\" }"));
+        let app = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+        assert!(app.contains(".module(my_pkg::MyPkg)"));
         // A second run is refused by the plan, so nothing is overwritten.
         assert!(super::plan(dir.path(), "my-pkg", None, &[], None).is_err());
     }
@@ -581,5 +669,55 @@ mod tests {
         assert!(p.manifest.contains("members = [\"app\", \"crates/inv\"]"));
         let p = plan(dir.path(), "inv", None, &[], Some("app".into())).unwrap();
         assert_eq!(p.register, Some(PathBuf::from("app")));
+    }
+
+    #[test]
+    fn dependency_is_added_once() {
+        let m = "[package]\nname = \"a\"\n\n[dependencies]\nrenox = \"1\"\n\n[dev-dependencies]\n";
+        let once = add_dependency(m, "inv", "crates/inv");
+        assert!(once.contains("renox = \"1\"\ninv = { path = \"crates/inv\" }\n\n[dev-dep"));
+        assert_eq!(add_dependency(&once, "inv", "crates/inv"), once);
+        assert!(
+            add_dependency("[package]\n", "inv", "x")
+                .ends_with("[dependencies]\ninv = { path = \"x\" }\n")
+        );
+        assert_eq!(
+            package_path(Path::new("app"), Path::new("crates/inv")),
+            "../crates/inv"
+        );
+        assert_eq!(
+            package_path(Path::new("."), Path::new("crates/inv")),
+            "crates/inv"
+        );
+    }
+
+    #[test]
+    fn virtual_workspace_registers_in_the_named_crate() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("Cargo.toml"),
+            "[workspace]\nmembers = [\"app\"]\n",
+        )
+        .unwrap();
+        std::fs::create_dir_all(dir.path().join("app/src")).unwrap();
+        std::fs::write(
+            dir.path().join("app/Cargo.toml"),
+            "[package]\nname = \"app\"\n\n[dependencies]\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("app/src/lib.rs"), "    .module(Home)\n").unwrap();
+        let now = chrono::Utc::now();
+        let none = plan(dir.path(), "inv", None, &[], None).unwrap();
+        write(dir.path(), &none, now).unwrap();
+        let app = std::fs::read_to_string(dir.path().join("app/Cargo.toml")).unwrap();
+        assert!(!app.contains("inv"));
+        let named = plan(dir.path(), "inv2", None, &[], Some("app".into())).unwrap();
+        write(dir.path(), &named, now).unwrap();
+        let app = std::fs::read_to_string(dir.path().join("app/Cargo.toml")).unwrap();
+        assert!(app.contains("inv2 = { path = \"../crates/inv2\" }"));
+        let lib = std::fs::read_to_string(dir.path().join("app/src/lib.rs")).unwrap();
+        assert!(lib.contains(".module(inv2::Inv2)"));
+        let root = std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap();
+        assert!(root.contains("\"crates/inv\"") && root.contains("\"crates/inv2\""));
     }
 }

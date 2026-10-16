@@ -227,7 +227,7 @@ fn register_call(main_rs: &Path, call: &str) -> Result<()> {
 }
 
 /// Where the App is built: `src/lib.rs` (apps from `rnx new`) or `main.rs`.
-fn app_file(root: &Path) -> PathBuf {
+pub(crate) fn app_file(root: &Path) -> PathBuf {
     let lib = root.join("src/lib.rs");
     if lib.is_file() {
         lib
