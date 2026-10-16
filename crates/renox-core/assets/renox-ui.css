@@ -324,8 +324,8 @@
 /* ---------- Navigation: navbar, sidebar, shell, page header ---------- */
 
 /* "Skip to content": hidden until focused with the keyboard. */
-.rx-skip { position: absolute; left: -9999px; top: 8px; z-index: 100; padding: 8px 12px; border-radius: 8px; background: var(--rx-surface); color: var(--rx-label); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
-.rx-skip:focus { left: 8px; }
+.rx-skip { position: absolute; inset-inline-start: -9999px; top: 8px; z-index: 100; padding: 8px 12px; border-radius: 8px; background: var(--rx-surface); color: var(--rx-label); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18); }
+.rx-skip:focus { inset-inline-start: 8px; }
 
 /* The bar on top: translucent material over the content, a hairline under it. */
 .rx-navbar {
@@ -403,7 +403,7 @@
 .rx-tabbar__tab[aria-current="page"] .rx-tabbar__icon { background: var(--rx-accent); color: var(--rx-on-accent); }
 .rx-tabbar__tab:focus-visible { outline: 2px solid #fff; outline-offset: -2px; }
 .rx-tabbar__badge {
-  position: absolute; top: 0; left: calc(50% + 0.5rem); min-width: 18px; padding: 0 5px; border-radius: 9px;
+  position: absolute; top: 0; inset-inline-start: calc(50% + 0.5rem); min-width: 18px; padding: 0 5px; border-radius: 9px;
   background: var(--rx-accent-2); color: #fff; font: 600 0.6875rem/18px var(--rx-font); text-align: center;
 }
 @media (prefers-reduced-motion: reduce) { .rx-tabbar__icon { transition: none; } }
@@ -419,7 +419,7 @@
 .rx-sidebar {
   position: sticky; top: 0; height: 100vh; height: 100dvh; overflow-y: auto;
   padding: var(--rx-space-4) var(--rx-space-3);
-  background: var(--rx-sidebar-bg); border-right: 0.5px solid var(--rx-separator);
+  background: var(--rx-sidebar-bg); border-inline-end: 0.5px solid var(--rx-separator);
 }
 .rx-sidebar__brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px var(--rx-space-4); font: 600 1.0625rem/1.2 var(--rx-font-display); letter-spacing: -0.015em; color: var(--rx-label); text-decoration: none; }
 .rx-sidebar__links { display: flex; flex-direction: column; gap: 2px; }
@@ -432,7 +432,7 @@
 @media (max-width: 48rem) {
   /* The bar on top keeps its height; the main column takes the rest. */
   .rx-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
-  .rx-sidebar { position: static; height: auto; overflow: visible; padding: 8px var(--rx-space-4); border-right: 0; border-bottom: 0.5px solid var(--rx-separator); }
+  .rx-sidebar { position: static; height: auto; overflow: visible; padding: 8px var(--rx-space-4); border-inline-end: 0; border-bottom: 0.5px solid var(--rx-separator); }
   .rx-sidebar__brand { padding: 4px 0 6px; }
   .rx-sidebar__links { flex-direction: row; overflow-x: auto; scrollbar-width: none; margin-inline: -10px; }
   .rx-sidebar__links::-webkit-scrollbar { display: none; }
@@ -485,7 +485,7 @@
 .rx-page-header { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: var(--rx-space-3); }
 .rx-page-header__text { display: grid; gap: 2px; min-width: 0; }
 .rx-page-header .rx-subtitle { font: var(--rx-type-lead); color: var(--rx-secondary-label); }
-.rx-page-header__back { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; color: var(--rx-accent-text); text-decoration: none; font-size: var(--rx-text-subhead); }
+.rx-page-header__back { display: inline-flex; align-items: center; gap: 2px; margin-inline-start: -4px; color: var(--rx-accent-text); text-decoration: none; font-size: var(--rx-text-subhead); }
 .rx-page-header__back:hover { text-decoration: underline; }
 /* The buttons take the rest of the row (so a segmented control in them gets
    a width to scroll in), pushed to its end. */
@@ -841,6 +841,9 @@
 /* An icon (`icon(…)`): a line drawing in the text's colour, sitting on the
    text's middle when it's inline; never squeezed in a flex row. */
 .rx-icon { display: inline-block; flex: none; vertical-align: middle; overflow: visible; }
+/* Chevrons and arrows (`rx-icon--directional`) point along the reading direction. */
+.rx-icon--directional:dir(rtl) { transform: scaleX(-1); }
+[dir="rtl"] .rx-icon--directional { transform: scaleX(-1); }
 .rx-button svg { flex: none; }
 .rx-button:has(> svg) { gap: 6px; }
 
@@ -1451,14 +1454,15 @@ a.rx-stat:focus-visible { outline: 2px solid var(--rx-accent); outline-offset: 2
 .rx-sheet--xl { width: min(100% - 2 * var(--rx-space-4), 56rem); }
 /* A slide-over: the sheet at the side, full height, its buttons at the
    bottom. */
-.rx-sheet--side { margin: 0 0 0 auto; height: 100dvh; max-height: 100dvh; width: min(100% - 3rem, 28rem); border-radius: var(--rx-radius-l) 0 0 var(--rx-radius-l); }
+.rx-sheet--side { margin: 0; margin-inline-start: auto; height: 100dvh; max-height: 100dvh; width: min(100% - 3rem, 28rem); border-radius: 0; border-start-start-radius: var(--rx-radius-l); border-end-start-radius: var(--rx-radius-l); }
 .rx-sheet--side.rx-sheet--sm { width: min(100% - 3rem, 22rem); }
 .rx-sheet--side.rx-sheet--lg { width: min(100% - 3rem, 40rem); }
 .rx-sheet--side.rx-sheet--xl { width: min(100% - 3rem, 56rem); }
 .rx-sheet--side[open] { animation-name: rx-sheet-side; }
+.rx-sheet--side:dir(rtl) { --rx-sheet-from: -100%; }
+[dir="rtl"] .rx-sheet--side { --rx-sheet-from: -100%; }
 .rx-sheet--side > .rx-sheet__inner { display: flex; flex-direction: column; min-height: 100%; box-sizing: border-box; }
 .rx-sheet--side .rx-sheet__actions { margin-top: auto; }
-[dir="rtl"] .rx-sheet--side { margin: 0 auto 0 0; border-radius: 0 var(--rx-radius-l) var(--rx-radius-l) 0; }
 @media (max-width: 36rem) {
   /* On phones a sheet rises from the bottom edge, within thumb reach. */
   .rx-sheet { width: 100%; max-width: 100%; margin: auto 0 0; border-radius: var(--rx-radius-l) var(--rx-radius-l) 0 0; padding-bottom: env(safe-area-inset-bottom); }
@@ -1595,7 +1599,7 @@ a.rx-stat:focus-visible { outline: 2px solid var(--rx-accent); outline-offset: 2
 @keyframes rx-pop { from { opacity: 0; transform: scale(0.94); } }
 @keyframes rx-sheet-in { from { opacity: 0; transform: translateY(12px) scale(0.97); } }
 @keyframes rx-sheet-up { from { transform: translateY(100%); } }
-@keyframes rx-sheet-side { from { transform: translateX(100%); } }
+@keyframes rx-sheet-side { from { transform: translateX(var(--rx-sheet-from, 100%)); } }
 @keyframes rx-toast-in { from { opacity: 0; transform: translateY(var(--rx-toast-from, -16px)) scale(0.96); } }
 @keyframes rx-toast-out { to { opacity: 0; transform: translateY(calc(var(--rx-toast-from, -16px) / 2)) scale(0.98); } }
 
