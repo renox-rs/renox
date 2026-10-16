@@ -4,8 +4,9 @@
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
     Input:          quantity, range_slider, keypad, swatches, datetime_range
-    Showing data:   gallery, history, compare_plans
-    Scheduling:     month_calendar, availability, kanban (+ kanban_card)
+    Showing data:   gallery, history, compare_plans, status_stepper
+    Scheduling:     month_calendar, availability, week_calendar, kanban
+                    (+ kanban_card)
 
     The form blocks send plain fields, so `Valid<T>` reads them as any
     other. Every block prints the stylesheet and the script once per page;
@@ -377,6 +378,51 @@
 {%- endmacro %}
 
 {#- ======================================================================
+    status_stepper: where a record is in its statuses (an order, a repair,
+    an approval), as steps in a row or a column.
+
+    {{ status_stepper([
+         {"key": "draft", "label": "Draft"},
+         {"key": "approved", "label": "Approved", "tone": "success"},
+         {"key": "shipped", "label": "Shipped"},
+         {"key": "cancelled", "label": "Cancelled", "tone": "error", "terminal": true}
+       ], current="approved", orientation="vertical", label="Order status") }}
+
+    An ordered list. The steps before `current` are done, `current` is the
+    current one (`aria-current="step"`), the rest are upcoming; each says
+    so in words for a screen reader, so colour is never the only sign.
+    `tone` (info, success, warning, error) colours a step's marker once it
+    is reached; `terminal` marks an ending (a step the record stops at,
+    such as cancelled or delivered): it is announced as "final step", and
+    is never counted as done unless it is the current one, so list the
+    alternative endings last. A `current` that matches no step leaves
+    every step upcoming. `orientation` is "horizontal" (the default; a
+    column on a narrow screen) or "vertical". A display only: it posts
+    nothing and needs no JavaScript.
+    ====================================================================== -#}
+{% macro status_stepper(steps, current=none, orientation="horizontal", label=none, id=none) -%}
+{{- _assets() }}
+{%- set at = namespace(current=-1) %}
+{%- for step in steps %}{% if step.key == current %}{% set at.current = loop.index0 %}{% endif %}{% endfor %}
+<ol class="rx-stepper rx-stepper--{{ 'vertical' if orientation == 'vertical' else 'horizontal' }}"{% if id %} id="{{ id }}"{% endif %} role="list" aria-label="{{ label or renox_blocks_t('blocks.stepper.label') }}">
+  {%- for step in steps %}
+  {%- set state = "current" if loop.index0 == at.current else ("done" if loop.index0 < at.current and not step.terminal else "upcoming") %}
+  <li class="rx-stepper__step rx-stepper__step--{{ state }}{% if step.tone and state != 'upcoming' %} rx-stepper__step--{{ step.tone }}{% endif %}{% if step.terminal %} rx-stepper__step--terminal{% endif %}"{% if state == "current" %} aria-current="step"{% endif %}>
+    <span class="rx-stepper__marker" aria-hidden="true">
+      {%- if state == "done" %}{{ _tick(14, 2.6) }}
+      {%- elif step.terminal %}<svg viewBox="0 0 20 20" width="12" height="12"><rect x="5" y="5" width="10" height="10" rx="2" fill="currentColor"/></svg>
+      {%- else %}{{ loop.index }}{% endif %}
+    </span>
+    <span class="rx-stepper__text">
+      <span class="rx-stepper__label">{{ step.label }}</span>
+      <span class="rx-visually-hidden"> ({{ renox_blocks_t('blocks.stepper.' ~ state) }}{% if step.terminal %}, {{ renox_blocks_t('blocks.stepper.final') }}{% endif %})</span>
+    </span>
+  </li>
+  {%- endfor %}
+</ol>
+{%- endmacro %}
+
+{#- ======================================================================
     compare_plans: pricing cards side by side, then a table comparing
     every feature, with one plan highlighted.
 
@@ -599,6 +645,99 @@
   <li><span class="rx-availability__key rx-availability__key--booked" aria-hidden="true"></span>{{ renox_blocks_t('blocks.availability.booked') }}</li>
   <li><span class="rx-availability__key rx-availability__key--closed" aria-hidden="true"></span>{{ renox_blocks_t('blocks.availability.closed') }}</li>
 </ul>
+{%- endmacro %}
+
+{#- ======================================================================
+    week_calendar: a week of bookings, one row per resource (bays, rooms,
+    people), days and hours as columns, and a click on a free slot to
+    book it.
+
+    {{ week_calendar(
+         [{"id": "bay-1", "label": "Bay 1"}, {"id": "bay-2", "label": "Bay 2"}],
+         [{"resource": "bay-1", "start": "2026-10-12T09:00:00Z", "end": "2026-10-12T10:30:00Z",
+           "label": "Tune-up · Ana R.", "tone": "info", "href": "/jobs/4"}],
+         start="2026-10-12", slot_url="/bookings", slot_target="#week", label="Workshop bays") }}
+
+    `resources`: `{id, label, note?}`. `events`: `{resource, start, end,
+    label, tone?, href?}` with RFC 3339 times, shown in the app's time zone
+    (`APP_TIMEZONE`); an event that crosses midnight, or the edge of the
+    hours shown, is cut to each day, and events that overlap are stacked
+    in lanes. `start` is the first day shown (`2026-10-12`, or a moment);
+    `days` (7), `from` and `to` (the hours shown, 8 and 18) and `step`
+    (the minutes a slot lasts, 30) shape the grid.
+
+    With `slot_url`, every free slot is a cell that sends an htmx POST to
+    it with `resource`, `start` and `end` (RFC 3339, in the zone's
+    offset): `hx-post` and a static `hx-vals`, so it works under
+    `CSP=strict`. The slot also carries `data-resource`, `data-start` and
+    `data-end`. `slot_target` and `slot_swap` (outerHTML by default) say
+    what the answer replaces; without a target nothing is swapped, so the
+    answer can redirect or send an `HX-Trigger`. Without `slot_url` the
+    free slots are not drawn as cells at all: the week only shows the
+    bookings.
+
+    A grid for the keyboard: one Tab stop, then the arrow keys move
+    between a row's slots and events (left and right) or to the same time
+    in the row above and below, Home and End go to the row's first and
+    last, Ctrl+Home and Ctrl+End to the grid's; Enter or Space books a slot
+    or follows an event's link. Every cell says its resource, day and time.
+    On a phone the grid scrolls inside its frame, the resource column
+    staying put.
+    ====================================================================== -#}
+{% macro week_calendar(resources, events=[], start=none, days=7, from=8, to=18, step=30, slot_url=none, slot_target=none, slot_swap=none, label=none, id="rx-week") -%}
+{{- _assets() }}
+{%- set grid = renox_week_grid(resources, events, start, days=days, from=from, to=to, step=step, slots=slot_url is not none) %}
+{%- set names = namespace(list=[]) %}
+{%- for d in grid.days %}
+{%- set names.list = names.list + [renox_blocks_t('blocks.calendar.day_long_' ~ d.weekday) ~ " " ~ d.day ~ " " ~ renox_blocks_t('blocks.calendar.month_' ~ d.month)] %}
+{%- endfor %}
+{%- set first = namespace(done=false) %}
+<div class="rx-week" id="{{ id }}" data-rx-week style="--rx-week-columns: {{ grid.columns }}; --rx-week-per-day: {{ grid.per_day }}">
+  <p class="rx-visually-hidden" id="{{ id }}-help">{{ renox_blocks_t('blocks.week.help_book' if slot_url else 'blocks.week.help') }}</p>
+  <div class="rx-week__grid" role="grid" aria-label="{{ label or renox_blocks_t('blocks.week.label') }}" aria-describedby="{{ id }}-help" aria-colcount="{{ grid.columns + 1 }}" aria-rowcount="{{ (grid.rows | length) + 1 }}">
+    <div class="rx-week__row rx-week__row--head" role="row">
+      <div class="rx-week__corner" role="columnheader">{{ renox_blocks_t('blocks.week.resource') }}</div>
+      <div class="rx-week__track rx-week__track--head">
+        {%- for d in grid.days %}
+        <div class="rx-week__day" role="columnheader" style="grid-column: {{ loop.index0 * grid.per_day + 1 }} / span {{ grid.per_day }}" aria-label="{{ names.list[loop.index0] }}">
+          <span class="rx-week__weekday">{{ renox_blocks_t('blocks.calendar.day_' ~ d.weekday) }}</span> <span class="rx-week__date">{{ d.day }}</span>
+        </div>
+        {%- endfor %}
+        {%- for h in grid.hours %}
+        <div class="rx-week__hour" aria-hidden="true" style="grid-column: {{ h.column }} / span {{ h.span }}; grid-row: 2">{{ h.label }}</div>
+        {%- endfor %}
+      </div>
+    </div>
+    {%- for row in grid.rows %}
+    <div class="rx-week__row" role="row" data-rx-week-row>
+      <div class="rx-week__resource" role="rowheader">
+        <span class="rx-week__name">{{ row.label }}</span>
+        {%- if row.note %}<span class="rx-week__note">{{ row.note }}</span>{% endif %}
+      </div>
+      <div class="rx-week__track" style="--rx-week-lanes: {{ row.lanes }}">
+        {%- for item in row.items %}
+        {%- set when = names.list[item.day] %}
+        {%- set tab = "-1" if first.done else "0" %}
+        {%- set first.done = true %}
+        {%- if item.kind == "free" %}
+        <div class="rx-week__cell rx-week__slot" role="gridcell" tabindex="{{ tab }}" style="grid-column: {{ item.column }}; grid-row: 1 / span {{ row.lanes }}"
+          aria-label="{{ renox_blocks_t('blocks.week.book', resource=row.label, day=when, from=item.from, to=item.to) }}"
+          data-resource="{{ row.id }}" data-start="{{ item.start }}" data-end="{{ item.end }}"
+          hx-post="{{ slot_url }}" hx-vals='{{ {"resource": row.id, "start": item.start, "end": item.end} | tojson }}'
+          {%- if slot_target %} hx-target="{{ slot_target }}" hx-swap="{{ slot_swap or 'outerHTML' }}"{% else %} hx-swap="none"{% endif %}></div>
+        {%- else %}
+        <div class="rx-week__cell rx-week__event{% if item.tone %} rx-week__event--{{ item.tone }}{% endif %}{% if item.before %} rx-week__event--before{% endif %}{% if item.after %} rx-week__event--after{% endif %}" role="gridcell" tabindex="{{ tab }}" style="grid-column: {{ item.column }} / span {{ item.span }}; grid-row: {{ item.lane }}"
+          aria-label="{{ renox_blocks_t('blocks.week.event', label=item.label, resource=row.label, day=when, from=item.from, to=item.to) }}{% if item.before %} {{ renox_blocks_t('blocks.week.earlier') }}{% endif %}{% if item.after %} {{ renox_blocks_t('blocks.week.later') }}{% endif %}">
+          {%- if item.href %}<a class="rx-week__event-link" href="{{ item.href }}" tabindex="-1">{{ item.label }}</a>{% else %}<span class="rx-week__event-title">{{ item.label }}</span>{% endif %}
+          <span class="rx-week__time">{{ item.from }}–{{ item.to }}</span>
+        </div>
+        {%- endif %}
+        {%- endfor %}
+      </div>
+    </div>
+    {%- endfor %}
+  </div>
+</div>
 {%- endmacro %}
 
 {#- ======================================================================

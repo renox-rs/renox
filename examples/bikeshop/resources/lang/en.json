@@ -411,6 +411,23 @@
     "swatches": {
       "sold_out": "sold out"
     },
+    "week": {
+      "label": "Week calendar",
+      "resource": "Resource",
+      "help": "The arrow keys move between the slots and events, Home and End go to the first and last of a row.",
+      "help_book": "The arrow keys move between the slots and events, Home and End go to the first and last of a row. Enter or Space books a free slot or opens an event.",
+      "book": "Book :resource, :day, :from to :to",
+      "event": ":label, :resource, :day, :from to :to",
+      "earlier": "(started earlier)",
+      "later": "(continues later)"
+    },
+    "stepper": {
+      "label": "Status",
+      "done": "done",
+      "current": "current step",
+      "upcoming": "not reached yet",
+      "final": "final step"
+    },
     "history": {
       "label": "History",
       "kind_info": "note",
@@ -453,6 +470,9 @@
       "calendar": "Service visits in a month; the arrows go to the months around it.",
       "availability": "Bikes against the hours of a day; a free slot is a link that books it.",
       "history": "What happened to a bike in the workshop.",
+      "stepper": "A job's progress through its statuses, in a row and in a column (the second job was abandoned).",
+      "week": "The workshop's bays across a week: a free slot posts its bay and times with htmx, the arrow keys move between cells.",
+      "week_booked": "Booked :resource from :from to :to (a demo: nothing is saved).",
       "plans": "The service plans, side by side and compared.",
       "variant": "Price and stock",
       "in_stock": ":n in stock",

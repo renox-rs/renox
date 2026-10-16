@@ -2038,6 +2038,14 @@ Notes:
   is the same and only what scrolls changes, so the phone layout, the theme and the sidebar
   stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
   rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
+- **Display blocks: status stepper and week calendar** (#55, part 3 of #32): `status_stepper` and
+  `week_calendar` in renox-blocks, with tags `<rx-status-stepper>` and `<rx-week-calendar>`. The
+  stepper is CSS only; its terminal steps are alternative endings that never count as done unless
+  current. The week calendar's layout (cells, lanes for overlapping events, free slots, RFC 3339
+  times for a slot) is worked out in Rust (`renox_week_grid`, a template function), not in the
+  template, and reads times through the `date` filter, so it follows `APP_TIMEZONE`: there is
+  no per-request time zone in Renox. A free slot posts with `hx-post` and a static `hx-vals`
+  JSON, not `hx-vals='js:…'` (CSP strict). Drag-to-reschedule stays out of scope.
 
 - **Company sign-in in `renox-oauth`** (#51): the ID token of `Microsoft` is read from the token
   endpoint's answer and its signature is not verified (OpenID Connect Core §3.1.3.7: received
