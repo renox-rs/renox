@@ -3,6 +3,7 @@
 
     tests/cli/smoke.py resources <base url> <sqlite file> <app binary>
     tests/cli/smoke.py starter   <base url> <sqlite file> <app binary>
+    tests/cli/smoke.py package   <base url> <sqlite file> <app binary>
 
 `resources`: the app tests/cli/run.sh makes with every generator. Every GET page answers
 without a server error, as a guest and logged in; the `products` module from
@@ -12,6 +13,9 @@ must store false) and deleted through its forms, with CSRF, validation errors an
 `starter`: an app from `rnx new --starter`. Sign-up lands on email verification; the seeded
 admin sees the dashboard, the users page and the activity log and changes a member's roles;
 the member gets 403 on the admin pages.
+
+`package`: an app with `rnx make:package invoicing --resource invoices …` (#34). The package's
+page answers, its resource needs a login and saves a record, and its migrations ran.
 
 Standard library only. A failure says which step and shows the response.
 """
@@ -247,8 +251,35 @@ def starter(base, database, binary):
     expect("…or the activity log", member.get("/activity"), 403)
 
 
+def package(base, database, binary):
+    routes = get_routes(binary)
+    guest = Browser(base)
+    # The package's page is public, and shows the embedded view with its text keys.
+    expect("the package's page answers a guest", guest.get("/invoicing"), 200, see="Invoicing")
+    every_page_answers(guest, routes, "a guest")
+
+    # --resource inside the package: login required, then the form saves a record.
+    expect("the package's resource needs a login", guest.get("/invoices"), 303, location="/login")
+    me = Browser(base)
+    register(me, "Ana", "ana@example.com", "/")
+    every_page_answers(me, routes, "a logged-in user")
+    expect("the resource list starts empty", me.get("/invoices"), 200, see="Nothing here yet")
+    expect("the create form", me.get("/invoices/new"), 200, see=['name="number"', 'name="total"'])
+    saved = me.post("/invoices", {"number": "INV-1", "total": "1250"})
+    expect("a valid form saves", saved, 303, location="/invoices")
+    expect("…and the list shows it", me.follow(saved), 200, see=["INV-1", "Saved."])
+    # The package's migrations ran in the app's database (`rnx migrate`).
+    tables = {r[0] for r in sqlite3.connect(database).execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'")}
+    for table in ("invoicing_entries", "invoicing_invoices"):
+        if table not in tables:
+            sys.exit(f"smoke: the package's table {table} is not in the app's database: {sorted(tables)}")
+    print("ok   …and the package's tables are in the app's database")
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 5 or sys.argv[1] not in ("resources", "starter"):
+    scenarios = {"resources": resources, "starter": starter, "package": package}
+    if len(sys.argv) != 5 or sys.argv[1] not in scenarios:
         sys.exit(__doc__)
-    {"resources": resources, "starter": starter}[sys.argv[1]](*sys.argv[2:])
+    scenarios[sys.argv[1]](*sys.argv[2:])
     print(f"smoke: {sys.argv[1]} passed")

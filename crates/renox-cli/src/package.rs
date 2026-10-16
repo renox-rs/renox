@@ -873,6 +873,68 @@ mod tests {
         );
     }
 
+    /// Every file under `root` with its text, to compare before and after.
+    fn snapshot(root: &Path) -> std::collections::BTreeMap<PathBuf, String> {
+        let mut out = std::collections::BTreeMap::new();
+        let mut stack = vec![root.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    out.insert(p.clone(), std::fs::read_to_string(&p).unwrap());
+                }
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn refused_runs_change_nothing() {
+        // AC6 and AC10: an unknown or unavailable --with value, an invalid name, an existing
+        // target and a bad --register all fail through `run` with no file written or edited.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "    .module(Home)\n").unwrap();
+        std::fs::create_dir_all(dir.path().join("crates/taken")).unwrap();
+        std::fs::write(dir.path().join("crates/taken/keep.txt"), "mine").unwrap();
+        let before = snapshot(dir.path());
+        let with = |v: &str| vec![v.to_owned()];
+        let admin = run(dir.path(), "inv", None, &with("admin"), None, None).unwrap_err();
+        assert!(admin.to_string().contains("needs a newer renox"));
+        assert!(run(dir.path(), "inv", None, &with("nope"), None, None).is_err());
+        assert!(run(dir.path(), "inv", None, &with("assets,nope"), None, None).is_err());
+        assert!(run(dir.path(), "Bad Name", None, &[], None, None).is_err());
+        assert!(run(dir.path(), "-x", None, &[], None, None).is_err());
+        assert!(run(dir.path(), "taken", None, &[], None, None).is_err());
+        assert!(run(dir.path(), "inv", None, &[], Some("app".into()), None).is_err());
+        assert_eq!(snapshot(dir.path()), before);
+    }
+
+    #[test]
+    fn a_second_package_keeps_the_first_in_the_workspace() {
+        // AC7: the workspace gets each crate once; re-running with another name keeps
+        // the earlier members and dependencies.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(dir.path().join("src/lib.rs"), "    .module(Home)\n").unwrap();
+        let now = chrono::Utc::now();
+        for name in ["first", "second"] {
+            let plan = plan(dir.path(), name, None, &[], None).unwrap();
+            write(dir.path(), &plan, now).unwrap();
+        }
+        let root = std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap();
+        assert!(root.contains("members = [\".\", \"crates/first\", \"crates/second\"]"));
+        assert_eq!(root.matches("[workspace]").count(), 1);
+        assert_eq!(root.matches("first = { path").count(), 1);
+        assert_eq!(root.matches("second = { path").count(), 1);
+        let lib = std::fs::read_to_string(dir.path().join("src/lib.rs")).unwrap();
+        assert!(lib.contains(".module(first::First)") && lib.contains(".module(second::Second)"));
+    }
+
     #[test]
     fn leftover_placeholders_are_found() {
         assert_eq!(placeholder("a __crate__ b"), Some("__crate__"));

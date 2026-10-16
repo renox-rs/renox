@@ -315,6 +315,87 @@ if runs; then
     cargo run --quiet -- users:admin member@example.com
 fi
 
+step "rnx make:package (#34): a package in a fresh app, with --resource and --with assets,commands"
+new_app ledger --database "$DATABASE"
+use_database ledger
+cp Cargo.toml "$WORK/ledger-Cargo.toml"
+cp src/lib.rs "$WORK/ledger-lib.rs"
+# Refused with nothing written: --with admin (needs a newer renox), an unknown --with value,
+# an invalid name.
+if "$RNX" make:package invoicing --with admin 2>"$WORK/err.txt"; then echo "FAIL: --with admin was accepted"; exit 1; fi
+grep -q 'needs a newer renox' "$WORK/err.txt"
+if "$RNX" make:package invoicing --with nope 2>/dev/null; then echo "FAIL: an unknown --with value was accepted"; exit 1; fi
+if "$RNX" make:package "Bad Name" 2>/dev/null; then echo "FAIL: an invalid name was accepted"; exit 1; fi
+test ! -e crates
+cmp Cargo.toml "$WORK/ledger-Cargo.toml"
+cmp src/lib.rs "$WORK/ledger-lib.rs"
+
+"$RNX" make:package invoicing --with assets,commands --resource invoices --fields "number:string total:money"
+for f in Cargo.toml build.rs README.md src/lib.rs src/texts.rs views/invoicing/index.html tests/package.rs \
+    src/assets.rs src/commands.rs src/invoices/mod.rs views/invoicing/invoices/index.html tests/invoices.rs; do
+    test -f "crates/invoicing/$f"
+done
+# Migrations carry a timestamp and the package's name, never a 0001 prefix.
+ls crates/invoicing/migrations | grep -qE '^[0-9]{14}_create_invoicing_entries_table\.up\.sql$'
+ls crates/invoicing/migrations | grep -qE '^[0-9]{14}_create_invoicing_invoices_table\.up\.sql$'
+if ls crates/invoicing/migrations | grep -q '^0001'; then echo "FAIL: a 0001 migration in the package"; exit 1; fi
+grep -q '^members = \[".", "crates/invoicing"\]' Cargo.toml
+grep -q '^invoicing = { path = "crates/invoicing" }' Cargo.toml
+grep -q '\.module(invoicing::Invoicing)' src/lib.rs
+if grep -rnE '\{\{[a-z_]+\}\}' crates/invoicing --exclude-dir=target; then echo "FAIL: placeholders left above"; exit 1; fi
+# An existing target is refused without changing anything.
+cp Cargo.toml "$WORK/ledger-Cargo.toml"
+if "$RNX" make:package invoicing 2>/dev/null; then echo "FAIL: an existing package was overwritten"; exit 1; fi
+cmp Cargo.toml "$WORK/ledger-Cargo.toml"
+
+# A second package: the workspace gets it appended, the first stays, each is listed once.
+"$RNX" make:package archive
+grep -q '^members = \[".", "crates/invoicing", "crates/archive"\]' Cargo.toml
+test "$(grep -c '"crates/invoicing"' Cargo.toml)" = 2 # the member and the dependency
+
+# What the package's own CI runs, then the app's.
+(cd crates/invoicing && cargo fmt --check && cargo clippy --all-targets -- -D warnings)
+(cd crates/archive && cargo fmt --check && cargo clippy --all-targets -- -D warnings)
+check_app
+cargo clippy --workspace --all-targets -- -D warnings
+cargo run --quiet -- view:check
+if runs; then
+    cargo test -p invoicing
+    cargo test -p archive
+    cargo run --quiet -- migrate
+    cargo run --quiet -- migrate:status | grep -q 'ran.*create_invoicing_invoices_table'
+    cargo run --quiet -- db:check
+    cargo run --quiet -- invoicing:status
+    if [ "$DATABASE" = sqlite ]; then
+        step "the package over HTTP: its page and its resource (tests/cli/smoke.py)"
+        smoke 3193 package
+    fi
+fi
+
+step "rnx make:package in a virtual workspace: --register, renox.workspace = true"
+cd "$WORK"
+mkdir vw
+cd vw
+"$RNX" new platform --renox-path "$REPO" --database "$DATABASE" >/dev/null
+renox_line=$(grep '^renox' platform/Cargo.toml)
+printf '[workspace]\nmembers = ["platform"]\nresolver = "2"\n\n[workspace.dependencies]\n%s\n' "$renox_line" > Cargo.toml
+cp platform/Cargo.toml "$WORK/platform-Cargo.toml"
+cp platform/src/lib.rs "$WORK/platform-lib.rs"
+"$RNX" make:package reports
+grep -q '"crates/reports"' Cargo.toml
+grep -q '^renox.workspace = true' crates/reports/Cargo.toml
+# The app is left alone without --register.
+cmp platform/Cargo.toml "$WORK/platform-Cargo.toml"
+cmp platform/src/lib.rs "$WORK/platform-lib.rs"
+if "$RNX" make:package ledgers --register missing 2>/dev/null; then echo "FAIL: --register named a crate that isn't there"; exit 1; fi
+test ! -e crates/ledgers
+"$RNX" make:package audit --register platform
+grep -q '^members = \["platform", "crates/reports", "crates/audit"\]' Cargo.toml
+grep -q '^audit = { path = "../crates/audit" }' platform/Cargo.toml
+grep -q '\.module(audit::Audit)' platform/src/lib.rs
+if grep -q 'reports' platform/Cargo.toml; then echo "FAIL: reports was registered without --register"; exit 1; fi
+cargo build -p reports -p audit
+
 echo
 if [ "$DATABASE" = sqlite ]; then
     echo "cli e2e: the generated apps are formatted, lint-free, pass their tests, run their commands and work over HTTP"
