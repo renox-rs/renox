@@ -543,7 +543,7 @@ arguments.
 | `<rx-action-sheet id label action title>` | A button that opens a sheet with a form sent by htmx. See [Actions](#actions). |
 | `<rx-confirm id label action title message confirm-label method="DELETE" size icon modal-icon="warning" key>` | A destructive action (like delete) that asks first, in a sheet. Cancel has the focus first, so pressing Enter by mistake does nothing harmful. `icon` goes on the button, `modal_icon` above the sheet's title (`none` for no icon). |
 | `<rx-menu label id variant="secondary" size="small">` + `<rx-menu-link href label icon download new-tab>` + `<rx-menu-action action label method="POST" danger icon>` + `<rx-menu-open id label>` + `<rx-menu-section title>` + `<rx-menu-separator>` | A drop-down menu of actions. The arrow keys move, Esc closes. `menu_action` sends a form (with `_method` for methods other than POST); `menu_open` opens a sheet. |
-| `<rx-action-group label id icon variant size>`, `<rx-wizard-action id label route title submit-label …>` with `<rx-wizard-step key title>` children, `<rx-import-action id label route title columns template-url …>` | Several actions behind one button, an action with steps, a CSV import. See [Actions](#action-groups). |
+| `<rx-action-group label id icon variant size>`, `<rx-wizard-action id label route title submit-label …>` with `<rx-wizard-step key title>` children, `<rx-import-action id label route title columns template-url check …>` | Several actions behind one button, an action with steps, a CSV or Excel import. See [Actions](#action-groups). |
 | `<rx-tabs id selected label>` with `<rx-tab key label>` children | A segmented control: tabs that switch between panels on one page; each panel is the content of its `<rx-tab>`. The arrow keys, Home and End move between tabs. |
 | `<rx-table :rows caption as key card>` with `<rx-column label align hide-narrow>` | A table in a card, one row per item of `rows`. `align="num"` lines a column up on the right (for numbers), and `hide-narrow` hides the column on phones. |
 | `<rx-empty title message action-href action-label icon>` | What an empty list says; `icon` draws one of the kit's icons in a tinted circle above it. With `action_href` (and its `action_label`), it adds a link to add the first item. |
@@ -2275,6 +2275,131 @@ The `ImportReport` has `imported`, `failed` (each with `row` and `errors`), `is_
 `summary()`, for a command or a job that imports without a page. Rows are checked before the
 transaction starts, so a `unique` rule can't see a repeat within the same file: the database's
 unique index catches that one, and the report says the row repeats a unique value.
+
+#### Excel files
+
+With the `xlsx` feature (the one that gives grids their Excel export), `Import::xlsx(bytes)` reads
+a workbook the way `Import::csv` reads a file: the first row of the sheet names the columns, the
+rows below are the records. Every cell is read as the text a CSV file would hold (`12`, not
+`12.0`; a date as `2026-01-31`, with the time when it has one; empty cells empty), so the same
+row struct and rules check both, and a workbook imports like the equivalent CSV. Row numbers in
+the report are the sheet's own. `.sheet("Items")` picks a sheet by name (the first by default);
+a workbook without it, or a file that isn't one, is an error under the file field.
+`Import::from_upload(&upload)` picks CSV or Excel by the file's content (a workbook is a zip
+archive), so one route takes both; give the sheet `accept=".csv,.xlsx"` (`:accept` in the tag).
+Without the feature, CSV imports are unchanged and an Excel file is a clear error asking for CSV.
+
+`renox::import::template_xlsx` is the matching template to download: headings, an example row (in
+grey) and every column formatted for its type, so what people type in is read as the import
+expects.
+
+```rust
+# use renox::prelude::*;
+# #[derive(serde::Deserialize, Validate)]
+# struct ProductRow { #[validate(required)] sku: String }
+# #[derive(serde::Deserialize, Validate)]
+# struct ImportForm { #[validate(required)] file: Option<Upload> }
+# async fn import(State(state): State<AppState>, Valid(form): Valid<ImportForm>) -> Result<renox::import::ImportReport> {
+let file = form.file.ok_or(Error::NotFound)?;
+renox::import::Import::from_upload(&file) // CSV or Excel, by content
+#     .run(&state, |_tx, _row: ProductRow| Box::pin(async { Ok(()) })).await
+# }
+
+/// The Excel template: `sku` as text, `price` with two decimals, `stock` whole numbers.
+# #[cfg(feature = "xlsx")]
+async fn template_xlsx() -> Result<renox::Download> {
+    use renox::import::TemplateColumn;
+    renox::import::template_xlsx(
+        "products.xlsx",
+        &[
+            TemplateColumn::text("sku", "COFFEE-1"),
+            TemplateColumn::number("price", 4.5, 2),
+            TemplateColumn::integer("stock", 12),
+            TemplateColumn::date("available_on", renox::chrono::NaiveDate::from_ymd_opt(2026, 1, 31).unwrap()),
+        ],
+    )
+}
+```
+
+#### Check first (dry run)
+
+`.dry_run()` reads and validates every row and runs your closure for the valid ones in the
+transaction, then rolls everything back. The report lists the same errors a real run would (a
+repeat inside the file, a row the database refuses), says "3 rows can be imported", and the
+database is unchanged. (A PostgreSQL sequence still advances.) The kit adds the step for you:
+`check` on `<rx-import-action>` (`check=true` on the macro) adds a ticked "Check the file first"
+box sent as `dry_run`, and the handler passes it on with `.dry_run_if(form.dry_run)`. The report of
+a check keeps the sheet open (and doesn't reload the page), so the person unticks the box and
+imports for real.
+
+#### Undo
+
+`.undoable(Duration::from_secs(86_400))` keeps what the import wrote for that long, and the report's
+`batch_id` names it. Renox can't see SQL your closure runs, so write through the closure's
+`ImportTx` (it stands in for the transaction; pass it where a transaction goes):
+`tx.insert(&mut model)`, `tx.update(&mut model)` and `tx.save(&mut model)` write through the model
+and record the table, the key and the row as it was. Anything written another way (raw SQL,
+`Query::update`) is not undone.
+
+```rust
+# use renox::prelude::*;
+use std::time::Duration;
+use renox::import::{Import, ImportReport, ImportTx};
+# #[derive(Model, serde::Serialize, Default)]
+# #[model(table = "products")]
+# struct Product { id: i64, sku: String, name: String, updated_at: Option<DateTime> }
+# #[derive(serde::Deserialize, Validate)]
+# struct ProductRow { #[validate(required)] sku: String, #[validate(required)] name: String }
+/// Inserts the product, or updates the one with that SKU.
+async fn write(tx: &mut ImportTx<'_>, row: ProductRow) -> Result {
+    match Product::where_eq("sku", row.sku.as_str()).first(&mut *tx).await? {
+        Some(mut product) => {
+            product.name = row.name;
+            tx.update(&mut product).await
+        }
+        None => tx.insert(&mut Product { sku: row.sku, name: row.name, ..Default::default() }).await,
+    }
+}
+
+async fn import(state: AppState, bytes: Vec<u8>) -> Result<ImportReport> {
+    Import::csv(bytes)
+        .undoable(Duration::from_secs(86_400))
+        .run(&state, |tx, row: ProductRow| Box::pin(write(tx, row)))
+        .await
+}
+
+/// POST /imports/{batch}/undo
+async fn undo(State(state): State<AppState>, Path(batch): Path<i64>) -> Result<Toast> {
+    let undone = renox::import::undo(&state, batch).await?;
+    Ok(Toast::success(format!("{} deleted, {} restored.", undone.deleted, undone.restored)))
+}
+```
+
+`undo` deletes the rows the batch inserted and puts back the rows it updated (their before-image,
+every column), in one transaction: either all of it or nothing. It refuses, with a message that is
+shown like any `Error::BadRequest`, when
+
+- the window has passed, or the batch was already undone;
+- a row it would touch was deleted since, or **changed** since: the row's current `updated_at` is
+  not the one the import left (a model without `updated_at` is undone without this check);
+- other rows still refer to a row it would delete: the message names the table that does
+  ("the products row 7 is still used by order_lines");
+- your rule says no: `Undo::batch(id).can_undo(|tx, change| Box::pin(async move { … }))` asks about
+  each row (`change.table()`, `change.key()`, `change.is_insert()`) in the undo's transaction;
+  return `Err(Error::BadRequest("…".into()))` to refuse ("used by an issued document").
+
+Encrypted columns are not kept in the before-image (it would hold the plaintext), so an undo
+doesn't restore them. `my-app import:prune` (`renox::import::prune(&state, age)`) deletes the
+records of finished windows; the tables are `import_batches` and `import_changes`.
+
+#### Error files
+
+A report that has failed rows can hand the file back for people to fix. `report.error_csv("errors.csv",
+ErrorFile::WholeFile)` is the whole uploaded file with an added `Error` column (empty for the good
+rows): fix it in place and upload it again. `ErrorFile::FailedRows` has only the rows that failed,
+for large files. With the `xlsx` feature, `report.error_xlsx(…)` makes a workbook. The kit's
+report links both CSV files as downloads (as `data:` links, up to 1 MiB each), and an app can
+serve its own from a route.
 
 ### Duplicate (replicate)
 

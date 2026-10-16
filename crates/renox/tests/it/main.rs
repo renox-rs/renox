@@ -35,6 +35,7 @@ mod forms;
 mod grid;
 mod grid_edges;
 mod i18n;
+mod import;
 mod infolist;
 mod infra;
 mod jobs;

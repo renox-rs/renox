@@ -2472,7 +2472,7 @@ pub(crate) static BUILTIN: &[Contract] = &[
     },
     Contract {
         tag: "rx-import-action",
-        doc: "A button that opens a sheet to import a CSV file; the handler answers with an `ImportReport`.",
+        doc: "A button that opens a sheet to import a CSV or Excel file; the handler answers with an `ImportReport`.",
         render: Render::Macro {
             module: Module::Ui,
             name: "import_action",
@@ -2505,6 +2505,10 @@ pub(crate) static BUILTIN: &[Contract] = &[
             text("icon", false, "The button's icon (upload by default)."),
             text("key", false, "A keyboard shortcut."),
             flag("button", "Whether to draw the opening button."),
+            flag(
+                "check",
+                "Adds a ticked \"check the file first\" box, sent as `dry_run` (see `Import::dry_run_if`).",
+            ),
         ],
         slots: &[],
         events: &[],

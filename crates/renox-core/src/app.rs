@@ -59,6 +59,7 @@ Commands:
   ui:publish [--force]      Copy the UI kit (renox/ui.html and its CSS) into the app to change it
   cache:prune               Delete expired rows of the database cache store
   session:prune             Delete expired sessions (SESSION_DRIVER=database)
+  import:prune [--days N]   Delete the records of imports whose undo window ended N days ago (default 0)
   schedule:list             List scheduled tasks and when they run next
   schedule:run <task>       Run one scheduled task now
   schedule:work             Run scheduled tasks (when SCHEDULER=false for serve)
@@ -599,6 +600,7 @@ impl App {
         migrations.push(crate::cache::MIGRATION);
         migrations.push(crate::session::MIGRATION);
         migrations.push(crate::grid::MIGRATION);
+        migrations.push(crate::import::MIGRATION);
         migrations.extend(crate::webhook::MIGRATIONS);
         migrations.extend(self.migrations);
         for module in &self.modules {
@@ -1191,6 +1193,14 @@ impl App {
                 "Deleted {} expired cache row(s).",
                 kernel.state.cache.prune().await?
             ),
+            "import:prune" => {
+                let days = flag_value(args, "--days")?.unwrap_or(0);
+                let age = Duration::from_secs(u64::from(days) * 86_400);
+                println!(
+                    "Deleted {} import record(s) whose undo window ended more than {days} day(s) ago.",
+                    crate::import::prune(&kernel.state, age).await?
+                );
+            }
             "schedule:list" => {
                 if kernel.schedule.is_empty() {
                     println!("No scheduled tasks.");
@@ -1305,6 +1315,7 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "webhook:retry",
     "cache:prune",
     "session:prune",
+    "import:prune",
     "ui:publish",
     "schedule:list",
     "schedule:run",

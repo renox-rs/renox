@@ -172,6 +172,7 @@ async fn the_binarys_commands_run_through_run_args() {
     run(&["webhook:failed"]).await.unwrap();
     run(&["cache:prune"]).await.unwrap();
     run(&["session:prune"]).await.unwrap();
+    run(&["import:prune"]).await.unwrap();
     assert!(run(&["queue:retry"]).await.is_err(), "needs an id or `all`");
 
     // Maintenance mode is a file in storage/framework.

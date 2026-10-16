@@ -274,7 +274,7 @@ Two more things are true inside a task:
 Some tables keep growing until something **prunes** them (deletes the old rows). For each
 there is a command:
 
-- `cache:prune`, `session:prune`, `queue:prune-failed`, `queue:prune-batches`;
+- `cache:prune`, `session:prune`, `queue:prune-failed`, `queue:prune-batches`, `import:prune`;
 - and, from modules, `tokens:prune`, `notifications:prune` and `audit:prune`.
 
 Each also has a function, so one daily task can do them all:

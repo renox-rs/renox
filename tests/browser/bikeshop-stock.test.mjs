@@ -181,6 +181,10 @@ describe('purchasing', () => {
       await page.click('[data-rx-open="price-list"]');
       await page.waitFor(() => document.getElementById('price-list')?.open, { message: 'the sheet opened' });
       assert.ok((await page.text('#price-list')).includes('sku'), 'the columns are listed');
+      // The "check the file first" box (a dry run) is there and ticked, and the
+      // file field takes Excel files as well.
+      assert.equal(await page.eval(() => document.getElementById('price-list-check')?.checked), true, 'the check box is ticked');
+      assert.equal(await page.eval(() => document.getElementById('price-list-file')?.accept), '.csv,.xlsx');
       await shot(page, 'supplier-import-desktop');
       page.assertClean();
     }));

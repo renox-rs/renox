@@ -153,10 +153,15 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
                            link, copyable); related/count_of/sum_of, advanced_filter,
                            remember, poll; export.rs: CSV, Excel (`xlsx`), print page,
                            export_as (any query) + ExportFormat
-  src/import.rs            renox::import: Import (CSV → rows checked as forms via
-                           validation::extract::parse_pairs, written in savepoints),
-                           ImportReport (IntoResponse: toast or views/import_report.html),
-                           template()
+  src/import.rs            renox::import: Import (CSV or Excel → rows checked as forms via
+                           validation::extract::parse_pairs, written in savepoints; dry_run,
+                           undoable), ImportReport (IntoResponse: toast or
+                           views/import_report.html; error files), template(), template_xlsx()
+  src/import/xlsx.rs       (feature `xlsx`) reading a sheet with calamine as the text a CSV
+                           would hold, the error workbook, TemplateColumn
+  src/import/undo.rs       ImportTx (records inserts/updates), import_batches /
+                           import_changes, undo / Undo (one transaction, updated_at check,
+                           FK refusal, can_undo hook), prune
   src/mail.rs              Mail (recipients, cc/bcc/reply_to/from, attachments), Mailer
                            (smtp/log/memory, MAIL_FAILOVER), named mailers (App::mailer,
                            mailer_named, queue_mail_via), mail_view, queue_mail, /_renox/mail

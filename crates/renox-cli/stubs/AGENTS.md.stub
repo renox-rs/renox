@@ -240,6 +240,10 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   `authorize` (403 before the rules), `after` (database checks, errors shown on the field).
   Rules include `alpha_dash`, `uuid`, `ip`, `size`, `starts_with`, `required_without`,
   `prohibited_if`, and `v.distinct(…)` for lists.
+- Imports (`renox::import`): `Import::from_upload(&file)` reads CSV, or Excel with the `xlsx`
+  feature; `.dry_run_if(form.dry_run)` checks without writing (`<rx-import-action check>`);
+  `.undoable(window)` can be undone with `renox::import::undo` only for rows written through the
+  closure's `tx.insert/update/save(&mut model)`, never raw SQL.
 - **The standard mechanism of a Renox dashboard application** (this app's signed-in pages, a
   back office, an admin panel, any daily workspace with a sidebar and many modules): the
   layout is `<rx-shell fill>` (`layouts/app.html` already is; docs/ui.md "The dashboard
