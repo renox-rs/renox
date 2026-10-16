@@ -84,6 +84,11 @@ pub(crate) const DEFAULTS: &[(&str, &str)] = &[
     ("n_detached", ":what detached."),
     ("relation_empty", "No :plural yet"),
     ("back_to", "Back to :label"),
+    (
+        "sealed_set",
+        "Set, last changed :when. Leave empty to keep the stored value.",
+    ),
+    ("sealed_unset", "Not set yet."),
 ];
 
 /// The texts of the request's language.

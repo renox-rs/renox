@@ -426,6 +426,18 @@
   flattens its `Mail`, so old payloads still decode) and the job returns
   `Middleware::rate_limited("channel:<name>" | "mailer:<name>", …)`. Unknown names fail at boot.
   Tests: tests/it/rate_limits.rs.
+- **#29, typed settings in the database** (`renox::settings`, docs/settings.md): the opt-in
+  `Settings` module (migration `00010101000400_create_settings_table`, commands `settings:get|set|
+  list`), `SettingsGroup` (`KEY`, `ENCRYPTED`) for a plain struct with defaults and `Validate`
+  rules, `App::settings::<T>()` / `settings_in_views` / `settings_from(path)`,
+  `AppState::settings` / `save_settings` (+ `_in` for a scope, `settings_info`), the `Setting<T>`
+  extractor, the event `SettingsChanged` and an `audit_logs` entry when `Audit` is on,
+  `TestApp::with_settings`, and `Admin::settings` / `AdminSettings` in renox-admin. Decisions: the
+  group trait is `SettingsGroup` and the module `Settings` (the issue used one name for both); the
+  table is keyed `(key, scope)` with `''` as the default scope so a scope needs no later migration;
+  an encrypted group is sealed the way `db::Encrypted` is; the per-process cache re-checks a
+  version row in `cache` (`renox:settings:<key>`) at most once a second per group, so one query per
+  group until a write and about a second for other servers to notice.
 - **#43, the upload pipeline**: `upload/pipeline.rs` (`Pipeline`, `UploadStep`, `StepOutcome`,
   `UploadContext`), `upload/clamav.rs`, `upload/images.rs` (feature `images`, the `image` crate with
   JPEG/PNG/WebP only), `App::uploads`, `AppState.uploads`. `Valid<T>` runs the steps after the

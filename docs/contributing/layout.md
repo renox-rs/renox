@@ -136,6 +136,9 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
                            in-process `Hub`)
   src/audit.rs             Audit module (audit_logs table, records auth events), audit::record,
                            audit:prune
+  src/settings.rs          Settings module (settings table), SettingsGroup, SettingsChanged, Setting<T>,
+                           AppState::settings/save_settings (+ _in scopes), the per-process cache with
+                           a version row in `cache`, settings:get|set|list, App::settings_from (#29)
   src/context.rs           renox::context: task-local values per request/job/task/command
                            (default scopes, context::app())
   src/queue/               Job trait, Queue (dispatch, chain, batch), Middleware, Worker,
@@ -211,7 +214,7 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   views/                   built-in templates (error, pagination, auth/*, mail/*, ui.html (the kit),
                            debug.html (/_renox/debug), queue/dashboard.html,
                            notifications.html (the bell's page and panel)); see §4.3
-  migrations/              framework-owned migrations (auth/, permissions/, audit/, queue/,
+  migrations/              framework-owned migrations (auth/, permissions/, audit/, settings/, queue/,
                            cache/, session/, grid/, webhook/); see §4.5
   tests/                   core-only integration tests (support/mod.rs has a small TestApp)
 crates/renox-macros/       proc macros: derive Model (typed column constants, `#[model(form)]`,
@@ -279,8 +282,10 @@ crates/renox-admin/        the admin panel plugin (#148, Filament's resources): 
                            resource's `allows` before `Valid<T>` is read; bulk/row actions
                            with the built-ins delete/restore/force-delete; the trash is
                            `?filter=trashed`), views/ (renox-admin/layout, dashboard, index,
-                           form, fields, show; renox-admin/{slug}/cells.html from the app for
-                           custom columns); its own tests/ (+ tests/migrations); guide
+                           form, fields, show, settings; renox-admin/{slug}/cells.html from the app for
+                           custom columns); settings.rs (`Admin::settings`, `AdminSettings`: a form
+                           for a settings group at `{path}/settings/{key}`, tests/settings.rs, #29);
+                           its own tests/ (+ tests/migrations); guide
                            docs/admin.md (doctested from lib.rs `Guide`)
 crates/renox-billing/      the subscriptions plugin (#155, Laravel's Cashier): Billing module
                            (lib.rs: plans, gateways, `Setup` given to the app with
@@ -451,6 +456,8 @@ docs/oauth.md              social login with renox-oauth (doctest: renox-oauth's
 docs/blocks.md             blocks beyond the kit with renox-blocks (doctest: its `Guide`)
 docs/admin.md              the admin panel with renox-admin (doctest: renox-admin's `Guide`)
 docs/billing.md            subscriptions with renox-billing (doctest: renox-billing's `Guide`)
+docs/settings.md           typed settings in the database (doctest: renox-admin's `SettingsGuide`,
+                           since it shows the admin page)
 docs/queue.md              jobs, retries, priority, unique, middleware, chains, batches (doctest
                            `QueueGuide`)
 docs/postgresql.md         PostgreSQL guide for app authors
