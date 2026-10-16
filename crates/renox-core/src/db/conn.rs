@@ -485,6 +485,7 @@ mod executor {
     pub trait Sealed {}
     impl Sealed for &super::Db {}
     impl Sealed for &mut super::Transaction {}
+    impl Sealed for &mut crate::import::ImportTx<'_> {}
     impl Sealed for super::Conn<'_> {}
 }
 

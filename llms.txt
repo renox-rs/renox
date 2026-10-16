@@ -177,7 +177,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); the
     Midtrans webhook: [sales/gateway.rs](examples/bikeshop/src/app/sales/gateway.rs); report
     grids grouped, summed and exported: [reports/grids.rs](examples/bikeshop/src/app/reports/grids.rs);
-    a CSV import with `renox::import`: [stock/import.rs](examples/bikeshop/src/app/stock/import.rs);
+    a CSV or Excel import with `renox::import` (checked first with `dry_run_if`):
+    [stock/import.rs](examples/bikeshop/src/app/stock/import.rs);
     the JSON API with token abilities and CORS: [api/mod.rs](examples/bikeshop/src/app/api/mod.rs)
 
 - [examples/hello](examples/hello) ([README](examples/hello/README.md)): a guestbook in one file: HTMX form posts that return
@@ -242,8 +243,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   buttons beside an entry's value with `prefix_actions`/`suffix_actions`;
   component events (`rx:<component>:<event>`, `@saved`, `attrs`) in "Components and the page: three directions",
   actions: `action_sheet`, `confirm`, `action_group` + `menu_open`, `wizard_action`,
-  `import_action` with `renox::import`, duplicating with `Model::replicate`, exports with
-  `Grid::export_as`;
+  `import_action` with `renox::import` (CSV or, with `xlsx`, Excel: `Import::from_upload`,
+  `.sheet`, `template_xlsx`; `.dry_run()` / the tag's `check` box; `.undoable(window)` with
+  `ImportTx` and `renox::import::undo`, `Undo::can_undo`; `report.error_csv`; `import:prune`),
+  duplicating with `Model::replicate`, exports with `Grid::export_as`;
   `date_picker` with `disabled_dates`/`closed_weekdays`; `icon(name)` (Lucide line icons);
   the page's frame: `navbar`/`nav_links`/`nav_link` (`tabs=[…]`: a bottom tab bar on phones,
   `nav_search`: the search behind a button there), `sidebar` + `<rx-shell fill>` for
@@ -345,7 +348,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - `crates/renox-core/src`: the runtime. `db/` (Db, models, queries, relations, migrations),
   `validation/`, `auth/` (incl. `permissions.rs`, `account.rs`, `events.rs`, `tokens.rs`, `device.rs`: tokens for a kiosk or till without a user),
   `audit.rs`, `settings.rs` (typed settings in the database), `context.rs`, `queue/`, `schedule.rs` + `timezone.rs`, `cache.rs`, `view.rs`,
-  `grid/` (the data grid and its exports), `import.rs` (CSV imports), `testing.rs`.
+  `grid/` (the data grid and its exports), `import.rs` (CSV and Excel imports, dry run, undo), `testing.rs`.
 - `crates/renox-cli`: `rnx`; `stubs/` holds the files `rnx new` writes.
 - `crates/renox-2fa`: the optional two-factor plugin crate (same version as `renox`): the
   module (`lib.rs`: the second login step, the account card, events to the audit log), its

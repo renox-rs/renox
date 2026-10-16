@@ -486,6 +486,36 @@ pub async fn template() -> renox::Download {
     renox::import::template("products.csv", &["sku", "name"])
 }
 
+/// Excel too: `from_upload` picks CSV or Excel by content (`Import::xlsx(bytes)` and `.sheet("Items")`
+/// with the `xlsx` feature; cells read as the text a CSV holds, so the same rules check both).
+/// `.dry_run_if(true)` checks every row and writes nothing (`<rx-import-action check>` adds the box).
+/// `.undoable(window)` keeps what the closure wrote through its `tx.insert/update/save(&mut model)`.
+pub async fn import_any(State(state): State<AppState>, Valid(form): Valid<ImportForm>) -> Result<ImportReport> {
+    let file = form.file.ok_or(Error::NotFound)?;
+    Import::from_upload(&file)
+        .dry_run_if(false)
+        .undoable(std::time::Duration::from_secs(86_400))
+        .run(&state, |tx, row: ProductRow| Box::pin(async move {
+            tx.insert(&mut Product { sku: row.sku, name: row.name, ..Default::default() }).await
+        }))
+        .await // report.batch_id; report.error_csv("errors.csv", ErrorFile::WholeFile) is the file to fix
+}
+
+/// Puts the batch back: deletes what it inserted, restores what it updated, in one transaction.
+/// Refuses with a message when the window passed, a row changed or vanished since (`updated_at`),
+/// or another table still uses a row. `Undo::batch(id).can_undo(|tx, change| …)` adds your rule.
+pub async fn undo_import(State(state): State<AppState>, Path(batch): Path<i64>) -> Result<Toast> {
+    let undone = renox::import::undo(&state, batch).await?; // `my-app import:prune` forgets old batches
+    Ok(Toast::success(format!("{} deleted, {} restored.", undone.deleted, undone.restored)))
+}
+
+/// With the `xlsx` feature: the Excel template (headings, an example row, typed columns).
+#[cfg(feature = "xlsx")]
+pub async fn template_xlsx() -> Result<renox::Download> {
+    use renox::import::TemplateColumn;
+    renox::import::template_xlsx("products.xlsx", &[TemplateColumn::text("sku", "COFFEE-1"), TemplateColumn::text("name", "Coffee")])
+}
+
 /// "Duplicate": a copy with no id and no timestamps, for the new-product form.
 pub async fn replicate(State(db): State<Db>, Path(id): Path<i64>) -> Result<View> {
     let mut product = Product::find_or_404(&db, id).await?.replicate();

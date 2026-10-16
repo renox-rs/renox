@@ -267,7 +267,7 @@ fn builtin(locale: &str) -> Option<&'static HashMap<&'static str, &'static str>>
             ("ui.value", "Value"),
             ("ui.back", "Back"),
             ("ui.actions", "Actions"),
-            ("ui.import.file", "CSV file"),
+            ("ui.import.file", "File"),
             ("ui.import.columns", "Columns:"),
             ("ui.import.template", "Download a template"),
             ("ui.import.row", "Row"),
@@ -281,6 +281,58 @@ fn builtin(locale: &str) -> Option<&'static HashMap<&'static str, &'static str>>
             (
                 "ui.import.nothing",
                 "Nothing was imported: one row has errors.|Nothing was imported: :count rows have errors.",
+            ),
+            (
+                "ui.import.check.done",
+                "The check found no problems: one row can be imported.|The check found no problems: :count rows can be imported.",
+            ),
+            (
+                "ui.import.check.partial",
+                "Check done, nothing was written: :imported can be imported, one row has errors.|Check done, nothing was written: :imported can be imported, :count rows have errors.",
+            ),
+            (
+                "ui.import.check.nothing",
+                "Check done, nothing was written: nothing can be imported, one row has errors.|Check done, nothing was written: nothing can be imported, :count rows have errors.",
+            ),
+            (
+                "ui.import.check_first",
+                "Check the file first (nothing is written)",
+            ),
+            ("ui.import.error_column", "Error"),
+            ("ui.import.download_failed", "Download the rows that failed"),
+            (
+                "ui.import.download_whole",
+                "Download the whole file with an error column",
+            ),
+            (
+                "ui.import.not_xlsx",
+                "The file is not a readable Excel workbook (.xlsx).",
+            ),
+            (
+                "ui.import.no_sheet",
+                "The workbook has no sheet called :sheet.",
+            ),
+            (
+                "ui.import.xlsx_unsupported",
+                "Excel files can't be read here: save the sheet as CSV.",
+            ),
+            ("ui.import.undo.unknown", "This import is not known."),
+            ("ui.import.undo.done", "This import was already undone."),
+            (
+                "ui.import.undo.expired",
+                "This import can no longer be undone: the time allowed for it has passed.",
+            ),
+            (
+                "ui.import.undo.deleted",
+                "The import can't be undone: the :table row :key was deleted after it.",
+            ),
+            (
+                "ui.import.undo.changed",
+                "The import can't be undone: the :table row :key was changed after it.",
+            ),
+            (
+                "ui.import.undo.in_use",
+                "The import can't be undone: the :table row :key is still used by :by.",
             ),
             ("ui.import.not_utf8", "The file must be CSV text (UTF-8)."),
             ("ui.import.empty", "The file has no rows to import."),

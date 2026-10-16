@@ -178,7 +178,8 @@ field for you.
   `queue::QueueCounts`, `queue::QueueStats` (the dashboard's), `http::SentRequest`,
   `select::SelectOption` (use `SelectOption::new`), `select::OptionQuery`, `Upload` (use
   `Upload::new`), `db::Migration` (use `Migration::new(..).sqlite(..).postgres(..)`),
-  `live_component::Mounted`, `import::ImportReport`, `import::FailedRow`, `auth::permissions::Assignment`
+  `live_component::Mounted`, `import::ImportReport`, `import::FailedRow`, `import::ErrorFile`, `import::ImportChange`,
+  `import::UndoReport`, `import::TemplateColumn` (use its constructors), `auth::permissions::Assignment`
   (`auth::permissions::Scope` has private fields: make one with `Scope::of`, `of_id`, `new`
   or `global`; `Scopes` stays `All` / `Only`, so a `match` on it needs no `_` arm)
 - `AppStateInner`: what an `AppState` holds, read as the state's fields

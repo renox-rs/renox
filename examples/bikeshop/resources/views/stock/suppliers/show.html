@@ -1,4 +1,4 @@
-{#- A supplier (#240): contact, their price list (renox::import's sheet loads it from a CSV),
+{#- A supplier (#240): contact, their price list (renox::import's sheet loads it from a CSV or Excel file, and can check it first),
     and the active store's orders with them. -#}
 <rx-page layout="layouts/staff.html" :title="supplier.name">
   <app-stock-assets/>
@@ -6,7 +6,7 @@
     {# [explain:stock.suppliers.show.template] #}
     <rx-page-header :title="supplier.name" :subtitle="t('stock.suppliers.lead_time', days=supplier.lead_days)" :back="route('stock.suppliers')" :back-label="t('stock.suppliers.title')">
       <rx-link-button :href="route('stock.suppliers.edit', supplier.id)" :label="t('stock.suppliers.edit')" icon="edit"/>
-      <rx-import-action id="price-list" :label="t('stock.import.button')" :action="route('stock.suppliers.import', supplier.id)" :title="t('stock.import.title', supplier=supplier.name)" :description="t('stock.import.lead', rows=200)" :columns="columns" :template-url="route('stock.suppliers.template')"/>
+      <rx-import-action id="price-list" :label="t('stock.import.button')" :action="route('stock.suppliers.import', supplier.id)" :title="t('stock.import.title', supplier=supplier.name)" :description="t('stock.import.lead', rows=200)" :columns="columns" :template-url="route('stock.suppliers.template')" accept=".csv,.xlsx" check/>
       <rx-link-button :href="route('stock.purchasing.create', supplier=supplier.id)" :label="t('stock.purchasing.new')" variant="primary" icon="plus"/>
     </rx-page-header>
     {# [/explain:stock.suppliers.show.template] #}
