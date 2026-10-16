@@ -654,7 +654,7 @@ impl Job for SendMailVia {
 impl AppState {
     /// Renders `{view}.html` into a mail, with `{view}.txt` as the text
     /// version when it exists (otherwise text made from the HTML).
-    /// Templates see `app` (`app.locale` too) and `t(key, …)` in the
+    /// Templates see `app` (`app.locale` and `app.dir`, `"ltr"` or `"rtl"`, too) and `t(key, …)` in the
     /// [`current_locale`](crate::i18n::current_locale) besides `ctx`, can
     /// extend `renox/mail/layout.html` and import
     /// `renox/mail/components.html` (`button`, `panel`, `table`).
@@ -669,7 +669,7 @@ impl AppState {
         let ctx = minijinja::value::merge_maps([
             minijinja::Value::from_serialize(&ctx),
             context! {
-                app => context! { name => self.config.name, url => self.config.url, locale => locale },
+                app => context! { name => self.config.name, url => self.config.url, locale => locale, dir => self.direction(&locale).as_str() },
                 t => crate::view::translate_function(self, &locale),
             },
         ]);

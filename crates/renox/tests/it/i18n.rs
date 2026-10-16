@@ -273,6 +273,28 @@ async fn direction_follows_the_default_list_and_app_rtl_locales() {
     assert_eq!(app.state().direction("ar"), Direction::Ltr);
 }
 
+#[tokio::test]
+async fn pages_expose_app_dir_for_the_visitors_locale() {
+    let dir = tempfile::tempdir().unwrap();
+    write_lang(dir.path());
+    std::fs::write(dir.path().join("lang/ar.json"), r#"{ "welcome": "x" }"#).unwrap();
+    let kernel = kernel(dir.path(), false).await;
+    std::fs::write(
+        dir.path().join("views/page.html"),
+        "{{ app.locale }}:{{ app.dir }}",
+    )
+    .unwrap();
+    let mut visitor = Visitor {
+        router: kernel.router(),
+        cookie: None,
+    };
+    assert_eq!(visitor.get("/").await.1, "en:ltr");
+    visitor.get("/lang/ar").await;
+    assert_eq!(visitor.get("/").await.1, "ar:rtl");
+    visitor.get("/lang/es").await;
+    assert_eq!(visitor.get("/").await.1, "es:ltr");
+}
+
 #[renox::test]
 async fn an_apps_language_file_brings_plurals_and_ranges() {
     // `tests/lang/es.json`: Renox ships English only; Spanish comes from the app.

@@ -1759,6 +1759,7 @@ fn globals(
             debug => config.debug,
             url => config.url,
             locale => locale,
+            dir => state.direction(locale).as_str(),
             currency => config.currency,
         },
         auth => context! {
