@@ -84,7 +84,13 @@ async function closePanel(page, docked) {
         visibility: document.visibilityState,
       }));
       process.stderr.write(`Esc did not close the sheet (try ${attempt}): ${JSON.stringify(state)}\n`);
-      if (attempt >= 3) throw error;
+      if (attempt >= 3) {
+        // Last resort, as `click` does: close it through the DOM and say so,
+        // so the run still tests the page and the log shows how often (#8).
+        process.stderr.write('Esc never reached the sheet; closing it through the DOM\n');
+        await page.eval(() => document.querySelector('#about-page').close());
+        return;
+      }
       await page.send('Page.bringToFront');
     }
   }

@@ -93,6 +93,10 @@ describe('renting a bike', () => {
       await page.eval(() => document.querySelector('#reserve-form').requestSubmit(document.querySelector('#reserve-form button[type=submit]')));
       await page.waitFor(() => /^\/rentals\/[0-9A-Z]{26}$/.test(location.pathname), { message: 'the reservation page' });
       code = await page.eval(() => location.pathname.split('/').pop());
+      // The URL changes when the navigation commits, before the new page is
+      // parsed: wait for it, or `main` is still null (#8).
+      await page.settle();
+      await page.waitFor(() => !!document.querySelector('main'), { message: 'the reservation page body' });
       const shown = await page.text('main');
       assert.ok(shown.includes(code), 'the code is shown as text');
       assert.match(shown, /Pay the deposit/);

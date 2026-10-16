@@ -53,8 +53,19 @@ async function addHelmet(page) {
   const href = await page.eval(() => document.querySelector('#results .rx-media-card__link').getAttribute('href'));
   await page.goto(`${app.url}${href}`);
   await page.waitFor(() => !!document.querySelector('[data-bs-add-to-cart]'));
-  await page.click('[data-bs-add-to-cart] button[type=submit]');
-  await page.waitFor(() => !!document.querySelector('#nav-cart .rx-button__badge'));
+  // The badge appears when the add's swap lands. If the click never sent the
+  // form (#342, #327, #8), nothing was added, so sending it again is safe.
+  for (let attempt = 1; ; attempt++) {
+    await page.click('[data-bs-add-to-cart] button[type=submit]');
+    try {
+      await page.waitFor(() => !!document.querySelector('#nav-cart .rx-button__badge'), { timeout: 5000, message: 'the cart badge' });
+      return;
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      process.stderr.write(`The cart badge did not appear (try ${attempt}); adding again\n`);
+      await page.settle();
+    }
+  }
 }
 
 /**
@@ -166,8 +177,18 @@ describe('bikeshop sales', () => {
       }, option);
       // Sent with requestSubmit: a click on the button in CI sometimes never
       // sent the form (#342, #327), and htmx hears the submit event the same.
-      await page.eval(() => document.querySelector('.bs-counter__find button[type=submit]').form.requestSubmit());
-      await page.waitFor(() => document.querySelectorAll('.bs-cart__line--counter').length === 1);
+      // Same wait, same retry as addHelmet: if no line came, none was added (#8).
+      for (let attempt = 1; ; attempt++) {
+        await page.eval(() => document.querySelector('.bs-counter__find button[type=submit]').form.requestSubmit());
+        try {
+          await page.waitFor(() => document.querySelectorAll('.bs-cart__line--counter').length === 1, { timeout: 5000, message: 'the counter line' });
+          break;
+        } catch (error) {
+          if (attempt >= 3) throw error;
+          process.stderr.write(`The counter line did not appear (try ${attempt}); sending again\n`);
+          await page.settle();
+        }
+      }
       await page.settle();
       // The keypad types the amount received; the change is worked out.
       await page.waitFor(() => !!document.querySelector('[data-rx-keypad][data-rx-blocks-ready]'));
