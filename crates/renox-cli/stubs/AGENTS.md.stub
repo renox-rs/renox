@@ -278,6 +278,10 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   in the app's own CSS takes the kit's type scale (`font: var(--rx-type-heading)`, `-body`,
   `-label`, `-caption`…), not sizes of its own. `data-rx-theme="classic"` on `<html>` is the
   kit's older look.
+- Right-to-left: every layout writes `<html lang="{{ app.locale }}" dir="{{ app.dir }}">`, and
+  `app.dir` is `rtl` for Arabic, Hebrew, Persian and the like. Keep `dir` on a layout you add,
+  and in the app's own CSS use logical properties (`margin-inline-start`, `padding-inline`,
+  `inset-inline-end`, `text-align: start`), never `left`/`right`.
 - Lists of records with filters, sorting, search or exports: build a `renox::grid::Grid`
   (docs/grid.md) and render it with `renox/grid.html` rather than a hand-made table. Excel
   exports need the `xlsx` feature (`renox = { …, features = ["xlsx"] }`); CSV and the print

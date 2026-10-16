@@ -830,6 +830,48 @@ mod tests {
         assert!(linker_file(Some(Linker::Mold), "riscv64", false).is_none());
     }
 
+    /// Every layout `rnx new` writes (plain, starter kit, with `--tailwind`) sets
+    /// `dir` from the request's locale next to `lang`.
+    #[test]
+    fn every_layout_sets_the_text_direction() {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, options) in [
+            ("plain", SQLITE),
+            (
+                "starter",
+                Options {
+                    starter: true,
+                    ..SQLITE
+                },
+            ),
+        ] {
+            run_in(dir.path(), name, None, options).unwrap();
+            let root = dir.path().join(name);
+            use_tailwind_with(&root, |_| Ok(())).unwrap();
+            let mut seen = 0;
+            let mut stack = vec![root.join("resources/views")];
+            while let Some(at) = stack.pop() {
+                for entry in fs::read_dir(at).unwrap() {
+                    let path = entry.unwrap().path();
+                    if path.is_dir() {
+                        stack.push(path);
+                        continue;
+                    }
+                    let html = read_lf(path.clone());
+                    if html.contains("<html") {
+                        seen += 1;
+                        assert!(
+                            html.contains("<html lang=\"{{ app.locale }}\" dir=\"{{ app.dir }}\">"),
+                            "{}",
+                            path.display()
+                        );
+                    }
+                }
+            }
+            assert!(seen >= 1, "{name} has no layout");
+        }
+    }
+
     #[test]
     fn makes_an_app_with_every_placeholder_filled() {
         let dir = tempfile::tempdir().unwrap();
