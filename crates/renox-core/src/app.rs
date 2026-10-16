@@ -119,6 +119,8 @@ pub struct App {
     mailer_limits: HashMap<String, crate::queue::Limit>,
     xsrf_cookie: bool,
     settings_seed: Option<std::path::PathBuf>,
+    theme: Option<crate::theme::Theme>,
+    theme_chooser: Option<crate::theme::ThemeFn>,
 }
 
 /// How `App::mailer` gets a mailer's settings once the configuration is loaded.
@@ -156,6 +158,8 @@ impl App {
             mailer_limits: HashMap::new(),
             xsrf_cookie: false,
             settings_seed: None,
+            theme: None,
+            theme_chooser: None,
         }
     }
 
@@ -664,6 +668,48 @@ impl App {
         self
     }
 
+    /// Gives the app one brand: its accent tokens are served as a hashed,
+    /// cacheable stylesheet that `<rx-theme/>` links after `<rx-ui/>`.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::theme::{Brand, Theme};
+    /// let theme = Theme::from_brand(&Brand::new("#0F766E")).unwrap();
+    /// # let _ =
+    /// App::new().theme(theme)
+    /// # ;
+    /// ```
+    pub fn theme(mut self, theme: crate::theme::Theme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    /// Picks the brand per request, e.g. by host. Return `Ok(None)` to use
+    /// the app's [`theme`](App::theme) (or the kit's look when there is none);
+    /// an `Err` is logged and falls back the same way. It runs for every
+    /// rendered page, so build each `Theme` once and hand out clones rather
+    /// than calling `Theme::from_brand` per request.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::theme::{Brand, Theme, ThemeRequest};
+    /// let north = Theme::from_brand(&Brand::new("#0F766E")).unwrap();
+    /// # let _ =
+    /// App::new().theme_for(move |req: ThemeRequest| {
+    ///     let north = north.clone();
+    ///     async move { Ok((req.host == "north.example.com").then_some(north)) }
+    /// })
+    /// # ;
+    /// ```
+    pub fn theme_for<F, Fut>(mut self, choose: F) -> Self
+    where
+        F: Fn(crate::theme::ThemeRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<crate::theme::Theme>>> + Send + 'static,
+    {
+        self.theme_chooser = Some(crate::theme::theme_fn(choose));
+        self
+    }
+
     /// Gives every view a value computed per request; see [`Registry::share`].
     pub fn share<F, Fut, T>(mut self, key: &str, compute: F) -> Self
     where
@@ -1025,7 +1071,10 @@ impl App {
             live_components: Arc::new(live_components),
             mailer,
             mailers: Arc::new(mailers),
-            themes: crate::theme::ThemeRegistry::default(),
+            themes: crate::theme::ThemeRegistry::new(
+                self.theme.as_ref(),
+                self.theme_chooser.clone(),
+            ),
             channel_limits: Arc::new(channel_limits),
             mailer_limits: Arc::new(self.mailer_limits),
             queue: Queue::new(db.clone(), key.clone()),

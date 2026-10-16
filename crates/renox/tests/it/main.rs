@@ -81,6 +81,7 @@ mod state_machine;
 mod tag_usage;
 mod testing;
 mod testing_tools;
+mod theme;
 mod tooling;
 mod typed_columns;
 mod types;

@@ -311,26 +311,79 @@ impl Theme {
     }
 }
 
-/// Every theme the app can serve, by content hash.
+/// What a [`App::theme_for`](crate::App::theme_for) chooser gets: the request
+/// a page is rendered for, to pick the brand by host, tenant or setting.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct ThemeRequest {
+    /// The request's host without the port, e.g. `shop.example.com`
+    /// (empty when the request has none).
+    pub host: String,
+    /// The request's path, e.g. `/products`.
+    pub path: String,
+    /// The request's language, e.g. `en`.
+    pub locale: String,
+    /// The logged-in user, if any.
+    pub user: Option<Arc<crate::auth::User>>,
+    /// The application state, e.g. to read a tenant's brand from the database.
+    pub state: crate::AppState,
+}
+
+/// How a per-request theme chooser is kept.
+pub(crate) type ThemeFn = Arc<
+    dyn Fn(
+            ThemeRequest,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = crate::Result<Option<Theme>>> + Send>,
+        > + Send
+        + Sync,
+>;
+
+pub(crate) fn theme_fn<F, Fut>(choose: F) -> ThemeFn
+where
+    F: Fn(ThemeRequest) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = crate::Result<Option<Theme>>> + Send + 'static,
+{
+    Arc::new(move |req| Box::pin(choose(req)))
+}
+
+/// Every theme the app can serve, by content hash, and which one a request
+/// gets.
 ///
 /// Filled when the app sets a theme and when a per-request chooser returns
 /// one, so `/_renox/theme/{hash}.css` can answer any hash a page was given.
 /// Cloning shares the map.
 #[derive(Clone, Default)]
-pub(crate) struct ThemeRegistry(Arc<RwLock<HashMap<String, Arc<str>>>>);
+pub(crate) struct ThemeRegistry {
+    themes: Arc<RwLock<HashMap<String, Arc<str>>>>,
+    /// The URL of the app's own theme (`App::theme`).
+    app_url: Option<String>,
+    /// The per-request chooser (`App::theme_for`).
+    chooser: Option<ThemeFn>,
+}
 
 impl ThemeRegistry {
+    /// A registry for an app with `app` as its theme and `chooser` picking
+    /// per request.
+    pub(crate) fn new(app: Option<&Theme>, chooser: Option<ThemeFn>) -> Self {
+        let mut registry = Self {
+            chooser,
+            ..Self::default()
+        };
+        registry.app_url = app.map(|theme| registry.register(theme));
+        registry
+    }
+
     /// Remembers `theme`'s stylesheet under its hash and returns its URL.
     /// A theme already known is not copied again.
-    #[allow(dead_code)] // used by `App::theme` (next step of #36)
     pub(crate) fn register(&self, theme: &Theme) -> String {
         let known = self
-            .0
+            .themes
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .contains_key(theme.hash());
         if !known {
-            self.0
+            self.themes
                 .write()
                 .unwrap_or_else(PoisonError::into_inner)
                 .entry(theme.hash().to_owned())
@@ -341,16 +394,35 @@ impl ThemeRegistry {
 
     /// The stylesheet registered under `hash`.
     pub(crate) fn css(&self, hash: &str) -> Option<Arc<str>> {
-        self.0
+        self.themes
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .get(hash)
             .cloned()
     }
+
+    /// The stylesheet URL for a request: the chooser's theme, else the
+    /// app's, else none (the kit's own look). A chooser that fails is logged
+    /// and falls back like one that answers `None`.
+    pub(crate) async fn resolve(&self, req: ThemeRequest) -> Option<String> {
+        if let Some(choose) = &self.chooser {
+            match choose(req).await {
+                Ok(Some(theme)) => return Some(self.register(&theme)),
+                Ok(None) => {}
+                Err(err) => tracing::warn!(error = ?err, "the theme chooser failed"),
+            }
+        }
+        self.app_url.clone()
+    }
+
+    /// Whether a theme can be chosen at all, so a request without one skips
+    /// the work.
+    pub(crate) fn is_set(&self) -> bool {
+        self.app_url.is_some() || self.chooser.is_some()
+    }
 }
 
 /// The URL of the stylesheet for a theme hash.
-#[allow(dead_code)] // used by `App::theme` (next step of #36)
 pub(crate) fn theme_url(hash: &str) -> String {
     format!("/_renox/theme/{hash}.css")
 }

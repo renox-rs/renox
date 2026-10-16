@@ -1377,6 +1377,7 @@ pub(crate) async fn middleware(
     let route = crate::routing::CurrentRoute::of(req.method(), req.extensions(), &state)
         .name()
         .map(str::to_owned);
+    let host = crate::domain::host(&req).unwrap_or_default();
     let nonce = req
         .extensions()
         .get::<crate::security::CspNonce>()
@@ -1499,6 +1500,15 @@ pub(crate) async fn middleware(
                 }
             }
         }
+        add_theme(
+            &mut shared,
+            &state,
+            &host,
+            &path,
+            &locale,
+            current_user.as_ref(),
+        )
+        .await;
         let events = match &session {
             Some(session) if !htmx.request => crate::analytics::take(session),
             _ => Vec::new(),
@@ -1575,6 +1585,15 @@ pub(crate) async fn middleware(
                     }
                 }
             }
+            add_theme(
+                &mut shared,
+                &state,
+                &host,
+                &path,
+                &locale,
+                current_user.as_ref(),
+            )
+            .await;
             // The app's error page may extend a layout with a menu: build
             // every menu, as the page that extends is not known here.
             let menus = request_menus(
@@ -1611,6 +1630,38 @@ pub(crate) async fn middleware(
         return error_response(&state, page, res, wants_json, &htmx, &request_line, globals);
     }
     res
+}
+
+/// The key a request's brand stylesheet URL is shared under, for `renox_theme()`.
+pub(crate) const THEME_KEY: &str = "renox_theme";
+
+/// Resolves the request's brand (`App::theme`, `App::theme_for`) and shares
+/// the URL of its stylesheet with the views; nothing is shared when the app
+/// has no theme for this request.
+async fn add_theme(
+    shared: &mut std::collections::BTreeMap<String, Value>,
+    state: &AppState,
+    host: &str,
+    path: &str,
+    locale: &str,
+    user: Option<&CurrentUser>,
+) {
+    if !state.themes.is_set() {
+        return;
+    }
+    let url = state
+        .themes
+        .resolve(crate::theme::ThemeRequest {
+            host: host.to_owned(),
+            path: path.to_owned(),
+            locale: locale.to_owned(),
+            user: user.and_then(|c| c.user.clone()),
+            state: state.clone(),
+        })
+        .await;
+    if let Some(url) = url {
+        shared.insert(THEME_KEY.to_owned(), Value::from(url));
+    }
 }
 
 /// The error page (or JSON for API clients) for `page`.
