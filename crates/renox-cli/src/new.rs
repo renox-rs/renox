@@ -402,6 +402,21 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
         ),
     };
     let key = crate::generate_key();
+    let vars = Vars {
+        name,
+        title: title(name),
+        crate_name: &crate_name,
+        renox_dependency: &dependency,
+        renox_docs: &docs,
+        renox_offline: &source,
+        database_url: &database_url,
+        test_database_url: &test_database_url,
+        app_key: &key,
+    };
+    let keyless = Vars {
+        app_key: "",
+        ..vars.clone()
+    };
 
     for (file, contents) in files(starter) {
         let contents = if notifications && !starter {
@@ -411,20 +426,8 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
         } else {
             contents.to_owned()
         };
-        let contents = contents
-            .replace("{{name}}", name)
-            .replace("{{title}}", &title(name))
-            .replace("{{renox_dependency}}", &dependency)
-            .replace("{{renox_docs}}", &docs)
-            .replace("{{renox_offline}}", &source)
-            .replace("{{crate_name}}", &crate_name)
-            .replace("{{database_url}}", &database_url)
-            .replace("{{test_database_url}}", &test_database_url);
         // Only the real .env gets a key; .env.example stays shareable.
-        let contents = match file {
-            ".env" => contents.replace("{{app_key}}", &key),
-            _ => contents.replace("{{app_key}}", ""),
-        };
+        let contents = fill(&contents, if file == ".env" { &vars } else { &keyless });
         let path = root.join(file);
         fs::create_dir_all(path.parent().expect("stub paths have a parent"))?;
         fs::write(&path, contents)
@@ -432,6 +435,48 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
         crate::format::touched(&path);
     }
 
+    link_fast(root)?;
+
+    if tailwind {
+        use_tailwind(root)?;
+    }
+
+    print_created(name, &crate_name, database, starter);
+    Ok(())
+}
+
+/// The values the placeholders of a new app stand for.
+#[derive(Clone)]
+struct Vars<'a> {
+    name: &'a str,
+    title: String,
+    crate_name: &'a str,
+    renox_dependency: &'a str,
+    renox_docs: &'a str,
+    renox_offline: &'a str,
+    database_url: &'a str,
+    test_database_url: &'a str,
+    app_key: &'a str,
+}
+
+/// Fills the known `{{key}}` placeholders (exact keys, no inner spaces) in
+/// `contents`; any other `{{ ... }}` stays as it is.
+fn fill(contents: &str, vars: &Vars) -> String {
+    contents
+        .replace("{{name}}", vars.name)
+        .replace("{{title}}", &vars.title)
+        .replace("{{renox_dependency}}", vars.renox_dependency)
+        .replace("{{renox_docs}}", vars.renox_docs)
+        .replace("{{renox_offline}}", vars.renox_offline)
+        .replace("{{crate_name}}", vars.crate_name)
+        .replace("{{database_url}}", vars.database_url)
+        .replace("{{test_database_url}}", vars.test_database_url)
+        .replace("{{app_key}}", vars.app_key)
+}
+
+/// Writes `.cargo/config.toml` in `root` for the fast linker found on this
+/// machine, unless there is none or the machine's configuration chooses one.
+fn link_fast(root: &Path) -> Result<()> {
     let already = crate::tools::configured_texts(None)
         .iter()
         .any(|t| crate::tools::mentions_linker(t).is_some());
@@ -450,11 +495,11 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
             linker.name()
         );
     }
+    Ok(())
+}
 
-    if tailwind {
-        use_tailwind(root)?;
-    }
-
+/// Prints the "Created ... Next:" message of a new app.
+fn print_created(name: &str, crate_name: &str, database: Database, starter: bool) {
     match database {
         Database::Sqlite => println!("Created {name}. Next:\n\n    cd {name}\n    rnx serve\n"),
         Database::Postgres => println!(
@@ -468,7 +513,6 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
              rnx users:admin you@example.com\n\n(or `rnx db:seed` for admin@example.com, password123)\n"
         );
     }
-    Ok(())
 }
 
 /// The `.cargo/config.toml` for the fast linker `found` on this machine, unless
@@ -609,6 +653,33 @@ mod tests {
             found.is_empty(),
             "template statements in the stubs: {found:#?}"
         );
+    }
+
+    #[test]
+    fn fill_replaces_exact_keys_only() {
+        let vars = Vars {
+            name: "my-shop",
+            title: "My Shop".into(),
+            crate_name: "my_shop",
+            renox_dependency: "renox = { version = \"1.1\" }",
+            renox_docs: "docs",
+            renox_offline: "offline",
+            database_url: "sqlite://storage/app.db",
+            test_database_url: "# test",
+            app_key: "KEY",
+        };
+        let text = "{{name}} {{title}} {{crate_name}} {{app_key}} {{database_url}} \
+                    {{ app.locale }} {{ url(\"x\") }} {{unknown}} {{ name }}";
+        assert_eq!(
+            fill(text, &vars),
+            "my-shop My Shop my_shop KEY sqlite://storage/app.db \
+             {{ app.locale }} {{ url(\"x\") }} {{unknown}} {{ name }}"
+        );
+        let keyless = Vars {
+            app_key: "",
+            ..vars
+        };
+        assert_eq!(fill("k={{app_key}}", &keyless), "k=");
     }
 
     #[test]
