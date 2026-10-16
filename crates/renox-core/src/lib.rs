@@ -126,6 +126,7 @@ pub mod storage;
 mod test_logs;
 pub mod testing;
 pub mod text;
+pub mod theme;
 pub mod timezone;
 pub mod toast;
 pub mod upload;
