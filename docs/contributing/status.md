@@ -305,6 +305,14 @@
   `password`: the account page lets them set one and asks them for a recent confirmation
   instead of a password), and the login/register/confirm pages'
   `{% include "renox/auth/login_options.html" ignore missing %}`.
+- **#51, company sign-in in `renox-oauth`**: `Microsoft` (OpenID Connect against
+  `login.microsoftonline.com/{tenant}/v2.0`; the ID token from the token endpoint, unsigned-checked
+  per OIDC Core §3.1.3.7, with `iss`/`aud`/`exp`/`tid` checked; a domain tenant is resolved to its
+  id from the discovery document and cached; the consumer tenant is always refused; the email is
+  verified only for a specific tenant), `Google::hosted_domain` (sends `hd`, checks the userinfo
+  `hd`), `OAuth::allow_domains` (verified email domain, any provider), `Refused` (an error type
+  `Provider::profile` returns to turn an account away), `Provider::with_config` (settings read
+  from the configuration, here `MICROSOFT_TENANT`) and the `OAuthRefused` event (`oauth.refused`).
 - **#148, `renox-admin`** (the admin panel: `Admin::new().authorize(…).resource(…)`,
   `impl AdminResource` with grid columns, form fields, filters, actions and the model's
   `Policy`; lists, forms, view pages, the trash, exports; the admin example): branch

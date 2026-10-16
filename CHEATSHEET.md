@@ -1427,7 +1427,11 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`
-// with GOOGLE_CLIENT_ID/_SECRET, GITHUB_CLIENT_ID/_SECRET (docs/oauth.md). A login of your
+// with GOOGLE_CLIENT_ID/_SECRET, GITHUB_CLIENT_ID/_SECRET (docs/oauth.md). Company sign-in:
+// `.provider(Microsoft::from_config().tenant("contoso.onmicrosoft.com"))` (MICROSOFT_CLIENT_ID/
+// _SECRET/_TENANT; personal accounts refused), `Google::from_config().hosted_domain("example.com")`
+// (sends `hd`, checks the claim), `OAuth::new()….allow_domains(&["example.com"])` (verified
+// email on any provider); a refusal emits `OAuthRefused` (`oauth.refused`). A login of your
 // own once you know who it is: `let to = renox::auth::sign_in(&state, &session, &user,
 // false, ip).await?;` (the second step included); `renox::auth::register_verified` makes an
 // account without a password (`user.has_password()` is false).

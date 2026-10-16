@@ -67,6 +67,7 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 use renox::Config;
@@ -79,7 +80,7 @@ use serde::{Deserialize, Serialize};
 pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 /// How long a call to a provider may take.
-const TIMEOUT: Duration = Duration::from_secs(10);
+pub(crate) const TIMEOUT: Duration = Duration::from_secs(10);
 
 /// A sign-in provider (Google, GitHub, …): the OAuth 2.0 authorization code
 /// flow with PKCE. The module builds the authorization URL (with `state`
@@ -124,9 +125,66 @@ pub trait Provider: Send + Sync + 'static {
         Box::pin(exchange_code(http, self.token_endpoint(), request))
     }
 
-    /// Who the token belongs to.
+    /// A copy of this provider with the settings it reads from the
+    /// configuration besides the credentials (Microsoft's `MICROSOFT_TENANT`),
+    /// resolved. The module calls it for each request; the default, `None`,
+    /// means there is nothing to resolve.
+    fn with_config(&self, _config: &Config) -> Option<Arc<dyn Provider>> {
+        None
+    }
+
+    /// Who the token belongs to. Return a [`Refused`] error when the account
+    /// is not one this app accepts (another tenant, another domain): the
+    /// visitor is told so, and `OAuthRefused` is announced.
     fn profile<'a>(&'a self, http: &'a Http, token: &'a Token) -> BoxFuture<'a, Result<Profile>>;
 }
+
+/// Why a provider account was turned away although the provider vouched for
+/// it: it belongs to another organisation than the app accepts. Return it
+/// from [`Provider::profile`] (`Err(Refused::new(..).into())`); the module
+/// shows `message` to the visitor, announces
+/// [`OAuthRefused`](crate::OAuthRefused) with `reason`, and logs nobody in.
+///
+/// ```
+/// use renox_oauth::provider::Refused;
+///
+/// let refused = Refused::new("tenant", "That account belongs to another organisation.");
+/// assert_eq!(refused.reason(), "tenant");
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Refused {
+    reason: String,
+    message: String,
+}
+
+impl Refused {
+    /// A refusal: `reason` is a short code for the activity log
+    /// (`tenant`, `domain`), `message` is shown to the visitor.
+    pub fn new(reason: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            reason: reason.into(),
+            message: message.into(),
+        }
+    }
+
+    /// The short code.
+    pub fn reason(&self) -> &str {
+        &self.reason
+    }
+
+    /// What the visitor is told.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+impl fmt::Display for Refused {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "sign-in refused ({}): {}", self.reason, self.message)
+    }
+}
+
+impl std::error::Error for Refused {}
 
 /// The app's client id and secret at a provider: given, or read from the
 /// configuration when a request needs them (`config.var`, i.e. `.env` or the

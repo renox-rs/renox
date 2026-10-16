@@ -1,11 +1,12 @@
 //! Sign in with Google (OpenID Connect): the `openid email profile` scopes,
-//! the profile from Google's userinfo endpoint.
+//! the profile from Google's userinfo endpoint. [`Google::hosted_domain`]
+//! limits sign-in to one Google Workspace domain.
 
 use renox::http::Http;
 use renox::prelude::*;
 use serde::Deserialize;
 
-use crate::provider::get_json;
+use crate::provider::{Refused, get_json};
 use crate::{BoxFuture, Credentials, Profile, Provider, Token};
 
 /// Google's userinfo endpoint (OpenID Connect).
@@ -17,6 +18,7 @@ pub const USERINFO: &str = "https://openidconnect.googleapis.com/v1/userinfo";
 #[derive(Debug, Clone)]
 pub struct Google {
     credentials: Credentials,
+    hosted_domain: Option<String>,
 }
 
 impl Google {
@@ -24,6 +26,7 @@ impl Google {
     pub fn from_config() -> Self {
         Self {
             credentials: Credentials::from_config("GOOGLE"),
+            hosted_domain: None,
         }
     }
 
@@ -31,7 +34,25 @@ impl Google {
     pub fn new(client_id: impl Into<String>, client_secret: impl Into<String>) -> Self {
         Self {
             credentials: Credentials::new(client_id, client_secret),
+            hosted_domain: None,
         }
+    }
+
+    /// Only accounts of this Google Workspace domain (`example.com`) sign in.
+    /// The `hd` parameter is sent so Google offers only that domain's
+    /// accounts, but it is just a hint (anyone can edit the URL): the
+    /// callback checks the `hd` claim of the userinfo answer, and an account
+    /// without one (a gmail.com account) is refused.
+    ///
+    /// ```
+    /// use renox_oauth::{Google, OAuth};
+    ///
+    /// let _ = OAuth::new().provider(Google::from_config().hosted_domain("example.com"));
+    /// ```
+    pub fn hosted_domain(mut self, domain: impl Into<String>) -> Self {
+        let domain: String = domain.into();
+        self.hosted_domain = Some(domain.trim().trim_start_matches('@').to_ascii_lowercase());
+        self
     }
 }
 
@@ -43,6 +64,8 @@ struct UserInfo {
     email_verified: bool,
     name: Option<String>,
     picture: Option<String>,
+    /// The Workspace domain, for accounts of one.
+    hd: Option<String>,
 }
 
 impl Provider for Google {
@@ -72,12 +95,27 @@ impl Provider for Google {
 
     fn authorize_params(&self) -> Vec<(&str, &str)> {
         // Lets people with several Google accounts pick one.
-        vec![("prompt", "select_account")]
+        let mut params = vec![("prompt", "select_account")];
+        if let Some(domain) = &self.hosted_domain {
+            params.push(("hd", domain.as_str()));
+        }
+        params
     }
 
     fn profile<'a>(&'a self, http: &'a Http, token: &'a Token) -> BoxFuture<'a, Result<Profile>> {
         Box::pin(async move {
             let info: UserInfo = get_json(http, USERINFO, token, "application/json").await?;
+            if let Some(domain) = &self.hosted_domain {
+                // `hd` in the URL is only a hint: this is the check.
+                let hd = info.hd.as_deref().unwrap_or_default();
+                if !hd.eq_ignore_ascii_case(domain) {
+                    return Err(Refused::new(
+                        "hosted_domain",
+                        format!("Only Google accounts of {domain} can sign in here."),
+                    )
+                    .into());
+                }
+            }
             let mut profile = Profile::new(info.sub);
             if let Some(email) = info.email {
                 profile = profile.email(email, info.email_verified);
