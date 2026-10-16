@@ -132,6 +132,16 @@ enum Command {
         /// In a virtual workspace: the crate of the app that should use the package.
         #[arg(long)]
         register: Option<PathBuf>,
+        /// A whole resource inside the package, like `make:module --resource`
+        /// (e.g. `invoices`): model, migration, factory, form, handlers, views, tests.
+        #[arg(long)]
+        resource: Option<String>,
+        /// With --resource: the fields, e.g. "number:string total:money".
+        #[arg(long, requires = "resource")]
+        fields: Option<String>,
+        /// With --resource: the model's name (default: the resource's, singular).
+        #[arg(long, requires = "resource")]
+        model: Option<String>,
     },
     /// Fake records for a model (`impl Factory`).
     #[command(name = "make:factory")]
@@ -370,7 +380,24 @@ fn run(command: Command) -> Result<()> {
             path,
             with,
             register,
-        } => package::run(&std::env::current_dir()?, &name, path, &with, register),
+            resource,
+            fields,
+            model,
+        } => {
+            let resource = resource.map(|name| package::Resource {
+                name,
+                model,
+                fields,
+            });
+            package::run(
+                &std::env::current_dir()?,
+                &name,
+                path,
+                &with,
+                register,
+                resource.as_ref(),
+            )
+        }
         Command::MakeFactory { model, module } => generate::factory(&app_root()?, &model, &module),
         Command::MakeSeeder { name } => generate::seeder(&app_root()?, &name),
         Command::MakeTest { name } => generate::test(&app_root()?, &name),
@@ -724,8 +751,16 @@ mod tests {
             Command::MakeModule { resource: true, fields: Some(f), model: None, .. } if f == "name price:money"
         ));
         assert!(matches!(
+            parse(&["make:package", "invoicing", "--resource", "invoices", "--fields", "number:string total:money", "--model", "Invoice"]),
+            Command::MakePackage { resource: Some(r), fields: Some(f), model: Some(m), .. }
+                if r == "invoices" && f == "number:string total:money" && m == "Invoice"
+        ));
+        // --fields and --model mean nothing without --resource.
+        assert!(Cli::try_parse_from(["rnx", "make:package", "x", "--fields", "a"]).is_err());
+        assert!(Cli::try_parse_from(["rnx", "make:package", "x", "--model", "A"]).is_err());
+        assert!(matches!(
             parse(&["make:package", "invoicing", "--with", "assets,commands"]),
-            Command::MakePackage { name, path: None, with, register: None }
+            Command::MakePackage { name, path: None, with, register: None, resource: None, .. }
                 if name == "invoicing" && with == ["assets", "commands"]
         ));
         assert!(matches!(

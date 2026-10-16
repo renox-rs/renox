@@ -7,6 +7,8 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use heck::{ToTitleCase, ToUpperCamelCase};
 
+use crate::scaffold;
+
 /// What `--with` can add to a package.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Extra {
@@ -339,9 +341,53 @@ pub(crate) fn run(
     path: Option<PathBuf>,
     with: &[String],
     register: Option<PathBuf>,
+    resource: Option<&Resource>,
 ) -> Result<()> {
     let plan = plan(root, name, path, with, register)?;
-    write(root, &plan, chrono::Utc::now())
+    // Refused before anything is written.
+    if let Some(r) = resource {
+        scaffold::check_resource(
+            plan.target(),
+            &r.name,
+            r.model.as_deref(),
+            r.fields.as_deref(),
+        )?;
+    }
+    write(root, &plan, chrono::Utc::now())?;
+    if let Some(r) = resource {
+        // The package has no database of its own: the app runs `migrate`.
+        scaffold::resource_in(
+            &root.join(&plan.path),
+            plan.target(),
+            &r.name,
+            r.model.as_deref(),
+            r.fields.as_deref(),
+        )?;
+        println!("Next: rnx migrate (in the app).");
+    }
+    Ok(())
+}
+
+/// `--resource`, `--fields` and `--model`: a whole resource inside the package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Resource {
+    /// The resource's module name, e.g. `invoices`.
+    pub name: String,
+    /// The model's name (default: the module's, singular).
+    pub model: Option<String>,
+    /// The fields, e.g. `"number:string total:money"`.
+    pub fields: Option<String>,
+}
+
+impl Plan {
+    /// Where a resource of this package goes.
+    fn target(&self) -> scaffold::Target<'_> {
+        scaffold::Target::Package {
+            crate_name: &self.crate_name,
+            lib_name: &self.lib_name,
+            struct_name: &self.struct_name,
+        }
+    }
 }
 
 fn has_package(manifest: &str) -> bool {
@@ -732,6 +778,99 @@ mod tests {
             .unwrap();
         assert!(lib.1.contains("mod texts;\n\nuse renox::db::Migration;"));
         assert!(!lib.1.contains("register(app)"));
+    }
+
+    #[test]
+    fn a_resource_goes_into_the_package() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        std::fs::create_dir(dir.path().join("src")).unwrap();
+        std::fs::write(
+            dir.path().join("src/lib.rs"),
+            "fn app() {\n    App::new()\n        .module(Home)\n        .run();\n}\n",
+        )
+        .unwrap();
+        let resource = Resource {
+            name: "invoices".into(),
+            model: None,
+            fields: Some("number:string total:money".into()),
+        };
+        run(dir.path(), "my-pkg", None, &[], None, Some(&resource)).unwrap();
+        let pkg = dir.path().join("crates/my-pkg");
+        let read = |path: &str| std::fs::read_to_string(pkg.join(path)).unwrap();
+        for path in [
+            "src/invoices/mod.rs",
+            "src/invoices/model.rs",
+            "views/my-pkg/invoices/index.html",
+            "views/my-pkg/invoices/form.html",
+            "views/my-pkg/invoices/show.html",
+            "tests/invoices.rs",
+        ] {
+            let text = read(path);
+            assert!(placeholder(&text).is_none(), "{path}");
+        }
+        // The migration carries the package's name; the base one is still there.
+        let names: Vec<String> = std::fs::read_dir(pkg.join("migrations"))
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert!(
+            names
+                .iter()
+                .any(|n| n.ends_with("_create_my_pkg_invoices_table.up.sql"))
+        );
+        assert!(
+            names
+                .iter()
+                .any(|n| n.ends_with("_create_my_pkg_entries_table.up.sql"))
+        );
+        assert!(!names.iter().any(|n| n.starts_with("0001")));
+
+        let lib = read("src/lib.rs");
+        assert!(lib.contains("mod invoices;"));
+        assert!(lib.contains("invoices::register(app);"));
+        assert!(lib.contains(".merge(invoices::routes())"));
+        for view in ["index", "form", "show"] {
+            assert!(lib.contains(&format!("\"my-pkg/invoices/{view}.html\"")));
+            assert!(lib.contains(&format!("../views/my-pkg/invoices/{view}.html")));
+        }
+        let module = read("src/invoices/mod.rs");
+        assert!(module.contains("\"my_pkg.invoices\""));
+        assert!(module.contains("view(\"my-pkg/invoices/index.html\""));
+        assert!(
+            read("views/my-pkg/invoices/index.html").contains("route=\"my_pkg.invoices.create\"")
+        );
+        let tests = read("tests/invoices.rs");
+        assert!(tests.contains("use my_pkg::MyPkg;") && tests.contains("boot(dir.path())"));
+        assert!(!tests.contains("my_pkg::app()"));
+    }
+
+    #[test]
+    fn a_bad_resource_writes_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        for (name, fields) in [
+            ("model", None),
+            ("invoice", None),
+            ("bad name", None),
+            ("orders", Some("x:nope")),
+        ] {
+            let resource = Resource {
+                name: name.into(),
+                model: None,
+                fields: fields.map(str::to_owned),
+            };
+            assert!(
+                run(dir.path(), "my-pkg", None, &[], None, Some(&resource)).is_err(),
+                "{name}"
+            );
+        }
+        assert!(!dir.path().join("crates").exists());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap(),
+            APP
+        );
     }
 
     #[test]

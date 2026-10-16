@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use heck::{ToKebabCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 
 /// `path` relative to the app root, for messages.
-fn shown(path: &Path) -> String {
+pub(crate) fn shown(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_default();
     path.strip_prefix(&cwd)
         .unwrap_or(path)

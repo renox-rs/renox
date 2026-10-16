@@ -247,6 +247,53 @@ pub(crate) fn crate_name(root: &Path) -> Result<String> {
     Ok(name.replace('-', "_"))
 }
 
+/// Where a resource goes: into the app (`make:module --resource`) or into a
+/// package (`make:package --resource`).
+#[derive(Clone, Copy)]
+pub(crate) enum Target<'a> {
+    /// `src/app/<module>/`, views in `resources/views/<module>/`.
+    App,
+    /// `src/<module>/` of the package, views in `views/<crate>/<module>/`,
+    /// routes named `<lib>.<module>.*`; the package's `lib.rs` mounts it.
+    Package {
+        /// The crate's name as in `Cargo.toml` (`-` kept).
+        crate_name: &'a str,
+        /// The library's name (`-` become `_`).
+        lib_name: &'a str,
+        /// The package's module struct, e.g. `Invoicing`.
+        struct_name: &'a str,
+    },
+}
+
+/// Files a package already has in `src/`; a resource can't take their names.
+const PACKAGE_MODULES: &[&str] = &["assets", "commands", "model", "texts"];
+
+/// The checks of `resource_in` that need no files, so `make:package` can
+/// refuse a bad resource before it writes the package.
+pub(crate) fn check_resource(
+    target: Target,
+    name: &str,
+    model: Option<&str>,
+    fields: Option<&str>,
+) -> Result<()> {
+    check_name(name)?;
+    parse_fields(fields.unwrap_or(""))?;
+    let module = name.to_snake_case();
+    let model = model.map_or_else(
+        || singular(&module).to_upper_camel_case(),
+        |m| m.to_upper_camel_case(),
+    );
+    if model == name.to_upper_camel_case() {
+        bail!(
+            "the module `{module}` and its model would both be `{model}`: name the module in the plural, or pass --model"
+        );
+    }
+    if matches!(target, Target::Package { .. }) && PACKAGE_MODULES.contains(&module.as_str()) {
+        bail!("`{module}` is already a file of the package: pick another name for --resource");
+    }
+    Ok(())
+}
+
 /// `rnx make:module products --resource [--model Product] [--fields …]`.
 pub fn resource(
     root: &Path,
@@ -254,18 +301,24 @@ pub fn resource(
     model: Option<&str>,
     fields: Option<&str>,
 ) -> Result<String> {
-    check_name(name)?;
+    resource_in(root, Target::App, name, model, fields)
+}
+
+/// `resource` for `target`, under `root` (the app's or the package's).
+pub(crate) fn resource_in(
+    root: &Path,
+    target: Target,
+    name: &str,
+    model: Option<&str>,
+    fields: Option<&str>,
+) -> Result<String> {
+    check_resource(target, name, model, fields)?;
     let module = name.to_snake_case();
     let module_type = name.to_upper_camel_case();
     let model = model.map_or_else(
         || singular(&module).to_upper_camel_case(),
         |m| m.to_upper_camel_case(),
     );
-    if model == module_type {
-        bail!(
-            "the module `{module}` and its model would both be `{model}`: name the module in the plural, or pass --model"
-        );
-    }
     let path = module.to_kebab_case();
     // The model's table, plural, as `make:model` names it (#127): the module
     // only names the routes and pages (`news` with `--model Article` →
@@ -273,14 +326,36 @@ pub fn resource(
     let table = plural(&model.to_snake_case());
     let title = module.to_title_case();
     let fields = parse_fields(fields.unwrap_or(""))?;
-    let crate_name = crate_name(root)?;
-    let dir = root.join("src/app").join(&module);
+    let (crate_name, struct_name, dir, view, route, views) = match target {
+        Target::App => (
+            crate_name(root)?,
+            String::new(),
+            root.join("src/app").join(&module),
+            module.clone(),
+            module.clone(),
+            root.join("resources/views").join(&module),
+        ),
+        Target::Package {
+            crate_name,
+            lib_name,
+            struct_name,
+        } => (
+            lib_name.to_owned(),
+            struct_name.to_owned(),
+            root.join("src").join(&module),
+            format!("{crate_name}/{module}"),
+            format!("{lib_name}.{module}"),
+            root.join("views").join(crate_name).join(&module),
+        ),
+    };
     if dir.exists() {
         bail!("{} already exists", dir.display());
     }
 
     let replace = |template: &str| -> String {
         template
+            .replace("__view__", &view)
+            .replace("__route__", &route)
             .replace("__Model__", &model)
             .replace("__Module__", &module_type)
             .replace("__module__", &module)
@@ -334,7 +409,14 @@ pub fn resource(
     write_new(&dir.join("model.rs"), &model_rs)?;
 
     // The module: routes, form, handlers.
-    let mod_rs = replace(MODULE);
+    let mod_rs = match target {
+        Target::App => replace(MODULE),
+        Target::Package { .. } => {
+            // The same handlers as the app's; only the head differs.
+            let handlers = &MODULE[MODULE.find("async fn index").expect("the handlers")..];
+            replace(&format!("{PACKAGE_MODULE}\n{handlers}"))
+        }
+    };
     write_new(&dir.join("mod.rs"), &mod_rs)?;
 
     // Views.
@@ -347,7 +429,7 @@ pub fn resource(
             let value = f.display("record");
             let label = f.label();
             if i == 0 {
-                format!("      <rx-column label=\"{label}\"{align}><a class=\"rx-link\" href=\"{{{{ route('__module__.show', record.id) }}}}\"><strong>{value}</strong></a></rx-column>\n")
+                format!("      <rx-column label=\"{label}\"{align}><a class=\"rx-link\" href=\"{{{{ route('__route__.show', record.id) }}}}\"><strong>{value}</strong></a></rx-column>\n")
             } else {
                 format!("      <rx-column label=\"{label}\"{align}>{value}</rx-column>\n")
             }
@@ -372,7 +454,6 @@ pub fn resource(
             )
         })
         .collect();
-    let views = root.join("resources/views").join(&module);
     write_new(
         &views.join("index.html"),
         &replace(INDEX_VIEW).replace("__cells__", &replace(&cells)),
@@ -421,7 +502,7 @@ pub fn resource(
                 "\n    app.assert_database_has(\"__table__\", &[(\"{name}\", &\"{second}\")]).await;"
             ),
             format!(
-                "\n\n#[renox::test]\nasync fn invalid___module___are_refused() {{\n    let app = TestApp::new(__crate__::app()).await;\n    app.acting_as(&user(&app).await);\n    app.htmx()\n        .post(\"/__path__\", &[{blank}])\n        .await\n        .assert_invalid(\"{name}\");\n    app.assert_database_count(\"__table__\", 0).await;\n}}\n",
+                "\n\n#[renox::test]\nasync fn invalid___module___are_refused() {{\n    __let_app__\n    app.acting_as(&user(&app).await);\n    app.htmx()\n        .post(\"/__path__\", &[{blank}])\n        .await\n        .assert_invalid(\"{name}\");\n    app.assert_database_count(\"__table__\", 0).await;\n}}\n",
                 blank = blanked(name)
             ),
         ),
@@ -435,6 +516,24 @@ pub fn resource(
         .replace("__has_row__", &replace(&has_row))
         .replace("__has_changed__", &replace(&has_changed))
         .replace("__invalid__", &replace(&invalid));
+    let (uses, helpers, let_app) = match target {
+        Target::App => (
+            String::new(),
+            "\n",
+            "let app = TestApp::new(__crate__::app()).await;",
+        ),
+        Target::Package { .. } => (
+            "use std::path::Path;\n\nuse __crate__::__Struct__;\n".to_owned(),
+            PACKAGE_TEST_HELPERS,
+            "let dir = views(&[]);\n    let app = boot(dir.path()).await;",
+        ),
+    };
+    let tests = tests
+        .replace("__uses__", &uses)
+        .replace("__helpers__", helpers)
+        .replace("__let_app__", let_app)
+        .replace("__Struct__", &struct_name)
+        .replace("__crate__", &crate_name);
     write_new(&root.join("tests").join(format!("{module}.rs")), &tests)?;
 
     // The table.
@@ -453,24 +552,150 @@ pub fn resource(
     let up = format!(
         "CREATE TABLE \"{table}\" (\n    {id},\n{columns}    created_at {stamp},\n    updated_at {stamp}\n);\n"
     );
+    let migration = match target {
+        Target::App => format!("create_{table}_table"),
+        // The package's name in it, so two packages can't clash.
+        Target::Package { lib_name, .. } => format!("create_{lib_name}_{table}_table"),
+    };
     crate::make::migration_with(
-        &format!("create_{table}_table"),
+        &migration,
         &root.join("migrations"),
         &up,
         &format!("DROP TABLE \"{table}\";\n"),
     )?;
 
-    add_mod(&root.join("src/app/mod.rs"), &module)?;
-    register_in_main(
-        &root.join(if root.join("src/lib.rs").is_file() {
-            "src/lib.rs"
-        } else {
-            "src/main.rs"
-        }),
-        &format!("app::{module}::{module_type}"),
-    )?;
+    match target {
+        Target::App => {
+            add_mod(&root.join("src/app/mod.rs"), &module)?;
+            register_in_main(
+                &root.join(if root.join("src/lib.rs").is_file() {
+                    "src/lib.rs"
+                } else {
+                    "src/main.rs"
+                }),
+                &format!("app::{module}::{module_type}"),
+            )?;
+        }
+        Target::Package {
+            crate_name,
+            lib_name,
+            ..
+        } => mount_in_package(&root.join("src/lib.rs"), crate_name, lib_name, &module)?,
+    }
     Ok(path)
 }
+
+/// Mounts the resource in the package's `lib.rs`: its `mod` line, its views
+/// in `VIEWS`, its routes in `routes()` and its model in `register`.
+fn mount_in_package(lib: &Path, crate_name: &str, lib_name: &str, module: &str) -> Result<()> {
+    let mut source = fs::read_to_string(lib)?;
+    let mut change = |old: &str, new: String| -> Result<()> {
+        if !source.contains(old) {
+            bail!(
+                "{} doesn't look like a package made by `rnx make:package` (no `{old}`); mount `{module}` by hand",
+                lib.display()
+            );
+        }
+        source = source.replacen(old, &new, 1);
+        Ok(())
+    };
+    change("mod model;\n", format!("mod {module};\nmod model;\n"))?;
+    change(
+        "        app.model::<Entry>()",
+        format!("        {module}::register(app);\n        app.model::<Entry>()"),
+    )?;
+    let name = format!(".name(\"{lib_name}.index\")");
+    change(
+        &name,
+        format!("{name}\n            .merge({module}::routes())"),
+    )?;
+    // The views: one more tuple at the end of the list.
+    let start = source
+        .find("const VIEWS")
+        .ok_or_else(|| anyhow::anyhow!("no `VIEWS` in {}", lib.display()))?;
+    let end = start
+        + source[start..]
+            .find("];")
+            .ok_or_else(|| anyhow::anyhow!("no end of `VIEWS` in {}", lib.display()))?;
+    let mut entries = String::new();
+    for view in ["index", "form", "show"] {
+        entries.push_str(&format!(
+            ",\n(\n\"{crate_name}/{module}/{view}.html\",\ninclude_str!(\"../views/{crate_name}/{module}/{view}.html\"),\n)"
+        ));
+    }
+    let list = source[..end].trim_end().trim_end_matches(',').to_owned();
+    source = format!("{list}{entries},\n{}", &source[end..]);
+    fs::write(lib, source)?;
+    crate::format::touched(lib);
+    println!("Updated {}", crate::generate::shown(lib));
+    Ok(())
+}
+
+/// The head of a package resource's `mod.rs` (the handlers follow).
+const PACKAGE_MODULE: &str = r#"//! Made with `rnx make:package --resource __module__`: list, show, create,
+//! edit and delete __title__, for logged-in users. The package's `lib.rs`
+//! mounts `routes()` and calls `register`.
+
+mod model;
+
+use model::{__Model__, __Model__Form};
+use renox::prelude::*;
+
+/// The model, for the registry.
+pub(super) fn register(app: &mut Registry) {
+    app.model::<__Model__>();
+}
+
+/// GET /__path__, GET /__path__/new, POST /__path__, GET /__path__/{id},
+/// GET /__path__/{id}/edit, PUT /__path__/{id}, DELETE /__path__/{id};
+/// named __route__.index, __route__.create, …
+pub(super) fn routes() -> Routes {
+    Routes::new()
+        .resource(
+            "/__path__",
+            "__route__",
+            Resource::new()
+                .index(index)
+                .create(create)
+                .store(store)
+                .show(show)
+                .edit(edit)
+                .update(update)
+                .destroy(destroy),
+        )
+        .require_auth()
+}
+"#;
+
+/// What a package's resource tests need to boot the module without an app.
+const PACKAGE_TEST_HELPERS: &str = r##"
+/// The pages extend the app's layout; a package test has no app, so it
+/// brings the smallest one.
+const LAYOUT: &str = r#"<!doctype html>
+<html><body><rx-outlet name="content"/></body></html>
+"#;
+
+/// A views directory holding the layout and `files` (the app's own views).
+fn views(files: &[(&str, &str)]) -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("a temporary views directory");
+    for (name, text) in [("layouts/app.html", LAYOUT)].iter().chain(files) {
+        let path = dir.path().join(name);
+        std::fs::create_dir_all(path.parent().expect("a file path")).expect("a directory");
+        std::fs::write(path, text).expect("a view file");
+    }
+    dir
+}
+
+/// The module mounted in an empty app that uses `views`; `Auth` brings the
+/// users table the resource's pages need.
+async fn boot(views: &Path) -> TestApp {
+    TestApp::with_config(App::new().module(Auth::new()).module(__Struct__), |config| {
+        config.views_path = views.to_path_buf();
+    })
+    .await
+}
+
+"##;
 
 const MODEL: &str = r#"use renox::fake::Fake;
 __faker_use__use renox::prelude::*;
@@ -519,10 +744,10 @@ impl Module for __Module__ {
         Routes::new()
             // GET /__path__, GET /__path__/new, POST /__path__, GET /__path__/{id},
             // GET /__path__/{id}/edit, PUT /__path__/{id}, DELETE /__path__/{id};
-            // named __module__.index, __module__.create, …
+            // named __route__.index, __route__.create, …
             .resource(
                 "/__path__",
-                "__module__",
+                "__route__",
                 Resource::new()
                     .index(index)
                     .create(create)
@@ -538,11 +763,11 @@ impl Module for __Module__ {
 
 async fn index(State(db): State<Db>, Page(page): Page) -> Result<View> {
     let records = __Model__::query().latest().paginate(&db, page, 20).await?;
-    Ok(view("__module__/index.html", context! { records }))
+    Ok(view("__view__/index.html", context! { records }))
 }
 
 async fn create() -> View {
-    view("__module__/form.html", context! {})
+    view("__view__/form.html", context! {})
 }
 
 async fn store(State(db): State<Db>, Valid(form): Valid<__Model__Form>) -> Result<(Toast, Redirect)> {
@@ -554,12 +779,12 @@ async fn store(State(db): State<Db>, Valid(form): Valid<__Model__Form>) -> Resul
 
 async fn show(State(db): State<Db>, Path(id): Path<i64>) -> Result<View> {
     let record = __Model__::find_or_404(&db, id).await?;
-    Ok(view("__module__/show.html", context! { record }))
+    Ok(view("__view__/show.html", context! { record }))
 }
 
 async fn edit(State(db): State<Db>, Path(id): Path<i64>) -> Result<View> {
     let record = __Model__::find_or_404(&db, id).await?;
-    Ok(view("__module__/form.html", context! { record }))
+    Ok(view("__view__/form.html", context! { record }))
 }
 
 async fn update(
@@ -583,14 +808,14 @@ async fn destroy(State(db): State<Db>, Path(id): Path<i64>) -> Result<(Toast, Re
 const INDEX_VIEW: &str = r#"<rx-page layout="layouts/app.html" title="__title__">
   <rx-stack>
     <rx-page-header title="__title__">
-      <rx-link-button route="__module__.create" label="New" variant="primary"/>
+      <rx-link-button route="__route__.create" label="New" variant="primary"/>
     </rx-page-header>
     <rx-table :rows="records" as="record" :key="record.id" caption="__title__">
 __cells__      <rx-row-actions>
-        <rx-link-button route="__module__.edit" label="Edit" variant="plain" size="small"/>
-        <rx-confirm id="delete-{{ record.id }}" route="__module__.destroy" label="Delete" title="Delete this?" size="small">This can't be undone.</rx-confirm>
+        <rx-link-button route="__route__.edit" label="Edit" variant="plain" size="small"/>
+        <rx-confirm id="delete-{{ record.id }}" route="__route__.destroy" label="Delete" title="Delete this?" size="small">This can't be undone.</rx-confirm>
       </rx-row-actions>
-      <rx-slot name="empty"><rx-empty title="Nothing here yet" message="What you add shows up in this list." route="__module__.create" action-label="Add the first"/></rx-slot>
+      <rx-slot name="empty"><rx-empty title="Nothing here yet" message="What you add shows up in this list." route="__route__.create" action-label="Add the first"/></rx-slot>
     </rx-table>
   </rx-stack>
 </rx-page>
@@ -599,13 +824,13 @@ __cells__      <rx-row-actions>
 // One form for both: `record` is only set when editing.
 const FORM_VIEW: &str = r#"<rx-page layout="layouts/app.html" :title="'Edit' if record else 'New'">
   <rx-stack>
-    <rx-page-header :title="'Edit' if record else 'New'" back="{{ route('__module__.index') }}" back-label="__title__"/>
-    <rx-form :action="route('__module__.update', record.id) if record else route('__module__.store')" live>
+    <rx-page-header :title="'Edit' if record else 'New'" back="{{ route('__route__.index') }}" back-label="__title__"/>
+    <rx-form :action="route('__route__.update', record.id) if record else route('__route__.store')" live>
       <input type="hidden" name="_method" value="PUT" rx-if="record">
       <rx-card>
         <rx-form-errors/>
 __inputs__        <div class="rx-card__footer">
-          <rx-link-button route="__module__.index" label="Cancel" variant="plain"/>
+          <rx-link-button route="__route__.index" label="Cancel" variant="plain"/>
           <rx-button :label="'Save changes' if record else 'Create'"/>
         </div>
       </rx-card>
@@ -616,9 +841,9 @@ __inputs__        <div class="rx-card__footer">
 
 const SHOW_VIEW: &str = r#"<rx-page layout="layouts/app.html" title="__title__">
   <rx-stack>
-    <rx-page-header title="__heading__" back="{{ route('__module__.index') }}" back-label="__title__">
-      <rx-link-button href="{{ route('__module__.edit', record.id) }}" label="Edit" variant="secondary" size="small"/>
-      <rx-confirm id="delete-{{ record.id }}" action="{{ route('__module__.destroy', record.id) }}" label="Delete" title="Delete this?" size="small">This can't be undone.</rx-confirm>
+    <rx-page-header title="__heading__" back="{{ route('__route__.index') }}" back-label="__title__">
+      <rx-link-button href="{{ route('__route__.edit', record.id) }}" label="Edit" variant="secondary" size="small"/>
+      <rx-confirm id="delete-{{ record.id }}" action="{{ route('__route__.destroy', record.id) }}" label="Delete" title="Delete this?" size="small">This can't be undone.</rx-confirm>
     </rx-page-header>
     <rx-card>
 __details__    </rx-card>
@@ -628,10 +853,9 @@ __details__    </rx-card>
 
 const TESTS: &str = r#"//! Made with `rnx make:module __module__ --resource`.
 
-use renox::prelude::*;
+__uses__use renox::prelude::*;
 use renox::testing::TestApp;
-
-async fn user(app: &TestApp) -> User {
+__helpers__async fn user(app: &TestApp) -> User {
     User::register(app.db(), "Test", "test@example.com", "password123")
         .await
         .unwrap()
@@ -639,15 +863,15 @@ async fn user(app: &TestApp) -> User {
 
 #[renox::test]
 async fn guests_are_sent_to_log_in() {
-    let app = TestApp::new(__crate__::app()).await;
+    __let_app__
     app.get("/__path__").await.assert_redirect("/login");
 }
 
 #[renox::test]
 async fn __module___are_created_listed_changed_and_deleted() {
-    let app = TestApp::new(__crate__::app()).await;
+    __let_app__
     app.acting_as(&user(&app).await);
-    app.get("/__path__").await.assert_ok().assert_view("__module__/index.html");
+    app.get("/__path__").await.assert_ok().assert_view("__view__/index.html");
     app.get("/__path__/new").await.assert_ok();
 
     app.post("/__path__", &[__form1__])
@@ -656,7 +880,7 @@ async fn __module___are_created_listed_changed_and_deleted() {
     app.get("/__path__")
         .await
         .assert_ok()__seen_first__;
-    app.get("/__path__/1").await.assert_ok().assert_view("__module__/show.html");
+    app.get("/__path__/1").await.assert_ok().assert_view("__view__/show.html");
     app.get("/__path__/1/edit").await.assert_ok();
 
     app.put("/__path__/1", &[__form2__])
@@ -669,13 +893,13 @@ async fn __module___are_created_listed_changed_and_deleted() {
 
 #[renox::test]
 async fn __module___match_their_table() {
-    let app = TestApp::new(__crate__::app()).await;
+    __let_app__
     app.assert_models_match_schema().await;
 }
 
 #[renox::test]
 async fn __module___views_compile() {
-    let app = TestApp::new(__crate__::app()).await;
+    __let_app__
     app.assert_views_compile();
 }
 "#;
