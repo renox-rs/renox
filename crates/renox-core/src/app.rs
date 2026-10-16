@@ -675,6 +675,18 @@ impl App {
         self
     }
 
+    /// Adds `link` to the navigation menu `menu`; see [`Registry::nav`].
+    pub fn nav(mut self, menu: &str, link: crate::nav::NavLink) -> Self {
+        self.registry.nav(menu, link);
+        self
+    }
+
+    /// Hides the link with `key` from the menu `menu`; see [`Registry::nav_hide`].
+    pub fn nav_hide(mut self, menu: &str, key: &str) -> Self {
+        self.registry.nav_hide(menu, key);
+        self
+    }
+
     /// Adds template functions, filters or globals; see [`Registry::templates`].
     pub fn templates(
         mut self,
@@ -745,6 +757,8 @@ impl App {
             view_data,
             settings_groups,
             settings_module,
+            nav_links,
+            nav_hidden,
         } = self.registry;
         if !settings_groups.is_empty() && !settings_module {
             return Err(anyhow!(
@@ -786,6 +800,7 @@ impl App {
                 anyhow!("two modules set a second login step (`Registry::second_factor`)").into(),
             );
         }
+        let nav = crate::nav::Nav::build(nav_links, nav_hidden)?;
         check_commands(&commands)?;
         schedule.check()?;
         let zone: Zone = config.timezone;
@@ -1053,6 +1068,7 @@ impl App {
             channels: Arc::new(channels),
             reporters: Arc::new(reporters),
             second_factor: second_factor.map(Arc::new),
+            nav: Arc::new(nav),
             account_sections: {
                 account_sections.sort_by_key(|section| section.order);
                 Arc::new(account_sections)

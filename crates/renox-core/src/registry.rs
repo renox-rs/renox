@@ -47,6 +47,9 @@ pub struct Registry {
     /// that owns their table is on.
     pub(crate) settings_groups: Vec<crate::settings::Group>,
     pub(crate) settings_module: bool,
+    /// Links modules add to named menus (`nav`), and the ones they hide.
+    pub(crate) nav_links: Vec<(String, crate::nav::NavLink)>,
+    pub(crate) nav_hidden: Vec<(String, String)>,
 }
 
 /// A seeder registered with `App::seeder` or `Registry::seeder`.
@@ -426,6 +429,20 @@ impl Registry {
     {
         self.account_sections
             .push(crate::auth::account::section(template, order, data));
+        self
+    }
+
+    /// Adds `link` to the navigation menu `menu`. A second link with the same
+    /// key in one menu is a boot error; see [`crate::nav::NavLink`].
+    pub fn nav(&mut self, menu: &str, link: crate::nav::NavLink) -> &mut Self {
+        self.nav_links.push((menu.to_owned(), link));
+        self
+    }
+
+    /// Removes the link with `key` from the menu `menu`, whichever module
+    /// added it.
+    pub fn nav_hide(&mut self, menu: &str, key: &str) -> &mut Self {
+        self.nav_hidden.push((menu.to_owned(), key.to_owned()));
         self
     }
 

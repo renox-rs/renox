@@ -89,6 +89,9 @@ pub struct AppStateInner {
     pub(crate) second_factor: Option<Arc<crate::auth::second_factor::SecondFactor>>,
     /// Sections other modules add to `/account` (`Registry::account_section`).
     pub(crate) account_sections: Arc<Vec<crate::auth::account::AccountSection>>,
+    /// The navigation menus (`App::nav`).
+    #[allow(dead_code)]
+    pub(crate) nav: Arc<crate::nav::Nav>,
     /// The `Auth` module's settings, when the app has it.
     pub(crate) auth: Option<Arc<crate::auth::module::Settings>>,
     /// `App::detect_locale`: the browser's `Accept-Language` picks the locale.
