@@ -725,6 +725,7 @@ impl App {
         migrations.push(crate::import::MIGRATION);
         migrations.extend(crate::webhook::MIGRATIONS);
         migrations.push(crate::db::SEQUENCE_MIGRATION);
+        migrations.push(crate::state_machine::MIGRATION);
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());

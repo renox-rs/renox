@@ -122,6 +122,7 @@ pub mod settings;
 pub mod shell;
 pub mod signed;
 mod state;
+pub mod state_machine;
 pub mod storage;
 #[cfg(test)]
 mod test_logs;
