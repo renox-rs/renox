@@ -7,6 +7,7 @@ mod format;
 mod generate;
 mod make;
 mod new;
+mod package;
 mod scaffold;
 mod serve;
 mod tailwind;
@@ -106,6 +107,21 @@ enum Command {
         /// With --resource: open the new page in the browser.
         #[arg(long)]
         open: bool,
+    },
+    /// Create a reusable package: a crate with a `Module`, joined to the workspace.
+    #[command(name = "make:package")]
+    MakePackage {
+        /// e.g. `invoicing` (snake or kebab case).
+        name: String,
+        /// Where the crate goes (default: `crates/<name>`).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Extras, comma separated: `assets`, `commands` (`admin` needs a newer Renox).
+        #[arg(long = "with", value_delimiter = ',')]
+        with: Vec<String>,
+        /// In a virtual workspace: the crate of the app that should use the package.
+        #[arg(long)]
+        register: Option<PathBuf>,
     },
     /// Fake records for a model (`impl Factory`).
     #[command(name = "make:factory")]
@@ -328,6 +344,12 @@ fn run(command: Command) -> Result<()> {
             finish::after_resource(&root, &path, !no_migrate, open)
         }
         Command::MakeModule { name, .. } => generate::module(&app_root()?, &name),
+        Command::MakePackage {
+            name,
+            path,
+            with,
+            register,
+        } => package::run(&std::env::current_dir()?, &name, path, &with, register),
         Command::MakeFactory { model, module } => generate::factory(&app_root()?, &model, &module),
         Command::MakeSeeder { name } => generate::seeder(&app_root()?, &name),
         Command::MakeTest { name } => generate::test(&app_root()?, &name),
@@ -663,6 +685,11 @@ mod tests {
         assert!(matches!(
             parse(&["make:module", "products", "--resource", "--fields", "name price:money"]),
             Command::MakeModule { resource: true, fields: Some(f), model: None, .. } if f == "name price:money"
+        ));
+        assert!(matches!(
+            parse(&["make:package", "invoicing", "--with", "assets,commands"]),
+            Command::MakePackage { name, path: None, with, register: None }
+                if name == "invoicing" && with == ["assets", "commands"]
         ));
         assert!(matches!(
             parse(&["doctor", "--no-build"]),

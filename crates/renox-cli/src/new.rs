@@ -588,7 +588,7 @@ fn use_tailwind_with(root: &Path, build: impl FnOnce(&Path) -> Result<()>) -> Re
     Ok(())
 }
 
-fn validate_name(name: &str) -> Result<()> {
+pub(crate) fn validate_name(name: &str) -> Result<()> {
     let valid = name.starts_with(|c: char| c.is_ascii_lowercase())
         && name
             .chars()
