@@ -201,7 +201,7 @@ async fn built_in_texts_can_be_translated() {
         login.contains(">Se connecter</h2>"),
         "renox.auth.* overrides the built-in page"
     );
-    assert!(login.contains(r#"<html lang="fr">"#));
+    assert!(login.contains(r#"<html lang="fr" dir="ltr">"#));
     visitor.get("/lang/es").await;
     assert!(
         visitor.get("/login").await.1.contains(">Log in</h2>"),
@@ -312,4 +312,23 @@ async fn an_apps_language_file_brings_plurals_and_ranges() {
     assert_eq!(es.t("ui.cancel", &[]), "Cancelar");
     // A language without a file gets the built-in English texts.
     assert_eq!(app.state().lang("fr").t("ui.cancel", &[]), "Cancel");
+}
+
+#[renox::test]
+async fn built_in_pages_write_dir_for_the_locale_and_error_pages_stay_ltr() {
+    let app = renox::testing::TestApp::with_config(App::new().module(Auth::new()), |c| {
+        c.locale = "ar".to_owned();
+    })
+    .await;
+    app.get("/login")
+        .await
+        .assert_see(r#"<html lang="ar" dir="rtl">"#);
+    app.get("/no-such-page")
+        .await
+        .assert_see(r#"<html lang="en" dir="ltr">"#);
+
+    let app = renox::testing::TestApp::new(App::new().module(Auth::new())).await;
+    app.get("/login")
+        .await
+        .assert_see(r#"<html lang="en" dir="ltr">"#);
 }
