@@ -70,6 +70,7 @@ mod send_handlers;
 mod seo;
 mod services;
 mod sessions;
+mod settings;
 mod tag_usage;
 mod testing;
 mod testing_tools;

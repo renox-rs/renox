@@ -68,6 +68,42 @@ async fn relations(State(db): State<Db>) -> Result<String> {
     ))
 }
 
+#[derive(serde::Serialize, serde::Deserialize, Validate, Default, Clone)]
+struct Prefs {
+    #[validate(max(20))]
+    theme: String,
+}
+
+impl renox::settings::SettingsGroup for Prefs {
+    const KEY: &'static str = "prefs";
+}
+
+/// #29's settings APIs: the reads, the saves, the info and the helpers the
+/// commands run.
+async fn settings(
+    State(state): State<AppState>,
+    renox::settings::Setting(prefs): renox::settings::Setting<Prefs>,
+) -> Result<String> {
+    let mut changed = (*prefs).clone();
+    changed.theme = "dark".into();
+    state.save_settings(&changed, None).await?;
+    state.save_settings_in(&changed, "eu", None).await?;
+    let read = state.settings::<Prefs>().await?;
+    let scoped = state.settings_in::<Prefs>("eu").await?;
+    let info = state.settings_info::<Prefs>().await?;
+    renox::settings::set_from_text(&state, "prefs.theme", "light", "").await?;
+    let text = renox::settings::describe(&state, "prefs", "", false).await?;
+    let all = renox::settings::describe_all(&state, "", true).await?;
+    Ok(format!(
+        "{} {} {} {} {}",
+        read.theme,
+        scoped.theme,
+        info.is_some(),
+        text.len(),
+        all.len()
+    ))
+}
+
 /// A helper taking `&Db`, the way apps split handlers up.
 async fn tagged(db: &Db, notes: &[Note]) -> Result<usize> {
     Ok(
@@ -743,6 +779,7 @@ impl Module for Handlers {
             .get("/builder", builder)
             .get("/models", models)
             .get("/cache", cache)
+            .get("/settings", settings)
             .get("/background", background)
             .get("/polish", polish)
             .get("/keyed", keyed)
@@ -762,6 +799,8 @@ async fn data_apis_work_in_routed_handlers() {
         App::new()
             .module(Auth::new())
             .module(Handlers)
+            .module(renox::settings::Settings)
+            .settings::<Prefs>()
             .migrations(&[
                 ARTICLES,
                 renox::db::search::migration::<Article>("20300101000001_search_articles"),
@@ -802,6 +841,10 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true false 2 3 true true");
+    app.get("/settings")
+        .await
+        .assert_ok()
+        .assert_see("dark dark true");
     app.get("/keyed")
         .await
         .assert_ok()

@@ -1,0 +1,32 @@
+{#- A settings page (renox-admin/settings.html): the form of a group of
+    settings kept in the database. Sent with htmx like the resource forms:
+    errors show under their fields (422), a success stays here with a toast.
+    `sealed` is a group that never prints its values; `editable` is false
+    when the user may look but not change. -#}
+{% extends "renox-admin/layout.html" %}
+{% from "renox/ui.html" import page_header, card, form_grid, form_errors, button %}
+{% from "renox-admin/fields.html" import field %}
+
+{% block title %}{{ title }} · {{ admin.title }}{% endblock %}
+
+{% block content %}
+{% call page_header(title) %}{% endcall %}
+<form method="post" action="{{ action }}" hx-post="{{ action }}" hx-swap="none" data-live-validate novalidate>
+  {{ csrf_field() }}{{ method_field(method) }}
+  {{ form_errors() }}
+  {% call card() %}
+    <fieldset style="border:0;margin:0;padding:0;min-width:0" {% if not editable %}disabled{% endif %}>
+    {% call form_grid(2) %}
+      {%- for f in fields %}
+      {{ field(f, currency=admin.currency) }}
+      {%- endfor %}
+    {% endcall %}
+    </fieldset>
+    {%- if editable %}
+    <div class="rx-row">
+      {{ button(submit_label, key="mod+s") }}
+    </div>
+    {%- endif %}
+  {% endcall %}
+</form>
+{% endblock %}

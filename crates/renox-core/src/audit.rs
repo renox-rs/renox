@@ -41,6 +41,7 @@ use crate::auth::events::{
     OtherDevicesLoggedOut, PasswordChanged, PasswordReset, ProfileUpdated, Registered,
 };
 use crate::db::{DateTime, Db, DbValue, Migration, Row, now, sql};
+use crate::settings::SettingsChanged;
 use crate::{AppState, Module, Registry, Result, Routes};
 
 const MIGRATIONS: &[Migration] = &[crate::db::framework_migration!(
@@ -115,6 +116,21 @@ impl Module for Audit {
                         .data(data),
                 )
             });
+        // Sealed groups arrive with `null` values: only the field names.
+        app.listen(|e: SettingsChanged, s| {
+            let data = json!({
+                "key": e.key,
+                "scope": e.scope,
+                "changed": e.changed,
+                "previous": e.previous,
+                "current": e.current,
+            });
+            let mut entry = Entry::new("settings.changed").data(data);
+            if let Some(user_id) = e.actor {
+                entry = entry.user(user_id);
+            }
+            log(s, entry)
+        });
         app.command(
             "audit:prune",
             "Delete audit entries older than --days (default 365)",
