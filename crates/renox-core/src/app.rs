@@ -112,6 +112,7 @@ pub struct App {
     layers: Vec<AppLayer>,
     limiters: HashMap<String, crate::rate_limit::LimitRule>,
     detect_locale: bool,
+    rtl_locales: Option<Vec<String>>,
     disks: Vec<(String, DiskSettings)>,
     uploads: crate::upload::Pipeline,
     mailers: Vec<(String, MailerSettings)>,
@@ -148,6 +149,7 @@ impl App {
             layers: Vec::new(),
             limiters: HashMap::new(),
             detect_locale: false,
+            rtl_locales: None,
             disks: Vec::new(),
             uploads: crate::upload::Pipeline::new(),
             mailers: Vec::new(),
@@ -172,6 +174,22 @@ impl App {
     /// ```
     pub fn detect_locale(mut self) -> Self {
         self.detect_locale = true;
+        self
+    }
+
+    /// Replaces the languages written right to left (by default Arabic,
+    /// Hebrew, Persian, Urdu, Pashto, Yiddish, Divehi and Central Kurdish)
+    /// with `locales`, matched by base language (`ar` covers `ar-AE`).
+    /// `AppState::direction` then answers from this list.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # let _ =
+    /// App::new().rtl_locales(&["ar", "he"])
+    /// # ;
+    /// ```
+    pub fn rtl_locales(mut self, locales: &[&str]) -> Self {
+        self.rtl_locales = Some(locales.iter().map(|l| (*l).to_owned()).collect());
         self
     }
 
@@ -1049,6 +1067,7 @@ impl App {
             provided: Arc::new(module_provided),
             throttle: Arc::new(LoginThrottle::new(shared_counters.clone())),
             detect_locale: self.detect_locale,
+            rtl_locales: self.rtl_locales.map(Arc::new),
         });
         if let Some(second) = &state.second_factor
             && state.url(&second.challenge, &[]).is_err()

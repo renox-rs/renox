@@ -825,7 +825,82 @@ impl Lang {
     }
 }
 
+/// The writing direction of a language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Direction {
+    /// Left to right.
+    Ltr,
+    /// Right to left (Arabic, Hebrew, Persian, ...).
+    Rtl,
+}
+
+impl Direction {
+    /// The value of the HTML `dir` attribute: `"ltr"` or `"rtl"`.
+    ///
+    /// ```
+    /// use renox::i18n::{direction, Direction};
+    /// assert_eq!(direction("ar").as_str(), "rtl");
+    /// assert_eq!(Direction::Ltr.as_str(), "ltr");
+    /// ```
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ltr => "ltr",
+            Self::Rtl => "rtl",
+        }
+    }
+}
+
+/// Base languages written right to left, used unless `App::rtl_locales`
+/// replaces them.
+const RTL_LOCALES: &[&str] = &["ar", "he", "fa", "ur", "ps", "yi", "dv", "ckb"];
+
+fn base_subtag(locale: &str) -> String {
+    locale
+        .split(['-', '_'])
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase()
+}
+
+/// The writing direction of `locale` (`ar`, `ar-AE` and `ar_AE` are all
+/// right to left; `en`, `es` and the empty string are left to right),
+/// judged by its base language against Arabic, Hebrew, Persian, Urdu,
+/// Pashto, Yiddish, Divehi and Central Kurdish. An app that changed the
+/// list with `App::rtl_locales` gets it through [`AppState::direction`].
+///
+/// ```
+/// use renox::i18n::{direction, Direction};
+/// assert_eq!(direction("ar-AE"), Direction::Rtl);
+/// assert_eq!(direction("en"), Direction::Ltr);
+/// ```
+pub fn direction(locale: &str) -> Direction {
+    let base = base_subtag(locale);
+    if RTL_LOCALES.contains(&base.as_str()) {
+        Direction::Rtl
+    } else {
+        Direction::Ltr
+    }
+}
+
 impl AppState {
+    /// The writing direction of `locale`, honouring `App::rtl_locales`
+    /// when the app set it, else [`direction`].
+    pub fn direction(&self, locale: &str) -> Direction {
+        match &self.rtl_locales {
+            Some(list) => {
+                let base = base_subtag(locale);
+                if list.iter().any(|l| base_subtag(l) == base) {
+                    Direction::Rtl
+                } else {
+                    Direction::Ltr
+                }
+            }
+            None => direction(locale),
+        }
+    }
+
     /// The texts of `locale`, for code without a request (a job, a mail
     /// to someone in another language).
     pub fn lang(&self, locale: &str) -> Lang {
@@ -868,6 +943,18 @@ mod tests {
             super::builtin_text("en", "ui.no-such-text"),
             "ui.no-such-text"
         );
+    }
+
+    #[test]
+    fn direction_follows_the_base_language() {
+        for rtl in ["ar", "ar-AE", "ar_AE", "AR", "he", "fa", "ckb"] {
+            assert_eq!(direction(rtl), Direction::Rtl, "{rtl}");
+        }
+        for ltr in ["en", "es", "pt-br", "", "arx"] {
+            assert_eq!(direction(ltr), Direction::Ltr, "{ltr}");
+        }
+        assert_eq!(Direction::Rtl.as_str(), "rtl");
+        assert_eq!(Direction::Ltr.as_str(), "ltr");
     }
 
     #[test]

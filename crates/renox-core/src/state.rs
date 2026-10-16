@@ -93,6 +93,8 @@ pub struct AppStateInner {
     pub(crate) auth: Option<Arc<crate::auth::module::Settings>>,
     /// `App::detect_locale`: the browser's `Accept-Language` picks the locale.
     pub(crate) detect_locale: bool,
+    /// `App::rtl_locales`: replaces the default right-to-left languages.
+    pub(crate) rtl_locales: Option<Arc<Vec<String>>>,
     pub(crate) security: Arc<crate::security::Security>,
     pub(crate) webhooks: crate::webhook::Handlers,
     /// Read by the live component route (#433).

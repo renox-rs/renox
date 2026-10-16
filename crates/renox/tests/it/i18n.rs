@@ -258,6 +258,22 @@ async fn debug_mode_picks_up_edited_lang_files() {
 }
 
 #[renox::test]
+async fn direction_follows_the_default_list_and_app_rtl_locales() {
+    use renox::i18n::{Direction, direction};
+    for l in ["ar", "ar-AE", "he", "fa"] {
+        assert_eq!(direction(l), Direction::Rtl, "{l}");
+    }
+    for l in ["en", "es", ""] {
+        assert_eq!(direction(l), Direction::Ltr, "{l}");
+    }
+    let app = renox::testing::TestApp::new(App::new()).await;
+    assert_eq!(app.state().direction("ar"), Direction::Rtl);
+    let app = renox::testing::TestApp::new(App::new().rtl_locales(&["xx"])).await;
+    assert_eq!(app.state().direction("xx-YY"), Direction::Rtl);
+    assert_eq!(app.state().direction("ar"), Direction::Ltr);
+}
+
+#[renox::test]
 async fn an_apps_language_file_brings_plurals_and_ranges() {
     // `tests/lang/es.json`: Renox ships English only; Spanish comes from the app.
     let app = renox::testing::TestApp::with_config(App::new(), |c| {
