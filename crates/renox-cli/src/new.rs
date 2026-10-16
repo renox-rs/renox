@@ -4,6 +4,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 
 use crate::Database;
+use crate::template::Source;
 
 /// Files of a new app: (path, contents). `.stub` files are templated.
 const STUBS: &[(&str, &str)] = &[
@@ -342,6 +343,48 @@ pub fn run(name: &str, renox_path: Option<&Path>, options: Options) -> Result<()
 
 /// `run`, making the app in `parent` (tests use a temporary directory).
 fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options) -> Result<()> {
+    make_app(parent, name, renox_path, options, None)
+}
+
+/// `rnx new <name> --from <source>`: the app is the template's files with the
+/// placeholders filled; `set` holds the raw `--set key=value` arguments.
+pub fn run_from(
+    name: &str,
+    renox_path: Option<&Path>,
+    database: Database,
+    source: &Source,
+    set: &[String],
+) -> Result<()> {
+    run_from_in(Path::new("."), name, renox_path, database, source, set)
+}
+
+/// `run_from`, making the app in `parent`.
+fn run_from_in(
+    parent: &Path,
+    name: &str,
+    renox_path: Option<&Path>,
+    database: Database,
+    source: &Source,
+    set: &[String],
+) -> Result<()> {
+    let options = Options {
+        database,
+        tailwind: false,
+        starter: false,
+        notifications: false,
+    };
+    make_app(parent, name, renox_path, options, Some((source, set)))
+}
+
+/// The shared body of `rnx new`: the built-in stubs, or (with `from`) a
+/// template directory.
+fn make_app(
+    parent: &Path,
+    name: &str,
+    renox_path: Option<&Path>,
+    options: Options,
+    from: Option<(&Source, &[String])>,
+) -> Result<()> {
     let Options {
         database,
         tailwind,
@@ -353,6 +396,12 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
     if root.exists() {
         bail!("`{name}` already exists");
     }
+    // Everything that can fail on the template's side is checked before the
+    // first file is written.
+    let prepared = match from {
+        Some((source, set)) => Some(prepare_template(source, set)?),
+        None => None,
+    };
 
     let rev = option_env!("RENOX_GIT_REV");
     // Where AGENTS.md sends coding agents: the docs of the Renox this app
@@ -418,6 +467,21 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
         ..vars.clone()
     };
 
+    if let Some(prepared) = prepared {
+        let made = copy_template(root, &prepared, &vars, &keyless).and_then(|written| {
+            for file in &written {
+                crate::format::touched(&root.join(file));
+            }
+            link_fast(root)
+        });
+        if let Err(err) = made {
+            let _ = fs::remove_dir_all(root);
+            return Err(err);
+        }
+        print_created(name, &crate_name, database, false);
+        return Ok(());
+    }
+
     for (file, contents) in files(starter) {
         let contents = if notifications && !starter {
             with_notifications(file, contents)
@@ -443,6 +507,54 @@ fn run_in(parent: &Path, name: &str, renox_path: Option<&Path>, options: Options
 
     print_created(name, &crate_name, database, starter);
     Ok(())
+}
+
+/// A resolved template with its configuration and the answers to its prompts.
+struct Prepared {
+    resolved: crate::template::Resolved,
+    config: crate::template::Config,
+    answers: Vec<(String, String)>,
+}
+
+/// Fetches the template, reads its configuration and collects the answers.
+fn prepare_template(source: &Source, set: &[String]) -> Result<Prepared> {
+    use std::io::IsTerminal;
+    let set = crate::template::parse_set(set)?;
+    let resolved = source.resolve()?;
+    let config = crate::template::Config::load(&resolved.dir)?;
+    let interactive = std::io::stdin().is_terminal();
+    let answers = crate::template::answers(
+        &config.ask,
+        &set,
+        interactive,
+        &mut std::io::stdin().lock(),
+        &mut std::io::stdout(),
+    )?;
+    Ok(Prepared {
+        resolved,
+        config,
+        answers,
+    })
+}
+
+/// Copies the template into `root`, filling the placeholders (`vars` for a
+/// file named `.env`, `keyless` elsewhere, then the answers). Returns the
+/// relative paths written.
+fn copy_template(
+    root: &Path,
+    prepared: &Prepared,
+    vars: &Vars,
+    keyless: &Vars,
+) -> Result<Vec<String>> {
+    let fill_file = |file: &str, text: &str| {
+        // Only the real .env gets a key; .env.example stays shareable.
+        let mut out = fill(text, if file == ".env" { vars } else { keyless });
+        for (key, answer) in &prepared.answers {
+            out = out.replace(&format!("{{{{{key}}}}}"), answer);
+        }
+        out
+    };
+    crate::template::copy(&prepared.resolved.dir, root, &prepared.config, &fill_file)
 }
 
 /// The values the placeholders of a new app stand for.
@@ -653,6 +765,81 @@ mod tests {
             found.is_empty(),
             "template statements in the stubs: {found:#?}"
         );
+    }
+
+    fn template_fixture(dir: &Path) -> std::path::PathBuf {
+        let tpl = dir.join("tpl");
+        fs::create_dir_all(tpl.join("src")).unwrap();
+        fs::write(tpl.join("Cargo.toml"), "name = \"{{crate_name}}\"\n").unwrap();
+        fs::write(tpl.join(".env"), "APP_KEY={{app_key}}\nCO={{company}}\n").unwrap();
+        fs::write(tpl.join(".env.example"), "APP_KEY={{app_key}}\n").unwrap();
+        fs::write(tpl.join("src/page.html"), "{{ app.locale }} {{title}}\n").unwrap();
+        fs::write(
+            tpl.join("renox-template.toml"),
+            "[[ask]]\nkey = \"company\"\nquestion = \"Company?\"\n",
+        )
+        .unwrap();
+        tpl
+    }
+
+    #[test]
+    fn from_a_template_fills_placeholders_and_the_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpl = template_fixture(dir.path());
+        let source = Source::Path(tpl);
+        run_from_in(
+            dir.path(),
+            "acme-web",
+            None,
+            Database::Sqlite,
+            &source,
+            &["company=Acme".to_string()],
+        )
+        .unwrap();
+        let app = dir.path().join("acme-web");
+        assert_eq!(
+            fs::read_to_string(app.join("Cargo.toml")).unwrap(),
+            "name = \"acme_web\"\n"
+        );
+        let env = fs::read_to_string(app.join(".env")).unwrap();
+        assert!(env.contains("CO=Acme"));
+        assert!(!env.contains("APP_KEY=\n"), "{env}");
+        assert_eq!(
+            fs::read_to_string(app.join(".env.example")).unwrap(),
+            "APP_KEY=\n"
+        );
+        assert_eq!(
+            fs::read_to_string(app.join("src/page.html")).unwrap(),
+            "{{ app.locale }} Acme Web\n"
+        );
+        assert!(!app.join("renox-template.toml").exists());
+    }
+
+    #[test]
+    fn a_bad_template_leaves_no_directory_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpl = template_fixture(dir.path());
+        // Missing answer, no terminal in tests: fails before anything is written.
+        let err = run_from_in(
+            dir.path(),
+            "shop",
+            None,
+            Database::Sqlite,
+            &Source::Path(tpl),
+            &[],
+        );
+        assert!(err.is_err());
+        assert!(!dir.path().join("shop").exists());
+        let err = run_from_in(
+            dir.path(),
+            "shop",
+            None,
+            Database::Sqlite,
+            &Source::Path(dir.path().join("missing")),
+            &[],
+        );
+        assert!(err.is_err());
+        assert!(!dir.path().join("shop").exists());
     }
 
     #[test]

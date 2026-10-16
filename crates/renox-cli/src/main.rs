@@ -46,16 +46,25 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Database::Sqlite)]
         database: Database,
         /// Style pages with Tailwind CSS (its standalone CLI, no Node) next to the UI kit.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         tailwind: bool,
         /// The starter kit: email verification, roles, a dashboard, the users
         /// page and the activity log in a sidebar layout.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         starter: bool,
         /// The notification bell in the navigation bar: in-app
         /// notifications, live (the starter kit always has it).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         notifications: bool,
+        /// Start from a template: a directory, or `git+<url>#<tag or branch>`.
+        /// Its `{{name}}`, `{{title}}`, `{{crate_name}}`, `{{database_url}}`,
+        /// `{{app_key}}` ... are filled in.
+        #[arg(long, value_name = "PATH|git+URL#REF")]
+        from: Option<String>,
+        /// With --from: answer a prompt of `renox-template.toml`, e.g.
+        /// `--set company=Acme` (repeatable).
+        #[arg(long = "set", value_name = "KEY=VALUE", requires = "from")]
+        set: Vec<String>,
     },
     /// Check this machine and app, and say how to fix what's missing.
     Doctor {
@@ -297,16 +306,27 @@ fn run(command: Command) -> Result<()> {
             tailwind,
             starter,
             notifications,
-        } => new::run(
-            &name,
-            renox_path.as_deref(),
-            new::Options {
+            from,
+            set,
+        } => match from {
+            Some(from) => new::run_from(
+                &name,
+                renox_path.as_deref(),
                 database,
-                tailwind,
-                starter,
-                notifications,
-            },
-        ),
+                &template::Source::parse(&from)?,
+                &set,
+            ),
+            None => new::run(
+                &name,
+                renox_path.as_deref(),
+                new::Options {
+                    database,
+                    tailwind,
+                    starter,
+                    notifications,
+                },
+            ),
+        },
         Command::Tailwind { watch, minify } => tailwind::run(&app_root()?, watch, minify),
         Command::TailwindInstall => {
             println!("{}", tailwind::binary()?.display());
@@ -649,8 +669,24 @@ mod tests {
     fn commands_parse_with_their_options() {
         assert!(matches!(
             parse(&["new", "shop", "--database", "postgres", "--tailwind"]),
-            Command::New { name, database: Database::Postgres, tailwind: true, renox_path: None, starter: false, notifications: false } if name == "shop"
+            Command::New { name, database: Database::Postgres, tailwind: true, renox_path: None, starter: false, notifications: false, from: None, .. } if name == "shop"
         ));
+        match parse(&[
+            "new", "shop", "--from", "../tpl", "--set", "a=b", "--set", "c=d",
+        ]) {
+            Command::New { from, set, .. } => {
+                assert_eq!(from.as_deref(), Some("../tpl"));
+                assert_eq!(set, ["a=b", "c=d"]);
+            }
+            _ => panic!("not `new`"),
+        }
+        for clash in ["--starter", "--notifications", "--tailwind"] {
+            assert!(
+                Cli::try_parse_from(["rnx", "new", "shop", "--from", "x", clash]).is_err(),
+                "--from and {clash} must clash"
+            );
+        }
+        assert!(Cli::try_parse_from(["rnx", "new", "shop", "--set", "a=b"]).is_err());
         assert!(matches!(
             parse(&["new", "shop", "--starter"]),
             Command::New {

@@ -5,9 +5,6 @@
 //! Nothing in a template is ever executed. Files are read and written, never
 //! run, and symlinks are skipped so a template cannot reach outside itself.
 
-// `rnx new --from` calls into this module in a later step of issue #35.
-#![allow(dead_code)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -217,16 +214,9 @@ fn walk(
     Ok(())
 }
 
-/// Where `rnx new` takes its files from.
+/// Where `rnx new --from` takes its files from (without `--from`, the stubs compiled into the CLI).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
-    /// Renox's own stubs, compiled in.
-    Builtin {
-        /// `--starter`.
-        starter: bool,
-        /// `--notifications`.
-        notifications: bool,
-    },
     /// A template directory on this machine.
     Path(PathBuf),
     /// A template repository: `git+<url>#<ref>`.
@@ -268,17 +258,16 @@ impl Source {
 
     /// Makes the template files available as a directory: a path is checked,
     /// a repository is cloned into a temporary directory that is removed when
-    /// the result is dropped. `Builtin` has no directory and is an error.
+    /// the result is dropped.
     pub fn resolve(&self) -> Result<Resolved> {
         match self {
-            Source::Builtin { .. } => bail!("the built-in starter is not a template directory"),
             Source::Path(path) => {
                 if !path.is_dir() {
                     bail!("--from {}: not a directory", path.display());
                 }
                 Ok(Resolved {
                     dir: path.clone(),
-                    temp: None,
+                    _temp: None,
                 })
             }
             Source::Git { url, git_ref } => {
@@ -287,7 +276,7 @@ impl Source {
                 match tools::git_clone(url, git_ref.as_deref(), &dir) {
                     Ok(()) => Ok(Resolved {
                         dir,
-                        temp: Some(temp),
+                        _temp: Some(temp),
                     }),
                     Err(tools::CloneError::NoGit) => {
                         bail!("`git` was not found on PATH; install git to use --from git+...")
@@ -322,13 +311,14 @@ pub struct Resolved {
     /// The directory holding the template files.
     pub dir: PathBuf,
     /// The temporary clone, deleted on drop.
-    temp: Option<TempDir>,
+    _temp: Option<TempDir>,
 }
 
 impl Resolved {
     /// Whether the files come from a temporary clone.
+    #[cfg(test)]
     pub fn is_clone(&self) -> bool {
-        self.temp.is_some()
+        self._temp.is_some()
     }
 }
 
