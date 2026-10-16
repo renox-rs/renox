@@ -713,8 +713,15 @@ async fn arabic_search_still_ranks_the_first_column_higher() {
     }
     let found = Party::search("الزهراء").get(db).await.unwrap();
     assert_eq!(found.len(), 3);
-    // The name (first column) outweighs the notes.
-    assert_eq!(found[0].name, "الزهراء");
+    // The name (first column) outweighs the notes: both name matches come
+    // before the row that only matches in its notes. Their order between
+    // themselves is a tie that PostgreSQL's `ts_rank` and SQLite's bm25 break
+    // differently, so the test does not pin it.
+    let mut first_two = names(&found[..2]);
+    first_two.sort_unstable();
+    let mut expected = ["الزهراء", "فاطمة الزهراء"];
+    expected.sort_unstable();
+    assert_eq!(first_two, expected);
     assert_eq!(found[2].name, "زبون");
 }
 
