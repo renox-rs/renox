@@ -805,6 +805,43 @@ impl Views {
         }
     }
 
+    /// The navigation menus the template `name` and the templates it reaches
+    /// (layouts, includes, imports) ask for with `nav("…")` or `menu="…"`.
+    /// Renox's own templates are not read: they get the menu name from the
+    /// caller.
+    pub(crate) fn menus_used(&self, name: &str) -> crate::nav::MenusUsed {
+        let mut used = crate::nav::MenusUsed::default();
+        let Ok(env) = self.reloader.acquire_env() else {
+            return used;
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut queue = vec![name.to_owned()];
+        while let Some(next) = queue.pop() {
+            if !seen.insert(next.clone()) || BUILTIN.iter().any(|(n, _)| *n == next) {
+                continue;
+            }
+            let Ok(template) = env.get_template(&next) else {
+                continue;
+            };
+            let source = template.source();
+            used.scan(source);
+            // Every quoted name of a template that exists is a layout, an
+            // include or an import (or text that happens to match).
+            let mut rest = source;
+            while let Some(at) = rest.find(['"', '\'']) {
+                let quote = rest.as_bytes()[at] as char;
+                let after = &rest[at + 1..];
+                let Some(len) = after.find(quote) else { break };
+                let candidate = &after[..len];
+                if candidate.ends_with(".html") && !candidate.contains('\n') {
+                    queue.push(candidate.to_owned());
+                }
+                rest = &after[len + 1..];
+            }
+        }
+        used
+    }
+
     /// Whether a template of this name exists (the app's or a built-in).
     pub fn exists(&self, name: &str) -> bool {
         self.reloader
@@ -942,6 +979,7 @@ pub(crate) const REQUEST_GLOBALS: &[&str] = &[
     "can",
     "request",
     "route_is",
+    "nav",
     "csrf_token",
     "csrf_field",
     "flash",
@@ -1458,6 +1496,15 @@ pub(crate) async fn middleware(
             Some(session) if !htmx.request => crate::analytics::take(session),
             _ => Vec::new(),
         };
+        let menus = request_menus(
+            &state,
+            current_user.as_ref(),
+            &locale,
+            route.as_deref(),
+            &path,
+            state.views.menus_used(&view.name),
+        )
+        .await;
         let globals = globals(
             &state,
             session.as_ref(),
@@ -1471,6 +1518,7 @@ pub(crate) async fn middleware(
                 events: &events,
             },
             &locale,
+            menus,
         );
         return match state
             .views
@@ -1520,6 +1568,20 @@ pub(crate) async fn middleware(
                     }
                 }
             }
+            // The app's error page may extend a layout with a menu: build
+            // every menu, as the page that extends is not known here.
+            let menus = request_menus(
+                &state,
+                current_user.as_ref(),
+                &locale,
+                route.as_deref(),
+                &path,
+                crate::nav::MenusUsed {
+                    names: Vec::new(),
+                    dynamic: true,
+                },
+            )
+            .await;
             let page_globals = globals(
                 &state,
                 session.as_ref(),
@@ -1533,6 +1595,7 @@ pub(crate) async fn middleware(
                     events: &[],
                 },
                 &locale,
+                menus,
             );
             Some(merge_maps([page_globals, Value::from_serialize(&shared)]))
         } else {
@@ -1612,6 +1675,22 @@ impl minijinja::value::Object for Flashed {
     }
 }
 
+/// Builds the menus `used` names for the request's user.
+async fn request_menus(
+    state: &AppState,
+    current_user: Option<&CurrentUser>,
+    locale: &str,
+    route: Option<&str>,
+    path: &str,
+    used: crate::nav::MenusUsed,
+) -> std::collections::HashMap<String, Vec<crate::nav::MenuGroup>> {
+    if state.nav.menus.is_empty() || (used.names.is_empty() && !used.dynamic) {
+        return Default::default();
+    }
+    let user = current_user.and_then(|c| crate::auth::auth_user_of(c, state));
+    crate::nav::build_for_request(state, user.as_ref(), locale, route, path, &used).await
+}
+
 /// What templates see of the request, besides the session and user.
 struct Requested<'a> {
     path: &'a str,
@@ -1684,6 +1763,7 @@ fn globals(
     htmx: &Htmx,
     requested: &Requested,
     locale: &str,
+    menus: std::collections::HashMap<String, Vec<crate::nav::MenuGroup>>,
 ) -> Value {
     let config = &state.config;
     let token = session.map(Session::token).unwrap_or_default();
@@ -1799,6 +1879,12 @@ fn globals(
                 })
             })
         },
+        // `nav('staff')`: the groups of a menu the app's modules contributed
+        // to, for this request's user (built before rendering, only for the
+        // menus the page's templates name).
+        nav => Value::from_function(move |menu: String| {
+            Value::from_serialize(menus.get(&menu).map(Vec::as_slice).unwrap_or_default())
+        }),
         csrf_token => token,
         flash => Value::from_object(Flashed(session.map(Session::flashed).unwrap_or_default())),
         errors => errors,

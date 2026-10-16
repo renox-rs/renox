@@ -916,6 +916,19 @@ async fn data_apis_work_in_routed_handlers() {
         App::new()
             .module(Auth::new())
             .module(Handlers)
+            // A badge with a closure and a query: the page middleware that
+            // builds the menu has to stay `Send`.
+            .nav(
+                "send",
+                renox::nav::NavLink::url("/notes", "Notes").badge(
+                    |state: AppState, _user: AuthUser| async move {
+                        let n: i64 = renox::db::sql("SELECT COUNT(*) FROM notes")
+                            .scalar(&state.db)
+                            .await?;
+                        Ok(Some(n.to_string()))
+                    },
+                ),
+            )
             .module(renox::settings::Settings)
             .settings::<Prefs>()
             .migrations(&[

@@ -472,6 +472,20 @@ impl<S: Send + Sync> OptionalFromRequestParts<S> for AuthUser {
     }
 }
 
+/// The request's user as an [`AuthUser`], for code outside a handler (the
+/// navigation menus a page draws).
+pub(crate) fn auth_user_of(current: &CurrentUser, state: &AppState) -> Option<AuthUser> {
+    Some(AuthUser {
+        user: current.user.clone()?,
+        gates: current.gates.clone(),
+        state: Some(state.clone()),
+        token_id: current.token_id,
+        abilities: current.abilities.clone(),
+        grants: current.grants.clone(),
+        role_names: std::sync::OnceLock::new(),
+    })
+}
+
 fn current(extensions: &axum::http::Extensions) -> Option<AuthUser> {
     let current = extensions.get::<CurrentUser>()?;
     Some(AuthUser {

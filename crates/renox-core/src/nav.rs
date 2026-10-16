@@ -2,9 +2,6 @@
 //! ([`NavLink`], [`Registry::nav`](crate::Registry::nav),
 //! [`App::nav`](crate::App::nav)).
 
-// The template function that calls the menu builder comes with the next change.
-#![allow(dead_code)]
-
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::pin::Pin;
@@ -290,6 +287,89 @@ impl Nav {
     }
 }
 
+/// The menus a set of templates asks for.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct MenusUsed {
+    /// Menu names written as text (`nav("staff")`, `menu="staff"`).
+    pub(crate) names: Vec<String>,
+    /// A menu name that is not text: any menu may be needed.
+    pub(crate) dynamic: bool,
+}
+
+impl MenusUsed {
+    /// Adds what `source` (one template) asks for: `nav("…")` calls and
+    /// `menu="…"` props.
+    pub(crate) fn scan(&mut self, source: &str) {
+        let bytes = source.as_bytes();
+        for (word, call) in [("nav", true), ("menu", false)] {
+            let mut from = 0;
+            while let Some(at) = source[from..].find(word) {
+                let start = from + at;
+                let end = start + word.len();
+                from = end;
+                let before = source[..start].chars().next_back();
+                if before.is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '.') {
+                    continue;
+                }
+                let mut i = end;
+                let skip = |i: &mut usize| {
+                    while bytes.get(*i).is_some_and(u8::is_ascii_whitespace) {
+                        *i += 1;
+                    }
+                };
+                skip(&mut i);
+                let punct = if call { b'(' } else { b'=' };
+                if bytes.get(i) != Some(&punct) {
+                    continue;
+                }
+                i += 1;
+                skip(&mut i);
+                match bytes.get(i) {
+                    Some(&quote @ (b'"' | b'\'')) => {
+                        let rest = &source[i + 1..];
+                        match rest.find(quote as char) {
+                            Some(len) => {
+                                let name = rest[..len].to_owned();
+                                if !self.names.contains(&name) {
+                                    self.names.push(name);
+                                }
+                            }
+                            None => self.dynamic = true,
+                        }
+                    }
+                    _ => self.dynamic = true,
+                }
+            }
+        }
+    }
+}
+
+/// Builds the menus a request's templates ask for (all of them when
+/// `used.dynamic`), as the map `nav(name)` reads.
+pub(crate) async fn build_for_request(
+    state: &AppState,
+    user: Option<&AuthUser>,
+    locale: &str,
+    route: Option<&str>,
+    path: &str,
+    used: &MenusUsed,
+) -> HashMap<String, Vec<MenuGroup>> {
+    let mut built = HashMap::new();
+    let request = MenuRequest {
+        state,
+        user,
+        locale,
+        route,
+        path,
+    };
+    for name in state.nav.menus.keys() {
+        if used.dynamic || used.names.iter().any(|n| n == name) {
+            built.insert(name.clone(), state.nav.menu(name, &request).await);
+        }
+    }
+    built
+}
+
 /// Whether the request's user may see `link`.
 async fn visible(link: &NavLink, request: &MenuRequest<'_>) -> bool {
     let restricted = link.permission.is_some() || link.gate.is_some() || link.when.is_some();
@@ -415,6 +495,19 @@ mod tests {
                 (Some("FINANCE"), vec!["payments", "invoices"]),
             ]
         );
+    }
+
+    #[test]
+    fn scan_finds_the_menus_a_template_names() {
+        let mut used = MenusUsed::default();
+        used.scan(
+            r#"{% for g in nav("staff") %}{% endfor %}{{ nav( 'portal' ) }} <x menu="side"/>"#,
+        );
+        used.scan("{{ subnav('no') }} {{ x.nav('no') }} {{ submenu='no' }} {{ menu }}");
+        assert_eq!(used.names, vec!["staff", "portal", "side"]);
+        assert!(!used.dynamic);
+        used.scan("{{ nav(which) }}");
+        assert!(used.dynamic);
     }
 
     #[test]

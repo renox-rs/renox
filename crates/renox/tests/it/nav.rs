@@ -2,6 +2,7 @@
 
 use renox::nav::NavLink;
 use renox::prelude::*;
+use renox::testing::TestApp;
 
 struct Billing;
 
@@ -48,6 +49,72 @@ async fn a_duplicate_key_in_one_menu_is_a_boot_error() {
         format!("{err:?}").contains("two links with the key `invoices.index`"),
         "{err:?}"
     );
+}
+
+struct Pages;
+
+impl Module for Pages {
+    fn name(&self) -> &'static str {
+        "nav-pages"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/invoices", || async { view("invoices.html", context! {}) })
+            .name("invoices.index")
+            .get("/plain", || async { view("plain.html", context! {}) })
+            .name("plain")
+    }
+}
+
+static BADGE_RUNS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[renox::test]
+async fn nav_lists_the_menu_in_templates_and_builds_it_only_when_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).unwrap();
+    write("layout.html", "{% block body %}{% endblock %}");
+    write(
+        "invoices.html",
+        "{% extends 'layout.html' %}{% block body %}{% for group in nav('staff') %}[{{ group.label }}:{% for link in group.items %}{{ link.label }}={{ link.url }}{% if link.active %}*{% endif %}{% if link.badge %}#{{ link.badge }}{% endif %},{% endfor %}]{% endfor %}{% endblock %}",
+    );
+    write("plain.html", "plain page");
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Auth::new())
+            .module(Pages)
+            .nav(
+                "staff",
+                NavLink::route("invoices.index", "Invoices")
+                    .group("Billing")
+                    .badge(|_state: AppState, _user: AuthUser| async move {
+                        BADGE_RUNS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        Ok(Some("3".to_owned()))
+                    }),
+            )
+            .nav("staff", NavLink::url("/docs", "Docs").key("docs")),
+        move |c| c.views_path = path,
+    )
+    .await;
+    // Anonymous visitors see unrestricted links; badges need a user.
+    app.get("/invoices")
+        .await
+        .assert_ok()
+        .assert_see("[None:Docs=/docs,][Billing:Invoices=/invoices*,]");
+    assert_eq!(BADGE_RUNS.load(std::sync::atomic::Ordering::SeqCst), 0);
+    let ana = User::register(app.db(), "Ana", "ana@example.com", "a long password 12")
+        .await
+        .unwrap();
+    app.acting_as(&ana);
+    // A page that doesn't name the menu runs no badge.
+    app.get("/plain").await.assert_ok().assert_see("plain page");
+    assert_eq!(BADGE_RUNS.load(std::sync::atomic::Ordering::SeqCst), 0);
+    app.get("/invoices")
+        .await
+        .assert_ok()
+        .assert_see("Invoices=/invoices*#3,");
+    assert_eq!(BADGE_RUNS.load(std::sync::atomic::Ordering::SeqCst), 1);
 }
 
 #[renox::test]
