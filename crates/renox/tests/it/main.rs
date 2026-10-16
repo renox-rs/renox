@@ -49,6 +49,7 @@ mod method;
 mod model_forms;
 mod model_keys;
 mod models;
+mod money;
 mod nav;
 mod notification_bell;
 mod operations;

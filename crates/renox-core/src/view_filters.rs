@@ -14,7 +14,7 @@ fn locale(state: &State) -> String {
 }
 
 /// Thousands and decimal separators for a locale.
-fn separators(locale: &str) -> (&'static str, &'static str) {
+pub(crate) fn separators(locale: &str) -> (&'static str, &'static str) {
     let language = locale.split(['-', '_']).next().unwrap_or(locale);
     match language {
         "id" | "de" | "nl" | "es" | "it" | "pt" | "tr" | "da" | "nb" | "ms" | "vi" => (".", ","),
