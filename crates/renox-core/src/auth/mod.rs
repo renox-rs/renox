@@ -337,6 +337,16 @@ impl AuthUser {
         self.grants.has_permission(permission)
     }
 
+    /// Whether a role of the user grants `permission` now, globally or in
+    /// at least one scope, whatever the request's scope. For showing
+    /// things such as menu links to someone who holds the permission only
+    /// through a scoped role; the page itself then filters by scope
+    /// (`scopes_with`, `has_permission_in`). `false` without the
+    /// `Permissions` module.
+    pub fn has_permission_anywhere(&self, permission: &str) -> bool {
+        self.grants.has_permission_anywhere(permission)
+    }
+
     /// Whether the user has `role` globally or in `scope` (the record's,
     /// not the request's), within its dates.
     pub fn has_role_in(&self, role: &str, scope: &permissions::Scope) -> bool {
