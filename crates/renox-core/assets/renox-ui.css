@@ -10,6 +10,9 @@
 @font-face { font-family: "Poppins"; font-style: normal; font-weight: 500; font-display: swap; src: url("/_renox/fonts/poppins-latin-500-4.003.woff2") format("woff2"); }
 @font-face { font-family: "Poppins"; font-style: normal; font-weight: 600; font-display: swap; src: url("/_renox/fonts/poppins-latin-600-4.003.woff2") format("woff2"); }
 @font-face { font-family: "Poppins"; font-style: normal; font-weight: 700; font-display: swap; src: url("/_renox/fonts/poppins-latin-700-4.003.woff2") format("woff2"); }
+/* Noto Sans Arabic (SIL OFL 1.1) for Arabic-script text. The unicode-range
+   makes the browser fetch it only on pages that contain such characters. */
+@font-face { font-family: "Noto Sans Arabic"; font-style: normal; font-weight: 100 900; font-display: swap; src: url("/_renox/fonts/noto-sans-arabic-wght-5.3.0.woff2") format("woff2"); unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FDF2, U+FDFC, U+200C-200F; }
 
 /* The default theme ("editorial", from the bike shop example, #344): Inter
    for text and large Poppins headlines, a cream page, white surfaces with a
@@ -18,8 +21,8 @@
    the look before 1.1 (an indigo accent), `data-rx-theme="classic"` the kit's
    first one (system fonts, Apple's blue): see the end of this block. */
 :root {
-  --rx-font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  --rx-font-display: "Poppins", "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --rx-font: "Inter", "Noto Sans Arabic", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --rx-font-display: "Poppins", "Inter", "Noto Sans Arabic", system-ui, -apple-system, "Segoe UI", sans-serif;
   --rx-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
 
   /* Semantic colors (light). Text colors keep 4.5:1 on their backgrounds

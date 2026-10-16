@@ -68,9 +68,10 @@ const IDIOMORPH: &str = include_str!("../assets/idiomorph-0.7.3.min.js");
 pub(crate) const LIVE_JS: &str = include_str!("../assets/renox-live.js");
 
 /// The kit's fonts (SIL Open Font License 1.1; assets/fonts has the
-/// licences): Inter for text, Poppins for titles and figures, Latin subsets.
+/// licences): Inter for text, Poppins for titles and figures, Latin subsets,
+/// and Noto Sans Arabic for Arabic-script text (loaded only by pages that use it).
 /// Their names carry the font's version, so they are cached for good.
-pub(crate) const FONTS: [(&str, &[u8]); 4] = [
+pub(crate) const FONTS: [(&str, &[u8]); 5] = [
     (
         "/_renox/fonts/inter-latin-wght-4.1.woff2",
         include_bytes!("../assets/fonts/inter-latin-wght-4.1.woff2"),
@@ -86,6 +87,10 @@ pub(crate) const FONTS: [(&str, &[u8]); 4] = [
     (
         "/_renox/fonts/poppins-latin-700-4.003.woff2",
         include_bytes!("../assets/fonts/poppins-latin-700-4.003.woff2"),
+    ),
+    (
+        "/_renox/fonts/noto-sans-arabic-wght-5.3.0.woff2",
+        include_bytes!("../assets/fonts/noto-sans-arabic-wght-5.3.0.woff2"),
     ),
 ];
 
