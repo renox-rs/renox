@@ -438,6 +438,20 @@
   an encrypted group is sealed the way `db::Encrypted` is; the per-process cache re-checks a
   version row in `cache` (`renox:settings:<key>`) at most once a second per group, so one query per
   group until a write and about a second for other servers to notice.
+- **#50, imports beyond CSV** (Excel files, dry run, undo; one branch): `Import::xlsx` (feature
+  `xlsx`, now also `calamine` 0.36, MIT, pure Rust; its `zip` and `quick-xml` were already in the
+  tree, new are `atoi_simd`, `fast-float2`, `codepage`, `debug_unsafe`), `Import::from_upload`
+  (CSV or Excel by content: a zip is a workbook), `.sheet`, `template_xlsx` + `TemplateColumn`;
+  `.dry_run()` / `.dry_run_if(bool)` (the row closures run in the transaction, which is rolled
+  back); `.undoable(window)` with `ImportTx` (`insert` / `update` / `save` record the table, the
+  key, a typed JSON before-image and the row's `updated_at` as text in `import_changes`),
+  `renox::import::undo` / `Undo::can_undo`, `prune` and `import:prune`; `ImportReport::{batch_id,
+  dry_run, error_csv, error_xlsx}` and `ErrorFile`; `<rx-import-action check>`. One framework
+  migration, `00010101000230_create_import_batches_table` (twenty-one in all; database.rs counts it).
+  The bike shop's price list uses it. The row closure's first argument is now `&mut ImportTx`
+  (derefs to the transaction and is an `Executor`, so closures written for `&mut Transaction`
+  compile unchanged). Not done: mapping columns in the browser (a follow-up); `ImportTx` has no
+  `delete`.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

@@ -1,4 +1,4 @@
-//! A supplier's price list, loaded from a CSV file with `renox::import`.
+//! A supplier's price list, loaded from a CSV or Excel file with `renox::import`.
 //!
 //! | Route | Name | Needs |
 //! |---|---|---|
@@ -18,6 +18,12 @@
 //! **Large files** (over [`LARGE_IMPORT`] rows) don't make the person
 //! wait: the file goes to private storage and an [`ImportPriceList`] job
 //! runs the same import in the background, then mails the report.
+//!
+//! The sheet takes `.xlsx` workbooks as well (`Import::from_upload` picks
+//! CSV or Excel by content; a workbook is always imported now) and has
+//! a "Check the file first" box: ticked, the whole file is read and
+//! written in a transaction that is rolled back, and the report says what
+//! a real import would do (`Import::dry_run_if`).
 
 use renox::db::{Transaction, sql};
 use renox::import::{Import, ImportReport};
@@ -159,11 +165,14 @@ pub async fn run(
 }
 // [/explain:stock.suppliers.show.import]
 
-/// The import form: one CSV file.
+/// The import form: one CSV or Excel file, and the "check first" box.
 #[derive(Deserialize, Validate)]
 pub struct ImportForm {
-    #[validate(required, mimes(&["csv", "txt"]))]
+    #[validate(required, mimes(&["csv", "txt", "xlsx"]))]
     pub file: Option<Upload>,
+    /// Ticked: check the file, write nothing.
+    #[serde(default)]
+    pub dry_run: bool,
 }
 
 /// How many data rows a file has (its lines, less the heading).
@@ -187,7 +196,9 @@ pub async fn import(
 ) -> Result<Response> {
     // [explain:stock.suppliers.show.import]
     let file = form.file.ok_or(Error::NotFound)?;
-    if rows_in(file.bytes()) > LARGE_IMPORT {
+    // A workbook is a zip archive: counting its lines means nothing.
+    let workbook = file.bytes().starts_with(b"PK\x03\x04");
+    if !form.dry_run && !workbook && rows_in(file.bytes()) > LARGE_IMPORT {
         let key = format!(
             "imports/price-list-{}-{}.csv",
             supplier.id,
@@ -210,7 +221,13 @@ pub async fn import(
             .into_response());
     }
     // [/explain:stock.suppliers.show.import]
-    Ok(run(&state, supplier.id, file.bytes(), &lang)
+    let supplier_id = supplier.id;
+    Ok(Import::from_upload(&file)
+        .dry_run_if(form.dry_run)
+        .lang(&lang)
+        .run(&state, move |tx, row: PriceRow| {
+            Box::pin(async move { write_row(tx, supplier_id, row).await })
+        })
         .await?
         .into_response())
 }
