@@ -107,6 +107,9 @@ pub struct AppStateInner {
     pub(crate) reporters: Arc<Vec<crate::report::ReportFn>>,
     /// What tests asked to record instead of doing (`TestApp::fake_events`, …).
     pub(crate) fakes: Arc<Fakes>,
+    /// The settings groups the app declared and the ones this process has
+    /// read (`AppState::settings`).
+    pub(crate) settings_store: Arc<crate::settings::Store>,
 }
 
 /// A notification a test recorded instead of sending.

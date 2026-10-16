@@ -42,6 +42,10 @@ pub struct Registry {
     pub(crate) seeders: Vec<Seeder>,
     pub(crate) models: Vec<crate::db::schema::ModelInfo>,
     pub(crate) view_data: Vec<crate::view::TypedView>,
+    /// Groups of settings (`settings`), and whether the `Settings` module
+    /// that owns their table is on.
+    pub(crate) settings_groups: Vec<crate::settings::Group>,
+    pub(crate) settings_module: bool,
 }
 
 /// A seeder registered with `App::seeder` or `Registry::seeder`.

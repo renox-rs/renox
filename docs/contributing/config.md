@@ -40,6 +40,10 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
   `GA4_API_SECRET`, `GTM_CONTAINER_ID`.
 - **App-specific:** anything else through `config.var(name)` (`config.vars` first, then the
   environment; empty counts as missing).
+- **Settings kept in the database** are not environment variables: values an administrator
+  changes without a redeploy (a company name, a number format, feature switches) are typed
+  groups of the `Settings` module (docs/settings.md, `state.settings::<T>()`), seeded from a JSON
+  file with `App::settings_from(path)`. They add no variable; sealed groups use `APP_KEY`.
 - **Set by others:** `LISTEN_FDS`/`LISTEN_PID` (systemd socket activation; `serve` uses that
   socket). For `rnx` itself: `TAILWIND_BIN` (a Tailwind binary to use instead of the pinned
   download) and `RNX_CACHE_DIR` (where downloads are kept).
