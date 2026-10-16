@@ -90,7 +90,7 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/error.rs             Error enum, IntoResponse, error pages (the app's errors/{status}.html,
                            errors/default.html with the page globals, else renox/error.html),
                            Debug for main(), panic_message
-  src/crypto.rs            APP_KEY parsing/generation, random tokens, constant_time_eq
+  src/crypto.rs            APP_KEY parsing/generation, seal/open, encrypted files (RNXE), random tokens, constant_time_eq
   src/signed.rs            signed URLs (HMAC-SHA256) + ValidSignature extractor
   src/db/                  conn.rs (Db/Transaction/Row/sql(), Executor, SchemaEpoch, savepoints,
                            the key for Encrypted columns), key.rs (ModelKey, Ulid), encrypted.rs
@@ -180,6 +180,9 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/maintenance.rs       down/up/status + middleware (bypass cookie)
   src/health.rs            GET /health
   src/upload.rs            Upload (multipart file field), sniffing, store/store_public, token registry
+  src/upload/pipeline.rs  Pipeline, UploadStep, StepOutcome, UploadContext (App::uploads, run by Valid)
+  src/upload/clamav.rs     ClamAv step (clamd INSTREAM over TCP/Unix, fails closed)
+  src/upload/images.rs     Images step, behind the `images` feature (the `image` crate)
   src/storage.rs           Storage (local disk; S3 with the `s3` feature), temporary URLs, /_renox/files,
                            list/copy/rename/size/delete_all; named disks (App::disk,
                            state.disk_named, StorageConfig::from_env) served at /_renox/disks/<name>

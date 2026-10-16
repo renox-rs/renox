@@ -32,6 +32,8 @@ jobs:
       - run: cargo clippy -p renox --no-default-features -- -D warnings
       # No C crypto library in a default build (reqwest and lettre use ring).
       - run: "! cargo tree -p hello -e normal -i aws-lc-rs"
+      # No image library unless the app turns on the `images` feature (the upload pipeline).
+      - run: "! cargo tree -p hello -e normal -i image"
       - run: cargo doc --workspace --no-deps
         env:
           RUSTDOCFLAGS: -D warnings

@@ -132,8 +132,9 @@ crates.io, `git = "…", rev = "…"` when it came from Git. Only add the `defau
 `default-features = false` turns all three off. The comment shows how to keep only the ones you
 want: list them in `features`.
 
-Some features are **off** unless you turn them on: `postgres`, `s3`, `uuid` and `xlsx` (Excel
-exports of data grids).
+Some features are **off** unless you turn them on: `postgres`, `s3`, `uuid`, `xlsx` (Excel
+exports of data grids) and `images` (the upload pipeline's `Images` step: resize, orient and
+thumbnail JPEG, PNG and WebP, with the pure-Rust `image` crate; apps without it don't compile it).
 
 > [!NOTE]
 > `s3` is the heaviest. It turns on object_store's `aws` feature, which brings in reqwest and

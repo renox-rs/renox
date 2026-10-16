@@ -26,6 +26,23 @@
 //!
 //! In the form: `<form method="post" enctype="multipart/form-data">`. The
 //! request size limit is `UPLOAD_MAX_SIZE` (megabytes, default 10).
+//!
+//! # Steps before storing
+//!
+//! A [`Pipeline`] (`App::uploads`) runs steps on every file after the form's
+//! rules pass: a [`ClamAv`] malware scan, `images::Images` (feature `images`:
+//! resize, orientation, thumbnails), or your own [`UploadStep`]. A step that
+//! refuses a file becomes an error on that file's field. Files holding
+//! sensitive data are stored encrypted with [`Upload::store_encrypted`].
+
+mod clamav;
+#[cfg(feature = "images")]
+pub mod images;
+mod pipeline;
+
+pub use clamav::ClamAv;
+pub use futures_util::future::BoxFuture;
+pub use pipeline::{Pipeline, StepOutcome, UploadContext, UploadStep};
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -46,6 +63,8 @@ pub struct Upload {
     file_name: String,
     content_type: String,
     bytes: Bytes,
+    /// Files steps made from this one (thumbnails), by name.
+    derived: Vec<(String, Upload)>,
 }
 
 impl fmt::Debug for Upload {
@@ -76,6 +95,120 @@ impl Upload {
             file_name: file_name.into(),
             content_type: content_type.into(),
             bytes: bytes.into(),
+            derived: Vec::new(),
+        }
+    }
+
+    /// Replaces the content, e.g. with a resized image. For
+    /// [`UploadStep`]s.
+    pub fn set_bytes(&mut self, bytes: impl Into<Bytes>) {
+        self.bytes = bytes.into();
+    }
+
+    /// Replaces the declared type (after a conversion). For [`UploadStep`]s.
+    pub fn set_content_type(&mut self, content_type: impl Into<String>) {
+        self.content_type = content_type.into();
+    }
+
+    /// Replaces the name (after a conversion, `photo.heic` to `photo.jpg`).
+    /// For [`UploadStep`]s.
+    pub fn set_file_name(&mut self, file_name: impl Into<String>) {
+        self.file_name = file_name.into();
+    }
+
+    /// Adds a file made from this one, which `store` writes next to it under
+    /// [`derived_key`](Upload::derived_key). `name` keeps only letters, digits,
+    /// `-` and `_`; a second file with the same name replaces the first.
+    pub fn derive(&mut self, name: &str, file: Upload) {
+        let name: String = name
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_'))
+            .collect();
+        let name = if name.is_empty() {
+            "derived".into()
+        } else {
+            name
+        };
+        self.derived.retain(|(existing, _)| *existing != name);
+        self.derived.push((name, file));
+    }
+
+    /// The files steps derived from this one, e.g. `("thumb", …)`.
+    pub fn derived(&self) -> &[(String, Upload)] {
+        &self.derived
+    }
+
+    /// The file derived as `name` from this upload, if a step made it.
+    pub fn derived_named(&self, name: &str) -> Option<&Upload> {
+        self.derived
+            .iter()
+            .find(|(existing, _)| existing == name)
+            .map(|(_, file)| file)
+    }
+
+    /// Where `store` puts the file derived as `name` for the original stored
+    /// at `key`: the name goes before the extension, `products/abc.jpg` ->
+    /// `products/abc.thumb.jpg`. Derived files take the original's extension,
+    /// so a step that changes the format changes the original's too.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// assert_eq!(
+    ///     Upload::derived_key("public/products/abc.jpg", "thumb"),
+    ///     "public/products/abc.thumb.jpg"
+    /// );
+    /// ```
+    pub fn derived_key(key: &str, name: &str) -> String {
+        let (dir, file) = key.rsplit_once('/').unwrap_or(("", key));
+        let file = match file.rsplit_once('.') {
+            Some((stem, ext)) => format!("{stem}.{name}.{ext}"),
+            None => format!("{file}.{name}"),
+        };
+        if dir.is_empty() {
+            file
+        } else {
+            format!("{dir}/{file}")
+        }
+    }
+
+    /// Something that changes when a step changes the file.
+    pub(crate) fn fingerprint(&self) -> (usize, usize, usize, String, String) {
+        (
+            self.bytes.as_ptr() as usize,
+            self.bytes.len(),
+            self.derived.len(),
+            self.file_name.clone(),
+            self.content_type.clone(),
+        )
+    }
+
+    /// Runs the app's upload steps (`App::uploads`) on the file. `Valid` does
+    /// this for the files of a form; call it for a file that comes any other
+    /// way. A refused file is a validation error on the field `file`; use
+    /// [`process_field`](Upload::process_field) to name another.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # async fn demo(state: AppState, mut file: Upload) -> Result {
+    /// file.process(&state).await?;
+    /// let key = file.store(&state.storage, "imports").await?;
+    /// # let _ = key;
+    /// # Ok(()) }
+    /// ```
+    pub async fn process(&mut self, state: &crate::AppState) -> Result {
+        self.process_field(state, "file").await
+    }
+
+    /// [`process`](Upload::process), reporting a refusal on `field`.
+    pub async fn process_field(&mut self, state: &crate::AppState, field: &str) -> Result {
+        let ctx = UploadContext::new(field, state);
+        match state.uploads.run(self, &ctx).await? {
+            None => Ok(()),
+            Some(message) => {
+                let mut errors = crate::validation::Errors::new();
+                errors.add(field, message);
+                Err(errors.into())
+            }
         }
     }
 
@@ -166,18 +299,64 @@ impl Upload {
         }
     }
 
-    /// Stores the file privately under `dir` with a random name; returns its key.
+    /// Stores the file and the files derived from it at `key`.
+    async fn put_at(&self, storage: &Storage, key: &str, encrypt: bool) -> Result {
+        put_one(storage, key, self.bytes.clone(), encrypt).await?;
+        for (name, file) in &self.derived {
+            put_one(
+                storage,
+                &Self::derived_key(key, name),
+                file.bytes.clone(),
+                encrypt,
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
+    /// Stores the file privately under `dir` with a random name; returns its
+    /// key. The files steps derived from it (thumbnails) are stored next to it
+    /// at [`derived_key`](Upload::derived_key).
     pub async fn store(&self, storage: &Storage, dir: &str) -> Result<String> {
         let key = self.key(dir);
-        storage.put(&key, self.bytes.clone()).await?;
+        self.put_at(storage, &key, false).await?;
         Ok(key)
     }
 
     /// Stores the file under `public/{dir}` so `storage.url(key)` can link to it.
     pub async fn store_public(&self, storage: &Storage, dir: &str) -> Result<String> {
         let key = self.key(&format!("public/{}", dir.trim_matches('/')));
-        storage.put(&key, self.bytes.clone()).await?;
+        self.put_at(storage, &key, false).await?;
         Ok(key)
+    }
+
+    /// Like [`store`](Upload::store), with the file (and its derived files)
+    /// encrypted at rest: AES-256-GCM, a data key per file sealed with
+    /// `APP_KEY`; see [`Storage::put_encrypted`]. Read it back with
+    /// `storage.get_decrypted(&key)` or `Download::decrypted`, or link it with
+    /// `storage.temporary_url` (local disks decrypt for the request). Never
+    /// under `public/`.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # async fn demo(state: AppState, id_card: Upload) -> Result {
+    /// let key = id_card.store_encrypted(&state.storage, "ids").await?;
+    /// let bytes = state.storage.get_decrypted(&key).await?;
+    /// # let _ = bytes;
+    /// # Ok(()) }
+    /// ```
+    pub async fn store_encrypted(&self, storage: &Storage, dir: &str) -> Result<String> {
+        let key = self.key(dir);
+        self.put_at(storage, &key, true).await?;
+        Ok(key)
+    }
+}
+
+async fn put_one(storage: &Storage, key: &str, bytes: Bytes, encrypt: bool) -> Result {
+    if encrypt {
+        storage.put_encrypted(key, bytes).await
+    } else {
+        storage.put(key, bytes).await
     }
 }
 

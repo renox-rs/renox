@@ -176,7 +176,8 @@ field for you.
   `grid::Action` (`Action::sheet`), `grid::Selection`, `storage::FileInfo`, `queue::BatchStatus`,
   `queue::QueueCounts`, `queue::QueueStats` (the dashboard's), `http::SentRequest`,
   `select::SelectOption` (use `SelectOption::new`), `select::OptionQuery`, `Upload` (use
-  `Upload::new`), `db::Migration` (use `Migration::new(..).sqlite(..).postgres(..)`),
+  `Upload::new`), `upload::StepOutcome`, `upload::UploadContext` (made by Renox for a step),
+  `upload::images::Images` (use `Images::new`), `db::Migration` (use `Migration::new(..).sqlite(..).postgres(..)`),
   `live_component::Mounted`, `import::ImportReport`, `import::FailedRow`, `auth::permissions::Assignment`
   (`auth::permissions::Scope` has private fields: make one with `Scope::of`, `of_id`, `new`
   or `global`; `Scopes` stays `All` / `Only`, so a `match` on it needs no `_` arm)
@@ -259,6 +260,7 @@ That way `renox = "1"` never breaks your code because of a dependency.
 | `tower` / `tower-http` (0.5 / 0.7) | `App::layer(L)`, `Routes::route_layer(L)`, `Routes::cors_layer(CorsLayer)` (`renox::cors`) |
 | `minijinja` (2) | `context!`, template values, `App::templates` / `Registry::templates` (a `minijinja::Environment`), re-exported as `renox::minijinja` |
 | `tokio` (1), `serde` (1), `serde_json` (1), `chrono` (0.4) | Re-exported and used throughout |
+| `futures-util` (0.3) | `upload::BoxFuture` (the return type of `UploadStep::process`) |
 | `bytes` (1) | `Bytes` in `Storage::put`/`get`, `Upload::bytes`, `WebhookRequest::body`, `Download::bytes` (as `axum::body::Bytes`) |
 | `http` (1) | `HeaderMap`, `Method`, `StatusCode` in `FormContext`, `WebhookRequest`, `TestResponse` (as `axum::http`) |
 | `fake` (5) | `Factory` definitions, re-exported as `renox::fake` (the `fake` feature, on by default) |

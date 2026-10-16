@@ -31,8 +31,12 @@ postgres = ["sqlx/postgres"]
 uuid = ["dep:uuid", "sqlx/uuid"]
 # Excel exports of data grids (`renox::grid`, `export=xlsx`).
 xlsx = ["dep:rust_xlsxwriter"]
+# `renox::upload::images::Images`: resize, orient and thumbnail uploaded JPEG, PNG and WebP images (pure Rust).
+images = ["dep:image"]
 
 [dependencies]
+# AES-256-GCM for per-file encryption (`Storage::put_encrypted`); the version `cookie` already uses.
+aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 rust_xlsxwriter = { version = "0.99.1", default-features = false, features = ["chrono"], optional = true }
@@ -53,6 +57,8 @@ hmac = "0.13.0"
 http-body-util = "0.1.5"
 # Takes the listening socket from systemd (socket activation) for restarts without refused connections.
 listenfd = "1.0.2"
+# Optional (feature `images`): decoding and encoding for the upload pipeline's `Images` step.
+image = { version = "0.25.10", optional = true, default-features = false, features = ["jpeg", "png", "webp"] }
 lettre = { version = "0.11.23", default-features = false, features = ["builder", "smtp-transport", "pool", "hostname", "tokio1-rustls-tls"] }
 mime_guess = "2.0.5"
 # The `markdown` template filter (raw HTML in the text is shown as text).

@@ -6,7 +6,8 @@ publish = false
 
 [dependencies]
 # `uuid`: /about/fields keys its samples by a UUID (src/app/about/fields.rs).
-renox = { workspace = true, features = ["xlsx", "uuid"] }
+# `images`: photos are resized and get a thumbnail (`renox::upload::images`, src/lib.rs).
+renox = { workspace = true, features = ["xlsx", "uuid", "images"] }
 renox-2fa.workspace = true
 renox-admin.workspace = true
 # Service plans billed as subscriptions (#237): Stripe in USD, and Xendit

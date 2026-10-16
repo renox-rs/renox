@@ -401,6 +401,17 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#43, the upload pipeline**: `upload/pipeline.rs` (`Pipeline`, `UploadStep`, `StepOutcome`,
+  `UploadContext`), `upload/clamav.rs`, `upload/images.rs` (feature `images`, the `image` crate with
+  JPEG/PNG/WebP only), `App::uploads`, `AppState.uploads`. `Valid<T>` runs the steps after the
+  rules (`validation/extract.rs`) on the multipart form's files and, when a step changed one,
+  parses the form again with it. Encrypted storage: `crypto::encrypt_file`/`decrypt_file`/
+  `rewrap_file` (`RNXE`, v1; `aes-gcm` direct dependency, same version as `cookie`'s),
+  `Storage::put_encrypted`/`get_decrypted`/`rewrap_encrypted` (`Storage` holds the `APP_KEY`),
+  `storage::file_response` decrypts for local temporary URLs. Tests: tests/it/upload_pipeline.rs
+  (+ send_handlers, s3), unit tests in `images.rs`/`crypto.rs`; bikeshop's tests/fields.rs uses a
+  real PNG (tests/fixtures/bike.png) since the pipeline decodes images. Not run here: the S3
+  round trip (needs the `s3` job).
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

@@ -111,6 +111,7 @@ pub struct App {
     limiters: HashMap<String, crate::rate_limit::LimitRule>,
     detect_locale: bool,
     disks: Vec<(String, DiskSettings)>,
+    uploads: crate::upload::Pipeline,
     mailers: Vec<(String, MailerSettings)>,
     xsrf_cookie: bool,
 }
@@ -144,6 +145,7 @@ impl App {
             limiters: HashMap::new(),
             detect_locale: false,
             disks: Vec::new(),
+            uploads: crate::upload::Pipeline::new(),
             mailers: Vec::new(),
             xsrf_cookie: false,
         }
@@ -544,6 +546,23 @@ impl App {
         self
     }
 
+    /// The steps every uploaded file passes after the form's rules and
+    /// before the handler sees it: a malware scan, image processing, your own
+    /// [`UploadStep`](crate::upload::UploadStep)s. See [`crate::upload`].
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::upload::{ClamAv, Pipeline};
+    ///
+    /// # let _ =
+    /// App::new().uploads(Pipeline::new().step(ClamAv::tcp("127.0.0.1:3310")))
+    /// # ;
+    /// ```
+    pub fn uploads(mut self, pipeline: crate::upload::Pipeline) -> Self {
+        self.uploads = pipeline;
+        self
+    }
+
     /// Makes `value` available everywhere the app runs: `Provided<T>` in
     /// handlers, `state.provided::<T>()` in jobs, listeners, commands and
     /// scheduled tasks. One value per type; a second one replaces the first,
@@ -785,7 +804,7 @@ impl App {
         }
         let routes = Arc::new(routes);
 
-        let storage = crate::storage::Storage::from_config(&config)?;
+        let storage = crate::storage::Storage::from_config(&config)?.with_key(key.clone());
         let mut disks = HashMap::new();
         for (name, settings) in &self.disks {
             let valid = !name.is_empty()
@@ -798,7 +817,8 @@ impl App {
                 )
                 .into());
             }
-            let disk = crate::storage::Storage::named(&config, name, &settings(&config)?)?;
+            let disk = crate::storage::Storage::named(&config, name, &settings(&config)?)?
+                .with_key(key.clone());
             if disks.insert(name.clone(), disk).is_some() {
                 return Err(anyhow!("two disks are named `{name}` (App::disk)").into());
             }
@@ -855,6 +875,7 @@ impl App {
             cache: crate::cache::Cache::new(config.cache_store, db.clone())?,
             storage,
             disks: Arc::new(disks),
+            uploads: self.uploads.clone(),
             http: crate::http::Http::default(),
             fakes: Arc::default(),
             translator: Arc::new(match embedded {

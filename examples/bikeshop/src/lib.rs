@@ -41,6 +41,17 @@ pub fn app() -> App {
         // A visitor's browser language wins when the shop has it (en, es),
         // until they pick one in the language menu.
         .detect_locale()
+        // Every uploaded JPEG, PNG or WebP is shrunk to fit 2560 × 2560 and
+        // stripped of its metadata (EXIF, GPS position), and gets a 320 px
+        // thumbnail stored next to it (/about/fields shows it).
+        .uploads(
+            renox::upload::Pipeline::new().step(
+                renox::upload::images::Images::new()
+                    .max_dimensions(2560, 2560)
+                    .strip_metadata()
+                    .thumbnail("thumb", 320, 320),
+            ),
+        )
         // The "About this page" panel: `about_page(request.route, request.path)` in the layouts,
         // hidden with BIKESHOP_EXPLAIN=false.
         .templates(explain::register)

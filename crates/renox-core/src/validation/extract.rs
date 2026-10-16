@@ -28,6 +28,9 @@ use crate::{AppState, Error};
 /// becomes a validation error rather than a 400.
 pub struct Valid<T>(pub T);
 
+/// A multipart form's field/token pairs and its files by token.
+type FormFiles = (Vec<(String, String)>, HashMap<String, Upload>);
+
 /// Built-in messages in the request's language, with the app's overrides.
 pub(crate) struct Messages {
     pub(crate) texts: crate::i18n::Texts,
@@ -120,6 +123,9 @@ where
         .and_then(|v| v.to_str().ok())
         .is_some_and(|v| v.starts_with("multipart/form-data"));
 
+    // The files of a multipart form and the fields they came from, for the
+    // app's upload steps (`App::uploads`).
+    let mut files: Option<FormFiles> = None;
     let (parsed, input) = if matches!(*req.method(), Method::GET | Method::HEAD) {
         let query = req.uri().query().unwrap_or_default().as_bytes();
         let pairs = form_urlencoded::parse(query).into_owned().collect();
@@ -132,7 +138,11 @@ where
         let (pairs, uploads) = read_multipart(multipart)
             .await
             .map_err(IntoResponse::into_response)?;
-        parse_pairs(pairs, &uploads, locale)
+        let parsed = parse_pairs(pairs.clone(), &uploads, locale);
+        if !uploads.is_empty() && !state.uploads.is_empty() {
+            files = Some((pairs, uploads));
+        }
+        parsed
     } else {
         let bytes = Bytes::from_request(req, state)
             .await
@@ -186,6 +196,29 @@ where
             for message in messages {
                 errors.add(field, message.clone());
             }
+        }
+    }
+    // The upload steps run once the rules pass (and not for live validation,
+    // which sends the whole form for each keystroke): a file that is refused
+    // is an error on its field; a file a step changed replaces the one the
+    // form was read with.
+    if errors.is_empty()
+        && live_field.is_none()
+        && let Some((pairs, mut uploads)) = files
+    {
+        let changed = state
+            .uploads
+            .run_form(state, &pairs, &mut uploads, &mut errors)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        if changed
+            && errors.is_empty()
+            && let (Parsed::Ok(mut again, parse_errors), _) =
+                parse_pairs::<T>(pairs, &uploads, locale)
+            && parse_errors.is_empty()
+        {
+            again.prepare();
+            data = again;
         }
     }
     if errors.is_empty() {

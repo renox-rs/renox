@@ -155,7 +155,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     radio → `DbEnum`, checkbox list → `Json<Vec<String>>` with `each`/`distinct`, `tags_input`,
     `key_value` → `Json<KeyValues>` (a nested form), `rich_editor` → `RichText`, `code_editor`
     → `.json()`, time, datetime-local, `date_picker`, an image checked by content and
-    `dimensions` stored with `store_public`, a PDF (`mimes`) stored privately and sent with
+    `dimensions` stored with `store_public` and given a thumbnail by the upload pipeline
+    (`Images` in src/lib.rs, the `images` feature), a PDF (`mimes`) stored privately and sent with
     `Download::from_storage(…).inline()`), samples keyed by `Uuid`, checked live, read back on
     an infolist (money, bool, color, badges, key_value, Markdown, `rich_text`, `code_entry`,
     `suffix_actions`); tests on SQLite, PostgreSQL and S3 (the `s3` feature):
@@ -286,7 +287,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   exports (CSV, Excel with `xlsx`, print; `export_as` for any query outside the page), polling.
 - [docs/validation.md](docs/validation.md): forms and validation: `Valid<T>` (form, JSON,
   query), `impl Validate` and `#[derive(Validate)]`, every rule, `unique`/`exists`, password
-  policy, forms made by the model (`#[model(form)]`), hooks (`prepare`/`authorize`/`after`), messages and translations, uploads as fields.
+  policy, forms made by the model (`#[model(form)]`), hooks (`prepare`/`authorize`/`after`), messages and translations, uploads as fields and the upload pipeline (`App::uploads`: `UploadStep`s that
+  refuse a file as a field error, `ClamAv`, `Images` with the `images` feature, `store_encrypted`/`get_decrypted`, key rotation).
 - [docs/routing.md](docs/routing.md): routes, groups, resources, domains, extractors and
   responses, middleware and guards, rate limits, sessions, CSRF, cookies, signed URLs,
   maintenance mode.

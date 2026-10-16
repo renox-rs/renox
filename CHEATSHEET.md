@@ -2180,6 +2180,48 @@ async fn upload(State(state): State<AppState>, Valid(form): Valid<PhotoForm>) ->
 }
 ```
 
+Steps every upload passes after the form's rules (`App::uploads`); a refusal is an error on the
+file's field (plain post and HTMX `422`). `store_encrypted` seals a file with `APP_KEY`:
+
+```rust
+use renox::prelude::*;
+use renox::upload::{ClamAv, Pipeline, StepOutcome, UploadContext, UploadStep};
+use renox::upload::BoxFuture;
+
+struct Shout; // any `impl UploadStep`: refuse, change the file, or derive another
+
+impl UploadStep for Shout {
+    fn process<'a>(
+        &'a self,
+        file: &'a mut Upload,
+        ctx: &'a UploadContext,
+    ) -> BoxFuture<'a, Result<StepOutcome>> {
+        Box::pin(async move {
+            Ok(if file.size() == 0 {
+                StepOutcome::Reject(format!("{} is empty.", ctx.field()))
+            } else {
+                StepOutcome::Keep
+            })
+        })
+    }
+}
+
+fn app() -> App {
+    // ClamAV fails closed (`.timeout(..)`, `.fail_open()`); `Images::new().max_dimensions(2560, 2560)
+    // .strip_metadata().thumbnail("thumb", 320, 320)` with renox's `images` feature.
+    App::new().uploads(Pipeline::new().step(ClamAv::tcp("127.0.0.1:3310")).step(Shout))
+}
+
+async fn keep(State(state): State<AppState>, mut id: Upload) -> Result<Vec<u8>> {
+    id.process(&state).await?; // outside `Valid`: run the steps by hand
+    let key = id.store_encrypted(&state.storage, "ids").await?; // AES-256-GCM, a data key per file
+    let thumb = Upload::derived_key(&key, "thumb"); // where a derived file is stored
+    let _ = thumb;
+    Ok(state.storage.get_decrypted(&key).await?.unwrap_or_default().to_vec())
+    // Download::decrypted(&state.storage, &key, "id.jpg"); storage.rewrap_encrypted("", &old_app_key)
+}
+```
+
 Renox's own texts are English. Translations live in `resources/lang/<locale>.json` (e.g.
 `es.json`), nested or flat, and also translate Renox's texts (`ui.*`, `renox.auth.*`,
 `renox.validation.*`); `detect_locale` picks only languages the app has a file for. `one|many` texts are plurals,
