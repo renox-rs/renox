@@ -56,6 +56,7 @@ pub mod field;
 mod panel;
 pub mod relation;
 pub mod resource;
+pub mod settings;
 mod texts;
 
 pub use entry::Entry;
@@ -64,8 +65,10 @@ pub use relation::RelationManager;
 pub use resource::{
     ActionContext, ActionInput, AdminAction, AdminResource, BoxFuture, Filter, SaveContext,
 };
+pub use settings::AdminSettings;
 
 use panel::{Access, Holder, Listed, Panel};
+use settings::{Page, SettingsPage};
 
 /// The templates, compiled in. An app replaces one with a file of the same
 /// name under its views directory (`resources/views/renox-admin/layout.html`).
@@ -91,6 +94,10 @@ const VIEWS: &[(&str, &str)] = &[
     (
         "renox-admin/fields.html",
         include_str!("../views/fields.html"),
+    ),
+    (
+        "renox-admin/settings.html",
+        include_str!("../views/settings.html"),
     ),
 ];
 
@@ -144,6 +151,7 @@ pub struct Admin {
     title: String,
     access: Option<Access>,
     resources: Vec<Arc<dyn Listed>>,
+    settings: Vec<Arc<dyn SettingsPage>>,
     slots: Vec<(Slot, String)>,
 }
 
@@ -175,6 +183,7 @@ impl Admin {
             title: "Admin".into(),
             access: None,
             resources: Vec::new(),
+            settings: Vec::new(),
             slots: Vec::new(),
         }
     }
@@ -258,6 +267,31 @@ impl Admin {
         self.resources.push(Arc::new(Holder(Arc::new(resource))));
         self
     }
+
+    /// Adds a page that edits a group of settings kept in the database
+    /// (`renox::settings`), at `/admin/settings/<key>` under a "Settings"
+    /// heading of the navigation. The form comes from
+    /// [`AdminSettings::fields`]; saving runs the group's rules and
+    /// `AppState::save_settings`, so it is audited and emits
+    /// `SettingsChanged`. The app needs the `renox::settings::Settings`
+    /// module (the group is declared for you).
+    ///
+    /// A group marked `ENCRYPTED` never prints its values: its fields start
+    /// empty with a note saying whether they are set and when they changed,
+    /// and a field left empty keeps its stored value.
+    ///
+    /// # Panics
+    ///
+    /// If another page has the same group.
+    pub fn settings<S: AdminSettings>(mut self, label: &str) -> Self {
+        assert!(
+            self.settings.iter().all(|page| page.key() != S::KEY),
+            "Admin::settings: two pages edit the group `{}`",
+            S::KEY
+        );
+        self.settings.push(Arc::new(Page::<S>::new(label)));
+        self
+    }
 }
 
 impl Module for Admin {
@@ -271,10 +305,14 @@ impl Module for Admin {
             title: self.title.clone(),
             access: self.access.clone(),
             resources: self.resources.clone(),
+            settings: self.settings.clone(),
         }))
     }
 
     fn register(&self, app: &mut Registry) {
+        for page in &self.settings {
+            page.declare(app);
+        }
         // One template per slot: what was added to it, in order.
         let mut slots: Vec<(&'static str, String)> = Vec::new();
         for (slot, source) in &self.slots {
@@ -308,3 +346,9 @@ impl Module for Admin {
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/admin.md")]
 pub struct Guide;
+
+/// Compiles the Rust in docs/settings.md (the guide) as doctests; it lives
+/// here because its admin page example needs this crate.
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/settings.md")]
+pub struct SettingsGuide;

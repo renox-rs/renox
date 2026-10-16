@@ -263,6 +263,15 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   (`AdminAction::form`, `cx.input`), the abilities the model's `Policy` is asked, soft deletes
   and the trash, exports, the routes `admin.{slug}.*`, the `renox.admin.*` translation keys,
   `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates.
+- [docs/settings.md](docs/settings.md): typed settings kept in the database: `Settings` (the
+  opt-in module: the `settings` table and `settings:get|set|list`), `SettingsGroup` (`KEY`,
+  `ENCRYPTED`), `App::settings::<T>()` / `settings_in_views` (`{{ settings.company.name }}`) /
+  `settings_from(path)` (a seed file; saved values win), `state.settings::<T>()` (cached; the
+  defaults until saved), `state.save_settings(&value, Some(&user))` (the group's rules, audited,
+  `SettingsChanged`), the `Setting<T>` extractor, scopes (`settings_in`, `save_settings_in`,
+  `--scope`), sealed groups (`<sealed>` unless `--reveal`), the cache and how other servers notice
+  (a version row in `cache`), `Admin::settings` with `AdminSettings` in renox-admin,
+  `TestApp::with_settings`.
 - [docs/billing.md](docs/billing.md): the renox-billing crate: `Billing` (plans, `stripe()`,
   `xendit()`, `generic_trials`, `without_proration`), `Plan` (price in the smallest unit,
   `trial_days`, `via`, `price_id` / `STRIPE_PRICE_<KEY>`), setting up Stripe and Xendit,
@@ -335,7 +344,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   [RELEASING.md](RELEASING.md): how a release goes to crates.io.
 - `crates/renox-core/src`: the runtime. `db/` (Db, models, queries, relations, migrations),
   `validation/`, `auth/` (incl. `permissions.rs`, `account.rs`, `events.rs`, `tokens.rs`, `device.rs`: tokens for a kiosk or till without a user),
-  `audit.rs`, `context.rs`, `queue/`, `schedule.rs` + `timezone.rs`, `cache.rs`, `view.rs`,
+  `audit.rs`, `settings.rs` (typed settings in the database), `context.rs`, `queue/`, `schedule.rs` + `timezone.rs`, `cache.rs`, `view.rs`,
   `grid/` (the data grid and its exports), `import.rs` (CSV imports), `testing.rs`.
 - `crates/renox-cli`: `rnx`; `stubs/` holds the files `rnx new` writes.
 - `crates/renox-2fa`: the optional two-factor plugin crate (same version as `renox`): the
@@ -377,7 +386,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   routes and pages (`panel.rs`: dashboard, list with exports and
   bulk/row actions, create/store, show, edit/update, destroy, the trash; every page asks the
   model's `Policy`), `views/` (`renox-admin/layout.html`, `dashboard.html`, `index.html`,
-  `form.html`, `fields.html`, `show.html`, `relation.html`). Guide: [docs/admin.md](docs/admin.md); used in
+  `form.html`, `fields.html`, `show.html`, `relation.html`, `settings.html`; `settings.rs` is
+  `Admin::settings` / `AdminSettings`, a form for a settings group). Guide: [docs/admin.md](docs/admin.md); used in
   examples/bikeshop (resources authorized by permission).
 - `crates/renox-billing`: the optional subscriptions plugin crate (same version as `renox`),
   Laravel's Cashier: the `Billing` module (`lib.rs`: plans, gateways, the provided settings,

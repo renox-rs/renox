@@ -209,6 +209,14 @@ pub static PAGES: &[Page] = &[
         "A back office generated from your models, with the renox-admin crate."
     ),
     page!(
+        "settings",
+        "Settings",
+        Guides,
+        "sliders-horizontal",
+        "docs/settings.md",
+        "Typed settings kept in the database, edited by an administrator, with no redeploy."
+    ),
+    page!(
         "billing",
         "Billing",
         Guides,

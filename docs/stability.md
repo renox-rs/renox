@@ -84,8 +84,8 @@ endpoints and scopes Google and GitHub use may change when the providers change 
 version as `renox`. Its public items (the `Admin` module, the `AdminResource` trait, `Field`,
 `FieldKind`, `Entry`, `Filter`, `AdminAction`, `ActionContext`, `ActionInput`, `SaveContext`,
 `RelationManager`, `Slot`) follow the same promise. `Field`, `FieldKind`, `Entry`,
-`ActionContext`, `SaveContext` and `Slot` are `#[non_exhaustive]`; `AdminResource` may
-get new methods with default bodies in minor releases. The templates' markup and the values
+`ActionContext`, `SaveContext` and `Slot` are `#[non_exhaustive]`; `AdminResource` and
+`AdminSettings` may get new methods with default bodies in minor releases. The templates' markup and the values
 they receive may change in minor releases; an app that replaced one keeps its own. It
 depends publicly on `renox` (its grid's `Column` and `Grid`, `Query`, `Validator`).
 
@@ -161,7 +161,8 @@ field for you.
 
 - `Config`, `MailConfig`, `StorageConfig`, `AnalyticsConfig`
 - `Mail`, `User`, `Paginated`, `SimplePage`, `CursorPage`, `RouteInfo`, `MigrationStatus`,
-  `FailedJob`, `audit::AuditLog`, the `auth::events` structs
+  `FailedJob`, `audit::AuditLog`, the `auth::events` structs, `settings::SettingsChanged`,
+  `settings::SettingInfo`
 - `DatabaseNotification`, `AccessToken`, `NewToken`, `auth::DeviceToken`, `auth::NewDeviceToken`,
   `auth::Device`, `i18n::RequestLocale`
 - `WebhookRequest`, `WebhookCall`, `JobContext`, `Htmx`, `Down`, `analytics::Event`

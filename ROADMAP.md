@@ -1573,6 +1573,15 @@ Notes from M34:
   developing and keeps mail in memory in tests, instead of trying an SMTP server that isn't
   configured.
 
+### Settings in the database (#29)
+- [x] `renox::settings`: the `Settings` module (`settings` table, `settings:get|set|list`),
+  `SettingsGroup` (`KEY`, `ENCRYPTED`), `App::settings` / `settings_in_views` / `settings_from`,
+  `AppState::settings` / `save_settings` and the scope variants, `Setting<T>`, `SettingsChanged`,
+  an audit entry, `TestApp::with_settings`: docs/settings.md
+- [x] renox-admin: `Admin::settings::<T>(label)` and `AdminSettings` (fields, a policy, read-only
+  fields, sealed groups never printed)
+- [ ] Settings pages contributed by a module through `Registry::contribute` (after #31)
+
 ### Plugins (separate crates, after M18)
 - [x] `renox-2fa` (TOTP and recovery codes): #146 (#169–#173), docs/two-factor.md
 - [x] `renox-editors` (rich text, Markdown and code editors, `code_entry`): #149, #150,
@@ -2053,6 +2062,20 @@ Notes:
   Personal Microsoft accounts are always refused, and the email is verified only for a specific
   tenant. Group/role mapping, SAML and a per-installation resolver for the settings (as in #44)
   are follow-ups.
+- **Settings in the database** (#29, 2026-10-16): a group is a struct (`SettingsGroup`, with
+  `Validate` and `Default`), the module is `Settings` (the issue used one name for both). One
+  row per `(key, scope)`; the scope is `''` unless the app names one, because adding it to the
+  primary key later would have meant rebuilding the table. The value is JSON text, sealed with
+  `APP_KEY` for an `ENCRYPTED` group (as `db::Encrypted` columns are; there is no `enc:` prefix).
+  Reads are cached per process; a save stamps `renox:settings:<key>` in the `cache` table in the
+  same transaction and a process re-checks the stamp at most once a second per group
+  (`RECHECK`), so a read is free, the first read is one query and other servers notice within about
+  a second (a check on every read would have cost a query per read). Rules run on every save
+  (`rules` only: `authorize` and `after` need a request). `settings:set` reads a value as JSON when
+  it is JSON, else as text, and takes the first reading the struct's types accept. `SettingsChanged`
+  carries the actor, the changed field names and the old and new JSON (`null` for sealed groups).
+  A seed file (`App::settings_from`) fills a group the first time it is read and has no row.
+  Admin pages use the default scope; per-field abilities and module-contributed pages are not done.
 
 - **Arabic-aware search** (#49): `#[model(search = "…", normalize = "arabic")]` and
   `renox::text` (`normalize_arabic`, `transliterate`, `match_key`), no dependency. The rules

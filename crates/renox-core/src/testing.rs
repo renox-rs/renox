@@ -76,6 +76,34 @@ impl TestApp {
         }
     }
 
+    /// Saves `value` as the app's settings group `T`, so a test starts with
+    /// the company filled in: `TestApp::new(app).await.with_settings(Company
+    /// { name: "Acme".into(), ..Default::default() }).await`. Needs the
+    /// `Settings` module. Panics if `value` is invalid or can't be saved.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # use renox::settings::{Settings, SettingsGroup};
+    /// # use renox::testing::TestApp;
+    /// # #[derive(serde::Serialize, serde::Deserialize, Validate, Default, Clone)]
+    /// # struct Company { name: String }
+    /// # impl SettingsGroup for Company { const KEY: &'static str = "company"; }
+    /// # async fn demo() {
+    /// let app = TestApp::new(App::new().module(Settings).settings::<Company>())
+    ///     .await
+    ///     .with_settings(Company { name: "Acme".into() })
+    ///     .await;
+    /// assert_eq!(app.state().settings::<Company>().await.unwrap().name, "Acme");
+    /// # }
+    /// ```
+    pub async fn with_settings<T: crate::settings::SettingsGroup>(self, value: T) -> Self {
+        self.state()
+            .save_settings(&value, None)
+            .await
+            .expect("the settings are valid and the Settings module is on");
+        self
+    }
+
     /// The booted app behind this `TestApp`.
     pub fn kernel(&self) -> &Kernel {
         &self.kernel

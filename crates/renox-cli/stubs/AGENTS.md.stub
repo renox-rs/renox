@@ -28,7 +28,9 @@ one Renox version (the `renox` line in `Cargo.toml`); the links below are for th
   fragments, live validation), `docs/grid.md` (data grids with `renox::grid`: columns,
   filters, search, editing, actions, summaries, exports), `docs/testing.md` (TestApp, fakes, time travel),
   `docs/authorization.md` (gates, policies, roles, token abilities, tenants), `docs/queue.md`
-  (jobs, retries, chains, batches), `docs/postgresql.md`, `docs/operations.md` (production).
+  (jobs, retries, chains, batches), `docs/settings.md` (values an administrator edits, kept in
+  the database: a company name, a number format, feature switches), `docs/postgresql.md`,
+  `docs/operations.md` (production).
 - {{renox_offline}} After moving the app to another Renox version, use that version's
   files. To read the docs as a website (with search), https://docs.renox.rs shows the
   latest version.

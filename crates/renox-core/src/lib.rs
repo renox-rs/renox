@@ -115,6 +115,7 @@ pub mod security;
 pub mod select;
 pub mod seo;
 mod session;
+pub mod settings;
 pub mod shell;
 pub mod signed;
 mod state;

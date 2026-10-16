@@ -432,6 +432,18 @@
   SQLite FTS5 table has its own content (no `content=`), so `rebuild` refills it with
   `DELETE` + `INSERT … SELECT`. Tests in tests/it/search.rs (the PostgreSQL run needs
   TEST_DATABASE_URL, as for the rest of that file). See ROADMAP "Decisions".
+- **#29, typed settings in the database** (`renox::settings`, docs/settings.md): the opt-in
+  `Settings` module (migration `00010101000400_create_settings_table`, commands `settings:get|set|
+  list`), `SettingsGroup` (`KEY`, `ENCRYPTED`) for a plain struct with defaults and `Validate`
+  rules, `App::settings::<T>()` / `settings_in_views` / `settings_from(path)`,
+  `AppState::settings` / `save_settings` (+ `_in` for a scope, `settings_info`), the `Setting<T>`
+  extractor, the event `SettingsChanged` and an `audit_logs` entry when `Audit` is on,
+  `TestApp::with_settings`, and `Admin::settings` / `AdminSettings` in renox-admin. Decisions: the
+  group trait is `SettingsGroup` and the module `Settings` (the issue used one name for both); the
+  table is keyed `(key, scope)` with `''` as the default scope so a scope needs no later migration;
+  an encrypted group is sealed the way `db::Encrypted` is; the per-process cache re-checks a
+  version row in `cache` (`renox:settings:<key>`) at most once a second per group, so one query per
+  group until a write and about a second for other servers to notice.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social
