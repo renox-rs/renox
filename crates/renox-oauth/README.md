@@ -25,7 +25,11 @@ What it adds:
 - the `oauth_accounts` table (no tokens stored), and the events `AccountLinked`,
   `AccountUnlinked` and `LoggedInWith`, recorded in the activity log when the app has the
   `Audit` module;
-- Google and GitHub; another provider is one impl of the `Provider` trait.
+- Google, Microsoft and GitHub; another provider is one impl of the `Provider` trait;
+- company sign-in: `Microsoft::from_config().tenant(..)` (work accounts of one tenant, never
+  personal ones), `Google::from_config().hosted_domain(..)` (a Workspace domain, checked on the
+  callback) and `OAuth::allow_domains(&[..])` (verified email domains, any provider); a refused
+  account gets a message and an `OAuthRefused` event.
 
 The guide is [docs/oauth.md](https://github.com/renox-rs/renox/blob/main/docs/oauth.md);
 examples/bikeshop uses it (Google and GitHub, when their keys are set). Versioned with `renox`: use the same version for both.

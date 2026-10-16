@@ -334,6 +334,109 @@
 .rx-plans__yes { display: inline-grid; color: var(--rx-success); vertical-align: middle; }
 .rx-plans__no { color: var(--rx-tertiary-label); }
 
+/* ---------- status_stepper ---------- */
+
+.rx-stepper { display: grid; margin: 0; padding: 0; list-style: none; font: var(--rx-type-body); }
+.rx-stepper--horizontal { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.rx-stepper__step { --rx-block-kind: var(--rx-accent); position: relative; display: grid; gap: var(--rx-space-2); min-width: 0; }
+.rx-stepper__step--info { --rx-block-kind: var(--rx-info); }
+.rx-stepper__step--success { --rx-block-kind: var(--rx-success); }
+.rx-stepper__step--warning { --rx-block-kind: var(--rx-warning); }
+.rx-stepper__step--error { --rx-block-kind: var(--rx-danger-text); }
+.rx-stepper__marker {
+  display: grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; box-sizing: border-box;
+  border: 2px solid var(--rx-border); background: var(--rx-surface); color: var(--rx-secondary-label);
+  font: var(--rx-type-note); font-weight: 600; font-variant-numeric: tabular-nums;
+}
+.rx-stepper__step--done .rx-stepper__marker { border-color: var(--rx-block-kind); background: color-mix(in srgb, var(--rx-block-kind) 16%, var(--rx-surface)); color: var(--rx-label); }
+/* The current step: a thick ring in the tone and a halo; its number stays the label colour, which reads on the surface in every scheme. */
+.rx-stepper__step--current .rx-stepper__marker { border-width: 3px; border-color: var(--rx-block-kind); background: color-mix(in srgb, var(--rx-block-kind) 22%, var(--rx-surface)); color: var(--rx-label); box-shadow: 0 0 0 4px color-mix(in srgb, var(--rx-block-kind) 25%, transparent); }
+/* An ending is square-ish, not round, whatever its colour. */
+.rx-stepper__step--terminal .rx-stepper__marker { border-radius: 0.5rem; }
+.rx-stepper__label { font: var(--rx-type-label); color: var(--rx-secondary-label); }
+.rx-stepper__step--done .rx-stepper__label, .rx-stepper__step--current .rx-stepper__label { color: var(--rx-label); }
+.rx-stepper__step--current .rx-stepper__label { font-weight: 700; }
+/* The line to the next step: filled once the step is done. */
+.rx-stepper__step:not(:last-child)::after { content: ""; position: absolute; background: var(--rx-separator); }
+.rx-stepper__step--done:not(:last-child)::after { background: var(--rx-block-kind); }
+.rx-stepper--horizontal .rx-stepper__step { justify-items: center; text-align: center; align-content: start; }
+.rx-stepper--horizontal .rx-stepper__step:not(:last-child)::after { top: calc(0.875rem - 1px); inset-inline-start: calc(50% + 1.25rem); inset-inline-end: calc(-50% + 1.25rem); height: 2px; }
+.rx-stepper--vertical { gap: 0; }
+.rx-stepper--vertical .rx-stepper__step { grid-template-columns: 1.75rem 1fr; gap: var(--rx-space-3); padding-bottom: var(--rx-space-5); align-items: start; }
+.rx-stepper--vertical .rx-stepper__step:last-child { padding-bottom: 0; }
+.rx-stepper--vertical .rx-stepper__text { padding-top: 0.2rem; }
+.rx-stepper--vertical .rx-stepper__step:not(:last-child)::after { top: 2rem; bottom: 0.25rem; inset-inline-start: calc(0.875rem - 1px); width: 2px; }
+/* On a narrow screen a row of steps becomes a column. */
+@media (max-width: 40rem) {
+  .rx-stepper--horizontal { grid-auto-flow: row; }
+  .rx-stepper--horizontal .rx-stepper__step { justify-items: start; text-align: start; grid-template-columns: 1.75rem 1fr; gap: var(--rx-space-3); padding-bottom: var(--rx-space-5); align-items: start; }
+  .rx-stepper--horizontal .rx-stepper__step:last-child { padding-bottom: 0; }
+  .rx-stepper--horizontal .rx-stepper__text { padding-top: 0.2rem; }
+  .rx-stepper--horizontal .rx-stepper__step:not(:last-child)::after { top: 2rem; bottom: 0.25rem; inset-inline-start: calc(0.875rem - 1px); inset-inline-end: auto; width: 2px; height: auto; }
+}
+
+/* ---------- week_calendar ---------- */
+
+/* `position: relative`: the screen reader text inside stays in the scrolling frame. */
+.rx-week {
+  --rx-week-slot: 2.75rem; --rx-week-name: 9rem;
+  position: relative; overflow-x: auto; border: var(--rx-surface-border); border-radius: var(--rx-radius); background: var(--rx-surface);
+  scroll-padding-inline-start: var(--rx-week-name);
+}
+.rx-week__grid { display: grid; width: max-content; min-width: 100%; font: var(--rx-type-body); }
+.rx-week__row { display: grid; grid-template-columns: var(--rx-week-name) calc(var(--rx-week-columns) * var(--rx-week-slot)); border-bottom: 0.5px solid var(--rx-separator); }
+.rx-week__row:last-child { border-bottom: 0; }
+.rx-week__corner, .rx-week__resource {
+  position: sticky; inset-inline-start: 0; z-index: 3; box-sizing: border-box; background: var(--rx-surface);
+  padding: var(--rx-space-2) var(--rx-space-3); border-inline-end: 1px solid var(--rx-separator);
+}
+.rx-week__corner { font: var(--rx-type-caption); text-transform: var(--rx-caption-case); letter-spacing: var(--rx-caption-tracking); color: var(--rx-secondary-label); }
+.rx-week__name, .rx-week__note { display: block; overflow-wrap: anywhere; }
+.rx-week__name { font: var(--rx-type-label); }
+.rx-week__note { font: var(--rx-type-note); color: var(--rx-secondary-label); }
+.rx-week__track {
+  display: grid; position: relative; min-width: 0;
+  grid-template-columns: repeat(var(--rx-week-columns), var(--rx-week-slot));
+  grid-template-rows: repeat(var(--rx-week-lanes, 1), minmax(var(--rx-target), auto));
+  background-image: linear-gradient(to right, var(--rx-separator) 1px, transparent 1px);
+  background-size: calc(var(--rx-week-slot) * var(--rx-week-per-day)) 100%; background-repeat: repeat-x;
+}
+.rx-week__track:dir(rtl) { background-image: linear-gradient(to left, var(--rx-separator) 1px, transparent 1px); background-position: 100% 0; }
+.rx-week__track--head { grid-template-rows: auto auto; background-image: none; }
+.rx-week__day { grid-row: 1; padding: var(--rx-space-2) var(--rx-space-2) 0; border-inline-start: 1px solid var(--rx-separator); font: var(--rx-type-label); position: sticky; inset-inline-start: var(--rx-week-name); }
+.rx-week__weekday { color: var(--rx-secondary-label); }
+.rx-week__hour { padding: 0 var(--rx-space-1) var(--rx-space-1); font: var(--rx-type-note); color: var(--rx-secondary-label); font-variant-numeric: tabular-nums; overflow: hidden; white-space: nowrap; }
+.rx-week__cell { box-sizing: border-box; min-width: 0; }
+.rx-week__cell:focus-visible { outline: 3px solid var(--rx-focus); outline-offset: -3px; z-index: 2; }
+/* A free slot: a faint cell, tinted on hover and focus. */
+.rx-week__slot { border-inline-end: 1px solid color-mix(in srgb, var(--rx-separator) 45%, transparent); cursor: pointer; }
+.rx-week__slot:hover, .rx-week__slot:focus-visible { background: color-mix(in srgb, var(--rx-success) 14%, var(--rx-surface)); }
+.rx-week__slot.htmx-request { opacity: 0.6; }
+/* A plus shows on the slot you are about to book. */
+.rx-week__slot { display: grid; place-items: center; color: var(--rx-success); font: var(--rx-type-label); }
+.rx-week__slot::after { content: "+"; opacity: 0; }
+.rx-week__slot:hover::after, .rx-week__slot:focus-visible::after { opacity: 1; }
+/* A booking: tinted by its tone, with a bar at its start edge and a pattern, so colour is not the only sign. */
+.rx-week__event {
+  --rx-block-kind: var(--rx-accent); position: relative; display: grid; align-content: start; gap: 1px; margin: 2px; padding: 2px var(--rx-space-2);
+  border-radius: var(--rx-radius-s); border-inline-start: 3px solid var(--rx-block-kind); overflow: hidden;
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--rx-block-kind) 16%, var(--rx-surface)) 0 8px, color-mix(in srgb, var(--rx-block-kind) 24%, var(--rx-surface)) 8px 16px);
+  color: var(--rx-label); font: var(--rx-type-note);
+}
+.rx-week__event--info { --rx-block-kind: var(--rx-info); }
+.rx-week__event--success { --rx-block-kind: var(--rx-success); }
+.rx-week__event--warning { --rx-block-kind: var(--rx-warning); }
+.rx-week__event--error { --rx-block-kind: var(--rx-danger-text); }
+.rx-week__event--before { border-start-start-radius: 0; border-end-start-radius: 0; }
+.rx-week__event--after { border-start-end-radius: 0; border-end-end-radius: 0; }
+.rx-week__event-link, .rx-week__event-title { font-weight: 600; color: inherit; text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The whole booking is the link. */
+.rx-week__event-link::after { content: ""; position: absolute; inset: 0; }
+.rx-week__time { color: var(--rx-label); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 40rem) {
+  .rx-week { --rx-week-name: 6.5rem; }
+}
+
 /* ---------- Less motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {

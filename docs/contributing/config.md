@@ -38,6 +38,9 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `STORAGE_URL`.
 - **SEO/analytics** (used in production only): `GOOGLE_SITE_VERIFICATION`, `GA4_MEASUREMENT_ID`,
   `GA4_API_SECRET`, `GTM_CONTAINER_ID`.
+- **Social login** (`renox-oauth`, read with `config.var`): `GOOGLE_CLIENT_ID`/`_SECRET`,
+  `GITHUB_CLIENT_ID`/`_SECRET`, `MICROSOFT_CLIENT_ID`/`_SECRET`, `MICROSOFT_TENANT` (a tenant id or
+  domain; `organizations` by default).
 - **App-specific:** anything else through `config.var(name)` (`config.vars` first, then the
   environment; empty counts as missing).
 - **Settings kept in the database** are not environment variables: values an administrator

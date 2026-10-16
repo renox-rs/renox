@@ -23,6 +23,7 @@ pub struct Registry {
     pub(crate) components: Vec<crate::components::Component>,
     pub(crate) shares: Vec<(String, crate::view::ShareFn)>,
     pub(crate) channels: HashMap<String, crate::auth::notifications::ChannelFn>,
+    pub(crate) channel_limits: HashMap<String, crate::queue::Limit>,
     pub(crate) reporters: Vec<crate::report::ReportFn>,
     /// The `Permissions` module is on: load each user's roles.
     pub(crate) permissions: bool,
@@ -347,6 +348,24 @@ impl Registry {
             name.to_owned(),
             crate::auth::notifications::channel_fn(send),
         );
+        self
+    }
+
+    /// Caps how fast queued deliveries to the channel `name` go out: at
+    /// most `max` per `per` (a fixed window, at least one second), shared
+    /// by every worker through the cache. A delivery over the limit is put
+    /// back until the window ends and doesn't use up an attempt; see
+    /// [`Middleware::rate_limited`](crate::queue::Middleware::rate_limited).
+    /// Only `notify_queued` deliveries are limited, not `notify`. An unknown
+    /// channel is an error when the app boots.
+    pub fn channel_rate_limit(
+        &mut self,
+        name: &str,
+        max: u32,
+        per: std::time::Duration,
+    ) -> &mut Self {
+        self.channel_limits
+            .insert(name.to_owned(), crate::queue::Limit::new(max, per));
         self
     }
 
