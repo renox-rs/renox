@@ -4,8 +4,8 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use anyhow::{Result, bail};
-use heck::ToUpperCamelCase;
+use anyhow::{Context, Result, bail};
+use heck::{ToTitleCase, ToUpperCamelCase};
 
 /// What `--with` can add to a package.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -97,7 +97,115 @@ pub(crate) fn plan(
     })
 }
 
-/// `rnx make:package`. The files themselves come with the next steps.
+/// The package's files: where they go (`__crate__` is the crate name) and
+/// their stubs.
+const FILES: &[(&str, &str)] = &[
+    (
+        "Cargo.toml",
+        include_str!("../stubs/package/Cargo.toml.stub"),
+    ),
+    ("build.rs", include_str!("../stubs/package/build.rs")),
+    ("README.md", include_str!("../stubs/package/README.md")),
+    ("src/lib.rs", include_str!("../stubs/package/src/lib.rs")),
+    (
+        "src/model.rs",
+        include_str!("../stubs/package/src/model.rs"),
+    ),
+    (
+        "src/texts.rs",
+        include_str!("../stubs/package/src/texts.rs"),
+    ),
+    (
+        "views/__crate__/index.html",
+        include_str!("../stubs/package/views/index.html"),
+    ),
+];
+
+/// The first migration's files: the suffix after its name, and the SQL.
+const MIGRATION: &[(&str, &str)] = &[
+    ("up.sql", include_str!("../stubs/package/migrations/up.sql")),
+    (
+        "postgres.up.sql",
+        include_str!("../stubs/package/migrations/up.postgres.sql"),
+    ),
+    (
+        "down.sql",
+        include_str!("../stubs/package/migrations/down.sql"),
+    ),
+];
+
+/// Every file of the package as (path inside the package, contents), with
+/// the placeholders filled in. `version` is the migration's timestamp. Fails
+/// when a placeholder is left over.
+pub(crate) fn render(plan: &Plan, version: &str) -> Result<Vec<(PathBuf, String)>> {
+    let title = plan.crate_name.to_title_case();
+    let fill = |text: &str| {
+        text.replace("__Struct__", &plan.struct_name)
+            .replace("__Title__", &title)
+            .replace("__crate__", &plan.crate_name)
+            .replace("__lib__", &plan.lib_name)
+            .replace("__renox__", &plan.renox_dependency)
+    };
+    let stem = format!("{version}_create_{}_entries_table", plan.lib_name);
+    let mut files = Vec::new();
+    for (path, text) in FILES {
+        files.push((PathBuf::from(fill(path)), fill(text)));
+    }
+    for (suffix, text) in MIGRATION {
+        files.push((
+            Path::new("migrations").join(format!("{stem}.{suffix}")),
+            fill(text),
+        ));
+    }
+    for (path, text) in &files {
+        if let Some(left) = placeholder(text) {
+            bail!("{}: `{left}` was not filled in", path.display());
+        }
+    }
+    Ok(files)
+}
+
+/// A `__word__` left in `text`, if any.
+fn placeholder(text: &str) -> Option<&str> {
+    let mut rest = text;
+    while let Some(at) = rest.find("__") {
+        let after = &rest[at + 2..];
+        let word = after.len()
+            - after
+                .trim_start_matches(|c: char| c.is_ascii_alphabetic())
+                .len();
+        if word > 0 && after[word..].starts_with("__") {
+            return Some(&rest[at..at + word + 4]);
+        }
+        rest = &rest[at + 2..];
+    }
+    None
+}
+
+/// Writes the package under `root` and adds it to the workspace `members`.
+/// Everything is rendered first, so a failure leaves nothing behind.
+pub(crate) fn write(root: &Path, plan: &Plan, now: chrono::DateTime<chrono::Utc>) -> Result<()> {
+    let version = crate::make::next_version(&root.join(&plan.path).join("migrations"), now);
+    let files = render(plan, &version)?;
+    let base = root.join(&plan.path);
+    for (path, text) in files {
+        let target = base.join(&path);
+        if let Some(dir) = target.parent() {
+            std::fs::create_dir_all(dir)
+                .with_context(|| format!("could not create {}", dir.display()))?;
+        }
+        std::fs::write(&target, text)
+            .with_context(|| format!("could not write {}", target.display()))?;
+        println!("Created {}", plan.path.join(&path).display());
+    }
+    std::fs::write(root.join("Cargo.toml"), &plan.manifest)
+        .context("could not update Cargo.toml")?;
+    println!("Updated Cargo.toml (workspace members)");
+    Ok(())
+}
+
+/// `rnx make:package`. Registering the package in the app comes with the
+/// next steps.
 pub(crate) fn run(
     root: &Path,
     name: &str,
@@ -105,8 +213,11 @@ pub(crate) fn run(
     with: &[String],
     register: Option<PathBuf>,
 ) -> Result<()> {
-    let _plan = plan(root, name, path, with, register)?;
-    bail!("make:package doesn't write the package yet")
+    let plan = plan(root, name, path, with, register)?;
+    if !plan.extras.is_empty() {
+        bail!("make:package doesn't write `--with` extras yet");
+    }
+    write(root, &plan, chrono::Utc::now())
 }
 
 fn has_package(manifest: &str) -> bool {
@@ -388,6 +499,72 @@ mod tests {
             std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap(),
             APP
         );
+    }
+
+    #[test]
+    fn writes_the_package_tree() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        let plan = plan(dir.path(), "my-pkg", None, &[], None).unwrap();
+        let now = chrono::DateTime::parse_from_rfc3339("2026-10-16T10:00:00Z")
+            .unwrap()
+            .to_utc();
+        write(dir.path(), &plan, now).unwrap();
+        let pkg = dir.path().join("crates/my-pkg");
+        let mut found = Vec::new();
+        let mut stack = vec![pkg.clone()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(d).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    let text = std::fs::read_to_string(&p).unwrap();
+                    assert!(placeholder(&text).is_none(), "{}", p.display());
+                    found.push(p.strip_prefix(&pkg).unwrap().to_string_lossy().into_owned());
+                }
+            }
+        }
+        found.sort();
+        assert_eq!(
+            found,
+            [
+                "Cargo.toml",
+                "README.md",
+                "build.rs",
+                "migrations/20261016100000_create_my_pkg_entries_table.down.sql",
+                "migrations/20261016100000_create_my_pkg_entries_table.postgres.up.sql",
+                "migrations/20261016100000_create_my_pkg_entries_table.up.sql",
+                "src/lib.rs",
+                "src/model.rs",
+                "src/texts.rs",
+                "views/my-pkg/index.html",
+            ]
+        );
+        let lib = std::fs::read_to_string(pkg.join("src/lib.rs")).unwrap();
+        assert!(lib.contains("pub struct MyPkg;") && lib.contains("my_pkg.index"));
+        let cargo = std::fs::read_to_string(pkg.join("Cargo.toml")).unwrap();
+        assert!(cargo.contains("name = \"my-pkg\""));
+        assert!(
+            cargo.contains("renox = { path = \"../../../x/crates/renox\" }")
+                || cargo.contains("renox = { path = \"/x/crates/renox\" }")
+        );
+        let sql = std::fs::read_to_string(
+            pkg.join("migrations/20261016100000_create_my_pkg_entries_table.up.sql"),
+        )
+        .unwrap();
+        assert!(sql.contains("\"my_pkg_entries\""));
+        let root = std::fs::read_to_string(dir.path().join("Cargo.toml")).unwrap();
+        assert!(root.contains("members = [\".\", \"crates/my-pkg\"]"));
+        // A second run is refused by the plan, so nothing is overwritten.
+        assert!(super::plan(dir.path(), "my-pkg", None, &[], None).is_err());
+    }
+
+    #[test]
+    fn leftover_placeholders_are_found() {
+        assert_eq!(placeholder("a __crate__ b"), Some("__crate__"));
+        assert_eq!(placeholder("x __lib___entries"), Some("__lib__"));
+        assert_eq!(placeholder("snake_case __ and_ _x_ __1__"), None);
     }
 
     #[test]

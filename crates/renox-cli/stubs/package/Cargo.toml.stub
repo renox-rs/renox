@@ -1,0 +1,10 @@
+[package]
+name = "__crate__"
+description = "__Title__: a reusable Renox module."
+readme = "README.md"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+__renox__
+serde = { version = "1", features = ["derive"] }

@@ -57,7 +57,7 @@ pub fn migration_with(name: &str, dir: &Path, up: &str, down: &str) -> Result<()
 /// The current time as `YYYYMMDDHHMMSS`, moved past the newest migration in
 /// `dir`: migrations made in the same second (`make:model -m`, then
 /// `make:migration`) still run in the order they were made.
-fn next_version(dir: &Path, now: chrono::DateTime<chrono::Utc>) -> String {
+pub(crate) fn next_version(dir: &Path, now: chrono::DateTime<chrono::Utc>) -> String {
     let now: u64 = now.format("%Y%m%d%H%M%S").to_string().parse().unwrap_or(0);
     let newest = fs::read_dir(dir)
         .into_iter()
