@@ -294,6 +294,42 @@ async fn reserving_online_shows_the_price_then_holds_the_bike_once_paid() {
             .any(|m| m.subject.contains(&rental.reservation_code.to_string())),
         "the confirmation mail carries the code"
     );
+    // ... and a calendar file (#48): the rental's period, one UID per rental,
+    // the customer invited, the content type of a REQUEST.
+    let confirmation = mails
+        .iter()
+        .find(|m| m.subject.contains(&rental.reservation_code.to_string()))
+        .unwrap();
+    let invite = confirmation
+        .attachments
+        .iter()
+        .find(|a| a.filename == "invite.ics")
+        .expect("the confirmation attaches invite.ics");
+    assert_eq!(
+        invite.content_type,
+        "text/calendar; method=REQUEST; charset=UTF-8"
+    );
+    let ics = String::from_utf8(invite.data.clone()).unwrap();
+    assert!(
+        ics.starts_with("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n"),
+        "{ics}"
+    );
+    assert!(ics.contains(&format!("UID:rental-{}@", rental.id)), "{ics}");
+    assert!(
+        ics.contains(&format!(
+            "DTSTART:{}\r\n",
+            rental.starts_at.format("%Y%m%dT%H%M%SZ")
+        )),
+        "{ics}"
+    );
+    assert!(
+        ics.contains(&format!(
+            "DTEND:{}\r\n",
+            rental.due_at.format("%Y%m%dT%H%M%SZ")
+        )),
+        "{ics}"
+    );
+    assert!(ics.contains("mailto:"), "{ics}");
 
     // Someone else's reservation doesn't exist for them.
     w.app.acting_as(&other);

@@ -78,7 +78,7 @@ A setting that takes one of a few words (`SESSION_DRIVER=database`) is an enum m
 Durations are `Duration` fields even when `.env` has minutes or seconds.
 
 ## 4.5 Migrations owned by the framework
-Names start with `0001…` so they sort before app migrations (`2026…`). There are twenty-one:
+Names start with `0001…` so they sort before app migrations (`2026…`). There are twenty-two:
 - Auth module (`auth/module.rs` `MIGRATIONS`): `00010101000000_create_users_table`,
   `…000001_create_password_reset_tokens_table`, `…000002_create_personal_access_tokens_table`,
   `…000003_create_notifications_table`, `…000004_add_sessions_revoked_at_to_users`,
@@ -93,7 +93,7 @@ Names start with `0001…` so they sort before app migrations (`2026…`). There
   the default), `value` as JSON text or sealed, `updated_at`, `updated_by`; the primary key is
   `(key, scope)`). The block `…000400`–`…000499` is shared with other planned modules (#39, #40,
   #41, #52); recount after rebasing.
-- Every app (registered in `App::boot`; nine, which tests/it/database.rs lists):
+- Every app (registered in `App::boot`; ten, which tests/it/database.rs lists):
   `00010101000100_create_jobs_table`, `00010101000110_add_chains_and_batches_to_jobs` and
   `00010101000120_add_callback_of_to_jobs` (queue), `00010101000200_create_cache_table` (cache),
   `00010101000210_create_sessions_table` (session.rs, installed whatever `SESSION_DRIVER` is),
@@ -101,7 +101,9 @@ Names start with `0001…` so they sort before app migrations (`2026…`). There
   `00010101000230_create_import_batches_table` (import.rs: `import_batches` and `import_changes`,
   what undoable imports wrote),
   `00010101000300_create_webhook_calls_table` and
-  `00010101000301_store_webhook_payloads_as_bytes` (webhook.rs `MIGRATIONS`).
+  `00010101000301_store_webhook_payloads_as_bytes` (webhook.rs `MIGRATIONS`) and
+  `00010101000420_create_sequences_table` (`db/sequence.rs`: the counters behind `Sequence`;
+  the block `…000400`–`…000499` is shared by several issues, so recount after a rebase).
 
 Each is `NAME.up.sql` (SQLite) + `NAME.postgres.up.sql` + a shared `NAME.down.sql`, included with
 `db::framework_migration!(dir, name)`. PostgreSQL versions use BIGINT identity ids, BIGINT

@@ -9,7 +9,7 @@ use renox::testing::TestApp;
 use renox_blocks::{Blocks, TEXTS};
 use serde::{Deserialize, Serialize};
 
-const PAGE: &str = r##"{% from "renox-blocks/blocks.html" import quantity, range_slider, keypad, swatches, datetime_range, gallery, history, compare_plans, month_calendar, availability, kanban, status_stepper, week_calendar %}
+const PAGE: &str = r##"{% from "renox-blocks/blocks.html" import quantity, range_slider, keypad, swatches, datetime_range, gallery, history, compare_plans, month_calendar, availability, kanban, status_stepper, week_calendar, receipt %}
 <html><head>{{ renox_head() }}</head><body>
 <form method="post" action="/order">
 {{ csrf_field() }}
@@ -27,6 +27,7 @@ const PAGE: &str = r##"{% from "renox-blocks/blocks.html" import quantity, range
 {{ month_calendar(month, [{"date": "2026-02-03", "time": "09:30", "title": "Tune-up", "url": "/v/1", "kind": "info"}, {"date": "2026-02-03T12:00:00", "title": "Rental"}], url="/visits?store=2", today="2026-02-03") }}
 {{ availability(["09:00", "10:00", "11:00"], [{"label": "Trail 5", "note": "M", "slots": [{"state": "booked", "span": 2, "title": "Ana R."}, {"state": "free", "action": "/book", "fields": {"bike": 12}}]}, {"label": "City 3", "slots": [{"state": "free", "url": "/rent?at=9"}, {"state": "closed", "span": 2}]}], corner="Bike") }}
 {{ kanban("jobs", [{"key": "waiting", "title": "Waiting", "cards": [{"id": 7, "title": "Tune-up", "subtitle": "City 3", "badge": "Today", "badge_kind": "warning"}]}, {"key": "ready", "title": "Ready", "cards": []}], url="/jobs/move", values={"store": 2}) }}
+{% call receipt([{"name": "Helmet", "quantity": 1, "price": 4900}], totals=[{"label": "Total", "amount": 4900, "strong": true}], title="Bike Shop", number="R-1") %}R-1{% endcall %}
 </body></html>"##;
 
 #[derive(Debug, Deserialize, Validate)]
@@ -189,7 +190,7 @@ async fn every_block_renders_and_the_files_load_once() {
         ),
     ];
     for part in [
-        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "week",
+        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "receipt", "week",
     ] {
         let path = between(&html, &format!(" data-{part}=\""), "\"");
         assert!(
@@ -455,6 +456,69 @@ async fn the_blocks_are_tags_too() {
     ] {
         assert!(html.contains(needle), "missing {needle}\n{html}");
     }
+}
+
+const RECEIPT: &str = r##"<html><head><rx-head/></head><body>
+<rx-receipt id="till" width="58mm" title="Bike Shop" :header="['Calle Mayor 12', '+34 600 000 000']" number="R-1042" date="2026-10-16 10:32"
+  :lines="[{'name': 'Helmet <Trail>', 'quantity': 2, 'price': 4900, 'note': 'Black'}, {'name': 'Bell', 'quantity': 1, 'price': 800}, {'name': 'Repair, 1 h', 'total': 3500}]"
+  :totals="[{'label': 'Subtotal', 'amount': 14100}, {'label': 'Total', 'amount': 14100, 'strong': true}]"
+  :footer="['Thank you!', 'Returns within 14 days']">
+  <span data-code>R-1042</span>
+</rx-receipt>
+<rx-receipt id="plain" :lines="[]" :print-button="false"/>
+</body></html>"##;
+
+/// The receipt block (#48), as a tag: its lines, amounts and code slot, the
+/// paper's width class, escaping, and the print button with its script.
+#[renox::test]
+async fn the_receipt_prints_its_lines_totals_and_code_slot() {
+    let app = TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Shop)
+            .templates(|env| renox::view::add_template(env, "page.html", RECEIPT).unwrap()),
+    )
+    .await;
+    let html = app.get("/order").await.assert_ok().text();
+    let till = between(
+        &html,
+        r#"<div class="rx-receipt rx-receipt--w58" id="till""#,
+        "</article>",
+    );
+    let has = |needle: &str| assert!(till.contains(needle), "missing {needle}\n{till}");
+    has("data-rx-receipt>");
+    has(r#"aria-label="Bike Shop""#);
+    has(r#"<p class="rx-receipt__title">Bike Shop</p>"#);
+    has(r#"<p class="rx-receipt__text">Calle Mayor 12</p>"#);
+    has("<span>R-1042</span><span>2026-10-16 10:32</span>");
+    // A quantity of 2 shows "2 × unit price" under the name, the total in its column.
+    has("Helmet &lt;Trail&gt;");
+    has(r#"<span class="rx-receipt__note">2 × $49.00 · Black</span>"#);
+    has("<td>$98.00</td>");
+    // One bell has no "1 ×" line; a line with only a total keeps it.
+    has("<td>$8.00</td>");
+    has("<td>$35.00</td>");
+    assert!(!till.contains("1 × $8.00"), "{till}");
+    // Totals in the table's footer, the last one strong.
+    has(
+        r#"<tr class="rx-receipt__sum rx-receipt__sum--strong"><th scope="row">Total</th><td>$141.00</td></tr>"#,
+    );
+    // The slot comes after the table, then the footer.
+    assert!(
+        till.find("</table>").unwrap() < till.find("<span data-code>R-1042</span>").unwrap(),
+        "{till}"
+    );
+    has(r#"<div class="rx-receipt__code">"#);
+    has(r#"<p class="rx-receipt__text">Returns within 14 days</p>"#);
+    // The print button needs the script, which the page loads for it.
+    assert!(
+        html.contains(r#" data-receipt="/_renox/blocks/receipt-"#),
+        "{html}"
+    );
+    // The other receipt: 80 mm by default, no button, no slot.
+    assert!(html.contains(r#"class="rx-receipt rx-receipt--w80" id="plain""#));
+    assert_eq!(html.matches("data-rx-receipt-print").count(), 1, "{html}");
+    assert_eq!(html.matches("rx-receipt__code").count(), 1, "{html}");
 }
 
 // ---------------------------------------------------------------------

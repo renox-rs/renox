@@ -1581,6 +1581,23 @@ Notes from M34:
 - [x] renox-admin: `Admin::settings::<T>(label)` and `AdminSettings` (fields, a policy, read-only
   fields, sealed groups never printed)
 - [ ] Settings pages contributed by a module through `Registry::contribute` (after #31)
+### Gapless sequences (#40)
+- [x] `renox::db::Sequence` (series, scope, period): `next(&mut tx)` takes the number in the
+      caller's transaction, `peek`, `last`, `set_start`, `list`, `next_allowing_gaps(&db)`;
+      `Period` (`None`, `Year`, `Month`), `Sequence::format` and `NumberFormat` (named tokens)
+- [x] Framework migration `00010101000420_create_sequences_table` (SQLite and PostgreSQL),
+      `sequence:list`
+- [x] Docs (relations.md "Numbering documents"), CHEATSHEET, llms.txt; the bike shop's counter
+      sales get gapless receipt numbers
+
+Notes from #40:
+- `next` takes `&mut Transaction` only: a number taken outside the transaction that stores the
+  document could be lost, which is the gap the API prevents. Series where gaps are fine use
+  `next_allowing_gaps`, which commits at once and does not hold the row.
+- Named tokens are substituted in one pass and never rescanned, so a value containing `{` is
+  safe; an unknown `{name}` stays as written.
+- The 50-task test uses a file database with eight connections (SQLite's `BEGIN IMMEDIATE`
+  and the busy timeout queue the writers); on PostgreSQL the row lock does it.
 
 ### Plugins (separate crates, after M18)
 - [x] `renox-2fa` (TOTP and recovery codes): #146 (#169–#173), docs/two-factor.md
@@ -2139,6 +2156,17 @@ Notes:
   (migration + `saving` hook); no macro attribute for it. `match_key` ignores spaces so that
   "Abd Allah" and "Abdullah" agree. Not configurable per rule (yet): a rule that must stay
   (say ta marbuta) means a model-level option later, without changing the default.
+- **Calendar files and the receipt** (#48, 2026-10): `renox::calendar` writes iCalendar by hand
+  (no dependency), UTC only: a `TZID` with `APP_TIMEZONE` would need a `VTIMEZONE` block, and
+  all-day and repeating events are left out; the method follows the events (`CANCEL` if one is
+  cancelled, `REQUEST` with attendees, else `PUBLISH`) unless `Ics::method` says otherwise, and
+  the content type carries the same `method`. Validation is golden files plus a structural check
+  in the tests (CI has no network). The receipt is a block in renox-blocks, not the kit; its
+  code slot takes markup because Renox has no QR generator (no library added). `@page` has no
+  `auto` height (`size: 80mm auto` is not valid CSS and Chrome drops the rule), so the receipt
+  uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
+  where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
+  A PDF receipt (#30) and ESC/POS printing stay out.
 
 ## Not planned
 

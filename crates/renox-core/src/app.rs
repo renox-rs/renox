@@ -57,6 +57,7 @@ Commands:
   webhook:failed            List webhook calls whose processing failed
   webhook:retry <id>        Process a stored webhook call again
   ui:publish [--force]      Copy the UI kit (renox/ui.html and its CSS) into the app to change it
+  sequence:list             List the numbering series (`Sequence`) and their last numbers
   cache:prune               Delete expired rows of the database cache store
   session:prune             Delete expired sessions (SESSION_DRIVER=database)
   import:prune [--days N]   Delete the records of imports whose undo window ended N days ago (default 0)
@@ -691,6 +692,7 @@ impl App {
         migrations.push(crate::grid::MIGRATION);
         migrations.push(crate::import::MIGRATION);
         migrations.extend(crate::webhook::MIGRATIONS);
+        migrations.push(crate::db::SEQUENCE_MIGRATION);
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());
@@ -1327,6 +1329,18 @@ impl App {
                 "Deleted {} expired session(s).",
                 crate::Session::prune_expired(&kernel.state.db).await?
             ),
+            "sequence:list" => {
+                let rows = crate::db::Sequence::list(&kernel.state.db).await?;
+                if rows.is_empty() {
+                    println!("No numbering series.");
+                }
+                for row in rows {
+                    println!(
+                        "  {}  scope={:?} period={:?}  last={}",
+                        row.series, row.scope, row.period, row.last
+                    );
+                }
+            }
             "cache:prune" => println!(
                 "Deleted {} expired cache row(s).",
                 kernel.state.cache.prune().await?
@@ -1451,6 +1465,7 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "queue:prune-batches",
     "webhook:failed",
     "webhook:retry",
+    "sequence:list",
     "cache:prune",
     "session:prune",
     "import:prune",

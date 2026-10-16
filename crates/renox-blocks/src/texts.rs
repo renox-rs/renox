@@ -146,6 +146,10 @@ pub const TEXTS: &[(&str, &str)] = &[
     ("blocks.plans.feature", "Feature"),
     ("blocks.plans.included", "Included"),
     ("blocks.plans.not_included", "Not included"),
+    ("blocks.receipt.label", "Receipt"),
+    ("blocks.receipt.item", "Item"),
+    ("blocks.receipt.amount", "Amount"),
+    ("blocks.receipt.print", "Print receipt"),
 ];
 
 /// The English text of `key`, if the blocks have one.

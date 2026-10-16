@@ -469,6 +469,24 @@
   (+ send_handlers, s3), unit tests in `images.rs`/`crypto.rs`; bikeshop's tests/fields.rs uses a
   real PNG (tests/fixtures/bike.png) since the pipeline decodes images. Not run here: the S3
   round trip (needs the `s3` job).
+- **#48, calendar files and the receipt print layout**: `renox::calendar` (`Ics`, `Event`,
+  `Method`, `Status`; RFC 5545: CRLF, folding at 75 octets without splitting a character,
+  escaping, UTC times, `DTSTAMP` from `clock`; no dependency), `Mail::attach_ics` (`invite.ics`
+  or `cancellation.ics`, `text/calendar; method=…; charset=UTF-8`) and `Download::ics`; a change
+  or a cancellation is the same UID with a higher `SEQUENCE` (`Status::Cancelled` makes the file
+  `METHOD:CANCEL`). In renox-blocks, the `receipt` macro / `<rx-receipt>` tag (twelfth block; a
+  new `receipt.js` part for the Print button) with named `@page` rules for 80 mm and 58 mm.
+  Tests: it/calendar.rs (golden files in `it/fixtures/calendar/` plus a structural RFC check),
+  it/mail.rs (SMTP), renox-blocks tests, tests/browser/receipt.test.mjs (print emulation and a
+  PDF size check). The bike shop attaches an invitation to a reservation's confirmation and
+  prints the counter's receipt with the block. Guides: docs/mail.md "Calendar invitations",
+  docs/blocks.md "Printing".
+- **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
+  `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
+  nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on
+  the caller's transaction (row lock on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), so rollbacks
+  give numbers back. The bike shop's counter sales number their receipts with it. Tests:
+  tests/it/sequences.rs.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

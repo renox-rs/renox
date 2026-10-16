@@ -1,5 +1,7 @@
-{#- The printable invoice, or the counter's receipt (`?receipt=1`): print
-    styles in public/sales/sales.css hide the navigation and the buttons. -#}
+{#- The printable invoice, or the counter's receipt: an online order is an
+    invoice on a sheet (print styles in public/sales/sales.css hide the
+    navigation and the buttons); a counter sale is a till receipt, the
+    `receipt` block at 80 mm (printed, it drops everything but itself). -#}
 <rx-page layout="layouts/app.html" :title="t('sales.invoice.title', number=page.number) ~ ' · ' ~ t('shop.name')">
   <app-sales-assets/>
   <rx-let name="o" :value="page"/>
@@ -11,7 +13,12 @@
   </div>
   {# [/explain:orders.invoice.template] #}
   <rx-alert rx-if="flash.change" kind="success" message="{{ t('sales.counter.change_due', amount=(flash.change | int | money)) }}"/>
-  <article class="rx-card bs-invoice">
+  <rx-receipt rx-if="o.channel == 'counter'" id="counter-receipt" title="{{ t('shop.name') }}" :header="receipt.header"
+    number="{{ t('sales.invoice.receipt', number=o.number) }}" date="{{ (o.paid_at or o.placed_at) | date('%Y-%m-%d %H:%M') }}"
+    :lines="receipt.lines" :totals="receipt.totals" :footer="receipt.footer" :print-button="false" label="{{ t('sales.invoice.receipt', number=o.number) }}">
+    <span class="bs-receipt__code">{{ o.number }}</span>
+  </rx-receipt>
+  <article rx-if="o.channel != 'counter'" class="rx-card bs-invoice">
     <header class="bs-invoice__head">
       <div>
         <p class="bs-invoice__shop">{{ t('shop.name') }}<template rx-if="o.store"> · {{ o.store.name }}</template></p>

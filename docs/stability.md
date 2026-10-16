@@ -195,7 +195,8 @@ compiles when a new variant appears.
 
 - `Error`, `Environment`, `CspMode`, `PermissionsMode`, `security::PermissionsPolicy`, `Channel`, `DbValue`, `Inspected` (a `Rule`
   matching on `Inspected` needs a `_` arm), `ToastKind`, `chart::Bucket`, `report::ReportKind`,
-  `grid::Kind`, `db::ColumnKind`, `db::search::Normalize`, `grid::Summary`, `grid::ExportFormat`
+  `grid::Kind`, `db::ColumnKind`, `db::search::Normalize`, `grid::Summary`, `grid::ExportFormat`, `calendar::Method`,
+  `calendar::Status`
 - the settings: `SessionDriver`, `LogFormat`, `CacheStore`, `mail::MailDriver`,
   `mail::MailEncryption`, `storage::DiskDriver`, and `webhook::WebhookStatus`
 
@@ -242,6 +243,8 @@ breaking anyone.
   `into_conn` makes of them, for several statements).
 - `db::relations::ForeignKey` is sealed: only a key type or an `Option` of one.
 - `db::Comparable` (which values a typed `Col` accepts) is implemented by Renox only.
+- `db::Period` and `db::SequenceRow` (numbering, `db::Sequence`) are `#[non_exhaustive]`: a
+  `Period` may get more variants (a week, a quarter), so `match` it with a `_` arm.
 
 ### Why `Dialect` isn't on the list
 

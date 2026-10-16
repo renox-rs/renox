@@ -35,6 +35,7 @@
 //! - Scheduling and work: `month_calendar`, `availability` (resources
 //!   against hours), `week_calendar` (resources against a week, click a
 //!   free slot to book it), `kanban` (with `kanban_card`).
+//! - Printing: `receipt` (a till receipt for an 80 mm or 58 mm thermal printer).
 //!
 //! The form blocks send plain fields, so `Valid<T>` reads them as any
 //! other. Each block works with the keyboard, follows
@@ -100,7 +101,8 @@ impl Module for Blocks {
 /// The blocks as tags: `<rx-quantity>`, `<rx-range-slider>`, `<rx-keypad>`,
 /// `<rx-swatches>`, `<rx-datetime-range>`, `<rx-gallery>`, `<rx-history>`,
 /// `<rx-compare-plans>`, `<rx-status-stepper>`, `<rx-month-calendar>`,
-/// `<rx-availability>`, `<rx-week-calendar>` and `<rx-kanban>`. Each is the macro of the same name, with its parameters as
+/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
+/// the same name, with its parameters as
 /// attributes (`value-start`, `hide-label`…).
 fn components(app: &mut Registry) {
     use renox::view::{Component, Prop};
@@ -283,6 +285,27 @@ fn components(app: &mut Registry) {
         .prop(Prop::text("url").required())
         .prop(Prop::text("label"))
         .prop(Prop::data("values")),
+    );
+    // Content: what is between the tags is the receipt's code slot (a QR code, a number).
+    app.component(
+        Component::macro_call(
+            "rx-receipt",
+            T,
+            "receipt",
+        )
+        .doc("A till receipt for an 80 mm or 58 mm thermal printer; its content is the code slot.")
+        .prop(Prop::data("lines").required())
+        .prop(Prop::data("totals"))
+        .prop(Prop::choice("width", &["80mm", "58mm"]))
+        .prop(Prop::text("title"))
+        .prop(Prop::data("header"))
+        .prop(Prop::text("number"))
+        .prop(Prop::text("date"))
+        .prop(Prop::data("footer"))
+        .prop(Prop::bool("print-button"))
+        .prop(Prop::text("print-label"))
+        .prop(Prop::text("label"))
+        .prop(Prop::text("id")),
     );
 }
 

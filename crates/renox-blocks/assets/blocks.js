@@ -17,6 +17,7 @@ const PARTS = [
   ["kanban", "[data-rx-kanban]"],
   ["datetime", "[data-rx-datetime-range]"],
   ["history", "[data-rx-history]"],
+  ["receipt", "[data-rx-receipt]"],
   ["week", "[data-rx-week]"],
 ];
 
