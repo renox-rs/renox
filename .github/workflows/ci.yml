@@ -129,11 +129,6 @@ jobs:
     # #139): a breaking change fails here, since 1.x promises none.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    # Advisory until calamine moves off zip 8.x (#66): every zip 8.x release is
-    # yanked and calamine 0.36.1 needs `zip ^8.6`, so the fresh resolve that
-    # cargo-semver-checks does (it ignores Cargo.lock) fails before it compares
-    # anything. Remove this line when calamine releases against zip 9.
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v7
         with:
@@ -147,6 +142,15 @@ jobs:
       # `--release-type minor`: the version only changes at a release, so an
       # unreleased change is checked as the next minor (additions pass, breaking
       # changes fail).
+      # Every zip 8.x release is yanked and calamine 0.36.1 needs `zip ^8.6`
+      # (#66). cargo-semver-checks resolves a fresh placeholder crate that
+      # ignores Cargo.lock, so the yank fails it before it compares anything.
+      # A git patch (read from the .cargo/config.toml above the placeholder, which
+      # lives under target/) lets that resolve pick zip 8.6.0. Only this job
+      # sees it. Remove it when calamine releases against zip 9.
+      - run: |
+          mkdir -p .cargo
+          printf '[patch.crates-io]\nzip = { git = "https://github.com/zip-rs/zip2", tag = "v8.6.0" }\n' > .cargo/config.toml
       - run: cargo semver-checks -p renox-core -p renox --release-type minor
 
   cli:
