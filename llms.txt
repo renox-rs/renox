@@ -358,7 +358,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `OAuth` module (`lib.rs`: the buttons' `oauth_providers`, the account card, events to the
   audit log), the routes (`handlers.rs`: redirect with `state` + PKCE, callback, unlink;
   linking by verified email), the `Provider` trait with `Profile`, `Token`, `Credentials`
-  (`provider.rs`), `google.rs`, `github.rs`, `OAuthAccount` (`model.rs`, `oauth_accounts`).
+  (`provider.rs`, with `Refused` and `Provider::with_config`), `google.rs` (`hosted_domain`),
+  `github.rs`, `microsoft.rs` (tenant-checked ID token, no JWT crate), `OAuth::allow_domains`,
+  `OAuthRefused`, `OAuthAccount` (`model.rs`, `oauth_accounts`).
   Logs in through `renox::auth::sign_in` / `register_verified` / `confirm_identity`
   (renox-core `auth/external.rs`). Guide: [docs/oauth.md](docs/oauth.md); used in
   examples/bikeshop.
