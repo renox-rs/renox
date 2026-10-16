@@ -119,6 +119,29 @@ const FILES: &[(&str, &str)] = &[
         "views/__crate__/index.html",
         include_str!("../stubs/package/views/index.html"),
     ),
+    (
+        "tests/package.rs",
+        include_str!("../stubs/package/tests/package.rs"),
+    ),
+];
+
+/// The files `--with` adds.
+const EXTRA_FILES: &[(Extra, &str, &str)] = &[
+    (
+        Extra::Assets,
+        "src/assets.rs",
+        include_str!("../stubs/package/src/assets.rs"),
+    ),
+    (
+        Extra::Assets,
+        "public/__lib__.css",
+        include_str!("../stubs/package/public/package.css"),
+    ),
+    (
+        Extra::Commands,
+        "src/commands.rs",
+        include_str!("../stubs/package/src/commands.rs"),
+    ),
 ];
 
 /// The first migration's files: the suffix after its name, and the SQL.
@@ -139,17 +162,42 @@ const MIGRATION: &[(&str, &str)] = &[
 /// when a placeholder is left over.
 pub(crate) fn render(plan: &Plan, version: &str) -> Result<Vec<(PathBuf, String)>> {
     let title = plan.crate_name.to_title_case();
+    let has = |extra| plan.extras.contains(&extra);
+    // `src/lib.rs` declares and registers the extras, in the order rustfmt
+    // keeps the `mod` lines.
+    let line = |on: bool, text: &str| if on { text.to_owned() } else { String::new() };
     let fill = |text: &str| {
-        text.replace("__Struct__", &plan.struct_name)
-            .replace("__Title__", &title)
-            .replace("__crate__", &plan.crate_name)
-            .replace("__lib__", &plan.lib_name)
-            .replace("__renox__", &plan.renox_dependency)
+        text.replace(
+            "__modassets__\n",
+            &line(has(Extra::Assets), "mod assets;\n"),
+        )
+        .replace(
+            "__modcommands__\n",
+            &line(has(Extra::Commands), "mod commands;\n"),
+        )
+        .replace(
+            "        __extras__\n",
+            &format!(
+                "{}{}",
+                line(has(Extra::Assets), "        assets::register(app);\n"),
+                line(has(Extra::Commands), "        commands::register(app);\n"),
+            ),
+        )
+        .replace("__Struct__", &plan.struct_name)
+        .replace("__Title__", &title)
+        .replace("__crate__", &plan.crate_name)
+        .replace("__lib__", &plan.lib_name)
+        .replace("__renox__", &plan.renox_dependency)
     };
     let stem = format!("{version}_create_{}_entries_table", plan.lib_name);
     let mut files = Vec::new();
     for (path, text) in FILES {
         files.push((PathBuf::from(fill(path)), fill(text)));
+    }
+    for (extra, path, text) in EXTRA_FILES {
+        if has(*extra) {
+            files.push((PathBuf::from(fill(path)), fill(text)));
+        }
     }
     for (suffix, text) in MIGRATION {
         files.push((
@@ -293,9 +341,6 @@ pub(crate) fn run(
     register: Option<PathBuf>,
 ) -> Result<()> {
     let plan = plan(root, name, path, with, register)?;
-    if !plan.extras.is_empty() {
-        bail!("make:package doesn't write `--with` extras yet");
-    }
     write(root, &plan, chrono::Utc::now())
 }
 
@@ -429,7 +474,7 @@ pub(crate) fn renox_dependency(manifest: &str, package_dir: &Path) -> String {
             fallback
         };
     };
-    if value.contains("workspace") {
+    if value.replace(' ', "").contains("workspace=true") {
         return "renox.workspace = true".to_owned();
     }
     format!("renox = {}", rebase_path(&value, package_dir))
@@ -543,6 +588,14 @@ mod tests {
         );
         let virt = "[workspace]\nmembers = []\n[workspace.dependencies]\nrenox = \"1\"\n";
         assert_eq!(renox_dependency(virt, dir), "renox.workspace = true");
+        // A path that merely contains the word is still a path.
+        let app = "[package]\nname = \"a\"\n[dependencies]\nrenox = { path = \"/home/me/workspace/renox\" }\n";
+        assert_eq!(
+            renox_dependency(app, dir),
+            "renox = { path = \"/home/me/workspace/renox\" }"
+        );
+        let inherited = "[package]\nname = \"a\"\n[dependencies]\nrenox = { workspace = true }\n";
+        assert_eq!(renox_dependency(inherited, dir), "renox.workspace = true");
     }
 
     #[test]
@@ -623,6 +676,7 @@ mod tests {
                 "src/lib.rs",
                 "src/model.rs",
                 "src/texts.rs",
+                "tests/package.rs",
                 "views/my-pkg/index.html",
             ]
         );
@@ -646,6 +700,38 @@ mod tests {
         assert!(app.contains(".module(my_pkg::MyPkg)"));
         // A second run is refused by the plan, so nothing is overwritten.
         assert!(super::plan(dir.path(), "my-pkg", None, &[], None).is_err());
+    }
+
+    #[test]
+    fn extras_add_their_files_and_registrations() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Cargo.toml"), APP).unwrap();
+        let with = vec!["assets".to_owned(), "commands".to_owned()];
+        let extras = plan(dir.path(), "my-pkg", None, &with, None).unwrap();
+        let files: std::collections::BTreeMap<String, String> = render(&extras, "20261016100000")
+            .unwrap()
+            .into_iter()
+            .map(|(p, t)| (p.to_string_lossy().into_owned(), t))
+            .collect();
+        for path in ["src/assets.rs", "src/commands.rs", "public/my_pkg.css"] {
+            assert!(files.contains_key(path), "{path}");
+        }
+        let lib = &files["src/lib.rs"];
+        assert!(lib.contains("mod assets;\nmod commands;\nmod model;\n"));
+        assert!(lib.contains("        assets::register(app);\n        commands::register(app);\n"));
+        assert!(files["src/assets.rs"].contains("\"/_my_pkg/my_pkg-0.1.0.css\""));
+        assert!(files["src/commands.rs"].contains("name = \"my-pkg:status\""));
+
+        // Without extras none of it is there.
+        let plain = plan(dir.path(), "my-pkg", None, &[], None).unwrap();
+        let files = render(&plain, "20261016100000").unwrap();
+        assert!(files.iter().all(|(p, _)| p != Path::new("src/assets.rs")));
+        let lib = files
+            .iter()
+            .find(|(p, _)| p == Path::new("src/lib.rs"))
+            .unwrap();
+        assert!(lib.1.contains("mod texts;\n\nuse renox::db::Migration;"));
+        assert!(!lib.1.contains("register(app)"));
     }
 
     #[test]

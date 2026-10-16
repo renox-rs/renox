@@ -1,6 +1,8 @@
 #![doc = include_str!("../README.md")]
 #![warn(missing_docs)]
 
+__modassets__
+__modcommands__
 mod model;
 mod texts;
 
@@ -44,6 +46,7 @@ impl Module for __Struct__ {
     }
 
     fn register(&self, app: &mut Registry) {
+        __extras__
         app.model::<Entry>().view_data::<IndexPage>();
         app.templates(|env| {
             for (name, source) in VIEWS {
