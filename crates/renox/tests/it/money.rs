@@ -391,3 +391,39 @@ fn serde_round_trip() {
     );
     assert_eq!(serde_json::to_string(&Currency::KWD).unwrap(), r#""KWD""#);
 }
+
+#[renox::test]
+async fn the_money_filter_uses_the_values_own_currency() {
+    use renox::prelude::*;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("m.html"),
+        "{{ aed | money }}|{{ jpy | money }}|{{ kwd | money }}|{{ aed | money(currency='EUR') }}|{{ aed | money(divide_by=1) }}|{{ aed | money(decimals=0) }}|{{ 7500 | money }}|{{ 7500 | money(currency='IDR') }}",
+    )
+    .unwrap();
+    struct M;
+    impl Module for M {
+        fn name(&self) -> &'static str {
+            "m"
+        }
+        fn routes(&self) -> Routes {
+            Routes::new().get("/m", || async {
+                view(
+                    "m.html",
+                    context! {
+                        aed => Money::aed(12500),
+                        jpy => Money::jpy(1250),
+                        kwd => Money::kwd(-12345),
+                    },
+                )
+            })
+        }
+    }
+    let path = dir.path().to_path_buf();
+    let app =
+        renox::testing::TestApp::with_config(App::new().module(M), move |c| c.views_path = path)
+            .await;
+    app.get("/m").await.assert_see(
+        "AED 125.00|¥1,250|-KWD 12.345|AED 125.00|AED 12,500.00|AED 125|$75.00|Rp 7,500",
+    );
+}

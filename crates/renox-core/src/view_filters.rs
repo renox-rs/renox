@@ -58,7 +58,8 @@ fn to_number(filter: &str, value: &Value) -> Result<f64, Error> {
 /// `10^currency_decimals(code)` (100 for `USD`, 1 for `IDR`). Keywords:
 /// `currency` (another ISO 4217 code for this amount), `decimals`, and
 /// `divide_by`, which replaces that divisor (`divide_by=1` for an amount
-/// already in whole units).
+/// already in whole units). A [`Money`](crate::money::Money) value is shown in
+/// its own currency (`currency=` is ignored for it).
 pub(crate) fn money(
     currency: String,
 ) -> impl Fn(&State, Value, Kwargs) -> Result<String, Error> + Send + Sync + 'static {
@@ -67,10 +68,37 @@ pub(crate) fn money(
         let decimals: Option<u32> = kwargs.get("decimals")?;
         let divide_by: Option<f64> = kwargs.get("divide_by")?;
         kwargs.assert_all_used()?;
+        if let Some(m) = money_object(&value)? {
+            // A `Money` carries its own currency, which wins over `currency=`.
+            if decimals.is_none() && divide_by.is_none() {
+                return Ok(m.format(&locale(state)));
+            }
+            let code = m.currency.code();
+            let amount = m.minor as f64 / money_divisor(code, divide_by);
+            return Ok(format_money(amount, code, decimals, &locale(state)));
+        }
         let code = code.map_or_else(|| currency.clone(), |c| c.trim().to_ascii_uppercase());
         let amount = to_number("money", &value)? / money_divisor(&code, divide_by);
         Ok(format_money(amount, &code, decimals, &locale(state)))
     }
+}
+
+/// The [`Money`](crate::money::Money) a template value holds: a map with an
+/// integer `minor` and a `currency` code (what `Money` serializes to).
+/// `None` for anything else, so plain numbers keep the old path.
+fn money_object(value: &Value) -> Result<Option<crate::money::Money>, Error> {
+    if value.kind() != minijinja::value::ValueKind::Map {
+        return Ok(None);
+    }
+    let (Ok(minor), Ok(code)) = (value.get_attr("minor"), value.get_attr("currency")) else {
+        return Ok(None);
+    };
+    let (Ok(minor), Some(code)) = (i64::try_from(minor), code.as_str()) else {
+        return Ok(None);
+    };
+    let currency = crate::money::Currency::parse(code)
+        .map_err(|e| Error::new(ErrorKind::InvalidOperation, format!("money: {e}")))?;
+    Ok(Some(crate::money::Money { minor, currency }))
 }
 
 /// What an amount in `code`'s smallest unit is divided by to give whole
