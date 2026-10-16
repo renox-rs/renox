@@ -77,6 +77,7 @@ mod sequences;
 mod services;
 mod sessions;
 mod settings;
+mod state_machine;
 mod tag_usage;
 mod testing;
 mod testing_tools;
