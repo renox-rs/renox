@@ -458,6 +458,18 @@
   (derefs to the transaction and is an `Executor`, so closures written for `&mut Transaction`
   compile unchanged). Not done: mapping columns in the browser (a follow-up); `ImportTx` has no
   `delete`.
+- **#48, calendar files and the receipt print layout**: `renox::calendar` (`Ics`, `Event`,
+  `Method`, `Status`; RFC 5545: CRLF, folding at 75 octets without splitting a character,
+  escaping, UTC times, `DTSTAMP` from `clock`; no dependency), `Mail::attach_ics` (`invite.ics`
+  or `cancellation.ics`, `text/calendar; method=…; charset=UTF-8`) and `Download::ics`; a change
+  or a cancellation is the same UID with a higher `SEQUENCE` (`Status::Cancelled` makes the file
+  `METHOD:CANCEL`). In renox-blocks, the `receipt` macro / `<rx-receipt>` tag (twelfth block; a
+  new `receipt.js` part for the Print button) with named `@page` rules for 80 mm and 58 mm.
+  Tests: it/calendar.rs (golden files in `it/fixtures/calendar/` plus a structural RFC check),
+  it/mail.rs (SMTP), renox-blocks tests, tests/browser/receipt.test.mjs (print emulation and a
+  PDF size check). The bike shop attaches an invitation to a reservation's confirmation and
+  prints the counter's receipt with the block. Guides: docs/mail.md "Calendar invitations",
+  docs/blocks.md "Printing".
 - **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
   `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
   nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on

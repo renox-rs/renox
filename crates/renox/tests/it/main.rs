@@ -17,6 +17,7 @@ mod auto_migrations;
 mod background;
 mod background_edges;
 mod background_resilience;
+mod calendar;
 mod commands;
 mod components;
 mod dashboards;

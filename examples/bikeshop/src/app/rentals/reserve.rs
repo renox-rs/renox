@@ -1,6 +1,7 @@
 //! The customer's side: find a bike (`/rent`), reserve it, pay the deposit
 //! online, see or cancel the reservation, and the list of one's rentals.
 
+use renox::calendar::{Event, Ics, Status};
 use renox::chrono::{Duration, NaiveDateTime, Timelike};
 use renox::prelude::*;
 use renox::validation::FormContext;
@@ -641,6 +642,7 @@ pub async fn deposit_paid(state: &AppState, payment_id: i64, rental_id: i64) -> 
     if let (Some(row), Some(customer)) = (row, customer) {
         let lang = state.current_lang();
         let local = to_local(&state.config, rental.starts_at);
+        let store_name = row.operating_store.map(|s| s.name).unwrap_or_default();
         notify::customer(
             state,
             &customer,
@@ -651,10 +653,7 @@ pub async fn deposit_paid(state: &AppState, payment_id: i64, rental_id: i64) -> 
                 "rentals.mail.reserved.body",
             )
             .param("code", &rental.reservation_code)
-            .param(
-                "store",
-                row.operating_store.map(|s| s.name).unwrap_or_default(),
-            )
+            .param("store", &store_name)
             .row("rentals.fields.code", &rental.reservation_code)
             .row("rentals.fields.bike", row.model.unwrap_or_default())
             .row("rentals.fields.starts", local.format("%Y-%m-%d %H:%M"))
@@ -665,6 +664,7 @@ pub async fn deposit_paid(state: &AppState, payment_id: i64, rental_id: i64) -> 
             .row("rentals.fields.price", money(state, rental.price))
             .row("rentals.fields.deposit", money(state, rental.deposit))
             .tone(Tone::Success)
+            .calendar(pickup_invitation(state, &rental, &store_name, &customer))
             .url(super::link(
                 state,
                 "rentals.show",
@@ -675,6 +675,42 @@ pub async fn deposit_paid(state: &AppState, payment_id: i64, rental_id: i64) -> 
         let _ = lang;
     }
     Ok(())
+}
+
+/// The calendar file of a reservation's confirmation mail: the period from
+/// pick-up to return in the customer's calendar, with a reminder an hour
+/// before. Its UID is the rental's, so a change or a cancellation sent later
+/// with a higher `SEQUENCE` replaces this entry instead of adding another.
+fn pickup_invitation(state: &AppState, rental: &Rental, store: &str, customer: &Customer) -> Ics {
+    let lang = state.current_lang();
+    let host = state
+        .config
+        .url
+        .split("://")
+        .last()
+        .unwrap_or_default()
+        .trim_end_matches('/');
+    let mut event = Event::new(
+        format!("rental-{}@{host}", rental.id),
+        rental.starts_at,
+        rental.due_at,
+    )
+    .summary(lang.t(
+        "rentals.calendar.summary",
+        &[("code", &rental.reservation_code)],
+    ))
+    .description(lang.t(
+        "rentals.calendar.description",
+        &[("code", &rental.reservation_code), ("store", &store)],
+    ))
+    .location(store)
+    .organizer(state.config.mail.from_address.clone())
+    .alarm_before(std::time::Duration::from_secs(3600))
+    .status(Status::Confirmed);
+    if let Some(email) = customer.email.as_deref().filter(|e| !e.is_empty()) {
+        event = event.attendee(email);
+    }
+    Ics::new("-//Bike Shop//Rentals//EN").event(event)
 }
 
 /// `PaymentFailed` for a rental: an unpaid reservation is called off, so

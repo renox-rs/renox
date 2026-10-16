@@ -1,0 +1,33 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Acme//Bookings//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+BEGIN:VEVENT
+UID:booking-42@acme.test
+DTSTAMP:20261101T080000Z
+DTSTART:20261103T090000Z
+DTEND:20261103T103000Z
+SUMMARY:Service at Acme\, Bay 3\; bring the bike
+DESCRIPTION:Bring the key\, the manual\; and the old tyres.\nBackslash \\ k
+ ept.\nCuéntanos qué ruido hace la bicicleta: ¿frena mal\, cruje la cade
+ na\, o falla el cambio? 自転車の整備の予約です。
+LOCATION:Calle Mayor 12\, Piso 3º\, Málaga
+URL:https://acme.test/bookings/42
+ORGANIZER;CN=Acme Bookings:mailto:bookings@acme.test
+ATTENDEE;CN="Ben B Ortiz, Jr.";ROLE=REQ-PARTICIPANT;RSVP=TRUE:mailto:ben@ex
+ ample.com
+STATUS:CONFIRMED
+SEQUENCE:0
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Service at Acme\, Bay 3\; bring the bike
+TRIGGER:-PT1H
+END:VALARM
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Service at Acme\, Bay 3\; bring the bike
+TRIGGER:-P1D
+END:VALARM
+END:VEVENT
+END:VCALENDAR

@@ -194,7 +194,8 @@ compiles when a new variant appears.
 
 - `Error`, `Environment`, `CspMode`, `PermissionsMode`, `security::PermissionsPolicy`, `Channel`, `DbValue`, `Inspected` (a `Rule`
   matching on `Inspected` needs a `_` arm), `ToastKind`, `chart::Bucket`, `report::ReportKind`,
-  `grid::Kind`, `db::ColumnKind`, `db::search::Normalize`, `grid::Summary`, `grid::ExportFormat`
+  `grid::Kind`, `db::ColumnKind`, `db::search::Normalize`, `grid::Summary`, `grid::ExportFormat`, `calendar::Method`,
+  `calendar::Status`
 - the settings: `SessionDriver`, `LogFormat`, `CacheStore`, `mail::MailDriver`,
   `mail::MailEncryption`, `storage::DiskDriver`, and `webhook::WebhookStatus`
 

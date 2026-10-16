@@ -27,7 +27,9 @@ The blocks:
   and a comparison table), `status_stepper` (a record's progress through its statuses);
 - scheduling and work: `month_calendar`, `availability` (resources against hours),
   `week_calendar` (resources against a week; a free slot posts its resource and times with
-  htmx), `kanban` (cards dragged or moved by keyboard, each move sent with htmx).
+  htmx), `kanban` (cards dragged or moved by keyboard, each move sent with htmx);
+- printing: `receipt` (an 80 mm or 58 mm till receipt that prints alone, with a code slot and a
+  Print button).
 
 The input blocks send plain form fields, so `Valid<T>` reads them; every block works with the
 keyboard, says its states in words, follows `prefers-reduced-motion`, works under

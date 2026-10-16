@@ -437,6 +437,59 @@
   .rx-week { --rx-week-name: 6.5rem; }
 }
 
+/* ---------- receipt ---------- */
+
+/* The paper is always white with black text, whatever the theme: it is a
+   picture of what the printer prints. Its width is the roll's; the page
+   around it is the app's. */
+.rx-receipt { display: grid; justify-items: center; gap: var(--rx-space-3); min-width: 0; }
+.rx-receipt--w80 { --rx-receipt-width: 80mm; }
+.rx-receipt--w58 { --rx-receipt-width: 58mm; }
+.rx-receipt__paper {
+  box-sizing: border-box; width: var(--rx-receipt-width); max-width: 100%; padding: 4mm 3mm;
+  background: #fff; color: #000; border: 1px solid var(--rx-separator); box-shadow: var(--rx-shadow);
+  font: 12px/1.4 var(--rx-mono); overflow-wrap: anywhere;
+}
+.rx-receipt__head, .rx-receipt__foot { text-align: center; }
+.rx-receipt__head { padding-bottom: 2mm; border-bottom: 1px dashed currentColor; }
+.rx-receipt__foot { padding-top: 2mm; border-top: 1px dashed currentColor; }
+.rx-receipt__title { margin: 0 0 1mm; font-size: 15px; font-weight: 700; text-transform: uppercase; }
+.rx-receipt__text { margin: 0; }
+.rx-receipt__meta { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 3mm; margin: 2mm 0 0; text-align: left; }
+.rx-receipt__lines { width: 100%; border-collapse: collapse; margin: 0; }
+.rx-receipt__lines th, .rx-receipt__lines td { padding: 1mm 0; vertical-align: top; font: inherit; color: inherit; text-align: left; }
+.rx-receipt__lines td { padding-left: 2mm; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.rx-receipt__lines th[scope="row"] { font-weight: 400; }
+.rx-receipt__note { display: block; opacity: 0.75; font-size: 11px; }
+.rx-receipt__lines tfoot tr:first-child > * { border-top: 1px dashed currentColor; padding-top: 2mm; }
+.rx-receipt__sum--strong th, .rx-receipt__sum--strong td { font-weight: 700; font-size: 14px; }
+.rx-receipt__code { display: grid; justify-items: center; margin: 2mm 0; text-align: center; }
+.rx-receipt__code svg, .rx-receipt__code img { max-width: 100%; height: auto; }
+.rx-receipt__actions { display: flex; justify-content: center; }
+
+/* The roll's paper. A named page sets the size for the receipt alone, so
+   no other printout of the app changes. `size` takes no `auto` height: the
+   page is as long as an A4 sheet, and a roll printer's driver cuts after
+   the content. An app with longer receipts overrides these two rules. */
+@page rx-receipt-80 { size: 80mm 297mm; margin: 0; }
+@page rx-receipt-58 { size: 58mm 297mm; margin: 0; }
+.rx-receipt--w80 { page: rx-receipt-80; }
+.rx-receipt--w58 { page: rx-receipt-58; }
+
+@media print {
+  /* Everything that is not the receipt, or does not hold it, is left out; what holds it
+     loses its padding, width and decoration, so the receipt starts at the paper's corner. */
+  body:has(.rx-receipt) :not(:has(.rx-receipt)):not(.rx-receipt):not(.rx-receipt *) { display: none !important; }
+  html:has(.rx-receipt), body:has(.rx-receipt), body:has(.rx-receipt) :has(.rx-receipt) {
+    display: block !important; position: static !important; width: auto !important; max-width: none !important; height: auto !important;
+    margin: 0 !important; padding: 0 !important; border: 0 !important; box-shadow: none !important;
+    background: none !important; overflow: visible !important; transform: none !important;
+  }
+  .rx-receipt { display: block; justify-items: start; }
+  .rx-receipt__paper { width: var(--rx-receipt-width); max-width: none; border: 0; box-shadow: none; }
+  .rx-receipt__actions { display: none !important; }
+}
+
 /* ---------- Less motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {

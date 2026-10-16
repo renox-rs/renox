@@ -40,6 +40,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "rx-swatches--colour",
         "class=\"rx-history\"",
         "class=\"rx-plans\"",
+        "class=\"rx-receipt rx-receipt--w80\"",
+        "class=\"rx-receipt rx-receipt--w58\"",
     ] {
         page.assert_see(marker);
     }
@@ -58,6 +60,7 @@ async fn the_page_shows_every_block_with_its_signature() {
         "swatches(name, label, options",
         "history(items",
         "compare_plans(plans, features=[]",
+        "receipt(lines, totals=[]",
     ] {
         page.assert_see(signature);
     }

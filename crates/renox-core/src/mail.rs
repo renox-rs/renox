@@ -177,6 +177,33 @@ impl Mail {
         self
     }
 
+    /// Attaches a calendar file ([`calendar::Ics`](crate::calendar::Ics)) as
+    /// `invite.ics` (`cancellation.ics` when it cancels), with the content
+    /// type `text/calendar; method=REQUEST; charset=UTF-8` (the method of the
+    /// file), so mail clients offer to add it to the calendar.
+    ///
+    /// ```
+    /// # use renox::calendar::{Event, Ics};
+    /// # use renox::chrono::{TimeZone, Utc};
+    /// # use renox::mail::Mail;
+    /// # let at = Utc.with_ymd_and_hms(2026, 11, 3, 9, 0, 0).unwrap();
+    /// let ics = Ics::new("-//Acme//Bookings//EN").event(
+    ///     Event::new("booking-42@acme.test", at, at + renox::chrono::Duration::hours(1))
+    ///         .summary("Service at Acme")
+    ///         .attendee("ben@example.com"),
+    /// );
+    /// let mail = Mail::new("ben@example.com", "Your booking", "See you.").attach_ics(&ics);
+    /// assert_eq!(mail.attachments[0].filename, "invite.ics");
+    /// ```
+    pub fn attach_ics(self, ics: &crate::calendar::Ics) -> Self {
+        let name = if ics.effective_method() == crate::calendar::Method::Cancel {
+            "cancellation.ics"
+        } else {
+            "invite.ics"
+        };
+        self.attach(name, ics.content_type(), ics.to_bytes())
+    }
+
     /// Whether `address` is among `to`, `cc` or `bcc`.
     pub fn is_for(&self, address: &str) -> bool {
         self.to

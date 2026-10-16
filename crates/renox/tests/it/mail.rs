@@ -346,6 +346,52 @@ async fn smtp_sends_multipart_mail() {
     assert!(data.contains("text/plain") && data.contains("text/html"));
 }
 
+/// A calendar invitation goes over SMTP as a `text/calendar` part with its
+/// `method` (#48), so mail clients offer to add it.
+#[tokio::test]
+async fn smtp_sends_a_calendar_invitation() {
+    use renox::calendar::{Event, Ics};
+    use renox::chrono::{TimeZone, Utc};
+
+    let dir = views();
+    let (port, received) = fake_smtp().await;
+    let smtp = {
+        let mut mail = MailConfig::default();
+        mail.mailer = renox::mail::MailDriver::Smtp;
+        mail.host = "127.0.0.1".into();
+        mail.port = Some(port);
+        mail.encryption = renox::mail::MailEncryption::None;
+        mail.from_address = "shop@example.com".into();
+        mail
+    };
+    let kernel = kernel_with({
+        let mut c = config(dir.path());
+        c.mail = smtp;
+        c
+    })
+    .await;
+    let starts = Utc.with_ymd_and_hms(2026, 11, 3, 9, 0, 0).unwrap();
+    let ics = Ics::new("-//Acme//Bookings//EN").event(
+        Event::new(
+            "booking-42@acme.test",
+            starts,
+            starts + renox::chrono::Duration::hours(1),
+        )
+        .summary("Service")
+        .attendee("ben@example.com"),
+    );
+    kernel
+        .mailer()
+        .send(Mail::new("ben@example.com", "Your booking", "See you.").attach_ics(&ics))
+        .await
+        .unwrap();
+
+    let data = received.lock().unwrap().clone();
+    assert!(data.contains("Content-Type: text/calendar"), "{data}");
+    assert!(data.contains("method=REQUEST"), "{data}");
+    assert!(data.contains("invite.ics"), "{data}");
+}
+
 #[tokio::test]
 async fn bad_mail_settings_fail_at_boot() {
     let dir = views();
