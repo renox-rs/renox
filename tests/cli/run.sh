@@ -15,7 +15,8 @@
 # Apps are made with the `rnx new` options people combine, and names on both sides of
 # "renox" (where imports sort: #124): shop (every generator), atlas (plain), pulse
 # (--notifications), site (--tailwind), studio (--starter, with the database), desk
-# (--starter --tailwind).
+# (--starter --tailwind). `--from` (#35) is run with a template made on the spot, from a path and from a
+# git+file:// repository, and its error cases.
 # Each must pass cargo fmt --check, clippy (but shop, whose generated items are dead code
 # until used) and its tests (#143).
 #
@@ -395,6 +396,128 @@ grep -q '^audit = { path = "../crates/audit" }' platform/Cargo.toml
 grep -q '\.module(audit::Audit)' platform/src/lib.rs
 if grep -q 'reports' platform/Cargo.toml; then echo "FAIL: reports was registered without --register"; exit 1; fi
 cargo build -p reports -p audit
+
+step "rnx new --from (#35): a template from a path and from a repository, built and tested"
+cd "$WORK"
+TPL="$WORK/acme-template"
+REPO_TPL="$WORK/acme-template-repo"
+MARKER="$WORK/template-code-ran"
+mkdir -p "$TPL/src" "$TPL/tests"
+cat > "$TPL/Cargo.toml" <<'EOF'
+[package]
+name = "{{crate_name}}"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+{{renox_dependency}}
+EOF
+cat > "$TPL/src/lib.rs" <<'EOF'
+//! Other double-brace text, like {{ app.locale }} and {{unknown}}, stays as written.
+pub const NAME: &str = "{{name}}";
+pub const COMPANY: &str = "{{company}}";
+pub const KEPT: &str = "{{unknown}}";
+EOF
+cat > "$TPL/tests/template.rs" <<'EOF'
+#[test]
+fn placeholders_were_filled() {
+    assert_eq!({{crate_name}}::COMPANY, "Acme Inc");
+    assert_eq!({{crate_name}}::KEPT, "{{unknown}}");
+    assert!(!{{crate_name}}::NAME.contains("{{"));
+}
+EOF
+printf 'APP_KEY={{app_key}}\nAPP_NAME={{title}}\nDATABASE_URL={{database_url}}\n' > "$TPL/.env"
+printf 'APP_KEY={{app_key}}\n' > "$TPL/.env.example"
+printf '\211PNG\0{{name}}' > "$TPL/logo.png"
+printf 'target/\n' > "$TPL/.gitignore"
+printf 'scratch\n' > "$TPL/notes.bak"
+# Code that would leave a marker file if anything ran it.
+printf 'fn main() { std::fs::write("%s", "x").unwrap(); }\n' "$MARKER" > "$TPL/build.rs"
+printf '#!/bin/sh\ntouch "%s"\n' "$MARKER" > "$TPL/setup.sh"
+chmod +x "$TPL/setup.sh"
+cat > "$TPL/renox-template.toml" <<'EOF'
+drop = ["*.bak"]
+
+[[ask]]
+key = "company"
+question = "Company name?"
+EOF
+# The same template as a repository: tag v1, then one more commit.
+cp -r "$TPL" "$REPO_TPL"
+git -C "$REPO_TPL" init --quiet
+git -C "$REPO_TPL" add -A
+git -C "$REPO_TPL" -c user.name=t -c user.email=t@example.com commit --quiet -m one
+git -C "$REPO_TPL" tag v1
+git -C "$REPO_TPL" -c user.name=t -c user.email=t@example.com commit --quiet --allow-empty -m two
+
+# What every app made from the template must look like.
+check_template_app() {
+    local app=$1
+    test -d "$app"
+    test ! -e "$app/.git"
+    test ! -e "$app/renox-template.toml"
+    test ! -e "$app/notes.bak"
+    test ! -e "$MARKER"
+    grep -q 'pub const COMPANY: &str = "Acme Inc";' "$app/src/lib.rs"
+    grep -q 'pub const KEPT: &str = "{{unknown}}";' "$app/src/lib.rs"
+    grep -q '{{ app.locale }}' "$app/src/lib.rs"
+    grep -Eq '^APP_KEY=.{20,}' "$app/.env"
+    grep -q '^APP_KEY=$' "$app/.env.example"
+    cmp "$app/logo.png" "$TPL/logo.png"
+    if grep -rnE '\{\{(name|title|crate_name|renox_dependency|database_url|app_key|company)\}\}' "$app" \
+        --exclude=logo.png --exclude-dir=target; then
+        echo "FAIL: placeholders left above"
+        exit 1
+    fi
+}
+
+# --set answers the prompt (there is no terminal here).
+"$RNX" new acme-path --renox-path "$REPO" --database "$DATABASE" --from "$TPL" --set company="Acme Inc"
+check_template_app acme-path
+"$RNX" new acme-tag --renox-path "$REPO" --database "$DATABASE" --from "git+file://$REPO_TPL#v1" --set company="Acme Inc"
+check_template_app acme-tag
+# Without #ref: the default branch.
+"$RNX" new acme-head --renox-path "$REPO" --database "$DATABASE" --from "git+file://$REPO_TPL" --set company="Acme Inc"
+check_template_app acme-head
+# The generated app builds and its tests pass.
+for app in acme-path acme-tag; do
+    cd "$WORK/$app"
+    use_database "${app//-/_}"
+    if runs; then cargo test; else cargo build --all-targets; fi
+done
+cd "$WORK"
+
+step "rnx new --from: clear errors, nothing left behind"
+# fail_new <expected text> <rnx new args...>: must fail, say the text, make no directory.
+fail_new() {
+    local want=$1 out
+    shift
+    if out=$("$RNX" new "$@" 2>&1); then echo "FAIL: rnx new $* succeeded"; exit 1; fi
+    printf '%s\n' "$out" | grep -qF -- "$want" || { echo "FAIL: '$want' not in: $out"; exit 1; }
+}
+fail_new "--set" broken --renox-path "$REPO" --from "$TPL"
+fail_new "nope" broken --renox-path "$REPO" --from "git+file://$REPO_TPL#nope" --set company=x
+sha=$(git -C "$REPO_TPL" rev-parse HEAD)
+fail_new "SHA" broken --renox-path "$REPO" --from "git+file://$REPO_TPL#$sha" --set company=x
+fail_new "not a directory" broken --renox-path "$REPO" --from "$WORK/no-such-template"
+fail_new "nothing" broken --renox-path "$REPO" --from "$TPL" --set company=x --set nothing=1
+test ! -e broken
+fail_new "already exists" acme-path --renox-path "$REPO" --from "$TPL" --set company=x
+# No git on PATH: a git+ source is a clear error.
+if out=$(PATH=/nonexistent "$RNX" new broken --renox-path "$REPO" \
+    --from "git+file://$REPO_TPL#v1" --set company=x 2>&1); then
+    echo "FAIL: succeeded without git"
+    exit 1
+fi
+printf '%s\n' "$out" | grep -q 'was not found on PATH' || { echo "FAIL: no clear error without git: $out"; exit 1; }
+test ! -e broken
+# --from clashes with the built-in starters.
+for clash in --starter --notifications --tailwind; do
+    if "$RNX" new broken --from "$TPL" "$clash" >/dev/null 2>&1; then echo "FAIL: --from with $clash"; exit 1; fi
+done
+test ! -e broken
+# Nothing in the template ran, in any of the above.
+test ! -e "$MARKER"
 
 echo
 if [ "$DATABASE" = sqlite ]; then

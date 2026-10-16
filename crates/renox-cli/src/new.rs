@@ -842,6 +842,228 @@ mod tests {
         assert!(!dir.path().join("shop").exists());
     }
 
+    fn git_in(dir: &Path, args: &[&str]) {
+        let ok = std::process::Command::new("git")
+            .args(["-c", "user.name=t", "-c", "user.email=t@example.com"])
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "git {args:?} failed");
+    }
+
+    /// The template fixture as a repository with tag `v1` and branch `side`
+    /// at the first commit, and a later commit on the default branch that
+    /// changes `page.txt`. `None` when git is not installed.
+    fn template_repo(dir: &Path) -> Option<String> {
+        crate::tools::find("git")?;
+        let tpl = template_fixture(dir);
+        fs::write(tpl.join("page.txt"), "first {{name}}\n").unwrap();
+        git_in(&tpl, &["init", "--quiet"]);
+        git_in(&tpl, &["add", "."]);
+        git_in(&tpl, &["commit", "--quiet", "-m", "one"]);
+        git_in(&tpl, &["tag", "v1"]);
+        git_in(&tpl, &["branch", "side"]);
+        fs::write(tpl.join("page.txt"), "second {{name}}\n").unwrap();
+        git_in(&tpl, &["commit", "--quiet", "-am", "two"]);
+        Some(format!("file://{}", tpl.display()))
+    }
+
+    fn git_source(url: &str, git_ref: Option<&str>) -> Source {
+        Source::Git {
+            url: url.to_string(),
+            git_ref: git_ref.map(str::to_string),
+        }
+    }
+
+    /// AC2: a tag, a branch and the default branch of a repository make the
+    /// same app as a path would, without `.git`.
+    #[test]
+    fn from_a_repository_by_tag_branch_and_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let Some(url) = template_repo(dir.path()) else {
+            eprintln!("skipped: git is not installed");
+            return;
+        };
+        let set = ["company=Acme".to_string()];
+        for (git_ref, want) in [
+            (Some("v1"), "first acme-web\n"),
+            (Some("side"), "first acme-web\n"),
+            (None, "second acme-web\n"),
+        ] {
+            let parent = tempfile::tempdir().unwrap();
+            let source = git_source(&url, git_ref);
+            run_from_in(
+                parent.path(),
+                "acme-web",
+                None,
+                Database::Sqlite,
+                &source,
+                &set,
+            )
+            .unwrap();
+            let app = parent.path().join("acme-web");
+            assert_eq!(fs::read_to_string(app.join("page.txt")).unwrap(), want);
+            assert_eq!(
+                fs::read_to_string(app.join("Cargo.toml")).unwrap(),
+                "name = \"acme_web\"\n"
+            );
+            let env = fs::read_to_string(app.join(".env")).unwrap();
+            assert!(
+                env.contains("CO=Acme") && !env.contains("APP_KEY=\n"),
+                "{env}"
+            );
+            assert_eq!(
+                fs::read_to_string(app.join(".env.example")).unwrap(),
+                "APP_KEY=\n"
+            );
+            assert!(!app.join(".git").exists(), "{git_ref:?}: .git was copied");
+            assert!(!app.join("renox-template.toml").exists());
+        }
+    }
+
+    /// AC6: an unknown ref, a SHA, a missing path and an existing target
+    /// each fail with a clear message and leave no new directory behind.
+    #[test]
+    fn failures_are_clear_and_leave_nothing_behind() {
+        let dir = tempfile::tempdir().unwrap();
+        let set = ["company=Acme".to_string()];
+        let fail = |parent: &Path, source: &Source| {
+            run_from_in(parent, "acme", None, Database::Sqlite, source, &set)
+                .unwrap_err()
+                .to_string()
+        };
+        if let Some(url) = template_repo(dir.path()) {
+            let err = fail(dir.path(), &git_source(&url, Some("nope")));
+            assert!(
+                err.contains("could not clone") && err.contains("#nope"),
+                "{err}"
+            );
+            let err = fail(dir.path(), &git_source(&url, Some("0123456789abcdef")));
+            assert!(err.contains("commit SHA is not supported"), "{err}");
+            assert!(!dir.path().join("acme").exists());
+        } else {
+            eprintln!("skipped the git cases: git is not installed");
+        }
+        let err = fail(dir.path(), &Source::Path(dir.path().join("missing")));
+        assert!(err.contains("not a directory"), "{err}");
+        assert!(!dir.path().join("acme").exists());
+
+        // A target that already holds files is left exactly as it was.
+        let tpl = dir.path().join("tpl");
+        fs::create_dir(dir.path().join("acme")).unwrap();
+        fs::write(dir.path().join("acme/mine.txt"), "keep").unwrap();
+        let err = fail(dir.path(), &Source::Path(tpl));
+        assert!(err.contains("`acme` already exists"), "{err}");
+        assert_eq!(
+            fs::read_to_string(dir.path().join("acme/mine.txt")).unwrap(),
+            "keep"
+        );
+    }
+
+    /// AC3 and AC5 through the whole command: other `{{ }}` text and binary
+    /// files are untouched, `drop` and `replace` apply, answers fill their key.
+    #[test]
+    fn a_template_with_a_config_is_copied_as_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpl = dir.path().join("tpl");
+        fs::create_dir_all(tpl.join("src")).unwrap();
+        fs::create_dir_all(tpl.join("docs")).unwrap();
+        let png: &[u8] = b"\x89PNG\0{{name}}{{company}}";
+        fs::write(tpl.join("logo.png"), png).unwrap();
+        fs::write(
+            tpl.join("src/a.txt"),
+            "{{name}} {{company}} {{unknown}} {{ url(\"x\") }}",
+        )
+        .unwrap();
+        fs::write(tpl.join("docs/a.txt"), "{{name}}").unwrap();
+        fs::write(tpl.join("scratch.bak"), "drop me").unwrap();
+        fs::write(
+            tpl.join("renox-template.toml"),
+            "replace = [\"src/**\"]\ndrop = [\"*.bak\"]\n\
+             [[ask]]\nkey = \"company\"\nquestion = \"Company?\"\n",
+        )
+        .unwrap();
+        let source = Source::Path(tpl.clone());
+        run_from_in(
+            dir.path(),
+            "acme",
+            None,
+            Database::Sqlite,
+            &source,
+            &["company=Acme".to_string()],
+        )
+        .unwrap();
+        let app = dir.path().join("acme");
+        assert_eq!(fs::read(app.join("logo.png")).unwrap(), png);
+        assert_eq!(
+            fs::read_to_string(app.join("src/a.txt")).unwrap(),
+            "acme Acme {{unknown}} {{ url(\"x\") }}"
+        );
+        assert_eq!(
+            fs::read_to_string(app.join("docs/a.txt")).unwrap(),
+            "{{name}}"
+        );
+        assert!(!app.join("scratch.bak").exists());
+
+        // An unknown key in the config, and a --set for no prompt: errors, nothing written.
+        fs::write(tpl.join("renox-template.toml"), "dorp = [\"x\"]\n").unwrap();
+        let err =
+            run_from_in(dir.path(), "typo", None, Database::Sqlite, &source, &[]).unwrap_err();
+        assert!(format!("{err:#}").contains("dorp"), "{err:#}");
+        assert!(!dir.path().join("typo").exists());
+        fs::remove_file(tpl.join("renox-template.toml")).unwrap();
+        let err = run_from_in(
+            dir.path(),
+            "extra",
+            None,
+            Database::Sqlite,
+            &source,
+            &["nothing=1".to_string()],
+        )
+        .unwrap_err();
+        assert!(format!("{err:#}").contains("nothing"), "{err:#}");
+        assert!(!dir.path().join("extra").exists());
+    }
+
+    /// AC4: with no terminal and no `--set`, the error names `--set key=value`.
+    #[test]
+    fn a_missing_answer_names_set() {
+        let dir = tempfile::tempdir().unwrap();
+        let tpl = template_fixture(dir.path());
+        let source = Source::Path(tpl);
+        let err =
+            run_from_in(dir.path(), "acme", None, Database::Sqlite, &source, &[]).unwrap_err();
+        assert!(format!("{err:#}").contains("--set"), "{err:#}");
+        assert!(!dir.path().join("acme").exists());
+    }
+
+    /// AC7 through the whole command: build scripts, shell scripts and git
+    /// hooks of a template are copied or ignored, never run.
+    #[cfg(unix)]
+    #[test]
+    fn rnx_new_from_never_runs_template_code() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let tpl = dir.path().join("tpl");
+        fs::create_dir_all(tpl.join(".git/hooks")).unwrap();
+        let marker = dir.path().join("MARKER");
+        let script = format!("#!/bin/sh\ntouch {}\n", marker.display());
+        let build = format!("fn main() {{ std::fs::write({marker:?}, \"x\").unwrap(); }}");
+        fs::write(tpl.join("build.rs"), build).unwrap();
+        fs::write(tpl.join("setup.sh"), &script).unwrap();
+        fs::write(tpl.join(".git/hooks/post-checkout"), &script).unwrap();
+        for f in ["setup.sh", ".git/hooks/post-checkout"] {
+            fs::set_permissions(tpl.join(f), fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let source = Source::Path(tpl);
+        run_from_in(dir.path(), "acme", None, Database::Sqlite, &source, &[]).unwrap();
+        assert!(dir.path().join("acme/build.rs").exists());
+        assert!(!dir.path().join("acme/.git").exists());
+        assert!(!marker.exists(), "a template file was executed");
+    }
+
     #[test]
     fn fill_replaces_exact_keys_only() {
         let vars = Vars {
