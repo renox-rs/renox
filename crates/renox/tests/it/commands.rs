@@ -170,6 +170,7 @@ async fn the_binarys_commands_run_through_run_args() {
     run(&["queue:prune-failed"]).await.unwrap();
     run(&["queue:prune-batches"]).await.unwrap();
     run(&["webhook:failed"]).await.unwrap();
+    run(&["sequence:list"]).await.unwrap();
     run(&["cache:prune"]).await.unwrap();
     run(&["session:prune"]).await.unwrap();
     assert!(run(&["queue:retry"]).await.is_err(), "needs an id or `all`");

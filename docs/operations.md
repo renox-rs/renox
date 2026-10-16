@@ -58,6 +58,7 @@ the queue workers and the scheduler.
 | `queue:work [--queue a,b] [--workers N] [--once]` | Runs workers in a process of their own. |
 | `queue:failed`, `queue:retry <id\|all>`, `queue:forget <id>`, `queue:flush`, `queue:prune-failed [--hours N]`, `queue:prune-batches [--hours N]` | Failed jobs and finished batches (see Failed jobs). |
 | `webhook:failed`, `webhook:retry <id>` | Failed webhook calls (see Failed webhook calls). |
+| `sequence:list` | Lists the numbering series (`Sequence`, docs/relations.md "Numbering documents") and the last number of each. |
 | `cache:prune`, `session:prune` | Deletes expired cache rows and database sessions. |
 | `schedule:list`, `schedule:run <task>`, `schedule:work` | The scheduler (`schedule:work` runs it alone, when `serve` runs with `SCHEDULER=false`). |
 | `db:check` | Compares the models registered with `App::model` with the tables the migrations build, and fails on a mismatch. |

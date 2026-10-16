@@ -64,7 +64,7 @@ plain `from_fn` middlewares with no state parameter and can be added from `Modul
   `/` (MiniJinja's default escapes `/` as `&#x2f;`, which uglified URLs in pages and mail).
 - **The app binary is its own CLI** (like artisan): `my-app migrate|migrate:rollback|migrate:fresh|
   migrate:status|db:seed|queue:work|queue:failed|queue:retry|queue:flush|queue:forget|
-  queue:prune-failed|queue:prune-batches|webhook:failed|webhook:retry|cache:prune|session:prune|
+  queue:prune-failed|queue:prune-batches|webhook:failed|webhook:retry|cache:prune|session:prune|sequence:list|
   ui:publish|schedule:list|schedule:run|schedule:work|route:list|db:shell|db:check|db:diff|
   view:check|view:data|down|up|help`, default `serve` (modules add more: `tokens:prune` and `notifications:prune` from Auth, `audit:prune` from Audit),
   plus the app's own commands (`App::command`, or `App::typed_command` for a clap `AppCommand`;

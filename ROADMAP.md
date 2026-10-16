@@ -1573,6 +1573,24 @@ Notes from M34:
   developing and keeps mail in memory in tests, instead of trying an SMTP server that isn't
   configured.
 
+### Gapless sequences (#40)
+- [x] `renox::db::Sequence` (series, scope, period): `next(&mut tx)` takes the number in the
+      caller's transaction, `peek`, `last`, `set_start`, `list`, `next_allowing_gaps(&db)`;
+      `Period` (`None`, `Year`, `Month`), `Sequence::format` and `NumberFormat` (named tokens)
+- [x] Framework migration `00010101000420_create_sequences_table` (SQLite and PostgreSQL),
+      `sequence:list`
+- [x] Docs (relations.md "Numbering documents"), CHEATSHEET, llms.txt; the bike shop's counter
+      sales get gapless receipt numbers
+
+Notes from #40:
+- `next` takes `&mut Transaction` only: a number taken outside the transaction that stores the
+  document could be lost, which is the gap the API prevents. Series where gaps are fine use
+  `next_allowing_gaps`, which commits at once and does not hold the row.
+- Named tokens are substituted in one pass and never rescanned, so a value containing `{` is
+  safe; an unknown `{name}` stays as written.
+- The 50-task test uses a file database with eight connections (SQLite's `BEGIN IMMEDIATE`
+  and the busy timeout queue the writers); on PostgreSQL the row lock does it.
+
 ### Plugins (separate crates, after M18)
 - [x] `renox-2fa` (TOTP and recovery codes): #146 (#169–#173), docs/two-factor.md
 - [x] `renox-editors` (rich text, Markdown and code editors, `code_entry`): #149, #150,

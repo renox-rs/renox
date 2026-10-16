@@ -401,6 +401,12 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#40, gapless sequences**: `db/sequence.rs` (`Sequence`, `Period`, `NumberFormat`), the
+  `sequences` table (`00010101000420_create_sequences_table`, an every-app framework migration:
+  nine now) and `sequence:list`. `next` is one `INSERT … ON CONFLICT DO UPDATE … RETURNING` on
+  the caller's transaction (row lock on PostgreSQL, `BEGIN IMMEDIATE` on SQLite), so rollbacks
+  give numbers back. The bike shop's counter sales number their receipts with it. Tests:
+  tests/it/sequences.rs.
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

@@ -16,19 +16,21 @@
 //! The sale being rung up lives in the session, one per store
 //! (`counter:{store}`), like a cart. Paying runs the same rules as online:
 //! the units are reserved in a transaction (`ledger::reserve`, so the last
-//! helmet can't be sold twice, even with the web shop), the payment is
+//! helmet can't be sold twice, even with the web shop; the receipt number
+//! comes from a gapless `Sequence` in the same transaction), the payment is
 //! recorded through the payments contract (`payments::record_counter`, cash
 //! or card), its `PaymentSucceeded` turns the reservation into a sale, and
 //! the goods are handed over at once (`completed`). A bike sold to a known
 //! customer is registered to them. Every route needs `orders.sell` in the
 //! active store.
 
+use renox::db::{Period, Sequence};
 use renox::prelude::*;
 use renox::select::{OptionQuery, SelectOption};
 use serde::{Deserialize, Serialize};
 
 use super::cart::{Cart, CartView, MAX_QUANTITY, available_at};
-use super::checkout::{self, number, totals};
+use super::checkout::{self, totals};
 use super::ledger;
 use super::model::{Channel, Fulfilment, Order, OrderItem, OrderStatus, PaymentMethod};
 use super::payments::{self, Charge, Payable};
@@ -376,12 +378,20 @@ pub async fn pay(
         .collect();
     let levels =
         ledger::levels_at(db, store_id, &lines.iter().map(|l| l.0).collect::<Vec<_>>()).await?;
-    let number = number(&state, store_id).await?;
     let now = renox::db::now();
+    let today = now.date_naive();
 
     let mut tx = db.begin().await?;
+    // The receipt number is taken in the sale's own transaction, so a sale
+    // that fails (the last helmet sold elsewhere) gives its number back:
+    // each store's receipts run 1, 2, 3 each year with no gap.
+    let receipt = Sequence::new("receipt")
+        .scope(store_id)
+        .period(Period::of_year(today))
+        .next(&mut tx)
+        .await?;
     let mut order = Order {
-        number,
+        number: Sequence::format(&format!("R{store_id}-{{yyyy}}-{{000000}}"), receipt, today),
         customer_id: sale.customer_id,
         operating_store_id: store_id,
         channel: Channel::Counter,
