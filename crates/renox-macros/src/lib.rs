@@ -40,7 +40,9 @@ use syn::{DeriveInput, parse_macro_input};
 /// - `soft_deletes` needs a `deleted_at: Option<DateTime>` field.
 /// - `search = "title, body"` names the text columns full-text search looks
 ///   in (`Model::search`, `renox::db::search`), most important first;
-///   `search_language = "simple"` changes the language from `english`.
+///   `search_language = "simple"` changes the language from `english`;
+///   `normalize = "arabic"` indexes and searches a normalised copy of the text
+///   (Arabic marks and spelling variants ignored).
 /// - Every column also gets a typed constant named after the field in
 ///   SHOUTY_SNAKE_CASE (`Product::PRICE: Col<Product, i64>`), for
 ///   `Query::where_` and friends; `skip` fields get none. `no_typed_columns`

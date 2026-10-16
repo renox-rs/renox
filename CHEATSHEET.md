@@ -1019,6 +1019,14 @@ keeps the index current on every write (bulk updates and raw SQL too).
 `#[model(search_language = "simple")]` turns English stemming off (PostgreSQL also takes
 `spanish`, `german`, …). A data grid over a searchable model searches through the index.
 
+Arabic text: `#[model(search = "name, notes", normalize = "arabic")]` indexes and searches a
+normalised copy (marks, tatweel, alef/ya/ta marbuta variants, Persian ک/ی and Arabic-Indic digits
+ignored), on both databases; `renox::db::search::arabic_sql(dialect, "expr")` is the same in SQL.
+`renox::text` has the Rust side: `normalize_arabic("أَحْمَد")` is `"احمد"`, `transliterate("محمد")`
+is `"mhmd"`, and `match_key` is equal for "محمد", "Mohammed" and "Muhammad". For "possible
+duplicate" checks keep a `name_key` column filled in the `saving` hook with
+`self.name_key = renox::text::match_key(&self.name)` and query `Party::NAME_KEY.eq(match_key(&input))`.
+
 ## Model hooks, partial saves, encrypted values
 
 Run your own code just before or after a model is saved or deleted (hooks), save only some

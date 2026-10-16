@@ -401,6 +401,12 @@
   editor is CodeMirror 6 with completions from Renox's API (extracted with `syn`) and
   `view:data`, challenges are compiled and tested in a container sandbox, videos are recorded
   by script and served from the server's disk. #523 is the skeleton (port 3100).
+- **#49, Arabic-aware search**: `normalize = "arabic"` on `#[model(search)]`, `renox::text`
+  (`normalize_arabic`, `transliterate`, `match_key`) and `db::search::arabic_sql`. One rule
+  table (`text.rs`) feeds the Rust function and both databases' SQL. A normalising model's
+  SQLite FTS5 table has its own content (no `content=`), so `rebuild` refills it with
+  `DELETE` + `INSERT … SELECT`. Tests in tests/it/search.rs (the PostgreSQL run needs
+  TEST_DATABASE_URL, as for the rest of that file). See ROADMAP "Decisions".
 - **Still open** (ROADMAP `- [ ]`): none of the plugins; `renox-2fa` (#146),
   `renox-oauth` (#147), `renox-admin` (#148) and `renox-billing` (#155) are done. A Laravel gap review after M25 (in the
   conversation that planned M26) ranked them: release and docs first, then 2FA and social

@@ -2031,6 +2031,18 @@ Notes:
   stay in one place, and plain `rx-shell` (document scroll) stays as it was (semver). The
   rule is written into llms.txt and the new apps' AGENTS.md so agents follow it.
 
+- **Arabic-aware search** (#49): `#[model(search = "…", normalize = "arabic")]` and
+  `renox::text` (`normalize_arabic`, `transliterate`, `match_key`), no dependency. The rules
+  live in one table in `text.rs`; `db::search::arabic_sql` builds the SQLite `replace(…)` chain
+  and the PostgreSQL `translate(…)` from it, and a test runs both against the Rust function. On
+  SQLite the FTS5 table can't read the table as external content (a `rebuild` would index the
+  text as written), so a normalising model's table keeps its own copy and the triggers delete by
+  rowid; models without `normalize` keep the old index. Arabic-Indic and Persian digits and the
+  Persian ک/ی fold too (the maintainer's note on the issue). The match key column is the app's
+  (migration + `saving` hook); no macro attribute for it. `match_key` ignores spaces so that
+  "Abd Allah" and "Abdullah" agree. Not configurable per rule (yet): a rule that must stay
+  (say ta marbuta) means a model-level option later, without changing the default.
+
 ## Not planned
 
 Kept out on purpose, so the framework stays small; some are good candidates for separate crates:
