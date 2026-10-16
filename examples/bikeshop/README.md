@@ -131,7 +131,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 
 | Feature | Page | Files |
 |---|---|---|
-| The staff shell (`sidebar` + `<rx-shell fill>`, the dashboard standard), the active store and its switcher, `permissions::set_scope` | `/staff` | [src/app/access/active_store.rs](src/app/access/active_store.rs), [resources/views/layouts/staff.html](resources/views/layouts/staff.html) |
+| The staff shell (`sidebar menu="staff"` fed by `app.nav`, + `<rx-shell fill>`, the dashboard standard), the active store and its switcher, `permissions::set_scope` | `/staff` | [src/app/access/active_store.rs](src/app/access/active_store.rs), [src/app/staff/nav.rs](src/app/staff/nav.rs), [resources/views/layouts/staff.html](resources/views/layouts/staff.html) |
 | Rental counter, walk-ins (`renox::select`), pick-up and return with damage photos, receipts (`Morph`) | `/staff/rentals`, `/staff/rentals/{rental}` | [src/app/rentals/counter.rs](src/app/rentals/counter.rs) |
 | Fleet board: `renox::grid` with `poll`, `cards_on_mobile`, badges, related columns | `/staff/fleet` | [src/app/rentals/fleet.rs](src/app/rentals/fleet.rs) |
 | Workshop board: the `kanban` block (drag or keyboard), the bench, parts from stock | `/staff/workshop`, `/staff/workshop/{order}` | [src/app/workshop/board.rs](src/app/workshop/board.rs), [src/app/workshop/order.rs](src/app/workshop/order.rs) |

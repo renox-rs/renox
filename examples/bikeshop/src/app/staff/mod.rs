@@ -23,6 +23,7 @@ pub mod catalog_tools;
 pub mod explain;
 pub mod factories;
 pub mod model;
+pub mod nav;
 pub mod roles;
 pub mod stores;
 pub mod team;
@@ -61,6 +62,8 @@ impl Module for Staff {
             .model::<crate::app::staff::model::Staff>()
             .model::<crate::app::staff::model::StaffHelpRequest>()
             .model::<crate::app::staff::model::StaffHelpHour>();
+        // The staff sidebar's links (nav.rs).
+        nav::register(app);
         // Two-factor login is required for staff (two_factor.rs).
         app.listen(two_factor::on_logged_in)
             .listen(two_factor::on_enabled)

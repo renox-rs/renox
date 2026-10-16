@@ -825,18 +825,25 @@ impl Views {
             };
             let source = template.source();
             used.scan(source);
-            // Every quoted name of a template that exists is a layout, an
-            // include or an import (or text that happens to match).
-            let mut rest = source;
-            while let Some(at) = rest.find(['"', '\'']) {
-                let quote = rest.as_bytes()[at] as char;
-                let after = &rest[at + 1..];
-                let Some(len) = after.find(quote) else { break };
-                let candidate = &after[..len];
-                if candidate.ends_with(".html") && !candidate.contains('\n') {
-                    queue.push(candidate.to_owned());
+            // Every quoted `….html` name is a layout, an include or an
+            // import (or text that happens to match). Found from the end of
+            // the name, so an apostrophe in a comment cannot pair the quotes
+            // wrongly.
+            let mut from = 0;
+            while let Some(at) = source[from..].find(".html") {
+                let end = from + at + ".html".len();
+                from = end;
+                let Some(quote) = source[end..]
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '"' | '\''))
+                else {
+                    continue;
+                };
+                let line_start = source[..end].rfind('\n').map_or(0, |i| i + 1);
+                if let Some(open) = source[line_start..end].rfind(quote) {
+                    queue.push(source[line_start + open + 1..end].to_owned());
                 }
-                rest = &after[len + 1..];
             }
         }
         used

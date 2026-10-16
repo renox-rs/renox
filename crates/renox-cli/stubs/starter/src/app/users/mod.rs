@@ -4,6 +4,7 @@
 use std::collections::BTreeMap;
 
 use renox::grid::{Column, Grid, GridRequest};
+use renox::nav::NavLink;
 use renox::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -14,6 +15,18 @@ pub struct Users;
 impl Module for Users {
     fn name(&self) -> &'static str {
         "users"
+    }
+
+    /// The sidebar link, for those who may manage users.
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "app",
+            NavLink::route("users.index", "nav.users")
+                .icon("users")
+                .group("nav.admin")
+                .order(10)
+                .permission(USERS),
+        );
     }
 
     fn routes(&self) -> Routes {

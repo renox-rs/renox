@@ -15,35 +15,10 @@
 <rx-let name="about" :value="about_page(request.route, request.path) if explain_panels else none"/>
 <body class="rx-page{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
   <rx-shell fill>
-  <rx-sidebar :brand="t('shop.name')" :href="route('staff.dashboard')">
-    {#- --- Staff navigation (one line per area; append yours, behind the
-        permission it needs: rx-if="can('…')") --- -#}
-    <rx-sidebar-link route="staff.dashboard" :label="t('nav.dashboard')" :active="route_is('staff.dashboard')" icon="layout-dashboard"/>
-    {#- Each group's heading shows when the person may open one of its pages. -#}
-    <rx-sidebar-section rx-if="can('orders.view') or can('orders.sell') or can('rentals.view') or can('fleet.view') or can('rentals.verify_id')" :title="t('staff.nav.sections.front')"/>
-    <rx-sidebar-link rx-if="can('orders.view')" route="sales.orders.index" :label="t('sales.staff.title')" :active="route_is('sales.orders.*')" icon="receipt"/>
-    <rx-sidebar-link rx-if="can('orders.sell')" route="sales.counter" :label="t('sales.counter.title')" :active="route_is('sales.counter*')" icon="scan-barcode"/>
-    <rx-sidebar-link rx-if="can('rentals.view')" route="rentals.counter" :label="t('rentals.nav.counter')" :active="route_is('rentals.counter', 'rentals.desk', 'rentals.receipt', 'rentals.walkin')" icon="key-round"/>
-    <rx-sidebar-link rx-if="can('fleet.view')" route="rentals.fleet" :label="t('rentals.nav.fleet')" :active="route_is('rentals.fleet', 'rentals.fleet.show')" icon="bike"/>
-    <rx-sidebar-link rx-if="can('rentals.verify_id')" route="rentals.identities" :label="t('rentals.nav.identities')" :active="route_is('rentals.identities')" icon="id-card"/>
-    <rx-sidebar-section rx-if="can('workorders.view') or can('stock.view') or can('purchasing.manage')" :title="t('staff.nav.sections.work')"/>
-    <rx-sidebar-link rx-if="can('workorders.view')" route="workshop.board" :label="t('workshop.nav.board')" :active="route_is('workshop.board', 'workshop.order', 'workshop.walkin')" icon="wrench"/>
-    <rx-sidebar-link rx-if="can('stock.view')" route="stock.index" :label="t('stock.index.title')" :active="route_is('stock.index', 'stock.ledger', 'stock.take', 'stock.fleet')" icon="boxes"/>
-    <rx-sidebar-link rx-if="can('stock.view')" route="stock.consignments" :label="t('stock.consignments.title')" :active="route_is('stock.consignments*')" icon="truck"/>
-    <rx-sidebar-link rx-if="can('purchasing.manage')" route="stock.purchasing" :label="t('stock.purchasing.title')" :active="route_is('stock.purchasing*', 'stock.suppliers*')" icon="clipboard-list"/>
-    <rx-sidebar-section rx-if="can('staff.help') or can('fleet.view') or can('intercompany.view')" :title="t('staff.nav.sections.stores')"/>
-    <rx-sidebar-link rx-if="can('staff.help')" route="multistore.help" :label="t('multistore.help.title')" :active="route_is('multistore.help*')" icon="handshake"/>
-    <rx-sidebar-link rx-if="can('fleet.view')" route="multistore.placements" :label="t('multistore.placements.title')" :active="route_is('multistore.placements*')" icon="map-pin"/>
-    <rx-sidebar-link rx-if="can('intercompany.view')" route="multistore.books" :label="t('multistore.books.title')" :active="route_is('multistore.books', 'multistore.settlements*', 'multistore.fees*')" icon="book-open"/>
-    <rx-sidebar-section rx-if="can('staff.manage') or can('stores.manage') or can('roles.manage') or can('audit.view') or can('catalog.manage') or can('plans.manage') or can('purchasing.manage') or can('fleet.manage') or can('reports.view')" :title="t('staff.nav.sections.manage')"/>
-    <rx-sidebar-link rx-if="can('reports.view')" route="reports.dashboard" :label="t('reports.nav')" :active="route_is('reports.*')" icon="chart-column"/>
-    <rx-sidebar-link rx-if="can('staff.manage')" route="staff.team.index" :label="t('staff.nav.team')" :active="route_is('staff.team.*') or route_is('staff.invitations.*')" icon="users"/>
-    <rx-sidebar-link rx-if="can('stores.manage')" route="staff.stores.index" :label="t('staff.nav.stores')" :active="route_is('staff.stores.*')" icon="store"/>
-    <rx-sidebar-link rx-if="can('roles.manage')" route="staff.roles.index" :label="t('staff.nav.roles')" :active="route_is('staff.roles.*')" icon="shield-check"/>
-    <rx-sidebar-link rx-if="can('audit.view')" route="staff.audit.index" :label="t('staff.nav.audit')" :active="route_is('staff.audit.*')" icon="history"/>
-    <rx-sidebar-link rx-if="can('catalog.manage') or can('plans.manage') or can('purchasing.manage') or can('stores.manage')" route="admin.dashboard" :label="t('staff.nav.admin')" icon="settings"/>
-    <rx-sidebar-link rx-if="can('fleet.manage')" route="api.kiosks" :label="t('api.kiosks.nav')" :active="route_is('api.kiosks')" icon="tablet-smartphone"/>
-    {#- --- end of staff navigation --- -#}
+  {#- The staff links come from `src/app/staff/nav.rs` (`app.nav("staff", …)`):
+      grouped, ordered, and only those the person may open, with the current
+      page marked. The links below follow the menu. -#}
+  <rx-sidebar menu="staff" :brand="t('shop.name')" :href="route('staff.dashboard')">
     <rx-sidebar-section :title="t('nav.shop')"/>
     <rx-sidebar-link route="home" :label="t('nav.storefront')" icon="shopping-bag"/>
     <rx-sidebar-link route="about.pages" :label="t('about.index_link')" :active="route_is('about.*')" icon="info"/>

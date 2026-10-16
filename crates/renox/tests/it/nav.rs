@@ -160,3 +160,30 @@ async fn the_same_key_in_two_menus_is_fine() {
         .nav("portal", NavLink::route("home", "Home"));
     assert!(app.boot().await.is_ok());
 }
+
+#[renox::test]
+async fn a_layout_reached_after_an_apostrophe_in_a_comment_still_names_its_menu() {
+    let dir = tempfile::tempdir().unwrap();
+    let write = |name: &str, body: &str| std::fs::write(dir.path().join(name), body).unwrap();
+    write(
+        "layout.html",
+        "<rx-sidebar menu=\"staff\"></rx-sidebar>{% block body %}{% endblock %}",
+    );
+    write(
+        "invoices.html",
+        "{# the page's note #}{% extends \"layout.html\" %}{% block body %}x{% endblock %}",
+    );
+    write("plain.html", "plain page");
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Pages)
+            .nav("staff", NavLink::url("/docs", "Docs").key("docs")),
+        move |c| c.views_path = path,
+    )
+    .await;
+    app.get("/invoices")
+        .await
+        .assert_ok()
+        .assert_see(r#"href="/docs""#);
+}

@@ -97,7 +97,7 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   adding margins (docs/ui.md "Spacing").
   Form tags: `<rx-repeater>` gives its content `row` and `prefix` (`name="{{ prefix }}[qty]"`);
   `<rx-wizard id=…>` takes its steps from `<rx-wizard-step key=… title=…>` children.
-  Navigation: `<rx-navbar>`, `<rx-sidebar>`, `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
+  Navigation: `<rx-navbar>`, `<rx-sidebar>` (`<rx-sidebar menu="app"/>` draws the links modules add with `app.nav("app", NavLink::route("users.index", "nav.users").permission("users.manage"))`, filtered per user; `<rx-nav-links menu=…>` and `nav("app")` likewise), `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
   `<rx-tabs id=…>` takes its tabs from `<rx-tab key=… label=…>` children; `<rx-shell>` is a `div.rx-shell`
   (`<rx-shell fill>` adds `rx-shell--fill`: the dashboard standard, below).
   `<rx-chart kind=…>` calls the `chart(...)` function; `<rx-grid :page=…>` has `row` and `column` in its content.

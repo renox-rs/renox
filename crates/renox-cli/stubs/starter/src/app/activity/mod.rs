@@ -4,6 +4,7 @@
 //! read-only model over that table, so the grid can page, filter and export.
 
 use renox::grid::{Column, Grid, GridRequest};
+use renox::nav::NavLink;
 use renox::prelude::*;
 use serde::Serialize;
 
@@ -14,6 +15,18 @@ pub struct Activity;
 impl Module for Activity {
     fn name(&self) -> &'static str {
         "activity"
+    }
+
+    /// The sidebar link, for those who may read the activity log.
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "app",
+            NavLink::route("activity.index", "nav.activity")
+                .icon("history")
+                .group("nav.admin")
+                .order(11)
+                .permission(ACTIVITY),
+        );
     }
 
     fn routes(&self) -> Routes {

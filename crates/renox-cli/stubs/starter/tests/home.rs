@@ -128,13 +128,24 @@ async fn only_admins_manage_users_and_read_the_activity_log() {
     app.acting_as(&member);
     app.get("/users").await.assert_forbidden();
     app.get("/activity").await.assert_forbidden();
+    // The sidebar menu (modules add their links, see `app.nav`) shows only
+    // what this person may open.
+    app.get("/dashboard")
+        .await
+        .assert_ok()
+        .assert_see(r#"class="rx-sidebar__link" href="/dashboard" aria-current="page""#)
+        .assert_see(r#"class="rx-sidebar__link" href="/account""#)
+        .assert_dont_see(r#"class="rx-sidebar__link" href="/users""#)
+        .assert_dont_see(r#"class="rx-sidebar__link" href="/activity""#);
 
     let admin = person(&app, "admin@example.com", ADMIN).await;
     app.acting_as(&admin);
     app.get("/users")
         .await
         .assert_ok()
-        .assert_see("member@example.com");
+        .assert_see("member@example.com")
+        .assert_see(r#"class="rx-sidebar__link" href="/users" aria-current="page""#)
+        .assert_see(r#"class="rx-sidebar__link" href="/activity""#);
     app.htmx()
         .put(
             &format!("/users/{}/roles", member.id),
