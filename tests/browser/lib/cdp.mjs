@@ -386,8 +386,8 @@ export class Page {
     }
   }
 
-  /** Presses a key: `Enter`, `Escape`, `ArrowDown`, `Tab`, `k`… */
-  async press(key, { shift = false } = {}) {
+  /** Presses a key: `Enter`, `Escape`, `ArrowDown`, `Tab`, `k`… (with `shift` or `ctrl` held when asked). */
+  async press(key, { shift = false, ctrl = false } = {}) {
     const named = {
       Enter: { code: 'Enter', keyCode: 13, text: '\r' },
       Escape: { code: 'Escape', keyCode: 27 },
@@ -405,7 +405,7 @@ export class Page {
       ' ': { code: 'Space', keyCode: 32, text: ' ' },
       ',': { code: 'Comma', keyCode: 188, text: ',' },
     }[key] || { code: `Key${key.toUpperCase()}`, keyCode: key.toUpperCase().charCodeAt(0), text: key };
-    const modifiers = shift ? 8 : 0;
+    const modifiers = (shift ? 8 : 0) | (ctrl ? 2 : 0);
     const base = { key, code: named.code, windowsVirtualKeyCode: named.keyCode, modifiers };
     // #327's family for keys: now and then the page never sees the key
     // (CI, a tab that is not in front). So check a `keydown` arrived; if not,

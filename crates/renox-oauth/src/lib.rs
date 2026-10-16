@@ -12,6 +12,9 @@
 //! # ;
 //! ```
 //!
+//! For company sign-in, [`Microsoft`] (one tenant), [`Google::hosted_domain`] and
+//! [`OAuth::allow_domains`] accept only the organisation's own accounts.
+//!
 //! The authorization code flow with PKCE (S256) and a single-use `state`
 //! bound to the session. A provider account logs in the user it is linked
 //! to; at a first login, it is linked to the account with the same
@@ -32,14 +35,18 @@ pub mod events;
 pub mod github;
 pub mod google;
 mod handlers;
+pub mod microsoft;
 mod model;
 pub mod provider;
 
-pub use events::{AccountLinked, AccountUnlinked, LoggedInWith};
+pub use events::{AccountLinked, AccountUnlinked, LoggedInWith, OAuthRefused};
 pub use github::GitHub;
 pub use google::Google;
+pub use microsoft::Microsoft;
 pub use model::OAuthAccount;
-pub use provider::{BoxFuture, Credentials, Profile, Provider, Token, TokenRequest, exchange_code};
+pub use provider::{
+    BoxFuture, Credentials, Profile, Provider, Refused, Token, TokenRequest, exchange_code,
+};
 
 const MIGRATIONS: &[Migration] = &[Migration::new(
     "00010101000800_create_oauth_accounts_table",
@@ -72,6 +79,7 @@ const VIEWS: &[(&str, &str)] = &[
 #[derive(Clone, Default)]
 pub struct OAuth {
     providers: Vec<Arc<dyn Provider>>,
+    domains: Vec<String>,
 }
 
 impl OAuth {
@@ -90,6 +98,36 @@ impl OAuth {
     /// the configuration (off while they're missing).
     pub fn github(self) -> Self {
         self.provider(GitHub::from_config())
+    }
+
+    /// Adds Microsoft work and school accounts, with `MICROSOFT_CLIENT_ID`,
+    /// `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT` from the
+    /// configuration (off while the first two are missing). For a tenant
+    /// given in code, use `.provider(Microsoft::from_config().tenant(..))`.
+    pub fn microsoft(self) -> Self {
+        self.provider(Microsoft::from_config())
+    }
+
+    /// Accepts only accounts whose **verified** email address is at one of
+    /// these domains (`example.com`; the domain itself, not its
+    /// subdomains), whatever the provider. Any other account, and any
+    /// without a verified address, is refused with a message on the login
+    /// page and an [`OAuthRefused`] event. Applies to logging in, linking
+    /// and confirming. Called again, it adds domains.
+    ///
+    /// ```
+    /// use renox_oauth::OAuth;
+    ///
+    /// let _ = OAuth::new().google().github().allow_domains(&["example.com"]);
+    /// ```
+    pub fn allow_domains(mut self, domains: &[&str]) -> Self {
+        for domain in domains {
+            let domain = domain.trim().trim_start_matches('@').to_ascii_lowercase();
+            if !domain.is_empty() && !self.domains.contains(&domain) {
+                self.domains.push(domain);
+            }
+        }
+        self
     }
 
     /// Adds a provider: [`Google::new`] with credentials given in code, or
@@ -112,21 +150,46 @@ impl fmt::Debug for OAuth {
 
 /// The providers, shared by the routes, the account section and the views.
 #[derive(Clone)]
-pub(crate) struct Providers(Arc<Vec<Arc<dyn Provider>>>);
+pub(crate) struct Providers {
+    list: Arc<Vec<Arc<dyn Provider>>>,
+    domains: Arc<Vec<String>>,
+}
 
 impl Providers {
+    fn new(oauth: &OAuth) -> Self {
+        Self {
+            list: Arc::new(oauth.providers.clone()),
+            domains: Arc::new(oauth.domains.clone()),
+        }
+    }
+
+    /// Whether `email` is at one of the allowed domains (any, when none are set).
+    pub(crate) fn allows(&self, email: Option<&str>) -> bool {
+        self.domains.is_empty()
+            || email
+                .and_then(|email| email.rsplit_once('@'))
+                .is_some_and(|(_, domain)| {
+                    self.domains.iter().any(|d| d.eq_ignore_ascii_case(domain))
+                })
+    }
+
+    /// The allowed domains, for the message.
+    pub(crate) fn domains(&self) -> &[String] {
+        &self.domains
+    }
+
     /// The provider named `name`, when its credentials are set.
     pub(crate) fn enabled(&self, state: &AppState, name: &str) -> Option<Arc<dyn Provider>> {
-        self.0
+        self.list
             .iter()
             .find(|p| p.name() == name)
             .filter(|p| p.credentials().resolve(&state.config).is_some())
-            .cloned()
+            .map(|p| p.with_config(&state.config).unwrap_or_else(|| p.clone()))
     }
 
     /// Every provider whose credentials are set, in order.
     pub(crate) fn all_enabled(&self, state: &AppState) -> Vec<Arc<dyn Provider>> {
-        self.0
+        self.list
             .iter()
             .filter(|p| p.credentials().resolve(&state.config).is_some())
             .cloned()
@@ -175,11 +238,11 @@ impl Module for OAuth {
     }
 
     fn routes(&self) -> Routes {
-        handlers::routes(Providers(Arc::new(self.providers.clone())))
+        handlers::routes(Providers::new(self))
     }
 
     fn register(&self, app: &mut Registry) {
-        let providers = Providers(Arc::new(self.providers.clone()));
+        let providers = Providers::new(self);
         // The buttons on the login, register and confirm-password pages.
         let shared = providers.clone();
         app.share("oauth_providers", move |ctx: renox::view::ViewContext| {
@@ -214,6 +277,14 @@ impl Module for OAuth {
             let entry = renox::audit::Entry::new("oauth.unlinked")
                 .user(e.user_id)
                 .data(renox::serde_json::json!({ "provider": e.provider }));
+            audit(&state, entry).await
+        })
+        .listen(|e: OAuthRefused, state| async move {
+            let entry = renox::audit::Entry::new("oauth.refused").data(renox::serde_json::json!({
+                "provider": e.provider,
+                "reason": e.reason,
+                "email": e.email,
+            }));
             audit(&state, entry).await
         })
         .listen(|e: LoggedInWith, state| async move {
@@ -280,7 +351,7 @@ async fn section(state: &AppState, providers: &Providers, user: &User) -> Result
     for account in &linked {
         if !rows.iter().any(|row| row.name == account.provider) {
             let label = providers
-                .0
+                .list
                 .iter()
                 .find(|p| p.name() == account.provider)
                 .map_or_else(|| account.provider.clone(), |p| p.label().to_owned());

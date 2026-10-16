@@ -242,11 +242,13 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            in `templates` unless the app has a file of the name,
                            `renox_blocks()` (the tags, once per page via `once`),
                            `renox_blocks_t(key, **params)`: the app's `t`, else the English
-                           in texts.rs `TEXTS`, keys `blocks.*`), assets.rs (hashed files
+                           in texts.rs `TEXTS`, keys `blocks.*`), week.rs
+                           (`renox_week_grid`: the week calendar's cells, lanes and free
+                           slots, times through the `date` filter), assets.rs (hashed files
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
-                           datetime_range, gallery, history, compare_plans, month_calendar,
-                           availability, kanban + kanban_card; `rx-` classes,
+                           datetime_range, gallery, history, compare_plans, status_stepper,
+                           month_calendar, availability, week_calendar, kanban + kanban_card; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
                            assets/blocks.css, assets/blocks.js (the loader: imports
                            assets/parts/<block>.js only when a page has that block; Web

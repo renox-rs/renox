@@ -113,6 +113,7 @@ pub struct App {
     detect_locale: bool,
     disks: Vec<(String, DiskSettings)>,
     mailers: Vec<(String, MailerSettings)>,
+    mailer_limits: HashMap<String, crate::queue::Limit>,
     xsrf_cookie: bool,
 }
 
@@ -146,6 +147,7 @@ impl App {
             detect_locale: false,
             disks: Vec::new(),
             mailers: Vec::new(),
+            mailer_limits: HashMap::new(),
             xsrf_cookie: false,
         }
     }
@@ -482,6 +484,46 @@ impl App {
         self
     }
 
+    /// Caps how fast the app's own queued deliveries to the channel `name`
+    /// go out; see [`Registry::channel_rate_limit`]. It is a separate call
+    /// (not chained on `channel`), so it works in any order.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # use std::time::Duration;
+    /// # let _ =
+    /// App::new()
+    ///     .channel("sms", |_to, _message, _state| async { Ok(()) })
+    ///     .channel_rate_limit("sms", 20, Duration::from_secs(1))
+    /// # ;
+    /// ```
+    pub fn channel_rate_limit(mut self, name: &str, max: u32, per: std::time::Duration) -> Self {
+        self.registry.channel_rate_limit(name, max, per);
+        self
+    }
+
+    /// Caps how fast queued mail (`queue_mail`, `queue_mail_via`, queued
+    /// notifications) goes out through the mailer `name`: at most `max` per
+    /// `per`, shared by every worker. `"default"` is the app's default
+    /// mailer. A mail over the limit waits for the next window without
+    /// using up an attempt. An unknown mailer is an error when the app boots.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::mail::MailConfig;
+    /// # use std::time::Duration;
+    /// # let _ =
+    /// App::new()
+    ///     .mailer("bulk", |config| MailConfig::from_env(config, "BULK"))
+    ///     .mailer_rate_limit("bulk", 100, Duration::from_secs(60))
+    /// # ;
+    /// ```
+    pub fn mailer_rate_limit(mut self, name: &str, max: u32, per: std::time::Duration) -> Self {
+        self.mailer_limits
+            .insert(name.to_owned(), crate::queue::Limit::new(max, per));
+        self
+    }
+
     /// Also sends the CSRF token as an `XSRF-TOKEN` cookie that scripts can
     /// read, and accepts it back in an `X-XSRF-TOKEN` header (Laravel's
     /// behaviour), for a JavaScript client on the same site: axios sends
@@ -620,6 +662,7 @@ impl App {
             components,
             shares,
             channels,
+            channel_limits,
             reporters,
             permissions,
             second_factor,
@@ -839,6 +882,22 @@ impl App {
                 return Err(anyhow!("two mailers are named `{name}` (App::mailer)").into());
             }
         }
+        for name in self.mailer_limits.keys() {
+            if name != "default" && !mailers.contains_key(name) {
+                return Err(anyhow!(
+                    "App::mailer_rate_limit names `{name}`, but no mailer has that name: add it with App::mailer"
+                )
+                .into());
+            }
+        }
+        for name in channel_limits.keys() {
+            if !channels.contains_key(name) {
+                return Err(anyhow!(
+                    "App::channel_rate_limit names `{name}`, but no channel has that name: add it with App::channel"
+                )
+                .into());
+            }
+        }
         let mut failover = Vec::new();
         for name in &config.mail.failover {
             let mailer = mailers.get(name).ok_or_else(|| {
@@ -853,6 +912,8 @@ impl App {
             live_components: Arc::new(live_components),
             mailer,
             mailers: Arc::new(mailers),
+            channel_limits: Arc::new(channel_limits),
+            mailer_limits: Arc::new(self.mailer_limits),
             queue: Queue::new(db.clone(), key.clone()),
             cache: crate::cache::Cache::new(config.cache_store, db.clone())?,
             storage,

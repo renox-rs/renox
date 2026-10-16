@@ -119,6 +119,9 @@ What's going on:
 - `state.queue_mail_via("newsletter", …)` puts the mail on the queue instead, to be sent by that
   mailer in the background.
 
+A provider that allows only so many mails a minute? See "Capping how fast queued sends go out"
+under [Notifications](#notifications): `App::mailer_rate_limit("newsletter", 100, 60 s)`.
+
 **Failover** means "if the first one fails, try the next". Set `MAIL_FAILOVER=backup` to use
 it. The value is a list of names from `App::mailer`, separated by commas, tried in order.
 
@@ -458,6 +461,34 @@ What's going on, step by step.
   then `failed_jobs`). It takes a `&User` or a `&Recipient`.
 - A custom channel that you never registered with `App::channel` makes `notify_later` fail at
   once.
+
+**Capping how fast queued sends go out.** A provider with a throughput cap (an SMS gateway, a
+mail relay) fails when a burst hits it. Cap the app's own queued deliveries:
+
+```rust
+use renox::prelude::*;
+use std::time::Duration;
+
+fn app() -> App {
+    App::new()
+        .channel("sms", |_to, _message, _state| async { Ok(()) })
+        .channel_rate_limit("sms", 20, Duration::from_secs(1))
+}
+```
+
+- `App::channel_rate_limit(name, max, per)` limits the queued sends of one channel (the jobs
+  `notify_later` makes). `App::mailer_rate_limit(name, max, per)` does the same for queued mail
+  (`queue_mail`, `queue_mail_via`, and the mail `notify_later` queues) through a named mailer;
+  use the name `"default"` for the app's default mailer.
+- It is a fixed window, like `Middleware::rate_limited` (see
+  [queue.md, Middleware](queue.md#middleware)), and it is that middleware underneath, with the
+  keys `channel:<name>` and `mailer:<name>`. The count lives in the cache, so with
+  `CACHE_STORE=database` every worker shares it. `per` is at least one second.
+- A send over the limit waits for the next window. It doesn't use up an attempt, so it never
+  lands in `failed_jobs` because of the limit.
+- Only queued sends are limited; `notify` and `mailer.send` run at once. A name that has no
+  channel or mailer stops the app at boot. The limit is stored with each job when it is
+  queued, so changing it affects what you queue afterwards.
 
 **Who it goes to (a `Recipient`):**
 
