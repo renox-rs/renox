@@ -4113,9 +4113,21 @@
               "name": "false"
             }
           ]
+        },
+        {
+          "description": "Adds a ticked \"check the file first\" box, sent as `dry_run` (see `Import::dry_run_if`).",
+          "name": "check",
+          "values": [
+            {
+              "name": "true"
+            },
+            {
+              "name": "false"
+            }
+          ]
         }
       ],
-      "description": "A button that opens a sheet to import a CSV file; the handler answers with an `ImportReport`.",
+      "description": "A button that opens a sheet to import a CSV or Excel file; the handler answers with an `ImportReport`.",
       "name": "rx-import-action"
     },
     {

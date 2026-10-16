@@ -151,6 +151,98 @@ On PostgreSQL the name is a text search configuration (`\dF` in `psql` lists the
 other language it matches words as typed (prefixes still work). PostgreSQL's `english` also
 leaves out common words ("the", "a", "or") that SQLite keeps.
 
+## Arabic and other scripts
+
+SQLite's `remove_diacritics` only folds Latin accents, and PostgreSQL's configurations know
+nothing of Arabic spelling, so by default "محمد" does not find "مُحَمَّد" (typed with
+marks), and "احمد" does not find "أحمد". Add `normalize = "arabic"` and the index is built
+over a normalised copy of the text, and the words searched for are normalised the same way:
+
+```rust
+# use renox::prelude::*;
+#[derive(Model, serde::Serialize, Default)]
+#[model(table = "parties", search = "name, notes", normalize = "arabic")]
+pub struct Party { pub id: i64, pub name: String, pub notes: String }
+```
+
+What is ignored, in the stored text and in the search alike:
+
+| Rule | Example |
+|---|---|
+| marks: harakat, tanwin, shadda, sukun, superscript alef | "مُحَمَّد" = "محمد" |
+| tatweel | "محـــمد" = "محمد" |
+| alef forms أ إ آ ٱ | "أحمد" = "احمد" |
+| alef maqsura ى is ya ي | "مصطفى" = "مصطفي" |
+| ta marbuta ة is ha ه | "فاطمة" = "فاطمه" |
+| Persian ک and ی are ك and ي | "کتاب" = "كتاب" |
+| Arabic-Indic ٠-٩ and Persian ۰-۹ digits are 0-9 | "٠٥٥١٢٣٤" = "0551234" |
+
+Ranking, prefixes ("محم" finds "محمد"), filters, the grid's search box and `rebuild` work as
+for any search. A model without `normalize` keeps the index it had.
+
+**It is the same on both databases.** The migration writes the normalisation into the SQL:
+nested `replace(…)` calls on SQLite (in the triggers and when the index is first filled), one
+`translate(…)` on PostgreSQL (inside the generated `search_vector` column). Both are made
+from the one rule table behind `renox::text::normalize_arabic`, and a test runs the SQL and the
+Rust function against each other for every rule, so they cannot drift. Because the index
+holds normalised text, the SQLite FTS5 table keeps its own copy of the indexed columns
+(without `normalize` it reads `posts` as external content); `rebuild` refills it.
+
+Adding `normalize` to a model that already has an index? Add another `migration::<M>(…)`
+under a new name, as for any change of the index.
+
+`renox::db::search::arabic_sql(dialect, "expr")` gives the same SQL expression for your own
+queries or generated columns.
+
+### Names in Latin letters: match keys
+
+Search finds Arabic text however it is spelled. It does not find "Mohammed" when the name is
+stored as "محمد". For that, and for "possible duplicate" checks, `renox::text` has a key that
+is equal for the spellings of a name:
+
+```rust
+use renox::text::{match_key, normalize_arabic, transliterate};
+
+assert_eq!(normalize_arabic("أَحْمَد"), "احمد");
+assert_eq!(transliterate("محمد"), "mhmd"); // a consonant skeleton, not for display
+for spelling in ["محمد", "Mohammed", "Muhammad", "Mohamed"] {
+    assert_eq!(match_key(spelling), "mhmd");
+}
+```
+
+`match_key` transliterates, drops vowels, unites digraphs (sh, kh, th, dh, gh, ch) and
+look-alike consonants (k/q/g, b/p, f/v), makes doubled letters single, drops a final h
+(Fatima, Fatimah) and ignores spaces and punctuation ("Abd al-Rahman" and "Abdulrahman"
+agree). It finds *candidates*: different names can share a key, so use it to show "possible
+duplicates", not to decide.
+
+Renox does not add the column. Add a `name_key TEXT` column (indexed) with a migration of
+your own and fill it in the model's `saving` hook:
+
+```rust
+# use renox::prelude::*;
+#[derive(Model, serde::Serialize, Default)]
+#[model(table = "parties", hooks)]
+pub struct Party { pub id: i64, pub name: String, pub name_key: String }
+
+impl renox::db::ModelHooks for Party {
+    fn saving(&mut self, _creating: bool) -> Result {
+        self.name_key = renox::text::match_key(&self.name);
+        Ok(())
+    }
+}
+
+# async fn demo(db: Db, input: String) -> Result {
+let candidates = Party::query()
+    .where_(Party::NAME_KEY.eq(renox::text::match_key(&input)))
+    .get(&db)
+    .await?;
+# let _ = candidates; Ok(()) }
+```
+
+Out of scope: Arabic stemming (root extraction), language detection, and a transliteration
+good enough to show to people.
+
 ## Kept in sync on every write
 
 The database keeps the index current, not the model: `save`, `delete`, `force_delete`, and
@@ -212,6 +304,8 @@ let grid = Grid::new("posts")
 - On PostgreSQL the table gets a `search_vector` column. Models list their columns, so it
   isn't read; a model with `SELECT_ALL` (the built-in `User`) would see it.
 - A search uses at most 16 words of up to 64 characters each.
+- With `normalize = "arabic"` on SQLite, the FTS5 table stores its own copy of the searched
+  columns (normalised), so the index is larger than without it.
 - Laravel Scout's other engines (Algolia, Meilisearch, Typesense) aren't built in: for those,
   call their HTTP APIs with `renox::http` from model hooks or a job.
 

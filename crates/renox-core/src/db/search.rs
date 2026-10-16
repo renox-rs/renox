@@ -41,6 +41,14 @@
 //! SQLite stems only English, so any other name there matches as typed.
 //! PostgreSQL's `english` also skips stop words ("the", "a").
 //!
+//! **Arabic and other scripts:** `#[model(search = "name", normalize = "arabic")]`
+//! makes the search ignore Arabic marks (harakat, tatweel) and spelling
+//! variants (alef forms, ya and alef maqsura, ta marbuta, Persian kaf and ya)
+//! and read Arabic-Indic digits as ASCII digits; see [`Normalize`]. The
+//! index is built over a normalised copy of the text and the words searched
+//! for are normalised the same way. [`crate::text`] has the same
+//! normalisation in Rust.
+//!
 //! **Keeping the index current:** the database does it, so every way of
 //! writing rows is covered: `save`, `delete`, but also bulk
 //! `Query::update`/`delete`, `insert_many` and raw SQL, which skip model
@@ -56,13 +64,106 @@
 //! - PostgreSQL: a column `search_vector` (`tsvector`, generated from the
 //!   columns) and a GIN index `posts_search_index` on it.
 //!
+//! With `normalize`, the SQLite FTS5 table keeps its own copy of the
+//! normalised text instead of reading `posts`, and the triggers delete by
+//! rowid; on PostgreSQL the generated column wraps each column in the
+//! normalising `translate(…)`.
+//!
 //! Changed the searchable columns? Add another migration made by
 //! [`migration`] under a new name: it replaces the index (rolling it back
 //! removes the index).
 
 use super::{Dialect, Executor, Migration, Model, quote, sql};
 use crate::Result;
+use crate::text::{self, Rule};
 use anyhow::anyhow;
+
+/// How a model's text is normalised before it is indexed and searched, set
+/// with `#[model(search = "…", normalize = "arabic")]`. Without it, text is
+/// indexed as written.
+///
+/// ```
+/// # use renox::prelude::*;
+/// #[derive(Model, serde::Serialize, Default)]
+/// #[model(table = "parties", search = "name, notes", normalize = "arabic")]
+/// struct Party { id: i64, name: String, notes: String }
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Normalize {
+    /// [`normalize_arabic`](crate::text::normalize_arabic): marks removed,
+    /// alef, ya and ta marbuta forms united, Persian kaf and ya folded,
+    /// Arabic-Indic and Persian digits turned into ASCII digits.
+    Arabic,
+}
+
+/// The SQL expression that normalises the text `expr` the way
+/// [`normalize_arabic`](crate::text::normalize_arabic) does, on `dialect`:
+/// nested `replace(…)` calls on SQLite, one `translate(…)` on PostgreSQL.
+/// Built from the same rule table as the Rust function. This is what a search
+/// index with `normalize = "arabic"` uses; it is public for expressions of
+/// your own (a generated column, a raw query).
+///
+/// `expr` is SQL, written by you, never user input.
+///
+/// ```
+/// use renox::db::{Dialect, search::arabic_sql};
+///
+/// let sql = arabic_sql(Dialect::Postgres, "name");
+/// assert!(sql.starts_with("translate(name, "));
+/// ```
+pub fn arabic_sql(dialect: Dialect, expr: &str) -> String {
+    match dialect {
+        Dialect::Sqlite => {
+            let mut sql = expr.to_owned();
+            for rule in text::RULES {
+                let (from, to) = match *rule {
+                    Rule::Map(from, to) => (from, to.to_string()),
+                    Rule::Delete(from) => (from, String::new()),
+                };
+                sql = format!(
+                    "replace({sql}, {}, {})",
+                    literal(&from.to_string()),
+                    literal(&to)
+                );
+            }
+            sql
+        }
+        Dialect::Postgres => {
+            // translate() drops the characters of `from` that have no
+            // counterpart in `to`, so the mappings come first.
+            let (mut from, mut to) = (String::new(), String::new());
+            for rule in text::RULES {
+                if let Rule::Map(f, t) = *rule {
+                    from.push(f);
+                    to.push(t);
+                }
+            }
+            for rule in text::RULES {
+                if let Rule::Delete(f) = *rule {
+                    from.push(f);
+                }
+            }
+            format!("translate({expr}, {}, {})", literal(&from), literal(&to))
+        }
+    }
+}
+
+/// `expr` normalised as `M` asks (unchanged without `normalize`).
+fn indexed_expr<M: Model>(dialect: Dialect, expr: &str) -> String {
+    match M::SEARCH_NORMALIZE {
+        Some(Normalize::Arabic) => arabic_sql(dialect, expr),
+        None => expr.to_owned(),
+    }
+}
+
+/// The text of a search, normalised as `M`'s index is.
+fn normalized<M: Model>(text: &str) -> std::borrow::Cow<'_, str> {
+    match M::SEARCH_NORMALIZE {
+        Some(Normalize::Arabic) => text::normalize_arabic(text).into(),
+        None => text.into(),
+    }
+}
 
 /// At most this many words of a search are used.
 const MAX_TERMS: usize = 16;
@@ -112,7 +213,8 @@ fn fts_table<M: Model>() -> String {
 /// The value `Query::search` binds: the words (`terms`), then, after a
 /// unit separator, the text as typed (control characters left out, at most
 /// 200 characters). One value for both databases; each takes what it needs.
-pub(crate) fn bound(text: &str) -> Option<String> {
+pub(crate) fn bound<M: Model>(text: &str) -> Option<String> {
+    let text = &*normalized::<M>(text);
     let words = terms(text)?;
     let typed: String = text.chars().filter(|c| !c.is_control()).take(200).collect();
     Some(format!("{words}{SEPARATOR}{}", typed.trim()))
@@ -210,6 +312,46 @@ fn sqlite_up<M: Model>() -> String {
     let fts = quote(&fts_table::<M>());
     let columns: Vec<String> = M::SEARCHABLE.iter().map(|c| quote(c)).collect();
     let columns = columns.join(", ");
+    let tokenize = if M::SEARCH_LANGUAGE == "english" {
+        "porter unicode61 remove_diacritics 2"
+    } else {
+        "unicode61 remove_diacritics 2"
+    };
+    let trigger = |suffix: &str| quote(&format!("{}_search_{suffix}", M::TABLE));
+    if M::SEARCH_NORMALIZE.is_some() {
+        // The index holds a normalised copy of the text, so it can't read
+        // the table as external content (a rebuild would index the text as
+        // written): it keeps its own, and the triggers delete by rowid.
+        let values = |row: &str| -> String {
+            M::SEARCHABLE
+                .iter()
+                .map(|c| indexed_expr::<M>(Dialect::Sqlite, &format!("{row}.{}", quote(c))))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        return format!(
+            "{drop}\n\
+             CREATE VIRTUAL TABLE {fts} USING fts5({columns}, tokenize={tokenize});\n\
+             CREATE TRIGGER {insert} AFTER INSERT ON {table} BEGIN\n\
+             \x20   INSERT INTO {fts}(rowid, {columns}) VALUES (new.rowid, {new});\n\
+             END;\n\
+             CREATE TRIGGER {delete} AFTER DELETE ON {table} BEGIN\n\
+             \x20   DELETE FROM {fts} WHERE rowid = old.rowid;\n\
+             END;\n\
+             CREATE TRIGGER {update} AFTER UPDATE OF \"id\", {columns} ON {table} BEGIN\n\
+             \x20   DELETE FROM {fts} WHERE rowid = old.rowid;\n\
+             \x20   INSERT INTO {fts}(rowid, {columns}) VALUES (new.rowid, {new});\n\
+             END;\n\
+             {fill};",
+            drop = sqlite_down::<M>(),
+            new = values("new"),
+            fill = sqlite_fill::<M>(),
+            tokenize = literal(tokenize),
+            insert = trigger("insert"),
+            delete = trigger("delete"),
+            update = trigger("update"),
+        );
+    }
     let new: Vec<String> = M::SEARCHABLE
         .iter()
         .map(|c| format!("new.{}", quote(c)))
@@ -219,12 +361,6 @@ fn sqlite_up<M: Model>() -> String {
         .map(|c| format!("old.{}", quote(c)))
         .collect();
     let (new, old) = (new.join(", "), old.join(", "));
-    let tokenize = if M::SEARCH_LANGUAGE == "english" {
-        "porter unicode61 remove_diacritics 2"
-    } else {
-        "unicode61 remove_diacritics 2"
-    };
-    let trigger = |suffix: &str| quote(&format!("{}_search_{suffix}", M::TABLE));
     format!(
         "{drop}\n\
          CREATE VIRTUAL TABLE {fts} USING fts5({columns}, content={content}, tokenize={tokenize});\n\
@@ -248,6 +384,22 @@ fn sqlite_up<M: Model>() -> String {
     )
 }
 
+/// Fills a normalising model's own FTS5 table from the rows (it is empty).
+fn sqlite_fill<M: Model>() -> String {
+    let columns: Vec<String> = M::SEARCHABLE.iter().map(|c| quote(c)).collect();
+    let values: Vec<String> = M::SEARCHABLE
+        .iter()
+        .map(|c| indexed_expr::<M>(Dialect::Sqlite, &quote(c)))
+        .collect();
+    format!(
+        "INSERT INTO {fts}(rowid, {}) SELECT rowid, {} FROM {}",
+        columns.join(", "),
+        values.join(", "),
+        quote(M::TABLE),
+        fts = quote(&fts_table::<M>()),
+    )
+}
+
 fn sqlite_down<M: Model>() -> String {
     let trigger = |suffix: &str| quote(&format!("{}_search_{suffix}", M::TABLE));
     format!(
@@ -265,9 +417,9 @@ fn postgres_up<M: Model>() -> String {
         .enumerate()
         .map(|(i, c)| {
             format!(
-                "setweight(to_tsvector({}, coalesce({}::text, '')), '{}')",
+                "setweight(to_tsvector({}, coalesce({}, '')), '{}')",
                 config_literal::<M>(),
-                quote(c),
+                indexed_expr::<M>(Dialect::Postgres, &format!("{}::text", quote(c))),
                 weight(i).0
             )
         })
@@ -335,9 +487,13 @@ pub async fn rebuild<'c, M: Model>(db: impl Executor<'c>) -> Result {
     let db = db.into_conn();
     if db.dialect() == Dialect::Sqlite {
         let fts = quote(&fts_table::<M>());
-        sql(format!("INSERT INTO {fts}({fts}) VALUES ('rebuild')"))
-            .execute(db)
-            .await?;
+        if M::SEARCH_NORMALIZE.is_some() {
+            super::script(db, &format!("DELETE FROM {fts};\n{}", sqlite_fill::<M>())).await?;
+        } else {
+            sql(format!("INSERT INTO {fts}({fts}) VALUES ('rebuild')"))
+                .execute(db)
+                .await?;
+        }
     }
     Ok(())
 }

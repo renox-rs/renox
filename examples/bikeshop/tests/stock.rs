@@ -724,6 +724,71 @@ async fn a_price_list_saves_good_rows_reports_bad_ones_and_queues_large_files() 
         .assert_see("sku,product,size,colour,cost,price,barcode");
 }
 
+/// A price list can be checked without saving it, and arrives as Excel.
+#[renox::test]
+async fn a_price_list_can_be_checked_first_and_comes_as_excel() {
+    let w = world().await;
+    let db = w.app.db();
+    let supplier = Supplier::create(
+        db,
+        Supplier {
+            name: "Parts & Co".into(),
+            lead_days: 3,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    w.app.acting_as(&w.manager_north);
+    let url = format!("/staff/suppliers/{}/import", supplier.id);
+    let csv = format!("sku,cost\n{},26.00\nNOPE,x\n", w.helmet.sku);
+
+    // Ticked: the report of the check, and nothing saved.
+    w.app
+        .htmx()
+        .post_multipart(
+            &url,
+            &[("dry_run", "on")],
+            &[("file", "prices.csv", csv.as_bytes())],
+        )
+        .await
+        .assert_ok()
+        .assert_see("Check done, nothing was written: 1 can be imported, one row has errors.");
+    assert_eq!(
+        ProductVariant::find(db, w.helmet.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .cost,
+        w.helmet.cost
+    );
+    assert_eq!(SupplierItem::query().count(db).await.unwrap(), 0);
+
+    // A workbook is read like the CSV.
+    let mut book = rust_xlsxwriter::Workbook::new();
+    let sheet = book.add_worksheet();
+    sheet.write_string(0, 0, "sku").unwrap();
+    sheet.write_string(0, 1, "cost").unwrap();
+    sheet.write_string(1, 0, &w.helmet.sku).unwrap();
+    sheet.write_number(1, 1, 26.0).unwrap();
+    let bytes = book.save_to_buffer().unwrap();
+    let res = w
+        .app
+        .htmx()
+        .post_multipart(&url, &[], &[("file", "prices.xlsx", &bytes)])
+        .await;
+    res.assert_ok().assert_header("hx-refresh", "true");
+    assert_eq!(
+        ProductVariant::find(db, w.helmet.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .cost,
+        2_600
+    );
+    assert_eq!(SupplierItem::query().count(db).await.unwrap(), 1);
+}
+
 #[renox::test]
 async fn the_daily_reorder_check_suggests_an_order_and_a_consignment() {
     let w = world().await;

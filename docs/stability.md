@@ -178,7 +178,8 @@ field for you.
   `queue::QueueCounts`, `queue::QueueStats` (the dashboard's), `http::SentRequest`,
   `select::SelectOption` (use `SelectOption::new`), `select::OptionQuery`, `Upload` (use
   `Upload::new`), `db::Migration` (use `Migration::new(..).sqlite(..).postgres(..)`),
-  `live_component::Mounted`, `import::ImportReport`, `import::FailedRow`, `auth::permissions::Assignment`
+  `live_component::Mounted`, `import::ImportReport`, `import::FailedRow`, `import::ErrorFile`, `import::ImportChange`,
+  `import::UndoReport`, `import::TemplateColumn` (use its constructors), `auth::permissions::Assignment`
   (`auth::permissions::Scope` has private fields: make one with `Scope::of`, `of_id`, `new`
   or `global`; `Scopes` stays `All` / `Only`, so a `match` on it needs no `_` arm)
 - `auth::LoginCodeDelivery` (read its fields; Renox builds it), `auth::OneTimeCode` (a namespace of
@@ -195,7 +196,7 @@ compiles when a new variant appears.
 
 - `Error`, `Environment`, `CspMode`, `PermissionsMode`, `security::PermissionsPolicy`, `Channel`, `DbValue`, `Inspected` (a `Rule`
   matching on `Inspected` needs a `_` arm), `ToastKind`, `chart::Bucket`, `report::ReportKind`,
-  `grid::Kind`, `db::ColumnKind`, `grid::Summary`, `grid::ExportFormat`
+  `grid::Kind`, `db::ColumnKind`, `db::search::Normalize`, `grid::Summary`, `grid::ExportFormat`
 - the settings: `SessionDriver`, `LogFormat`, `CacheStore`, `mail::MailDriver`,
   `mail::MailEncryption`, `storage::DiskDriver`, and `webhook::WebhookStatus`
 
