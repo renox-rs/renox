@@ -582,7 +582,7 @@ fn app() -> App {
   (`queue_mail`, `queue_mail_via`, and the mail `notify_later` queues) through a named mailer;
   use the name `"default"` for the app's default mailer.
 - It is a fixed window, like `Middleware::rate_limited` (see
-  [queue.md, Middleware](queue.md#middleware)), and it is that middleware underneath, with the
+  [queue.md, Unique jobs, rate limits and overlapping](queue.md#unique-jobs-rate-limits-and-overlapping)), and it is that middleware underneath, with the
   keys `channel:<name>` and `mailer:<name>`. The count lives in the cache, so with
   `CACHE_STORE=database` every worker shares it. `per` is at least one second.
 - A send over the limit waits for the next window. It doesn't use up an attempt, so it never
