@@ -205,7 +205,8 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/seo.rs               seo() tags, head tags (noindex / verification / GA4 / GTM), robots.txt, Sitemap
   src/analytics.rs         analytics::event, GaClientId, ServerEvent job (`server-events` feature,
                            sent through `state.http`)
-  src/webhook.rs           Webhook trait, receive route, webhook_calls store/retry, ProcessWebhook job
+  src/webhook/             mod.rs re-exports the public paths; inbound.rs: Webhook trait, receive route,
+                           webhook_calls store/retry, ProcessWebhook job, HMAC helpers
   src/security.rs          security headers + CSP (+ nonce), csrf-exempt and webhook route sets,
                            TRUSTED_HOSTS (400 for other hosts), ETags for Routes::etag (hashed
                            here, after the view layer rendered the page)
@@ -309,7 +310,7 @@ crates/renox-billing/      the subscriptions plugin (#155, Laravel's Cashier): B
                            model.rs (Subscription, BillingCustomer, SubscriptionStatus;
                            tables `subscriptions` + `billing_customers`, prefix
                            00010101000900), sync.rs (apply a Remote: metadata or customer →
-                           owner, `synced_at` orders webhooks, events), webhook.rs (one
+                           owner, `synced_at` orders webhooks, events), webhook/inbound.rs (one
                            Webhook `billing` at /billing/webhooks/{gateway}; a route layer
                            names the gateway and the event id in headers, the event id stored
                            as `{gateway}:{id}`), handlers.rs (billing.* pages), guard.rs
