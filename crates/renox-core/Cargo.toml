@@ -29,8 +29,9 @@ s3 = ["dep:object_store"]
 postgres = ["sqlx/postgres"]
 # `uuid::Uuid` model fields (BLOB on SQLite, UUID on PostgreSQL).
 uuid = ["dep:uuid", "sqlx/uuid"]
-# Excel exports of data grids (`renox::grid`, `export=xlsx`).
-xlsx = ["dep:rust_xlsxwriter"]
+# Excel exports of data grids (`renox::grid`, `export=xlsx`) and Excel files in
+# imports (`Import::xlsx`, `renox::import::template_xlsx`).
+xlsx = ["dep:rust_xlsxwriter", "dep:calamine"]
 # `renox::upload::images::Images`: resize, orient and thumbnail uploaded JPEG, PNG and WebP images (pure Rust).
 images = ["dep:image"]
 
@@ -39,6 +40,8 @@ images = ["dep:image"]
 aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
 anyhow = "1.0.104"
 argon2 = "0.6.0"
+# Reads Excel files for `renox::import` (pure Rust, MIT; zip and quick-xml were already in the tree).
+calamine = { version = "0.36.1", default-features = false, features = ["dates"], optional = true }
 rust_xlsxwriter = { version = "0.99.1", default-features = false, features = ["chrono"], optional = true }
 # Verifies bcrypt hashes of users imported from Laravel (rehashed to Argon2id at login).
 bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }

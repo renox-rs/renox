@@ -1,5 +1,5 @@
-//! Imports: the rows of a CSV file, each checked with a form's rules, then
-//! written in one transaction (Filament's import action).
+//! Imports: the rows of a CSV or Excel file, each checked with a form's
+//! rules, then written in one transaction (Filament's import action).
 //!
 //! A row is read like a form: its columns, named by the file's first line,
 //! fill a struct that derives `Deserialize` and `Validate`, so the same
@@ -55,65 +55,204 @@
 //! The handler answers with the [`ImportReport`]: a toast when every row
 //! was imported, else a table of the rows that weren't, which the kit's
 //! `import_action` sheet shows. A file that can't be read at all (not
-//! UTF-8, no rows, too many rows) is a validation error on the form's
-//! `file` field.
+//! UTF-8, not a workbook, no rows, too many rows) is a validation error on
+//! the form's `file` field.
+//!
+//! # Excel files
+//!
+//! With the `xlsx` feature, `Import::xlsx` reads a workbook the way
+//! [`Import::csv`] reads a file: the first row of the sheet names the
+//! columns, the rows below it are the records. Every cell is read as the
+//! text a CSV file would hold (`12`, not `12.0`; dates as `2026-01-31`), so
+//! the same row struct and rules check both. [`Import::sheet`] picks a sheet
+//! by name (the first one by default), and [`Import::from_upload`] picks CSV
+//! or Excel from the file's content. `template_xlsx` makes the matching
+//! empty workbook to download. Builds without the feature keep CSV imports;
+//! an Excel file is then a validation error asking for CSV.
+//!
+//! # Checking first, and undoing
+//!
+//! [`Import::dry_run`] reads, validates and writes every row (your closure
+//! runs, in a transaction) and then rolls everything back, so the report
+//! shows what a real run would do and the database is unchanged. (A
+//! PostgreSQL sequence still advances.)
+//!
+//! [`Import::undoable`] keeps what the import wrote for a time, so
+//! [`undo`] can put it back. Write through the closure's [`ImportTx`]
+//! (`insert`, `update`, `save`) so Renox sees the rows; SQL run any other
+//! way is not undone:
+//!
+//! ```
+//! # use renox::prelude::*;
+//! use std::time::Duration;
+//! use renox::import::{Import, ImportReport};
+//! # #[derive(Model, serde::Serialize, Default)]
+//! # #[model(table = "products")]
+//! # struct Product { id: i64, sku: String, name: String, updated_at: Option<DateTime> }
+//! # #[derive(serde::Deserialize, Validate)]
+//! # struct ProductRow { #[validate(required)] sku: String, #[validate(required)] name: String }
+//! # async fn import(state: AppState, bytes: Vec<u8>) -> Result<ImportReport> {
+//! let report = Import::csv(bytes)
+//!     .undoable(Duration::from_secs(86_400))
+//!     .run(&state, |tx, row: ProductRow| {
+//!         Box::pin(async move {
+//!             let mut product = Product { sku: row.sku, name: row.name, ..Default::default() };
+//!             tx.insert(&mut product).await?; // recorded
+//!             Ok(())
+//!         })
+//!     })
+//!     .await?;
+//! if let Some(batch) = report.batch_id {
+//!     // Later, within a day: deletes the inserted rows, restores the updated ones.
+//!     renox::import::undo(&state, batch).await?;
+//! }
+//! # Ok(report) }
+//! ```
+//!
+//! An undo refuses, with a message, when a row it would touch was deleted
+//! or changed since (its `updated_at` is not the one the import left; a
+//! model without `updated_at` is undone without that check), when the
+//! window has ended, when other tables still refer to a row to delete, or
+//! when [`Undo::can_undo`] says no. It runs in one transaction. `my-app
+//! import:prune` deletes the records of finished windows.
+//!
+//! # Error files
+//!
+//! [`ImportReport::error_csv`] (and `error_xlsx` with the feature) give the
+//! file back for people to fix: the rows that failed, or the whole file,
+//! each with an added error column. The kit's report links both as
+//! downloads.
 
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Duration;
 
 use axum::response::{IntoResponse, Response};
+use base64::Engine as _;
 use futures_util::future::BoxFuture;
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
 use crate::auth::User;
-use crate::db::Transaction;
+use crate::db::sql;
 use crate::validation::extract::{Messages, Parsed, parse_pairs};
 use crate::validation::{Errors, FormContext, Validate, ValidationError, Validator};
 use crate::{AppState, Error, Lang, Result};
+
+mod undo;
+#[cfg(feature = "xlsx")]
+mod xlsx;
+
+/// The framework migration creating `import_batches` and `import_changes`
+/// (every app gets them).
+pub(crate) const MIGRATION: crate::db::Migration =
+    crate::db::framework_migration!("import", "00010101000230_create_import_batches_table");
+
+pub use undo::{ImportChange, ImportTx, Undo, UndoReport, prune, undo};
+#[cfg(feature = "xlsx")]
+pub use xlsx::TemplateColumn;
 
 /// The most rows one import reads, unless [`Import::max_rows`] says otherwise.
 pub const MAX_IMPORT_ROWS: usize = 10_000;
 
 /// What writes one row (`run`'s closure), boxed.
 type WriteRow<'a, T> =
-    Box<dyn for<'t> FnMut(&'t mut Transaction, T) -> BoxFuture<'t, Result> + Send + 'a>;
+    Box<dyn for<'t, 'x> FnMut(&'t mut ImportTx<'x>, T) -> BoxFuture<'t, Result> + Send + 'a>;
 
-/// A data row: its row number and its (column, value) pairs.
-type Record = (usize, Vec<(String, String)>);
+/// A data row: its row number and its cells.
+type Record = (usize, Vec<String>);
 
 /// The most failed rows the report's table lists; the rest are counted.
 const LISTED_FAILURES: usize = 100;
 
-/// A CSV file to import; see the [module docs](self).
+/// The largest error file the report embeds as a download link.
+const MAX_LINKED_ERROR_FILE: usize = 1 << 20;
+
+/// Where an import's rows come from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Source {
+    Csv,
+    Excel,
+}
+
+/// A CSV or Excel file to import; see the [module docs](self).
 #[must_use = "an import does nothing until it is `run`"]
 pub struct Import {
     data: Vec<u8>,
+    source: Source,
+    sheet: Option<String>,
     field: String,
     delimiter: char,
     headers: Option<Vec<String>>,
     renames: Vec<(String, String)>,
     max_rows: usize,
     all_or_nothing: bool,
+    dry_run: bool,
+    undo_window: Option<Duration>,
     lang: Option<Lang>,
     user: Option<User>,
 }
 
+/// A file read into rows: the columns' headings as the file has them, the
+/// fields they fill and the data rows.
+struct Table {
+    headings: Vec<String>,
+    fields: Vec<String>,
+    rows: Vec<Record>,
+}
+
 impl Import {
-    /// The bytes of a CSV file (an upload's, a file's): UTF-8, with or
-    /// without a byte order mark, its first line naming the columns.
-    pub fn csv(data: impl AsRef<[u8]>) -> Self {
+    fn from_source(data: &[u8], source: Source) -> Self {
         Self {
-            data: data.as_ref().to_vec(),
+            data: data.to_vec(),
+            source,
+            sheet: None,
             field: "file".into(),
             delimiter: ',',
             headers: None,
             renames: Vec::new(),
             max_rows: MAX_IMPORT_ROWS,
             all_or_nothing: false,
+            dry_run: false,
+            undo_window: None,
             lang: None,
             user: None,
         }
+    }
+
+    /// The bytes of a CSV file (an upload's, a file's): UTF-8, with or
+    /// without a byte order mark, its first line naming the columns.
+    pub fn csv(data: impl AsRef<[u8]>) -> Self {
+        Self::from_source(data.as_ref(), Source::Csv)
+    }
+
+    /// The bytes of an Excel workbook (`.xlsx`): the first row of the
+    /// sheet names the columns. Cells are read as the text a CSV file
+    /// would hold; see the [module docs](self). A file that isn't a
+    /// workbook is reported by `run` as an error on the form's field.
+    #[cfg(feature = "xlsx")]
+    pub fn xlsx(data: impl AsRef<[u8]>) -> Self {
+        Self::from_source(data.as_ref(), Source::Excel)
+    }
+
+    /// An upload, read as Excel when its content is a workbook (a zip
+    /// archive) and as CSV otherwise, whatever its name says.
+    pub fn from_upload(upload: &crate::Upload) -> Self {
+        let bytes = upload.bytes();
+        let source = if bytes.starts_with(b"PK\x03\x04") {
+            Source::Excel
+        } else {
+            Source::Csv
+        };
+        Self::from_source(bytes, source)
+    }
+
+    /// Reads the sheet called `name` of a workbook (the first by default);
+    /// a workbook without it is reported as an error on the form's field.
+    /// Ignored for CSV.
+    pub fn sheet(mut self, name: &str) -> Self {
+        self.sheet = Some(name.to_owned());
+        self
     }
 
     /// Cells are separated by `delimiter` (`;` in files from a spreadsheet
@@ -153,6 +292,33 @@ impl Import {
         self
     }
 
+    /// Checks the file completely and writes nothing. Every row is read and
+    /// validated and your closure runs for the valid ones, in the
+    /// transaction, which is then rolled back: the report lists the same
+    /// errors a real run would (a duplicate inside the file, a row the
+    /// database refuses) and [`ImportReport::imported`] counts the rows that
+    /// would be written. Nothing is recorded for undo.
+    pub fn dry_run(mut self) -> Self {
+        self.dry_run = true;
+        self
+    }
+
+    /// [`dry_run`](Import::dry_run) when `check` is true: for the kit's
+    /// "check first" box (`Import::from_upload(&file).dry_run_if(form.dry_run)`).
+    pub fn dry_run_if(mut self, check: bool) -> Self {
+        self.dry_run |= check;
+        self
+    }
+
+    /// Keeps what the import wrote for `window`, so [`undo`] can put it back
+    /// (the report's [`batch_id`](ImportReport::batch_id) names it). Needs
+    /// the closure to write through its [`ImportTx`]; see the
+    /// [module docs](self).
+    pub fn undoable(mut self, window: Duration) -> Self {
+        self.undo_window = Some(window);
+        self
+    }
+
     /// Messages (and the report) in this language; the app's
     /// `APP_LOCALE` otherwise.
     pub fn lang(mut self, lang: &Lang) -> Self {
@@ -181,6 +347,11 @@ impl Import {
     /// messages, `Error::BadRequest` its text, a unique-constraint
     /// violation says the row repeats a unique value.
     ///
+    /// The closure's first argument is an [`ImportTx`], which stands in for
+    /// the transaction (pass it where a transaction or `&db` goes) and
+    /// records writes made through it when the import is
+    /// [`undoable`](Import::undoable).
+    ///
     /// `T`'s `authorize` hook isn't asked: authorize the import's route.
     pub fn run<'a, T, F>(
         self,
@@ -189,7 +360,7 @@ impl Import {
     ) -> impl Future<Output = Result<ImportReport>> + Send + 'a
     where
         T: DeserializeOwned + Validate + Send + Sync + 'a,
-        F: for<'t> FnMut(&'t mut Transaction, T) -> BoxFuture<'t, Result> + Send + 'a,
+        F: for<'t, 'x> FnMut(&'t mut ImportTx<'x>, T) -> BoxFuture<'t, Result> + Send + 'a,
     {
         let lang = self
             .lang
@@ -199,18 +370,30 @@ impl Import {
         // futures from being `Send` (rustc #100013).
         let mut write: WriteRow<'a, T> = Box::new(write);
         async move {
-            let records = self.records(&lang)?;
+            let table = self.table(&lang)?;
             let mut report = ImportReport {
                 imported: 0,
                 failed: Vec::new(),
                 all_or_nothing: self.all_or_nothing,
+                dry_run: self.dry_run,
+                batch_id: None,
+                headings: table.headings,
+                rows: Vec::new(),
                 lang: lang.clone(),
             };
             let messages = Messages {
                 texts: lang.texts(),
             };
             let mut valid = Vec::new();
-            for (row, pairs) in records {
+            for (row, cells) in table.rows {
+                let pairs = table
+                    .fields
+                    .iter()
+                    .zip(&cells)
+                    .filter(|(field, _)| !field.is_empty())
+                    .map(|(field, cell)| (field.clone(), cell.clone()))
+                    .collect();
+                report.rows.push((row, cells));
                 match check::<T>(state, self.user.as_ref(), &messages, pairs).await? {
                     Ok(data) => valid.push((row, data)),
                     Err(errors) => report.failed.push(FailedRow { row, errors }),
@@ -219,12 +402,33 @@ impl Import {
             if self.all_or_nothing && !report.failed.is_empty() {
                 return Ok(report);
             }
+            let track = self.undo_window.is_some() && !self.dry_run;
             let mut tx = state.db.begin().await?;
+            let mut changes = Vec::new();
             let mut imported = 0;
             for (row, data) in valid {
-                let outcome = tx.savepoint(|tx| write(tx, data)).await;
+                // Our own savepoint (not `Transaction::savepoint`, whose
+                // closure can't borrow `write`); the row's closure may open
+                // its own, which are named differently.
+                sql("SAVEPOINT renox_import_row").execute(&mut tx).await?;
+                let mut row_changes = Vec::new();
+                let outcome = {
+                    let mut itx = ImportTx::new(&mut tx, &mut row_changes, track);
+                    write(&mut itx, data).await
+                };
+                if outcome.is_err() {
+                    sql("ROLLBACK TO SAVEPOINT renox_import_row")
+                        .execute(&mut tx)
+                        .await?;
+                }
+                sql("RELEASE SAVEPOINT renox_import_row")
+                    .execute(&mut tx)
+                    .await?;
                 match outcome {
-                    Ok(()) => imported += 1,
+                    Ok(()) => {
+                        imported += 1;
+                        changes.append(&mut row_changes);
+                    }
                     Err(err) => {
                         report.failed.push(FailedRow {
                             row,
@@ -237,35 +441,67 @@ impl Import {
                     }
                 }
             }
-            tx.commit().await?;
+            if self.dry_run {
+                tx.rollback().await?;
+            } else {
+                if let Some(window) = self.undo_window
+                    && !changes.is_empty()
+                {
+                    let user = self.user.as_ref().map(|u| u.id);
+                    report.batch_id = Some(undo::record(&mut tx, user, window, &changes).await?);
+                }
+                tx.commit().await?;
+            }
             report.imported = imported;
             report.failed.sort_by_key(|f| f.row);
             Ok(report)
         }
     }
 
-    /// The data rows as (row number, column/value pairs), or the file's
-    /// error on the form's field.
-    fn records(&self, lang: &Lang) -> Result<Vec<Record>> {
-        let refuse = |key: &str, count: usize| -> Error {
-            let mut errors = Errors::new();
-            errors.add(
-                self.field.clone(),
-                lang.t(key, &[("count", &count as &dyn fmt::Display)]),
-            );
-            ValidationError::new(errors).into()
-        };
-        let Ok(text) = std::str::from_utf8(&self.data) else {
-            return Err(refuse("ui.import.not_utf8", 0));
-        };
-        let mut rows = parse_csv(text.trim_start_matches('\u{feff}'), self.delimiter);
-        // A record's index from 0 is its spreadsheet row number minus one.
-        let headers = match &self.headers {
+    /// An error on the form's field.
+    fn refuse(&self, lang: &Lang, key: &str, params: &[(&str, &dyn fmt::Display)]) -> Error {
+        let mut errors = Errors::new();
+        errors.add(self.field.clone(), lang.t(key, params));
+        ValidationError::new(errors).into()
+    }
+
+    /// The file's rows: (row number minus one, cells), CSV or Excel.
+    fn raw_rows(&self, lang: &Lang) -> Result<Vec<(usize, Vec<String>)>> {
+        match self.source {
+            Source::Csv => {
+                let Ok(text) = std::str::from_utf8(&self.data) else {
+                    return Err(self.refuse(lang, "ui.import.not_utf8", &[]));
+                };
+                Ok(parse_csv(
+                    text.trim_start_matches('\u{feff}'),
+                    self.delimiter,
+                ))
+            }
+            #[cfg(feature = "xlsx")]
+            Source::Excel => {
+                xlsx::read(&self.data, self.sheet.as_deref()).map_err(|problem| match problem {
+                    xlsx::Problem::Unreadable => self.refuse(lang, "ui.import.not_xlsx", &[]),
+                    xlsx::Problem::NoSheet(name) => {
+                        self.refuse(lang, "ui.import.no_sheet", &[("sheet", &name)])
+                    }
+                })
+            }
+            #[cfg(not(feature = "xlsx"))]
+            Source::Excel => Err(self.refuse(lang, "ui.import.xlsx_unsupported", &[])),
+        }
+    }
+
+    /// The file as a table, or the file's error on the form's field.
+    fn table(&self, lang: &Lang) -> Result<Table> {
+        let mut rows = self.raw_rows(lang)?;
+        // A row's index from 0 is its spreadsheet row number minus one. A
+        // sheet may start below row 1: its first row still names the columns.
+        let headings = match &self.headers {
             Some(headers) => headers.clone(),
-            None if rows.is_empty() => return Err(refuse("ui.import.empty", 0)),
+            None if rows.is_empty() => return Err(self.refuse(lang, "ui.import.empty", &[])),
             None => rows.remove(0).1,
         };
-        let headers: Vec<String> = headers
+        let fields: Vec<String> = headings
             .iter()
             .map(|h| {
                 let key = field_name(h);
@@ -275,26 +511,26 @@ impl Import {
                     .map_or(key, |(_, to)| to.clone())
             })
             .collect();
-        let records: Vec<Record> = rows
+        let rows: Vec<Record> = rows
             .into_iter()
             .filter(|(_, cells)| cells.iter().any(|c| !c.trim().is_empty()))
-            .map(|(index, cells)| {
-                let pairs = headers
-                    .iter()
-                    .zip(cells)
-                    .filter(|(h, _)| !h.is_empty())
-                    .map(|(h, c)| (h.clone(), c))
-                    .collect();
-                (index + 1, pairs)
-            })
+            .map(|(index, cells)| (index + 1, cells))
             .collect();
-        if records.is_empty() {
-            return Err(refuse("ui.import.empty", 0));
+        if rows.is_empty() {
+            return Err(self.refuse(lang, "ui.import.empty", &[]));
         }
-        if records.len() > self.max_rows {
-            return Err(refuse("ui.import.too_many", self.max_rows));
+        if rows.len() > self.max_rows {
+            return Err(self.refuse(
+                lang,
+                "ui.import.too_many",
+                &[("count", &self.max_rows as &dyn fmt::Display)],
+            ));
         }
-        Ok(records)
+        Ok(Table {
+            headings,
+            fields,
+            rows,
+        })
     }
 }
 
@@ -369,14 +605,27 @@ fn row_errors(err: Error, lang: &Lang) -> Result<Errors> {
 /// why. As a handler's answer it is a success toast (and `HX-Refresh`)
 /// when every row was imported, else the `renox/import_report.html`
 /// fragment listing the failed rows, which keeps the kit's import sheet
-/// open.
+/// open. The fragment also links the error files (see
+/// [`ImportReport::error_csv`]). The report of a [dry run](Import::dry_run)
+/// is always the fragment, so the sheet stays open to import for real.
 #[non_exhaustive]
 pub struct ImportReport {
-    /// Rows written.
+    /// Rows written (for a dry run, rows that would be).
     pub imported: usize,
     /// Rows left out, by row number.
     pub failed: Vec<FailedRow>,
+    /// Whether the import was a [dry run](Import::dry_run): nothing was
+    /// written.
+    pub dry_run: bool,
+    /// The batch to give [`undo`], when the import was
+    /// [`undoable`](Import::undoable) and wrote rows through its
+    /// [`ImportTx`].
+    pub batch_id: Option<i64>,
     all_or_nothing: bool,
+    /// The file's headings, and its data rows (row number, cells), for the
+    /// error files.
+    headings: Vec<String>,
+    rows: Vec<Record>,
     lang: Lang,
 }
 
@@ -386,8 +635,21 @@ impl fmt::Debug for ImportReport {
             .field("imported", &self.imported)
             .field("failed", &self.failed)
             .field("all_or_nothing", &self.all_or_nothing)
+            .field("dry_run", &self.dry_run)
+            .field("batch_id", &self.batch_id)
             .finish()
     }
+}
+
+/// Which rows an error file holds; see [`ImportReport::error_csv`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ErrorFile {
+    /// Only the rows that failed (for large files).
+    FailedRows,
+    /// Every row of the file, the error column empty for the good ones, so
+    /// people fix the file in place and upload it again.
+    WholeFile,
 }
 
 impl ImportReport {
@@ -397,28 +659,114 @@ impl ImportReport {
     }
 
     /// A one-line summary: "3 rows imported.", "2 rows imported, 1 left
-    /// out.", or "Nothing was imported: 1 row has errors.".
+    /// out.", or "Nothing was imported: 1 row has errors."; for a dry run
+    /// "3 rows can be imported." and so on.
     pub fn summary(&self) -> String {
         let failed = self.failed.len() as i64;
+        let prefix = if self.dry_run {
+            "ui.import.check"
+        } else {
+            "ui.import"
+        };
+        let (done, partial, nothing) = (
+            format!("{prefix}.done"),
+            format!("{prefix}.partial"),
+            format!("{prefix}.nothing"),
+        );
         if self.failed.is_empty() {
-            self.lang
-                .choice("ui.import.done", self.imported as i64, &[])
+            self.lang.choice(&done, self.imported as i64, &[])
         } else if self.imported == 0 {
-            self.lang.choice("ui.import.nothing", failed, &[])
+            self.lang.choice(&nothing, failed, &[])
         } else {
             self.lang.choice(
-                "ui.import.partial",
+                &partial,
                 failed,
                 &[("imported", &self.imported as &dyn fmt::Display)],
             )
         }
+    }
+
+    /// The file's headings and rows with an error column added, as text:
+    /// the failed rows, or every row with the column empty for the good ones.
+    fn error_table(&self, which: ErrorFile) -> (Vec<String>, Vec<Vec<String>>) {
+        let mut headings = self.headings.clone();
+        let width = headings.len();
+        headings.push(self.lang.t("ui.import.error_column", &[]));
+        let messages: HashMap<usize, String> = self
+            .failed
+            .iter()
+            .map(|f| (f.row, f.messages().join(" ")))
+            .collect();
+        let rows = self
+            .rows
+            .iter()
+            .filter(|(row, _)| which == ErrorFile::WholeFile || messages.contains_key(row))
+            .map(|(row, cells)| {
+                let mut cells = cells.clone();
+                cells.resize(width, String::new());
+                cells.push(messages.get(row).cloned().unwrap_or_default());
+                cells
+            })
+            .collect();
+        (headings, rows)
+    }
+
+    /// The error file as CSV (UTF-8 with a byte order mark, so Excel opens
+    /// it right): the file's own columns and an added error column, for
+    /// the rows `which` says. Serve it from a route (an app keeps the report
+    /// or runs the import again), or let the kit's report link it.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::import::{ErrorFile, ImportReport};
+    /// # async fn demo(report: ImportReport) -> renox::Download {
+    /// report.error_csv("items-errors.csv", ErrorFile::WholeFile)
+    /// # }
+    /// ```
+    pub fn error_csv(&self, filename: &str, which: ErrorFile) -> crate::Download {
+        crate::Download::bytes(
+            filename.to_owned(),
+            "text/csv; charset=utf-8",
+            self.error_csv_bytes(which),
+        )
+    }
+
+    fn error_csv_bytes(&self, which: ErrorFile) -> Vec<u8> {
+        let (headings, rows) = self.error_table(which);
+        let mut out = String::from('\u{feff}');
+        for line in std::iter::once(&headings).chain(&rows) {
+            let cells: Vec<String> = line.iter().map(|c| quote_cell(c)).collect();
+            out.push_str(&cells.join(","));
+            out.push_str("\r\n");
+        }
+        out.into_bytes()
+    }
+
+    /// The error file as an Excel workbook (every cell text): like
+    /// [`error_csv`](ImportReport::error_csv).
+    #[cfg(feature = "xlsx")]
+    pub fn error_xlsx(&self, filename: &str, which: ErrorFile) -> Result<crate::Download> {
+        let (headings, rows) = self.error_table(which);
+        Ok(xlsx::download(filename, xlsx::table(&headings, &rows)?))
+    }
+
+    /// A `data:` link to an error file for the report's fragment; none when
+    /// it is too large to embed.
+    fn error_link(&self, which: ErrorFile) -> Option<String> {
+        let bytes = self.error_csv_bytes(which);
+        (bytes.len() <= MAX_LINKED_ERROR_FILE).then(|| {
+            format!(
+                "data:text/csv;charset=utf-8;base64,{}",
+                base64::engine::general_purpose::STANDARD.encode(bytes)
+            )
+        })
     }
 }
 
 impl IntoResponse for ImportReport {
     fn into_response(self) -> Response {
         let summary = self.summary();
-        if self.failed.is_empty() {
+        if self.failed.is_empty() && !self.dry_run {
             return (
                 crate::Toast::success(summary),
                 crate::HxRefresh,
@@ -432,13 +780,25 @@ impl IntoResponse for ImportReport {
             .take(LISTED_FAILURES)
             .map(|f| json!({ "row": f.row, "messages": f.messages() }))
             .collect();
+        let (failed_link, whole_link) = if self.failed.is_empty() {
+            (None, None)
+        } else {
+            (
+                self.error_link(ErrorFile::FailedRows),
+                self.error_link(ErrorFile::WholeFile),
+            )
+        };
         crate::view(
             "renox/import_report.html",
             minijinja::context! {
                 summary,
                 imported => self.imported,
+                dry_run => self.dry_run,
+                clean => self.failed.is_empty(),
                 failed,
                 more => self.failed.len().saturating_sub(LISTED_FAILURES),
+                failed_link,
+                whole_link,
             },
         )
         .into_response()
@@ -486,6 +846,32 @@ pub fn template(filename: &str, columns: &[&str]) -> crate::Download {
         "text/csv; charset=utf-8",
         format!("\u{feff}{line}\r\n"),
     )
+}
+
+/// An Excel template (feature `xlsx`) to match [`Import::xlsx`]: the
+/// headings on row 1, an example row under them (in grey; people replace
+/// or delete it) and every column formatted for its type, so what is
+/// typed in reads as the import expects.
+///
+/// ```
+/// # use renox::prelude::*;
+/// use renox::import::TemplateColumn;
+///
+/// async fn template() -> Result<renox::Download> {
+///     renox::import::template_xlsx(
+///         "products.xlsx",
+///         &[
+///             TemplateColumn::text("sku", "COFFEE-1"),
+///             TemplateColumn::text("name", "House blend"),
+///             TemplateColumn::number("price", 4.5, 2),
+///             TemplateColumn::integer("stock", 12),
+///         ],
+///     )
+/// }
+/// ```
+#[cfg(feature = "xlsx")]
+pub fn template_xlsx(filename: &str, columns: &[TemplateColumn]) -> Result<crate::Download> {
+    Ok(xlsx::download(filename, xlsx::template(columns)?))
 }
 
 fn quote_cell(cell: &str) -> String {

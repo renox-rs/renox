@@ -58,6 +58,10 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
     /// (no stemming) or `spanish`. Set it with
     /// `#[model(search_language = "simple")]`.
     const SEARCH_LANGUAGE: &'static str = "english";
+    /// How full-text search normalises text before indexing and searching
+    /// it; `None` (the default) indexes text as written. Set it with
+    /// `#[model(search = "name", normalize = "arabic")]`.
+    const SEARCH_NORMALIZE: Option<super::search::Normalize> = None;
 
     /// The type of the `id` field.
     type Key: ModelKey;

@@ -1836,6 +1836,11 @@ Filament's actions (https://filamentphp.com/docs/5.x/actions/overview) as the ya
   `n` for a new product, ⌘S / Ctrl+S on the form).
 - [ ] Later: action groups (a `menu` already holds links and forms), an action that opens a
   wizard, and replicate/import/export actions (the grid has exports).
+- [x] Imports beyond CSV (#50): `Import::xlsx` / `from_upload` / `.sheet(name)` (feature `xlsx`,
+  `calamine`), `template_xlsx` + `TemplateColumn`, `.dry_run()` / `dry_run_if` and the tag's
+  `check` box, `.undoable(window)` with `ImportTx` (`insert` / `update` / `save`),
+  `renox::import::undo` / `Undo::can_undo`, `prune` / `import:prune`, `ImportReport::batch_id` and
+  the error files (`error_csv`, `error_xlsx`, `ErrorFile`).
 
 Notes:
 - Tooltips are one element placed by renox-ui.js, not CSS `::before`: a pseudo-element was
@@ -2105,6 +2110,35 @@ Notes:
   carries the actor, the changed field names and the old and new JSON (`null` for sealed groups).
   A seed file (`App::settings_from`) fills a group the first time it is read and has no row.
   Admin pages use the default scope; per-field abilities and module-contributed pages are not done.
+
+- **Imports beyond CSV** (#50, 2026-10): Excel is read with `calamine` under the existing `xlsx`
+  feature (MIT, pure Rust; it reuses the `zip` and `quick-xml` already built for exports), as
+  text, so one row struct and its rules check CSV and Excel alike (dates as `YYYY-MM-DD`, `12`
+  not `12.0`). The constructors are `Import::xlsx(bytes)` and `Import::from_upload(&upload)`
+  without the `?` the story sketched: a file that can't be read is reported by `run`, as a
+  validation error on the form's field in the user's language, like the other unreadable files.
+  The row closure keeps its `(tx, row)` order (the story wrote `(row, tx)`), so existing
+  closures compile: `tx` is an `ImportTx`, which derefs to the transaction and is an `Executor`.
+  Undo can't see arbitrary SQL, so `ImportTx::insert` / `update` / `save` write through the model
+  and record the table, the key, a typed JSON before-image (each `DbValue` with its type, so
+  dates and booleans restore as what they were; `Encrypted` columns are left out rather than
+  stored as plaintext) and the row's `updated_at` cast to text. Undo refuses when that text
+  differs now (a model without `updated_at` skips the check; a row written twice by one batch is
+  checked against its last write), runs in one transaction, names the referencing table when a
+  foreign key stops a delete, and takes an optional `can_undo` veto. A dry run runs the real
+  closures and rolls back; it records nothing. The report's check step and error files are in
+  the kit (`data:` links up to 1 MiB, so no server-side storage of uploads).
+- **Arabic-aware search** (#49): `#[model(search = "…", normalize = "arabic")]` and
+  `renox::text` (`normalize_arabic`, `transliterate`, `match_key`), no dependency. The rules
+  live in one table in `text.rs`; `db::search::arabic_sql` builds the SQLite `replace(…)` chain
+  and the PostgreSQL `translate(…)` from it, and a test runs both against the Rust function. On
+  SQLite the FTS5 table can't read the table as external content (a `rebuild` would index the
+  text as written), so a normalising model's table keeps its own copy and the triggers delete by
+  rowid; models without `normalize` keep the old index. Arabic-Indic and Persian digits and the
+  Persian ک/ی fold too (the maintainer's note on the issue). The match key column is the app's
+  (migration + `saving` hook); no macro attribute for it. `match_key` ignores spaces so that
+  "Abd Allah" and "Abdullah" agree. Not configurable per rule (yet): a rule that must stay
+  (say ta marbuta) means a model-level option later, without changing the default.
 
 ## Not planned
 

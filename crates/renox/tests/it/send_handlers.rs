@@ -663,6 +663,70 @@ async fn imports(
     ))
 }
 
+/// #50: the dry run, undoable imports, `ImportTx`, undo with a veto, the
+/// error files and pruning, all awaited in a routed handler.
+async fn import_more(State(state): State<AppState>, lang: Lang) -> Result<String> {
+    use renox::import::{ErrorFile, Import, Undo};
+    let csv = "body,stars\nchecked,2\n,1\n";
+    let dry = Import::csv(csv)
+        .lang(&lang)
+        .dry_run()
+        .run(&state, |tx, row: NoteRow| {
+            Box::pin(async move {
+                let mut note = Note {
+                    body: row.body,
+                    ..Default::default()
+                };
+                tx.insert(&mut note).await
+            })
+        })
+        .await?;
+    let upload = Upload::new("notes.csv", "text/csv", "body,stars\nundoable,4\n");
+    let report = Import::from_upload(&upload)
+        .undoable(Duration::from_secs(60))
+        .run(&state, |tx, row: NoteRow| {
+            Box::pin(async move {
+                let mut note = Note {
+                    body: row.body,
+                    stars: row.stars.unwrap_or(0),
+                    ..Default::default()
+                };
+                tx.save(&mut note).await?;
+                note.stars += 1;
+                tx.update(&mut note).await
+            })
+        })
+        .await?;
+    let _ = dry.error_csv("errors.csv", ErrorFile::WholeFile);
+    #[cfg(feature = "xlsx")]
+    let _ = dry.error_xlsx("errors.xlsx", ErrorFile::FailedRows)?;
+    #[cfg(feature = "xlsx")]
+    let _ = renox::import::template_xlsx(
+        "notes.xlsx",
+        &[renox::import::TemplateColumn::text("body", "x")],
+    )?;
+    let batch = report.batch_id.unwrap_or_default();
+    let undone = Undo::batch(batch)
+        .lang(&lang)
+        .can_undo(|tx, change| {
+            Box::pin(async move {
+                let _rows: i64 = renox::db::sql("SELECT COUNT(*) FROM notes WHERE id = ?")
+                    .bind_all([change.key().clone()])
+                    .scalar(tx)
+                    .await?;
+                Ok(())
+            })
+        })
+        .run(&state)
+        .await?;
+    let again = renox::import::undo(&state, batch).await.is_err();
+    let pruned = renox::import::prune(&state, Duration::from_secs(3600)).await?;
+    Ok(format!(
+        "{} {} {} {} {again} {pruned}",
+        dry.imported, report.imported, undone.deleted, undone.restored
+    ))
+}
+
 /// #154: full-text search on a model with an index.
 #[derive(Model, serde::Serialize, Default, Clone)]
 #[model(table = "articles", search = "title, body")]
@@ -800,6 +864,7 @@ impl Module for Handlers {
             .get("/factories", factories)
             .get("/grid", grid)
             .get("/imports", imports)
+            .get("/import-more", import_more)
             .get("/search", search)
             .get("/live", live)
             .get("/uploaded", uploaded)
@@ -872,6 +937,13 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("1 2 0 200");
+    // Dry run: one valid row; undoable: inserted then updated (a note has
+    // no `updated_at`), undone once (1 deleted, 0 restored: the update is
+    // folded into the row's delete), the second undo refused.
+    app.get("/import-more")
+        .await
+        .assert_ok()
+        .assert_see("1 1 1 1 true 0");
     app.get("/search").await.assert_ok().assert_see("1 1 1");
     app.get("/uploaded")
         .await
