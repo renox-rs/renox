@@ -293,6 +293,16 @@
   renox-admin's layout and the bike shop's staff and admin layouts use it, with the tag in
   `<body class="rx-page">` (the docs taught `rx-shell` on `<body>` before). Rule text in
   llms.txt "Start here" and AGENTS.md.stub; tests/browser/ui-shell.test.mjs.
+- **#55, status stepper and week calendar** (part 3 of #32; parts #53 and #54 are separate PRs):
+  renox-blocks gets `status_stepper` (steps `{key, label, tone?, terminal?}`, `aria-current="step"`,
+  state said in words, horizontal or vertical, CSS only) and `week_calendar` (resources as rows,
+  `days` x `from`..`to` by `step` minutes as columns; `week.rs` works out each event's cells and
+  lane, the free slots and their RFC 3339 start and end through the `date` filter, so times follow
+  `APP_TIMEZONE`; a free slot is a `role=gridcell` with `hx-post`, static `hx-vals` and
+  `data-resource/-start/-end`; `assets/parts/week.js` is the grid's roving-tabindex keyboard,
+  right-to-left aware). `blocks.week.*` and `blocks.stepper.*` texts; shown on the bike shop's
+  /about/blocks; tests in crates/renox-blocks/tests/blocks.rs and
+  tests/browser/blocks.test.mjs.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 

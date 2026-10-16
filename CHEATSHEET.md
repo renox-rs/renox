@@ -535,6 +535,14 @@ classes keep working next to the utilities.
 {# value forms: x="text"  x="{{ expr }}"  x="a {{ b }}"  :x="expr"  bare = true. Errors show file:line. #}
 ```
 
+The renox-blocks crate (`.module(Blocks::new())`, guide docs/blocks.md) adds tags of its own, among them two displays:
+
+```html
+<rx-status-stepper :steps="states" current="approved" orientation="vertical"/>   {# steps: [{key, label, tone?, terminal?}]; aria-current="step" #}
+<rx-week-calendar :resources="bays" :events="bookings" start="2026-10-12"        {# resources: [{id, label}]; events: [{resource, start, end, label, tone?, href?}], RFC 3339 #}
+  slot-url="/bookings" slot-target="#week" id="week"/>                           {# a free slot POSTs resource, start, end (hx-post + static hx-vals); days, from, to, step #}
+```
+
 ### Component events (details in docs/ui.md "Components and the page: three directions")
 
 ```html
