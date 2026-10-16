@@ -11,6 +11,7 @@ mod package;
 mod scaffold;
 mod serve;
 mod tailwind;
+mod template;
 mod tools;
 
 use std::path::{Path, PathBuf};
