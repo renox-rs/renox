@@ -45,3 +45,21 @@ pub struct LoggedInWith {
 }
 
 impl Event for LoggedInWith {}
+
+/// A sign-in was turned away: the provider vouched for the account, but it
+/// isn't one this app accepts (another Microsoft tenant, a personal
+/// account, a Google Workspace domain or an email domain outside
+/// `OAuth::allow_domains`). Recorded in the activity log as `oauth.refused`
+/// when the app has the `Audit` module.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct OAuthRefused {
+    /// The provider's name.
+    pub provider: String,
+    /// A short code: `domain`, `tenant`, `personal_account`, `hosted_domain`.
+    pub reason: String,
+    /// The account's email address, when the provider shared one.
+    pub email: Option<String>,
+}
+
+impl Event for OAuthRefused {}

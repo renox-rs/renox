@@ -18,6 +18,7 @@ const PARTS = [
   ["datetime", "[data-rx-datetime-range]"],
   ["history", "[data-rx-history]"],
   ["receipt", "[data-rx-receipt]"],
+  ["week", "[data-rx-week]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

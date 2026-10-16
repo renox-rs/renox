@@ -30,9 +30,11 @@
 //!   `keypad` (a point-of-sale number pad), `swatches` (variant chips),
 //!   `datetime_range` (a start and an end, each a day and a time).
 //! - Showing data: `gallery` (a carousel), `history` (a timeline),
-//!   `compare_plans` (a pricing table).
+//!   `compare_plans` (a pricing table), `status_stepper` (a record's
+//!   progress through its statuses).
 //! - Scheduling and work: `month_calendar`, `availability` (resources
-//!   against hours), `kanban` (with `kanban_card`).
+//!   against hours), `week_calendar` (resources against a week, click a
+//!   free slot to book it), `kanban` (with `kanban_card`).
 //! - Printing: `receipt` (a till receipt for an 80 mm or 58 mm thermal printer).
 //!
 //! The form blocks send plain fields, so `Valid<T>` reads them as any
@@ -49,6 +51,7 @@ use renox::prelude::*;
 
 mod assets;
 mod texts;
+mod week;
 
 pub use texts::TEXTS;
 
@@ -89,6 +92,7 @@ impl Module for Blocks {
                 minijinja::Value::from_safe_string(assets::tags())
             });
             env.add_function("renox_blocks_t", text);
+            env.add_function("renox_week_grid", week::week_grid);
         });
         components(app);
     }
@@ -96,8 +100,9 @@ impl Module for Blocks {
 
 /// The blocks as tags: `<rx-quantity>`, `<rx-range-slider>`, `<rx-keypad>`,
 /// `<rx-swatches>`, `<rx-datetime-range>`, `<rx-gallery>`, `<rx-history>`,
-/// `<rx-compare-plans>`, `<rx-month-calendar>`, `<rx-availability>`,
-/// `<rx-kanban>` and `<rx-receipt>`. Each is the macro of the same name, with its parameters as
+/// `<rx-compare-plans>`, `<rx-status-stepper>`, `<rx-month-calendar>`,
+/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
+/// the same name, with its parameters as
 /// attributes (`value-start`, `hide-label`…).
 fn components(app: &mut Registry) {
     use renox::view::{Component, Prop};
@@ -236,6 +241,37 @@ fn components(app: &mut Registry) {
         .prop(Prop::data("rows").required())
         .prop(Prop::text("label"))
         .prop(Prop::text("corner"))
+        .prop(Prop::text("id")),
+    );
+    app.component(
+        block(
+            "rx-status-stepper",
+            "status_stepper",
+            "Where a record is in its statuses.",
+        )
+        .prop(Prop::data("steps").required())
+        .prop(Prop::text("current"))
+        .prop(Prop::choice("orientation", &["horizontal", "vertical"]))
+        .prop(Prop::text("label"))
+        .prop(Prop::text("id")),
+    );
+    app.component(
+        block(
+            "rx-week-calendar",
+            "week_calendar",
+            "Resources against a week, with click-to-book slots.",
+        )
+        .prop(Prop::data("resources").required())
+        .prop(Prop::data("events"))
+        .prop(Prop::text("start").required())
+        .prop(Prop::number("days"))
+        .prop(Prop::number("from"))
+        .prop(Prop::number("to"))
+        .prop(Prop::number("step"))
+        .prop(Prop::text("slot-url"))
+        .prop(Prop::text("slot-target"))
+        .prop(Prop::text("slot-swap"))
+        .prop(Prop::text("label"))
         .prop(Prop::text("id")),
     );
     app.component(

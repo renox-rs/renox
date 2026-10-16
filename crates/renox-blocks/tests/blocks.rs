@@ -7,9 +7,9 @@
 use renox::prelude::*;
 use renox::testing::TestApp;
 use renox_blocks::{Blocks, TEXTS};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-const PAGE: &str = r##"{% from "renox-blocks/blocks.html" import quantity, range_slider, keypad, swatches, datetime_range, gallery, history, compare_plans, month_calendar, availability, kanban, receipt %}
+const PAGE: &str = r##"{% from "renox-blocks/blocks.html" import quantity, range_slider, keypad, swatches, datetime_range, gallery, history, compare_plans, month_calendar, availability, kanban, status_stepper, week_calendar, receipt %}
 <html><head>{{ renox_head() }}</head><body>
 <form method="post" action="/order">
 {{ csrf_field() }}
@@ -190,7 +190,7 @@ async fn every_block_renders_and_the_files_load_once() {
         ),
     ];
     for part in [
-        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "receipt",
+        "gallery", "range", "quantity", "keypad", "kanban", "datetime", "history", "receipt", "week",
     ] {
         let path = between(&html, &format!(" data-{part}=\""), "\"");
         assert!(
@@ -388,7 +388,7 @@ fn every_text_the_macros_use_is_in_english() {
         }
         used += 1;
     }
-    assert!(used > 60, "{used}");
+    assert!(used > 80, "{used}");
     for key in [
         "blocks.plans.month",
         "blocks.plans.year",
@@ -425,6 +425,8 @@ const TAGS: &str = r##"<html><head><rx-head/></head><body>
 <rx-month-calendar :month="month" today="2026-02-03"/>
 <rx-availability :columns="['09:00']" :rows="[{'label': 'Trail 5', 'slots': [{'state': 'free'}]}]" corner="Bike"/>
 <rx-kanban id="jobs" :columns="[{'key': 'waiting', 'title': 'Waiting', 'cards': []}]" url="/jobs/move"/>
+<rx-status-stepper :steps="[{'key': 'draft', 'label': 'Draft'}, {'key': 'sent', 'label': 'Sent'}]" current="sent" orientation="vertical"/>
+<rx-week-calendar :resources="[{'id': 'bay-1', 'label': 'Bay 1'}]" start="2026-10-12" :days="2" :from="9" :to="11" :step="60" slot-url="/book"/>
 </body></html>"##;
 
 #[renox::test]
@@ -449,6 +451,8 @@ async fn the_blocks_are_tags_too() {
         "rx-month",
         "rx-availability",
         "rx-kanban",
+        r#"class="rx-stepper rx-stepper--vertical""#,
+        "data-rx-week",
     ] {
         assert!(html.contains(needle), "missing {needle}\n{html}");
     }
@@ -515,4 +519,401 @@ async fn the_receipt_prints_its_lines_totals_and_code_slot() {
     assert!(html.contains(r#"class="rx-receipt rx-receipt--w80" id="plain""#));
     assert_eq!(html.matches("data-rx-receipt-print").count(), 1, "{html}");
     assert_eq!(html.matches("rx-receipt__code").count(), 1, "{html}");
+}
+
+// ---------------------------------------------------------------------
+// status_stepper and week_calendar, with typed data.
+
+#[derive(Serialize)]
+struct Step {
+    key: &'static str,
+    label: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tone: Option<&'static str>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    terminal: bool,
+}
+
+#[derive(Serialize)]
+struct Bay {
+    id: &'static str,
+    label: &'static str,
+}
+
+#[derive(Serialize)]
+struct Booking {
+    resource: &'static str,
+    start: &'static str,
+    end: &'static str,
+    label: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tone: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    href: Option<&'static str>,
+}
+
+fn step(key: &'static str, label: &'static str) -> Step {
+    Step {
+        key,
+        label,
+        tone: None,
+        terminal: false,
+    }
+}
+
+fn booking(
+    resource: &'static str,
+    start: &'static str,
+    end: &'static str,
+    label: &'static str,
+) -> Booking {
+    Booking {
+        resource,
+        start,
+        end,
+        label,
+        tone: None,
+        href: None,
+    }
+}
+
+const DISPLAY: &str = r##"{% from "renox-blocks/blocks.html" import status_stepper, week_calendar %}
+<html><head>{{ renox_head() }}</head><body>
+{{ status_stepper(steps, current=current, orientation=orientation) }}
+{{ week_calendar(bays, bookings, start="2026-10-12", days=2, from=9, to=12, step=60, slot_url="/book", slot_target="#week", label="Bays") }}
+{{ week_calendar(bays, bookings, start="2026-10-12", days=1, from=9, to=12, step=60, id="plain") }}
+</body></html>"##;
+
+#[derive(Deserialize)]
+struct DisplayQuery {
+    current: Option<String>,
+    orientation: Option<String>,
+    /// Bookings made in Jakarta's wall clock (UTC+7), for the zone test.
+    jakarta: Option<bool>,
+}
+
+#[derive(Deserialize)]
+struct Slot {
+    resource: String,
+    start: String,
+    end: String,
+}
+
+struct Display;
+
+impl Module for Display {
+    fn name(&self) -> &'static str {
+        "display"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/display", |Query(q): Query<DisplayQuery>| async move {
+                let steps = vec![
+                    step("draft", "Draft"),
+                    Step {
+                        tone: Some("success"),
+                        ..step("approved", "Approved")
+                    },
+                    step("shipped", "Shipped"),
+                    Step {
+                        tone: Some("error"),
+                        terminal: true,
+                        ..step("cancelled", "Cancelled")
+                    },
+                ];
+                let bays = vec![
+                    Bay {
+                        id: "bay-1",
+                        label: "Bay 1",
+                    },
+                    Bay {
+                        id: "bay-2",
+                        label: "Bay 2",
+                    },
+                ];
+                // Bay 1: 09:30-11:00 and 10:00-12:00 overlap. Bay 2: one
+                // booking from Monday 11:00 to Tuesday 10:00. Times are UTC,
+                // or the same wall-clock times as Jakarta's (+07:00) offset.
+                let hour = |h: u8| -> &'static str {
+                    match (q.jakarta == Some(true), h) {
+                        (false, 9) => "2026-10-12T09:30:00Z",
+                        (false, 10) => "2026-10-12T10:00:00Z",
+                        (false, 11) => "2026-10-12T11:00:00Z",
+                        (false, 12) => "2026-10-12T12:00:00Z",
+                        (false, _) => "2026-10-13T10:00:00Z",
+                        (true, 9) => "2026-10-12T02:30:00Z",
+                        (true, 10) => "2026-10-12T03:00:00Z",
+                        (true, 11) => "2026-10-12T04:00:00Z",
+                        (true, 12) => "2026-10-12T05:00:00Z",
+                        (true, _) => "2026-10-13T03:00:00Z",
+                    }
+                };
+                let bookings = vec![
+                    Booking {
+                        tone: Some("info"),
+                        href: Some("/jobs/4"),
+                        ..booking("bay-1", hour(9), hour(11), "Tune-up")
+                    },
+                    booking("bay-1", hour(10), hour(12), "Brakes"),
+                    Booking {
+                        tone: Some("warning"),
+                        ..booking("bay-2", hour(11), hour(13), "Overnight")
+                    },
+                    booking("nowhere", hour(10), hour(11), "Lost"),
+                ];
+                view(
+                    "display.html",
+                    context! {
+                        steps,
+                        current => q.current,
+                        orientation => q.orientation,
+                        bays,
+                        bookings,
+                    },
+                )
+            })
+            .post("/book", |Form(slot): Form<Slot>| async move {
+                Json(json!({"resource": slot.resource, "start": slot.start, "end": slot.end}))
+            })
+    }
+}
+
+fn display_app() -> App {
+    App::new()
+        .module(Blocks::new())
+        .module(Display)
+        .templates(|env| env.add_template("display.html", DISPLAY).unwrap())
+}
+
+/// The `<li>` of the step labelled `label`.
+fn step_of(list: &str, label: &str) -> String {
+    let at = list.find(&format!(">{label}</span>")).unwrap();
+    let start = list[..at].rfind("<li ").unwrap();
+    let end = list[at..].find("</li>").unwrap() + at;
+    list[start..end].to_owned()
+}
+
+#[renox::test]
+async fn the_status_stepper_says_which_step_is_current() {
+    let app = TestApp::new(display_app()).await;
+    let html = app
+        .get("/display?current=approved&orientation=vertical")
+        .await
+        .assert_ok()
+        .text();
+    let list = between(&html, r#"<ol class="rx-stepper"#, "</ol>");
+    assert!(list.contains("rx-stepper--vertical"), "{list}");
+    assert_eq!(list.matches(r#"aria-current="step""#).count(), 1, "{list}");
+    assert_eq!(list.matches("<li ").count(), 4, "{list}");
+    // Draft is done, Approved is the current step (tinted by its tone), the
+    // others are ahead; the ending is said to be final.
+    let draft = step_of(&list, "Draft");
+    assert!(draft.contains("rx-stepper__step--done"), "{draft}");
+    assert!(draft.contains("(done)") && !draft.contains("aria-current"));
+    let approved = step_of(&list, "Approved");
+    assert!(
+        approved.contains("rx-stepper__step--current rx-stepper__step--success"),
+        "{approved}"
+    );
+    assert!(approved.contains(r#"aria-current="step""#) && approved.contains("(current step)"));
+    assert!(step_of(&list, "Shipped").contains("(not reached yet)"));
+    let cancelled = step_of(&list, "Cancelled");
+    assert!(
+        cancelled.contains("rx-stepper__step--terminal"),
+        "{cancelled}"
+    );
+    assert!(
+        cancelled.contains("(not reached yet, final step)"),
+        "{cancelled}"
+    );
+    assert!(
+        !cancelled.contains("rx-stepper__step--error"),
+        "a tone shows once the step is reached: {cancelled}"
+    );
+
+    // Reaching the ending: the steps before it are done, it is current.
+    let html = app.get("/display?current=cancelled").await.text();
+    let list = between(&html, r#"<ol class="rx-stepper"#, "</ol>");
+    assert!(list.contains("rx-stepper--horizontal"), "{list}");
+    assert_eq!(list.matches("rx-stepper__step--done").count(), 3, "{list}");
+    assert!(
+        list.contains(
+            "rx-stepper__step--current rx-stepper__step--error rx-stepper__step--terminal"
+        ),
+        "{list}"
+    );
+    assert!(list.contains("(current step, final step)"));
+
+    // A current that is no step leaves every step ahead.
+    let html = app.get("/display?current=lost").await.text();
+    assert!(!html.contains("aria-current"), "{html}");
+}
+
+#[renox::test]
+async fn the_week_calendar_places_events_in_their_cells() {
+    let app = TestApp::new(display_app()).await;
+    let html = app.get("/display").await.assert_ok().text();
+    let week = between(&html, r#"<div class="rx-week" id="rx-week""#, "\n</div>\n");
+    // 2 days x 3 hourly slots = 6 columns; a header row and a row a bay.
+    assert!(
+        week.contains("--rx-week-columns: 6; --rx-week-per-day: 3"),
+        "{week}"
+    );
+    assert!(week.contains(r#"role="grid" aria-label="Bays""#));
+    assert!(week.contains(r#"aria-label="Monday 12 October""#));
+    assert!(week.contains(r#"aria-label="Tuesday 13 October""#));
+    assert_eq!(week.matches(r#"role="row""#).count(), 3, "{week}");
+    let row = |label: &str| {
+        let at = week.find(&format!(">{label}</span>")).unwrap();
+        let end = week[at..]
+            .find("<div class=\"rx-week__row\"")
+            .map_or(week.len(), |n| n + at);
+        week[at..end].to_owned()
+    };
+
+    // Bay 1: 09:30-11:00 takes the slots of 09 and 10 (columns 1-2) in the
+    // first lane, 10:00-12:00 those of 10 and 11 (columns 2-3) in the second.
+    let bay1 = row("Bay 1");
+    assert!(bay1.contains("--rx-week-lanes: 2"), "{bay1}");
+    assert!(bay1.contains("rx-week__event--info"), "{bay1}");
+    assert!(
+        bay1.contains("grid-column: 1 / span 2; grid-row: 1"),
+        "{bay1}"
+    );
+    assert!(
+        bay1.contains("grid-column: 2 / span 2; grid-row: 2"),
+        "{bay1}"
+    );
+    assert!(
+        bay1.contains(r#"aria-label="Tune-up, Bay 1, Monday 12 October, 09:30 to 11:00""#),
+        "{bay1}"
+    );
+    assert!(
+        bay1.contains(r#"<a class="rx-week__event-link" href="/jobs/4" tabindex="-1">Tune-up</a>"#)
+    );
+    // Under the events there are no free slots; Tuesday's three each span both lanes.
+    assert!(!bay1.contains(r#"data-start="2026-10-12T"#), "{bay1}");
+    assert_eq!(bay1.matches("rx-week__slot").count(), 3, "{bay1}");
+    assert!(
+        bay1.contains(r#"style="grid-column: 4; grid-row: 1 / span 2""#),
+        "{bay1}"
+    );
+    assert!(
+        bay1.contains(r#"aria-label="Book Bay 1, Tuesday 13 October, 09:00 to 10:00""#),
+        "{bay1}"
+    );
+
+    // A free slot carries what a click sends: data-* and a static hx-vals.
+    assert!(bay1.contains(
+        r#"data-resource="bay-1" data-start="2026-10-13T09:00:00Z" data-end="2026-10-13T10:00:00Z""#
+    ), "{bay1}");
+    assert!(bay1.contains(r#"hx-post="/book""#));
+    assert!(bay1.contains(
+        r#"hx-vals='{"end":"2026-10-13T10:00:00Z","resource":"bay-1","start":"2026-10-13T09:00:00Z"}'"#
+    ), "{bay1}");
+    assert!(bay1.contains(r##"hx-target="#week" hx-swap="outerHTML""##));
+
+    // Bay 2: the booking from Monday 11:00 to Tuesday 10:00 is cut to each
+    // day's hours: Monday 11:00-12:00 (column 3, continues later) and
+    // Tuesday 09:00-10:00 (column 4, started earlier).
+    let bay2 = row("Bay 2");
+    assert!(bay2.contains("--rx-week-lanes: 1"), "{bay2}");
+    assert!(
+        bay2.contains("rx-week__event--warning rx-week__event--after"),
+        "{bay2}"
+    );
+    assert!(
+        bay2.contains("rx-week__event--warning rx-week__event--before"),
+        "{bay2}"
+    );
+    assert!(bay2.contains("grid-column: 3 / span 1"), "{bay2}");
+    assert!(bay2.contains("grid-column: 4 / span 1"), "{bay2}");
+    assert!(bay2.contains("(continues later)") && bay2.contains("(started earlier)"));
+    assert!(
+        !html.contains("Lost"),
+        "an event of no listed resource is dropped"
+    );
+
+    // One Tab stop: the first cell only. The help says how to use the grid.
+    assert_eq!(
+        week.matches(r#"role="gridcell" tabindex="0""#).count(),
+        1,
+        "{week}"
+    );
+    assert!(week.contains("Enter or Space books a free slot"));
+
+    // Without slot_url the free slots are not cells; the bookings still are.
+    let plain = between(&html, r#"<div class="rx-week" id="plain""#, "\n</div>\n");
+    assert!(!plain.contains("rx-week__slot"), "{plain}");
+    assert!(!plain.contains("hx-post"));
+    assert!(plain.contains("rx-week__event"));
+    assert!(!plain.contains("Enter or Space books"));
+}
+
+#[renox::test]
+async fn the_week_calendar_reads_times_in_the_apps_zone() {
+    // In UTC+7, 02:30Z is 09:30: the same cells as above, and the slots go
+    // out with the zone's offset.
+    let app = TestApp::with_config(display_app(), |c| c.timezone = "+07:00".parse().unwrap()).await;
+    let html = app.get("/display?jakarta=true").await.assert_ok().text();
+    let week = between(&html, r#"<div class="rx-week" id="rx-week""#, "\n</div>\n");
+    assert!(
+        week.contains("grid-column: 1 / span 2; grid-row: 1"),
+        "{week}"
+    );
+    assert!(week.contains("09:30 to 11:00"), "{week}");
+    assert!(
+        week.contains(
+            r#"data-start="2026-10-13T09:00:00+07:00" data-end="2026-10-13T10:00:00+07:00""#
+        ),
+        "{week}"
+    );
+    // What a click sends is what the handler reads back.
+    let posted = app
+        .post(
+            "/book",
+            &[
+                ("resource", "bay-1"),
+                ("start", "2026-10-13T09:00:00+07:00"),
+                ("end", "2026-10-13T10:00:00+07:00"),
+            ],
+        )
+        .await
+        .assert_ok()
+        .text();
+    assert!(posted.contains("2026-10-13T09:00:00+07:00"), "{posted}");
+}
+
+#[renox::test]
+async fn a_week_calendar_with_bad_data_says_what_is_wrong() {
+    let app = TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .templates(|env| {
+                env.add_template(
+                    "bad.html",
+                    r#"{% from "renox-blocks/blocks.html" import week_calendar %}{{ week_calendar([{"id": "a", "label": "A"}], [{"resource": "a", "start": "soon", "end": "later", "label": "x"}], start="2026-10-12") }}"#,
+                )
+                .unwrap()
+            })
+            .module(Bad),
+    )
+    .await;
+    app.get("/bad")
+        .await
+        .assert_status(500)
+        .assert_see("`soon` is not a time");
+}
+
+struct Bad;
+
+impl Module for Bad {
+    fn name(&self) -> &'static str {
+        "bad"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/bad", || async { view("bad.html", context! {}) })
+    }
 }

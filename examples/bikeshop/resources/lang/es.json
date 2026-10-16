@@ -2296,6 +2296,23 @@
       "book": "Reservar :resource a las :slot",
       "legend": "Qué significa cada franja"
     },
+    "week": {
+      "label": "Calendario semanal",
+      "resource": "Recurso",
+      "help": "Las flechas se mueven entre las franjas y los eventos; Inicio y Fin van al primero y al último de una fila.",
+      "help_book": "Las flechas se mueven entre las franjas y los eventos; Inicio y Fin van al primero y al último de una fila. Intro o Espacio reserva una franja libre o abre un evento.",
+      "book": "Reservar :resource, :day, de :from a :to",
+      "event": ":label, :resource, :day, de :from a :to",
+      "earlier": "(empezó antes)",
+      "later": "(continúa después)"
+    },
+    "stepper": {
+      "label": "Estado",
+      "done": "hecho",
+      "current": "paso actual",
+      "upcoming": "aún no alcanzado",
+      "final": "paso final"
+    },
     "datetime": {
       "start_date": "Desde (día)",
       "start_time": "Desde (hora)",
@@ -2359,6 +2376,9 @@
       "calendar": "Las visitas de servicio de un mes; las flechas van a los meses de alrededor.",
       "availability": "Las bicis frente a las horas de un día; un hueco libre es un enlace que lo reserva.",
       "history": "Lo que le pasó a una bici en el taller.",
+      "stepper": "El avance de un trabajo por sus estados, en fila y en columna (el segundo trabajo se abandonó).",
+      "week": "Los puestos del taller durante una semana: una franja libre envía su puesto y sus horas con htmx; las flechas se mueven entre las celdas.",
+      "week_booked": "Reservado :resource de :from a :to (una demostración: no se guarda nada).",
       "plans": "Los planes de servicio, uno junto a otro y comparados.",
       "receipt": "El recibo de caja del mostrador a 80 mm y a 58 mm. Imprime la página: solo se imprime el recibo, al ancho del rollo.",
       "variant": "Precio y stock",

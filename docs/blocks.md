@@ -2,15 +2,15 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds twelve such components, as template macros
+of cards to drag. The `renox-blocks` crate adds fourteen such components, as template macros
 built on the kit:
 
 | Input | Showing data | Scheduling and work | Printing |
 |---|---|---|---|
 | [`quantity`](#quantity): a stepper | [`gallery`](#gallery): photos in a carousel | [`month_calendar`](#month_calendar): a month of events | [`receipt`](#receipt): a till receipt for a thermal printer |
 | [`range_slider`](#range_slider): two handles on one track | [`history`](#history): a timeline | [`availability`](#availability): resources against hours | |
-| [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`kanban`](#kanban): cards moved between columns | |
-| [`swatches`](#swatches): variant chips | | | |
+| [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`week_calendar`](#week_calendar): resources against a week, click to book | |
+| [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns | |
 | [`datetime_range`](#datetime_range): a start and an end, with times | | | |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
@@ -340,6 +340,44 @@ the feature names staying put.
 | `table` | `true` | `false` shows only the cards |
 | `id` | `"rx-plans"` | the section's id |
 
+### status_stepper
+
+Where a record is in its statuses (an order, a repair, an approval), as steps in a row or in a
+column. Like every block it is also a tag:
+
+```html
+<rx-status-stepper
+  :steps="[
+    {'key': 'draft', 'label': 'Draft'},
+    {'key': 'approved', 'label': 'Approved', 'tone': 'success'},
+    {'key': 'shipped', 'label': 'Shipped'},
+    {'key': 'cancelled', 'label': 'Cancelled', 'tone': 'error', 'terminal': true}
+  ]"
+  current="approved" orientation="vertical" label="Order status"/>
+```
+
+In a real page `steps` comes from the handler (a `Vec` of a `Serialize` struct with `key`,
+`label`, `tone` and `terminal`, in a `#[derive(ViewData)]` context), and `current` is the
+record's status. It is an ordered list: the steps before `current` are done (a tick), `current`
+is the current one (`aria-current="step"`, bold, filled) and the rest are upcoming. Each step
+says so in words for a screen reader ("Draft (done)", "Approved (current step)", "Shipped (not
+reached yet)"), so colour is never the only sign.
+
+A `terminal` step is an ending: Cancelled, or Delivered. Its marker is square, a screen reader
+hears "final step", and it never counts as done unless it is the current one: put the endings
+last, and a record that was cancelled shows every step before Cancelled as done. `tone` (`info`,
+`success`, `warning`, `error`) colours a step's marker and the line behind it once it is
+reached; an upcoming step stays grey. A `current` that matches no step leaves every step
+upcoming. The block only displays: it posts nothing and needs no JavaScript.
+
+| Option | Default | What it does |
+|---|---|---|
+| `steps` | | a list of `{key, label, tone?, terminal?}`, in order |
+| `current` | none | the `key` of the step the record is at |
+| `orientation` | `"horizontal"` | `"horizontal"` (a column below 40rem) or `"vertical"` |
+| `label` | "Status" | the list's name for screen readers |
+| `id` | none | the list's id |
+
 ## Scheduling and work
 
 ### month_calendar
@@ -402,6 +440,88 @@ its `fields` and the CSRF field, so booking needs no JavaScript.
 | `label` | "Availability" | the table's caption for screen readers |
 | `corner` | "Resource" | the top-left heading |
 | `id` | `"rx-availability"` | the frame's id |
+
+### week_calendar
+
+A week of bookings: resources (bays, rooms, people) as rows, days and hours as columns, the
+bookings on them, and a click on a free slot to book it:
+
+```html
+<rx-week-calendar :resources="bays" :events="bookings" start="2026-10-12"
+  slot-url="/bookings" slot-target="#week" id="week" label="Workshop bays"/>
+```
+
+`bays` is a list of `{id, label, note?}` and `bookings` one of `{resource, start, end, label,
+tone?, href?}`: `resource` is a bay's `id`, `start` and `end` are RFC 3339 times, `tone` is
+`info`, `success`, `warning` or `error`, and `href` makes the booking a link (a booking of no
+listed resource is left out).
+
+```rust
+#[derive(serde::Serialize)]
+struct Booking {
+    resource: String,
+    start: String, // "2026-10-12T09:30:00Z"
+    end: String,
+    label: String,
+    tone: Option<String>,
+    href: Option<String>,
+}
+```
+
+Times are read and shown in the app's time zone (`APP_TIMEZONE`). `start` is the first day
+shown, `days` how many (7), `from` and `to` the hours shown (8 and 18), `step` the minutes a
+slot lasts (30). A booking is placed on the cells it covers, even by a few minutes; one that
+crosses midnight or the edge of the hours is cut to each day (and says "started earlier" or
+"continues later"), and bookings that overlap are stacked in lanes, the row growing taller.
+
+With `slot_url`, every free slot is a cell that sends an htmx `POST` to it with three fields,
+`resource`, `start` and `end` (RFC 3339, with the zone's offset on that day). They are static
+`hx-vals` on the slot (also `data-resource`, `data-start`, `data-end`), so nothing needs
+`hx-vals='js:…'`, which `CSP=strict` forbids:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Slot {
+    resource: String,
+    start: renox::chrono::DateTime<renox::chrono::Utc>,
+    end: renox::chrono::DateTime<renox::chrono::Utc>,
+}
+
+async fn book(Form(slot): Form<Slot>) -> Result<Redirect> {
+    // Check the person may book `slot.resource`, that nothing overlaps, then save it.
+    # let _ = slot;
+    Ok(Redirect::to("/bookings"))
+}
+```
+
+`slot_target` (a selector) and `slot_swap` (`outerHTML` by default) say what the answer
+replaces; without a target nothing is swapped, so the handler can redirect (`HX-Redirect`) or
+send an `HX-Trigger`. Without `slot_url` the free slots are not drawn: the calendar only shows
+what is booked.
+
+It is a grid for the keyboard, with one Tab stop. The arrow keys move between a row's slots
+and bookings (left and right) or to the same time in the row above or below; Home and End go
+to the row's first and last cell, Ctrl+Home and Ctrl+End to the grid's. Enter or Space books
+the slot or follows the booking's link. Every cell says its resource, day and time ("Book Bay
+1, Monday 12 October, 09:00 to 09:30"). Free slots tint on hover and focus, bookings are
+striped with a bar at their start, so no state rests on colour alone. On a phone the grid
+scrolls sideways inside its frame with the resources staying put. Dragging a booking to
+another time is not part of the block.
+
+| Option | Default | What it does |
+|---|---|---|
+| `resources` | | a list of `{id, label, note?}`, one row each |
+| `events` | `[]` | a list of `{resource, start, end, label, tone?, href?}` |
+| `start` | | the first day shown, `2026-10-12` (or a moment) |
+| `days` | 7 | how many days |
+| `from`, `to` | 8, 18 | the first and last hour shown (`to` up to 24) |
+| `step` | 30 | minutes a slot lasts (5 to 240) |
+| `slot_url` | none | the URL free slots `POST` to |
+| `slot_target`, `slot_swap` | none, `outerHTML` | what the answer replaces |
+| `label` | "Week calendar" | the grid's name for screen readers |
+| `id` | `"rx-week"` | the frame's id |
 
 ### kanban
 
@@ -572,8 +692,8 @@ The first block on a page prints two tags: the blocks' stylesheet and `blocks.js
 JavaScript module. The module looks at the page (and at whatever htmx swaps in later) and
 imports a block's code only when the page has that block: a product page with a gallery and a
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
-`month_calendar` and `availability` need no code at all (`receipt` has a few lines, for its
-Print button).
+`status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
+`week.js` for its keyboard, and `receipt` has a few lines, for its Print button.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

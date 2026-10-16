@@ -535,6 +535,14 @@ classes keep working next to the utilities.
 {# value forms: x="text"  x="{{ expr }}"  x="a {{ b }}"  :x="expr"  bare = true. Errors show file:line. #}
 ```
 
+The renox-blocks crate (`.module(Blocks::new())`, guide docs/blocks.md) adds tags of its own, among them two displays:
+
+```html
+<rx-status-stepper :steps="states" current="approved" orientation="vertical"/>   {# steps: [{key, label, tone?, terminal?}]; aria-current="step" #}
+<rx-week-calendar :resources="bays" :events="bookings" start="2026-10-12"        {# resources: [{id, label}]; events: [{resource, start, end, label, tone?, href?}], RFC 3339 #}
+  slot-url="/bookings" slot-target="#week" id="week"/>                           {# a free slot POSTs resource, start, end (hx-post + static hx-vals); days, from, to, step #}
+```
+
 ### Component events (details in docs/ui.md "Components and the page: three directions")
 
 ```html
@@ -1427,7 +1435,11 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`
-// with GOOGLE_CLIENT_ID/_SECRET, GITHUB_CLIENT_ID/_SECRET (docs/oauth.md). A login of your
+// with GOOGLE_CLIENT_ID/_SECRET, GITHUB_CLIENT_ID/_SECRET (docs/oauth.md). Company sign-in:
+// `.provider(Microsoft::from_config().tenant("contoso.onmicrosoft.com"))` (MICROSOFT_CLIENT_ID/
+// _SECRET/_TENANT; personal accounts refused), `Google::from_config().hosted_domain("example.com")`
+// (sends `hd`, checks the claim), `OAuth::new()….allow_domains(&["example.com"])` (verified
+// email on any provider); a refusal emits `OAuthRefused` (`oauth.refused`). A login of your
 // own once you know who it is: `let to = renox::auth::sign_in(&state, &session, &user,
 // false, ip).await?;` (the second step included); `renox::auth::register_verified` makes an
 // account without a password (`user.has_password()` is false).
@@ -2037,6 +2049,11 @@ fn channels(app: App) -> App {
         let _ = (phone, message);
         Ok(())
     })
+    // Cap queued sends (notify_later) to this channel: 20 a second, shared by every worker;
+    // the rest wait for the next window without using an attempt. Unknown name = boot error.
+    .channel_rate_limit("whatsapp", 20, std::time::Duration::from_secs(1))
+    // Same for queued mail through a named mailer ("default" = the default one):
+    // .mailer_rate_limit("bulk", 100, std::time::Duration::from_secs(60))
 }
 
 async fn ship(state: &AppState, user: &User) -> Result {

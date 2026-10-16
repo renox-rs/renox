@@ -80,7 +80,7 @@ async function tabTo(page, selector, max = 60) {
 // bikeshop-staff.test.mjs's).
 const BIKESHOP = { binary: 'bikeshop', dir: 'examples/bikeshop', env: { BIKESHOP_STAFF_2FA: 'optional' } };
 const pages = {
-  'bikeshop (a customer)': { ...BIKESHOP, login: 'customer@bikeshop.test', password: 'password', paths: ['/', '/shop', '/cart', '/rent', '/service/book', '/plans', '/account', '/about/fields', '/about/htmx'] },
+  'bikeshop (a customer)': { ...BIKESHOP, login: 'customer@bikeshop.test', password: 'password', paths: ['/', '/shop', '/cart', '/rent', '/service/book', '/plans', '/account', '/about/fields', '/about/htmx', '/about/blocks'] },
   'bikeshop (the owner)': { ...BIKESHOP, login: 'owner@bikeshop.test', password: 'password', paths: ['/staff', '/staff/stock', '/staff/reports/orders', '/admin', '/admin/products'] },
   'the data grid (fixture)': { fixture: true, login: 'demo@example.com', password: 'password', paths: ['/grid', '/grid/regions', '/grid/follow-up'] },
 };

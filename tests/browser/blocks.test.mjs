@@ -49,6 +49,8 @@ const BLOCKS = {
   compare_plans: '.rx-plans',
   month_calendar: '.rx-month',
   availability: '.rx-availability',
+  week_calendar: '[data-rx-week][data-rx-blocks-ready]',
+  status_stepper: '.rx-stepper',
   kanban: '[data-rx-kanban][data-rx-blocks-ready]',
 };
 
@@ -75,6 +77,16 @@ const TEXTS = [
   '.rx-availability__slot--booked .rx-availability__label',
   '.rx-availability__slot--closed .rx-availability__label',
   '.rx-availability__note',
+  '.rx-week__weekday',
+  '.rx-week__hour',
+  '.rx-week__name',
+  '.rx-week__note',
+  '.rx-week__event',
+  '.rx-week__time',
+  '.rx-stepper__label',
+  '.rx-stepper__marker',
+  '.rx-stepper__step--current .rx-stepper__marker',
+  '.rx-stepper__step--upcoming .rx-stepper__marker',
   '.rx-kanban__subtitle',
   '.rx-kanban__title',
 ];
@@ -139,7 +151,7 @@ describe('renox-blocks', () => {
           assert.ok(await fitsWidth(page), 'no sideways scrolling');
           // Each block fits its card (wide ones scroll inside their own frame).
           const overflowing = await page.eval(() =>
-            ['.rx-quantity-field', '.rx-range', '.rx-keypad', '.rx-swatches', '.rx-datetime-range', '.rx-gallery', '.rx-history', '.rx-plans', '.rx-month', '.rx-availability', '.rx-kanban']
+            ['.rx-quantity-field', '.rx-range', '.rx-keypad', '.rx-swatches', '.rx-datetime-range', '.rx-gallery', '.rx-history', '.rx-plans', '.rx-month', '.rx-availability', '.rx-week', '.rx-stepper', '.rx-kanban']
               .filter((s) => {
                 const el = document.querySelector(s);
                 const card = el.closest('.rx-card') || document.body;
@@ -443,6 +455,149 @@ describe('renox-blocks', () => {
       await page.waitFor(() => location.search.includes('slot='));
       page.assertClean();
     }));
+
+  test('status_stepper: one current step, said in words; a row on a desktop, a column on a phone', () =>
+    browser.with(async (page) => {
+      await page.goto(`${app.url}${PAGE}`);
+      const steps = await page.eval(() =>
+        [...document.querySelectorAll('.rx-stepper')].map((list) => ({
+          current: list.querySelectorAll('[aria-current="step"]').length,
+          currentText: list.querySelector('[aria-current="step"]')?.textContent.replace(/\s+/g, ' ').trim(),
+          done: list.querySelectorAll('.rx-stepper__step--done').length,
+          tops: [...list.children].map((li) => Math.round(li.getBoundingClientRect().top)),
+        })),
+      );
+      assert.equal(steps.length, 2);
+      // Job 104 is in the stand: two steps done, then the current one.
+      assert.equal(steps[0].current, 1);
+      assert.match(steps[0].currentText, /In the stand \(current step\)/);
+      assert.equal(steps[0].done, 2);
+      assert.equal(new Set(steps[0].tops).size, 1, 'the horizontal stepper is one row');
+      // Job 105 was abandoned: the endings never count as done.
+      assert.match(steps[1].currentText, /Abandoned \(current step, final step\)/);
+      assert.equal(steps[1].done, 3);
+      assert.equal(new Set(steps[1].tops).size, 4, 'the vertical stepper is a column');
+      page.assertClean();
+    }));
+
+  test('status_stepper on a phone: the horizontal one becomes a column', () =>
+    browser.with(async (page) => {
+      await page.goto(`${app.url}${PAGE}`);
+      const tops = await page.eval(() => [...document.querySelector('.rx-stepper--horizontal').children].map((li) => Math.round(li.getBoundingClientRect().top)));
+      assert.equal(new Set(tops).size, tops.length);
+      assert.ok(await fitsWidth(page));
+      page.assertClean();
+    }, PHONE));
+
+  test('week_calendar: events stacked, a grid for the keyboard, a slot posts its resource and times', () =>
+    browser.with(async (page) => {
+      await page.send('Network.enable');
+      const posts = [];
+      page.on('Network.requestWillBeSent', (p) => {
+        if (p.request.method === 'POST' && p.request.url.endsWith('/about/blocks/week')) posts.push(p.request.postData);
+      });
+      await page.goto(`${app.url}${PAGE}`);
+      await page.waitFor(() => !!document.querySelector('[data-rx-week][data-rx-blocks-ready]'));
+      await page.eval(() => document.querySelector('#demo-week').scrollIntoView({ block: 'center' }));
+      // Wednesday's two overlapping bookings sit in two lanes of Bay 1's row.
+      const lanes = await page.eval(() => {
+        const rect = (text) => [...document.querySelectorAll('#demo-week .rx-week__event')].find((e) => e.textContent.includes(text)).getBoundingClientRect();
+        const a = rect('Full service');
+        const b = rect('Fork seals');
+        return { overlapAcross: a.left < b.right && b.left < a.right, stacked: b.top >= a.bottom - 1 };
+      });
+      assert.ok(lanes.overlapAcross && lanes.stacked, JSON.stringify(lanes));
+      // One Tab stop, on the first cell; every cell says what it is.
+      assert.equal(await page.eval(() => document.querySelectorAll('#demo-week [role=gridcell][tabindex="0"]').length), 1);
+      assert.equal(await page.eval(() => document.querySelectorAll('#demo-week [role=gridcell]:not([aria-label])').length), 0);
+      assert.equal(await page.eval(() => getComputedStyle(document.querySelector('#demo-week .rx-week__resource')).position), 'sticky');
+      const at = () => page.eval(() => document.activeElement.getAttribute('aria-label'));
+      await page.focus('#demo-week [role=gridcell][tabindex="0"]');
+      const first = await at();
+      assert.match(first, /^Book Bay 1, .+, 08:00 to 09:00$/);
+      // Right and left move along the row (slots and bookings alike), Down to
+      // the same time in the next row.
+      await page.press('ArrowRight');
+      assert.match(await at(), /^Tune-up · Ana R\., Bay 1, .+, 09:00 to 10:30$/);
+      await page.press('ArrowLeft');
+      assert.equal(await at(), first);
+      await page.press('ArrowDown');
+      assert.match(await at(), /^Book Bay 2, .+, 08:00 to 09:00$/);
+      await page.press('ArrowUp');
+      assert.equal(await at(), first);
+      await page.press('End');
+      assert.match(await at(), /^Book Bay 1, .+, 17:00 to 18:00$/);
+      await page.press('Home');
+      assert.equal(await at(), first);
+      // Ctrl+End goes to the grid's last cell (the last row's last slot).
+      await page.press('End', { ctrl: true });
+      assert.match(await at(), /^Book Paint booth, .+, 17:00 to 18:00$/);
+      await page.press('Home', { ctrl: true });
+      assert.equal(await at(), first);
+      await page.press('End', { ctrl: true });
+      // The roving tab stop followed the focus.
+      assert.equal(await page.eval(() => document.querySelectorAll('#demo-week [role=gridcell][tabindex="0"]').length), 1);
+      assert.equal(await page.eval(() => document.activeElement.getAttribute('tabindex')), '0');
+
+      // Enter on a free slot books it: a POST with the resource and the times.
+      await page.press('Enter');
+      await page.waitFor(() => !!document.querySelector('.rx-toast--success'));
+      assert.equal(posts.length, 1, JSON.stringify(posts));
+      const sent = new URLSearchParams(posts[0]);
+      assert.equal(sent.get('resource'), 'bay-3');
+      assert.match(sent.get('start'), /^\d{4}-\d\d-\d\dT17:00:00(Z|[+-]\d\d:\d\d)$/);
+      assert.match(sent.get('end'), /^\d{4}-\d\d-\d\dT18:00:00(Z|[+-]\d\d:\d\d)$/);
+      assert.match(await page.text('.rx-toast--success'), /Booked Paint booth from \w+ 17:00 to \w+ 18:00/);
+      // A click does the same, on another slot; the cell has the data too.
+      const slot = await page.eval(() => {
+        const cell = document.querySelector('#demo-week [data-resource="bay-2"]');
+        return { resource: cell.dataset.resource, start: cell.dataset.start, end: cell.dataset.end };
+      });
+      await page.click('#demo-week [data-resource="bay-2"]');
+      for (let i = 0; i < 50 && posts.length < 2; i++) await sleep(100);
+      assert.equal(posts.length, 2);
+      const clicked = new URLSearchParams(posts[1]);
+      assert.deepEqual({ resource: clicked.get('resource'), start: clicked.get('start'), end: clicked.get('end') }, slot);
+      page.assertClean();
+    }));
+
+  test('week_calendar: left and right swap in a right-to-left page', () =>
+    browser.with(async (page) => {
+      await page.goto(`${app.url}${PAGE}`);
+      await page.waitFor(() => !!document.querySelector('[data-rx-week][data-rx-blocks-ready]'));
+      await page.eval(() => {
+        document.documentElement.dir = 'rtl';
+        document.querySelector('#demo-week').scrollIntoView({ block: 'center' });
+      });
+      await page.focus('#demo-week [role=gridcell][tabindex="0"]');
+      const first = await page.eval(() => document.activeElement.getAttribute('aria-label'));
+      await page.press('ArrowLeft');
+      assert.match(await page.eval(() => document.activeElement.getAttribute('aria-label')), /^Tune-up/, 'left is forwards in time');
+      await page.press('ArrowRight');
+      assert.equal(await page.eval(() => document.activeElement.getAttribute('aria-label')), first);
+      page.assertClean();
+    }));
+
+  test('week_calendar on a phone: it scrolls inside its frame, the bays staying put', () =>
+    browser.with(async (page) => {
+      await page.goto(`${app.url}${PAGE}`);
+      await page.waitFor(() => !!document.querySelector('[data-rx-week][data-rx-blocks-ready]'));
+      assert.ok(await page.eval(() => document.querySelector('.rx-week').scrollWidth > document.querySelector('.rx-week').clientWidth), 'wider than the screen');
+      assert.ok(await fitsWidth(page), 'the page itself does not scroll sideways');
+      // Moving by keyboard to a far slot scrolls it into view, clear of the sticky bay names.
+      await page.eval(() => document.querySelector('#demo-week').scrollIntoView({ block: 'center' }));
+      await page.focus('#demo-week [role=gridcell][tabindex="0"]');
+      await page.press('End');
+      await sleep(300);
+      const visible = await page.eval(() => {
+        const frame = document.querySelector('.rx-week').getBoundingClientRect();
+        const cell = document.activeElement.getBoundingClientRect();
+        const name = document.querySelector('.rx-week__resource').getBoundingClientRect();
+        return { inFrame: cell.right <= frame.right + 1 && cell.left >= frame.left, clear: cell.left >= name.right - 1 };
+      });
+      assert.deepEqual(visible, { inFrame: true, clear: true });
+      page.assertClean();
+    }, PHONE));
 
   test('kanban: keyboard moves, a drag, a refused move put back', () =>
     browser.with(async (page) => {

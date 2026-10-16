@@ -30,6 +30,9 @@ async fn the_page_shows_every_block_with_its_signature() {
         "data-rx-quantity",
         "data-rx-keypad=\"rx-paid\"",
         "data-rx-kanban",
+        "class=\"rx-stepper rx-stepper--horizontal\"",
+        "class=\"rx-stepper rx-stepper--vertical\"",
+        "data-rx-week",
         "class=\"rx-month\"",
         "class=\"rx-availability\"",
         "data-rx-datetime-range",
@@ -47,6 +50,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "range_slider(name_min, name_max, min, max",
         "quantity(name, value=1",
         "keypad(target,",
+        "status_stepper(steps, current=none",
+        "week_calendar(resources, events=[]",
         "kanban(id, columns, url",
         "kanban_card(card)",
         "month_calendar(month, events=[]",
@@ -248,6 +253,52 @@ async fn a_kanban_move_is_checked_on_the_server() {
 }
 
 #[renox::test]
+async fn the_week_calendar_books_a_slot_the_server_checks() {
+    let app = TestApp::new(bikeshop::app()).await;
+    // The page offers free slots, and bookings in the first bay's row.
+    app.get("/about/blocks")
+        .await
+        .assert_ok()
+        .assert_see(r#"hx-post="/about/blocks/week""#)
+        .assert_see("Tune-up · Ana R.")
+        .assert_see("Frame paint, curing overnight")
+        .assert_see(r#"data-resource="bay-2""#);
+    // What a slot posts is accepted (a toast on a 204)...
+    let ok = [
+        ("resource", "bay-1"),
+        ("start", "2026-10-12T09:00:00+00:00"),
+        ("end", "2026-10-12T10:00:00+00:00"),
+    ];
+    app.htmx()
+        .post("/about/blocks/week", &ok)
+        .await
+        .assert_status(204);
+    // ...and a bay that doesn't exist, or an end before the start, is not.
+    app.htmx()
+        .post(
+            "/about/blocks/week",
+            &[
+                ("resource", "bay-9"),
+                ("start", "2026-10-12T09:00:00+00:00"),
+                ("end", "2026-10-12T10:00:00+00:00"),
+            ],
+        )
+        .await
+        .assert_invalid("resource");
+    app.htmx()
+        .post(
+            "/about/blocks/week",
+            &[
+                ("resource", "bay-1"),
+                ("start", "2026-10-12T10:00:00+00:00"),
+                ("end", "2026-10-12T09:00:00+00:00"),
+            ],
+        )
+        .await
+        .assert_invalid("end");
+}
+
+#[renox::test]
 async fn the_page_speaks_spanish() {
     let app = TestApp::new(bikeshop::app()).await;
     app.request()
@@ -257,5 +308,7 @@ async fn the_page_speaks_spanish() {
         .assert_ok()
         .assert_see("Octubre 2026")
         .assert_see("Foto anterior")
-        .assert_see("Reservar Trail 5 a las 09:00");
+        .assert_see("Reservar Trail 5 a las 09:00")
+        .assert_see("Reservar Bay 1, ")
+        .assert_see("paso actual");
 }

@@ -51,6 +51,8 @@ const BLOCKS = [
   '[data-rx-datetime-range][data-rx-blocks-ready]',
   '.rx-swatches--size',
   '.rx-swatches--colour',
+  '[data-rx-week][data-rx-blocks-ready]',
+  '.rx-stepper',
   '.rx-history',
   '.rx-plans',
   '[data-rx-receipt][data-rx-blocks-ready]',
