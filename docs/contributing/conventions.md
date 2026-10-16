@@ -78,7 +78,7 @@ A setting that takes one of a few words (`SESSION_DRIVER=database`) is an enum m
 Durations are `Duration` fields even when `.env` has minutes or seconds.
 
 ## 4.5 Migrations owned by the framework
-Names start with `0001…` so they sort before app migrations (`2026…`). There are nineteen:
+Names start with `0001…` so they sort before app migrations (`2026…`). There are twenty-one:
 - Auth module (`auth/module.rs` `MIGRATIONS`): `00010101000000_create_users_table`,
   `…000001_create_password_reset_tokens_table`, `…000002_create_personal_access_tokens_table`,
   `…000003_create_notifications_table`, `…000004_add_sessions_revoked_at_to_users`,
@@ -89,11 +89,17 @@ Names start with `0001…` so they sort before app migrations (`2026…`). There
   (scope_type/scope_id, '' for global, and starts_at/ends_at; SQLite rebuilds the table to
   replace its UNIQUE, so it is a `Migration` literal with its own PostgreSQL down, #244).
 - Audit module (`audit.rs`): `00010101000600_create_audit_logs_table`.
-- Every app (registered in `App::boot`; eight, which tests/it/database.rs lists):
+- Settings module (`settings.rs`): `00010101000400_create_settings_table` (`key`, `scope` ('' for
+  the default), `value` as JSON text or sealed, `updated_at`, `updated_by`; the primary key is
+  `(key, scope)`). The block `…000400`–`…000499` is shared with other planned modules (#39, #40,
+  #41, #52); recount after rebasing.
+- Every app (registered in `App::boot`; nine, which tests/it/database.rs lists):
   `00010101000100_create_jobs_table`, `00010101000110_add_chains_and_batches_to_jobs` and
   `00010101000120_add_callback_of_to_jobs` (queue), `00010101000200_create_cache_table` (cache),
   `00010101000210_create_sessions_table` (session.rs, installed whatever `SESSION_DRIVER` is),
   `00010101000220_create_grid_preferences_table` (grid/mod.rs),
+  `00010101000230_create_import_batches_table` (import.rs: `import_batches` and `import_changes`,
+  what undoable imports wrote),
   `00010101000300_create_webhook_calls_table` and
   `00010101000301_store_webhook_payloads_as_bytes` (webhook.rs `MIGRATIONS`).
 
@@ -113,6 +119,8 @@ PostgreSQL suite 2.5x slower (reconnects).
 
 ## 4.6 Background work and errors
 - Framework rows in the `cache` table start with `renox:` (`Cache::flush` keeps them).
+  `renox:settings:<key>[@<scope>]` is a settings group's version stamp (`settings.rs`): a save
+  writes a new one in the same transaction, and other processes compare it at most once a second.
 - `Error::permanent` marks errors the queue won't retry; `error::panic_message` formats caught
   panics. Jobs run in their own task, so a panic is a failed attempt.
 - `App::listen` listeners run before modules' (modules register at boot).

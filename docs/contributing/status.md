@@ -426,6 +426,32 @@
   flattens its `Mail`, so old payloads still decode) and the job returns
   `Middleware::rate_limited("channel:<name>" | "mailer:<name>", …)`. Unknown names fail at boot.
   Tests: tests/it/rate_limits.rs.
+- **#29, typed settings in the database** (`renox::settings`, docs/settings.md): the opt-in
+  `Settings` module (migration `00010101000400_create_settings_table`, commands `settings:get|set|
+  list`), `SettingsGroup` (`KEY`, `ENCRYPTED`) for a plain struct with defaults and `Validate`
+  rules, `App::settings::<T>()` / `settings_in_views` / `settings_from(path)`,
+  `AppState::settings` / `save_settings` (+ `_in` for a scope, `settings_info`), the `Setting<T>`
+  extractor, the event `SettingsChanged` and an `audit_logs` entry when `Audit` is on,
+  `TestApp::with_settings`, and `Admin::settings` / `AdminSettings` in renox-admin. Decisions: the
+  group trait is `SettingsGroup` and the module `Settings` (the issue used one name for both); the
+  table is keyed `(key, scope)` with `''` as the default scope so a scope needs no later migration;
+  an encrypted group is sealed the way `db::Encrypted` is; the per-process cache re-checks a
+  version row in `cache` (`renox:settings:<key>`) at most once a second per group, so one query per
+  group until a write and about a second for other servers to notice.
+- **#50, imports beyond CSV** (Excel files, dry run, undo; one branch): `Import::xlsx` (feature
+  `xlsx`, now also `calamine` 0.36, MIT, pure Rust; its `zip` and `quick-xml` were already in the
+  tree, new are `atoi_simd`, `fast-float2`, `codepage`, `debug_unsafe`), `Import::from_upload`
+  (CSV or Excel by content: a zip is a workbook), `.sheet`, `template_xlsx` + `TemplateColumn`;
+  `.dry_run()` / `.dry_run_if(bool)` (the row closures run in the transaction, which is rolled
+  back); `.undoable(window)` with `ImportTx` (`insert` / `update` / `save` record the table, the
+  key, a typed JSON before-image and the row's `updated_at` as text in `import_changes`),
+  `renox::import::undo` / `Undo::can_undo`, `prune` and `import:prune`; `ImportReport::{batch_id,
+  dry_run, error_csv, error_xlsx}` and `ErrorFile`; `<rx-import-action check>`. One framework
+  migration, `00010101000230_create_import_batches_table` (twenty-one in all; database.rs counts it).
+  The bike shop's price list uses it. The row closure's first argument is now `&mut ImportTx`
+  (derefs to the transaction and is an `Executor`, so closures written for `&mut Transaction`
+  compile unchanged). Not done: mapping columns in the browser (a follow-up); `ImportTx` has no
+  `delete`.
 - **#48, calendar files and the receipt print layout**: `renox::calendar` (`Ics`, `Event`,
   `Method`, `Status`; RFC 5545: CRLF, folding at 75 octets without splitting a character,
   escaping, UTC times, `DTSTAMP` from `clock`; no dependency), `Mail::attach_ics` (`invite.ics`

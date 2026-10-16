@@ -486,6 +486,36 @@ pub async fn template() -> renox::Download {
     renox::import::template("products.csv", &["sku", "name"])
 }
 
+/// Excel too: `from_upload` picks CSV or Excel by content (`Import::xlsx(bytes)` and `.sheet("Items")`
+/// with the `xlsx` feature; cells read as the text a CSV holds, so the same rules check both).
+/// `.dry_run_if(true)` checks every row and writes nothing (`<rx-import-action check>` adds the box).
+/// `.undoable(window)` keeps what the closure wrote through its `tx.insert/update/save(&mut model)`.
+pub async fn import_any(State(state): State<AppState>, Valid(form): Valid<ImportForm>) -> Result<ImportReport> {
+    let file = form.file.ok_or(Error::NotFound)?;
+    Import::from_upload(&file)
+        .dry_run_if(false)
+        .undoable(std::time::Duration::from_secs(86_400))
+        .run(&state, |tx, row: ProductRow| Box::pin(async move {
+            tx.insert(&mut Product { sku: row.sku, name: row.name, ..Default::default() }).await
+        }))
+        .await // report.batch_id; report.error_csv("errors.csv", ErrorFile::WholeFile) is the file to fix
+}
+
+/// Puts the batch back: deletes what it inserted, restores what it updated, in one transaction.
+/// Refuses with a message when the window passed, a row changed or vanished since (`updated_at`),
+/// or another table still uses a row. `Undo::batch(id).can_undo(|tx, change| …)` adds your rule.
+pub async fn undo_import(State(state): State<AppState>, Path(batch): Path<i64>) -> Result<Toast> {
+    let undone = renox::import::undo(&state, batch).await?; // `my-app import:prune` forgets old batches
+    Ok(Toast::success(format!("{} deleted, {} restored.", undone.deleted, undone.restored)))
+}
+
+/// With the `xlsx` feature: the Excel template (headings, an example row, typed columns).
+#[cfg(feature = "xlsx")]
+pub async fn template_xlsx() -> Result<renox::Download> {
+    use renox::import::TemplateColumn;
+    renox::import::template_xlsx("products.xlsx", &[TemplateColumn::text("sku", "COFFEE-1"), TemplateColumn::text("name", "Coffee")])
+}
+
 /// "Duplicate": a copy with no id and no timestamps, for the new-product form.
 pub async fn replicate(State(db): State<Db>, Path(id): Path<i64>) -> Result<View> {
     let mut product = Product::find_or_404(&db, id).await?.replicate();
@@ -1523,6 +1553,59 @@ async fn refund(State(db): State<Db>, user: AuthUser, ClientIp(ip): ClientIp) ->
 ```
 
 `rnx audit:prune --days 365` deletes older entries.
+
+## Settings in the database (details in [docs/settings.md](docs/settings.md))
+
+Typed settings (a company name, a number format, which features are on) kept in the `settings`
+table, cached, validated, editable by an administrator. Opt in with the `Settings` module.
+
+```rust
+use renox::prelude::*;
+use renox::settings::{Setting, Settings, SettingsChanged, SettingsGroup};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Validate, Default, Clone)]
+struct Company {
+    #[validate(required, max(120))]
+    name: String,
+    tax_number: Option<String>,
+}
+
+impl SettingsGroup for Company {
+    const KEY: &'static str = "company"; // one row per group (and scope)
+    // const ENCRYPTED: bool = true;     // sealed with APP_KEY (gateway keys)
+}
+
+fn app() -> App {
+    App::new()
+        .module(Settings)                    // the table + settings:get|set|list
+        .settings_in_views::<Company>()      // declares it; `{{ settings.company.name }}`
+        // .settings::<Company>()            // declares it without sharing it with views
+        // .settings_from("storage/settings.json") // seed groups never saved (saved values win)
+        .listen(|e: SettingsChanged, _state| async move {
+            let _ = (e.key, e.changed, e.actor, e.previous, e.current); // sealed: previous/current are null
+            Ok(())
+        })
+}
+
+async fn footer(company: Setting<Company>) -> String {
+    format!("© {}", company.name)
+}
+
+async fn rename(state: AppState, user: User) -> Result {
+    let company = state.settings::<Company>().await?; // Arc<Company>; the defaults until saved
+    let mut changed = (*company).clone();
+    changed.name = "Acme".into();
+    state.save_settings(&changed, Some(&user)).await?; // validated, audited, emits SettingsChanged
+    let _per_branch = state.settings_in::<Company>("branch-7").await?; // a scope; "" is the default
+    Ok(())
+}
+```
+
+`rnx settings:list`, `settings:get company[.name]`, `settings:set company.name "Acme"` (validated;
+`--scope S`; encrypted groups print `<sealed>` unless `--reveal`). Admin page:
+`Admin::settings::<Company>("Company")` with `impl AdminSettings for Company` (`fields()`,
+`allows(user, "view" | "update")`; docs/admin.md). Tests: `TestApp::with_settings(Company { … })`.
 
 ## Tenants, roles and permissions
 

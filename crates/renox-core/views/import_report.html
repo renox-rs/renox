@@ -1,9 +1,13 @@
 {#- The rows an import left out (renox::import::ImportReport), shown in the
     kit's import sheet: data-rx-keep-open keeps the sheet open, and when
-    some rows went in, closing it reloads the page. -#}
+    some rows went in, closing it reloads the page. A dry run (nothing was
+    written) keeps the sheet open even when every row is fine, without a
+    reload. The error files are `data:` links: the failed rows, and the whole
+    file with an error column. -#}
 {%- from "renox/ui.html" import alert %}
-<div class="rx-import-report" data-rx-keep-open{% if imported %} data-rx-refresh-on-close{% endif %}>
-  {{ alert(summary, kind="warning" if imported else "error") }}
+<div class="rx-import-report" data-rx-keep-open{% if imported and not dry_run %} data-rx-refresh-on-close{% endif %}>
+  {{ alert(summary, kind=("success" if clean else ("warning" if imported else "error"))) }}
+  {%- if not clean %}
   <div class="rx-table-wrap rx-import-report__table" tabindex="0" role="region" aria-label="{{ summary }}">
     <table class="rx-table">
       <thead><tr><th scope="col" class="rx-num">{{ t('ui.import.row') }}</th><th scope="col">{{ t('ui.import.problem') }}</th></tr></thead>
@@ -15,4 +19,12 @@
     </table>
   </div>
   {%- if more %}<p class="rx-hint">{{ t('ui.import.more', count=more) }}</p>{% endif %}
+  {%- if failed_link or whole_link %}
+  <p class="rx-import-report__files">
+    {%- if failed_link %}<a class="rx-link" href="{{ failed_link }}" download="import-errors.csv">{{ t('ui.import.download_failed') }}</a>{% endif %}
+    {%- if failed_link and whole_link %} · {% endif %}
+    {%- if whole_link %}<a class="rx-link" href="{{ whole_link }}" download="import-checked.csv">{{ t('ui.import.download_whole') }}</a>{% endif %}
+  </p>
+  {%- endif %}
+  {%- endif %}
 </div>
