@@ -1867,6 +1867,11 @@ Notes:
 
 ## Decisions
 
+- **Rate limits for queued channel and mail sends are separate methods** (#46):
+  `App::channel_rate_limit(name, …)` and `App::mailer_rate_limit(name, …)`, not a builder
+  returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in
+  the job payload because `Job::middleware` has no `AppState`; it reuses
+  `Middleware::rate_limited` (a fixed window). A sliding window or token bucket stays a follow-up.
 - **`rx-*` tags are the default way to write pages** in `rnx new`, the docs and the examples (owner, 2026-10-11, #384); kit macros stay supported and are what the tags compile to.
 - **Browser tests on Node's own test runner and raw CDP** (#262, 2026-10): `tests/browser/`
   drives headless Chrome over the DevTools protocol with Node 24's `node:test` and global

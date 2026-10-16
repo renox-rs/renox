@@ -291,7 +291,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   responses, middleware and guards, rate limits, sessions, CSRF, cookies, signed URLs,
   maintenance mode.
 - [docs/mail.md](docs/mail.md): mail (drivers, views, attachments, queued mail, the preview) and
-  notifications (mail, database, custom channels, `DatabaseMessage`, the in-app inbox and the
+  notifications (mail, database, custom channels with `App::channel_rate_limit`, queued mail
+  caps with `App::mailer_rate_limit`, `DatabaseMessage`, the in-app inbox and the
   kit's live notification bell (`Auth::new().notifications()`, Server-Sent Events), pruning,
   testing), and the app's own live events over that stream (`state.broadcast`,
   `broadcast_to`, `event_stream()`, and their limits).
