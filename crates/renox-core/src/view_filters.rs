@@ -116,27 +116,10 @@ pub fn currency_decimals(code: &str) -> u32 {
     currency(code).1
 }
 
-/// A currency's symbol and usual decimals (the code itself and 2 when it
-/// isn't one of the listed ones).
+/// A currency's symbol and usual decimals from the one table in
+/// [`crate::money`] (the code itself and 2 when it isn't listed).
 fn currency(code: &str) -> (&str, u32) {
-    match code {
-        "IDR" => ("Rp", 0),
-        "USD" => ("$", 2),
-        "EUR" => ("€", 2),
-        "GBP" => ("£", 2),
-        "JPY" => ("¥", 0),
-        "CNY" => ("CN¥", 2),
-        "SGD" => ("S$", 2),
-        "MYR" => ("RM", 2),
-        "AUD" => ("A$", 2),
-        "CAD" => ("CA$", 2),
-        "INR" => ("₹", 2),
-        "KRW" => ("₩", 0),
-        "THB" => ("฿", 2),
-        "PHP" => ("₱", 2),
-        "VND" => ("₫", 0),
-        other => (other, 2),
-    }
+    crate::money::info(code)
 }
 
 /// `n` with `decimals` decimals and the locale's separators: `75.000` in

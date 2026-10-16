@@ -101,6 +101,7 @@ pub mod mail;
 pub mod maintenance;
 mod method;
 mod module;
+pub mod money;
 pub mod nav;
 mod path;
 pub mod prompt;
