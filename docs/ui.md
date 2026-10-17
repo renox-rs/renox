@@ -34,6 +34,7 @@ full reload.
   - form fields;
   - the page's frame (navigation bar, sidebar, page headers);
   - themes and type, and [brand themes](#brand-themes) (one colour in, readable accent tokens out);
+  - [installing the app on phones](#install-on-phones): manifest, service worker, offline page;
   - [right-to-left](#right-to-left) pages: `app.dir`, logical CSS, the Arabic font;
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
@@ -1133,6 +1134,92 @@ let html = r#"<a style="background:#1c1917;color:#ffffff;">Pay</a>"#;
 let mail = Mail::new("ana@example.com", "Invoice", "Invoice").html(html).theme(&theme);
 assert!(mail.html.unwrap().contains(&accent));
 ```
+
+### Install on phones
+
+A phone can put a web app on its home screen and open it without browser bars. `App::pwa`
+makes yours installable: Renox serves the manifest and a small service worker, and the worker
+shows an offline page when the network is gone.
+
+```rust
+use renox::prelude::*;
+use renox::pwa::Pwa;
+
+fn app() -> App {
+    App::new().pwa(
+        Pwa::new("Bike Shop")
+            .short_name("Bikes")
+            .theme_color("#1E3A5F")
+            .icons("public/icons")
+            .offline_page("offline.html"),
+    )
+}
+```
+
+The quickest start is `rnx make:pwa`. It writes `resources/views/offline.html`, three
+placeholder icons in `public/icons/` and the `.pwa(..)` call (after your last `.module(`);
+replace the icons with your own. It refuses to overwrite files unless you pass `--force`.
+Put `<rx-pwa/>` (or `{{ renox_pwa() }}`) in the layout's head, after `<rx-theme/>`; the
+layouts `rnx new` writes already have it. It links the manifest and sets `theme-color`, the
+apple-touch-icon and the script that registers the worker. The script carries the request's
+nonce, so it works under `CSP=strict`. Without `App::pwa` the tag renders nothing.
+
+| Builder | Meaning |
+|---|---|
+| `Pwa::new(name)` | the app's name |
+| `.short_name(..)` | the label under the icon (defaults to the name) |
+| `.theme_color(..)`, `.background_color(..)` | default `#0b6e66` (the kit's accent) and `#ffffff` |
+| `.icons(dir)` | a folder with `icon-192.png`, `icon-512.png` and `icon-maskable-512.png` |
+| `.start_url(..)` | a route name or a path |
+| `.display(..)` | `PwaDisplay::Standalone` by default |
+| `.offline_page(view)` | the view shown offline |
+
+What Renox serves:
+
+- `GET /manifest.webmanifest` with `name`, `short_name`, `icons`, `start_url`, `display`,
+  the two colours, `lang` and `dir`. `lang` and `dir` follow the request's locale. To translate
+  the name, define the lang keys `pwa.name` and `pwa.short_name`; otherwise the builder values
+  are used.
+- `GET /sw.js`, sent with `Cache-Control: no-cache` and `Service-Worker-Allowed: /`, and
+  without a session cookie. Its version changes when the hashed `/_renox/*` assets, the
+  offline page or the brand change, and a new worker replaces the old one.
+- `GET /_renox/offline` and the icons under `/_renox/pwa/icons/`.
+- A `public/manifest.webmanifest` or `public/sw.js` of your own wins, as `robots.txt` does.
+
+The app fails to boot when an icon file is missing or the offline view does not render; the
+message names the file or view. The offline page is rendered once with an empty context (no
+signed-in user), so keep it plain. The worker is deliberately small: it caches the offline
+page and the hashed assets, goes to the network for every navigation (the offline page is
+only a fallback) and never stores a page, so a signed-in page is never shown from a cache.
+It does not touch POST or other non-GET requests.
+
+**A brand per request.** For several brands by host, or a name and logo that an administrator
+edits, `App::pwa_for` runs for each manifest, worker and offline request and returns a
+`PwaBrand` with the name, short name, theme colour and icons (a folder or bytes), or `Ok(None)`
+to use the static `Pwa`. It needs `App::pwa` as the fallback:
+
+```rust
+use renox::prelude::*;
+use renox::pwa::{Pwa, PwaBrand, PwaRequest};
+
+fn app() -> App {
+    App::new()
+        .pwa(Pwa::new("Bike Shop").icons("public/icons"))
+        .pwa_for(|req: PwaRequest| async move {
+            Ok((req.host() == "north.example.com").then(|| {
+                PwaBrand::new("North Bikes").short_name("North").theme_color("#0F766E")
+            }))
+        })
+}
+```
+
+The responses send `Vary: Host`, the brand's icons are served under a path with the brand's
+hash, and the hash is part of the worker version, so a changed brand installs a new worker.
+Icons are checked on first use; an invalid one is logged and the static icons stay, as they
+do when the closure returns an error. Keep the closure cheap. One manifest per app is the
+rule for now; a second manifest with its own scope is not supported. Offline data entry
+(forms that wait for the network) comes later as "Offline forms" (#52) and will be described
+next to this section.
 
 ### The type scale
 

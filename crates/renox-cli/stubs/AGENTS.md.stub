@@ -57,6 +57,7 @@ rnx make:notification OrderShipped --module orders     # also make:event, make:r
 rnx make:middleware StampRequests                      # also make:component (an <app-…> tag)
 rnx make:component --ui                                # copy the UI kit in to change it (same as rnx ui:publish)
 rnx make:deploy                                        # Dockerfile, systemd unit + socket, Litestream
+rnx make:pwa                                           # installable on phones: offline page, placeholder icons, .pwa(..)
 rnx build                                              # release binary in dist/ (Tailwind CSS minified first)
 rnx tailwind --watch                                   # rebuild public/css/app.css (rnx serve does it for you)
 ```
@@ -288,6 +289,11 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   in the app's own CSS takes the kit's type scale (`font: var(--rx-type-heading)`, `-body`,
   `-label`, `-caption`…), not sizes of its own. `data-rx-theme="classic"` on `<html>` is the
   kit's older look.
+- Installable on phones: `rnx make:pwa` (then replace the icons in `public/icons/`), or
+  `App::pwa(Pwa::new("Name").icons("public/icons").offline_page("offline.html"))`; `<rx-pwa/>`
+  goes in the layout head after `<rx-theme/>`. Renox serves the manifest, `/sw.js` and the offline
+  page; navigations are never cached, so don't expect signed-in pages offline. Per host:
+  `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`.
 - Right-to-left: every layout writes `<html lang="{{ app.locale }}" dir="{{ app.dir }}">`, and
   `app.dir` is `rtl` for Arabic, Hebrew, Persian and the like. Keep `dir` on a layout you add,
   and in the app's own CSS use logical properties (`margin-inline-start`, `padding-inline`,

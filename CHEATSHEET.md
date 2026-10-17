@@ -55,6 +55,7 @@ rnx webhook:failed                   # webhook:retry <id>
 rnx webhook:endpoints                # webhook:deliveries [--endpoint N] [--failed], webhook:redeliver <id>, webhook:prune-deliveries [--days 30]
 rnx down --secret s3cret --retry 60  # 503 for everyone but visitors of /s3cret; `rnx up` ends it
 rnx build                            # one release binary in dist/; rnx make:deploy
+rnx make:pwa                         # installable on phones: offline page, icons, .pwa(..) (--force replaces)
 rnx tailwind --watch                 # resources/css/app.css -> public/css/app.css (serve/build do it)
 rnx tailwind --minify                # one build; rnx tailwind:install downloads the pinned CLI
 ```
@@ -1632,6 +1633,11 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // App::new().theme(theme)  // or .theme_for(|req: ThemeRequest| async move { Ok(Some(theme)) }) per host/tenant/setting; Ok(None) = app theme
 // Layout: <rx-theme/> after <rx-ui/>; served at /_renox/theme/{hash}.css (immutable, CSP strict safe).
 // theme.tokens() / theme.dark_tokens() -> BTreeMap; Mail::theme(&theme) colours rx-mail-button/panel, also when queued.
+// Install on phones (docs/ui.md "Install on phones"): `rnx make:pwa [--force]` writes offline.html, placeholder icons, the .pwa(..) call.
+// App::new().pwa(Pwa::new("Bike Shop").short_name("Bikes").theme_color("#1E3A5F").icons("public/icons").offline_page("offline.html"))
+// (`use renox::pwa::{Pwa, PwaBrand, PwaRequest}`; icons dir: icon-192.png, icon-512.png, icon-maskable-512.png; a missing one is a boot error)
+// .pwa_for(|req: PwaRequest| async move { Ok(Some(PwaBrand::new("North Bikes").theme_color("#0F766E"))) }) per host (Vary: Host); Ok(None) = static Pwa
+// Layout: <rx-pwa/> after <rx-theme/>; serves /manifest.webmanifest, /sw.js (versioned), /_renox/offline; navigations are never cached.
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`

@@ -549,6 +549,17 @@
   `state.emit` of a registered event dispatches directly. The job payload is encrypted and has ids only.
   `SignedRequest` buffers the body and keeps replay ids in the cache for the tolerance window.
   Guide: docs/operations.md "Outbound webhooks".
+- **#33, install on phones**: `renox-core/src/pwa.rs` (`Pwa` builder, `PwaRequest`, `PwaBrand`, manifest JSON with
+  `lang`/`dir` from the request locale, name from the lang keys `pwa.name`/`pwa.short_name`) and the worker
+  `assets/renox-sw.js`, filled with the hashed `/_renox/*` assets. `App::pwa` merges `/manifest.webmanifest`, `/sw.js`,
+  `/_renox/offline` and the icon routes next to `robots(..)`, before sessions (no cookie); a `public/` file of the same
+  name wins; a missing icon or an offline view that fails to render is a boot error. The worker version is a sha256
+  prefix of worker, assets, offline HTML and brand hash. Navigations are network-only with the offline page as
+  fallback and are never stored. `App::pwa_for` resolves a `PwaBrand` per host (`Vary: Host`), serves its icons under
+  `/_renox/pwa/icons/<hash>/` and caches the offline page by hash; `None`, an error or invalid icons fall back to the
+  static `Pwa`. `<rx-pwa/>` / `renox_pwa()` emit the nonce-carrying registration script. `rnx make:pwa`
+  (`renox-cli/src/pwa.rs`). Several manifests per app are deferred; offline forms are #52.
+  Guide: docs/ui.md "Install on phones".
 - **#36, brand themes**: `renox-core/src/theme.rs` (colour core: hex, sRGB/OKLCH with gamut clipping, WCAG ratio,
   nearest-passing lightness search; `Brand`, `Theme::from_brand`, `ContrastError`, `tokens()`/`dark_tokens()`,
   `css()` with the kit's three selector blocks, a 16-digit content hash). Text variants move in lightness

@@ -300,6 +300,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   light and dark, or `Err(ContrastError { suggestion })`; `App::theme(theme)` or `App::theme_for(|req: ThemeRequest| ..)` per host/tenant/setting;
   `<rx-theme/>` after `<rx-ui/>` links the hashed `/_renox/theme/{hash}.css`, CSP strict safe; `theme.tokens()`/`dark_tokens()`,
   `Mail::theme(&theme)`; guide: docs/ui.md "Brand themes", example: examples/bikeshop per-store brands),
+  installable on phones (`App::new().pwa(Pwa::new("Bike Shop").icons("public/icons").offline_page("offline.html"))` serves
+  `/manifest.webmanifest`, a versioned `/sw.js` and `/_renox/offline`; `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`
+  per host with `Vary: Host`; `<rx-pwa/>` after `<rx-theme/>`, CSP strict safe; `rnx make:pwa`; navigations are never cached;
+  guide: docs/ui.md "Install on phones"),
   themes and the type scale: the warm default, `data-rx-theme="classic"`, `--rx-type-*`),
   the filters `number`, `money` (`APP_CURRENCY`), `quantity`, `date`, `since`, `words`, `markdown`,
   dashboards (`renox::chart`: `Period` with presets, weeks and custom ranges, `Trend` per
@@ -384,6 +388,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/stability.md](docs/stability.md): what semver covers, which types may grow
   (`#[non_exhaustive]`), public dependencies (axum yes, sqlx only through escape hatches).
 - `rnx make:deploy` writes `deploy/README.md` (Docker, systemd, Litestream backups).
+- `rnx make:pwa` writes `resources/views/offline.html`, three placeholder icons in `public/icons/` and the `.pwa(..)` call (docs/ui.md "Install on phones").
 
 ## Where things are (for changing Renox itself)
 

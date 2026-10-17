@@ -1961,6 +1961,13 @@ Notes:
 - [ ] An admin screen for endpoints, OAuth2 client credentials, per-endpoint payload transforms and
   private-address blocking are out of scope
 
+### Install on phones (#33)
+- [x] `renox::pwa`: `Pwa`, `PwaBrand`, `PwaRequest`; `App::pwa`, `App::pwa_for`; `/manifest.webmanifest`, versioned
+  `/sw.js`, `/_renox/offline`, icons; `<rx-pwa/>` / `renox_pwa()`; `rnx make:pwa`
+- [x] Docs (ui.md "Install on phones"), CHEATSHEET.md, llms.txt, AGENTS.md.stub
+- [ ] Browser test and acceptance tests (#33 parts 8 and 9)
+- [ ] Offline forms (#52), push notifications and several manifests per app are out of scope here
+
 ### Brand themes (#36)
 - [x] `renox::theme`: `Brand`, `Theme::from_brand` (OKLCH, WCAG-checked, `ContrastError` with a passing
   suggestion), `tokens()`/`dark_tokens()`, `css()`; hashed `/_renox/theme/{hash}.css`; `App::theme`,
@@ -2043,6 +2050,10 @@ Notes:
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
   (a queued mail from its own locale), the CSS is logical rather than a second stylesheet, and the font is a
   separate face with a `unicode-range` so Latin pages never pay for it. The error and debug pages stay `dir="ltr"`.
+
+- **The service worker never stores pages** (#33): navigations go to the network and fall back to one offline page
+  rendered at boot with no user, so a signed-in page cannot be served from a cache. `pwa_for` brands the manifest,
+  icons, offline page and worker version per host (`Vary: Host`); several manifests per app are deferred.
 
 - **Brand themes are hashed stylesheets only** (#36): no inline `<style>` and no `Vary: Host`, so a theme works
   under `CSP=strict` without a nonce and caches for a year. Every theme the app serves is kept in memory by hash.
