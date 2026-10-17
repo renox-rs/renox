@@ -345,6 +345,21 @@ const RESERVED: &[&str] = &[
     "styles",
 ];
 
+/// The texts the outbox script reads from an offline form (attribute suffix, `ui.offline.*` key).
+const OFFLINE_TEXTS: [(&str, &str); 11] = [
+    ("waiting", "waiting"),
+    ("attention", "attention"),
+    ("saved", "saved"),
+    ("sent", "sent"),
+    ("sending", "sending"),
+    ("signin", "sign_in"),
+    ("failed", "failed"),
+    ("review", "review"),
+    ("resend", "resend"),
+    ("discard", "discard"),
+    ("problem", "problem"),
+];
+
 /// Splits the siblings after an `<rx-let>` at the end tag of the plain HTML element that holds
 /// it (plain elements are not nodes of the tree, only text): what comes before that tag is the
 /// let's scope, the rest (starting with the tag) is outside it.
@@ -1123,6 +1138,11 @@ pub(super) fn form(
         out.push_str(&format!(
             " data-rx-offline=\"{{{{ {name} }}}}\" data-rx-offline-csrf=\"/_renox/csrf\""
         ));
+        for (attr, key) in OFFLINE_TEXTS {
+            out.push_str(&format!(
+                " data-rx-offline-{attr}=\"{{{{ t('ui.offline.{key}') }}}}\""
+            ));
+        }
     }
     match live.as_deref() {
         None | Some("false") => {}

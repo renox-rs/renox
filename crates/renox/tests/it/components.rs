@@ -1072,16 +1072,31 @@ async fn rx_form_offline_marks_the_form_and_loads_the_outbox_script_once() {
     let html = app.get("/r").await.assert_ok().text();
     assert!(
         html.contains(
-            "<form method=\"post\" action=\"/save\" data-rx-offline=\"visits\" data-rx-offline-csrf=\"/_renox/csrf\" class=\"a\">"
+            "<form method=\"post\" action=\"/save\" data-rx-offline=\"visits\" data-rx-offline-csrf=\"/_renox/csrf\" data-rx-offline-waiting=\"One waiting to send|:count waiting to send\""
         ),
         "{html}"
     );
+    assert!(html.contains("data-rx-offline-discard=\"Discard\" data-rx-offline-problem=\"The server did not accept it.\" class=\"a\">"), "{html}");
     assert!(html.contains("data-rx-offline=\"notes\""), "{html}");
     assert_eq!(html.matches("/_renox/offline-").count(), 1, "{html}");
     let start = html.find("/_renox/offline-").unwrap();
     let url = &html[start..start + html[start..].find('"').unwrap()];
     let script = app.get(url).await.assert_ok().text();
     assert!(script.contains("data-rx-offline"), "{script}");
+    for marker in [
+        "Idempotency-Key",
+        "X-Recorded-At",
+        "X-Client-Id",
+        "indexedDB",
+        "aria-live",
+        "/logout",
+    ] {
+        assert!(script.contains(marker), "{marker}");
+    }
+    assert!(
+        !script.contains("localStorage"),
+        "the outbox keeps nothing in localStorage"
+    );
 
     let plain = app.get("/m").await.assert_ok().text();
     assert!(!plain.contains("offline"), "{plain}");

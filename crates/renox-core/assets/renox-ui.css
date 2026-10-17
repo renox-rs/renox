@@ -1645,3 +1645,13 @@ a.rx-stat:focus-visible { outline: 2px solid var(--rx-accent); outline-offset: 2
   .rx-notification--unread { border-inline-start: 4px solid Highlight; }
   .rx-repeatable__item { border: 1px solid CanvasText; }
 }
+
+/* ---------- Offline forms: pending badge and "needs attention" list ---------- */
+
+.rx-offline { margin-block: var(--rx-space-3); }
+.rx-offline__status { margin: 0; font-size: var(--rx-text-subhead); color: var(--rx-secondary-label); }
+.rx-offline__status:empty { display: none; }
+.rx-offline__list { list-style: none; margin: var(--rx-space-2) 0 0; padding: 0; display: grid; gap: var(--rx-space-2); }
+.rx-offline__item { display: flex; flex-wrap: wrap; align-items: center; gap: var(--rx-space-2); padding-block: var(--rx-space-2); padding-inline: var(--rx-space-3); border: 1px solid var(--rx-danger); border-radius: var(--rx-radius, 0.5rem); }
+.rx-offline__problem { color: var(--rx-danger); }
+.rx-offline__actions { display: flex; gap: var(--rx-space-2); margin-inline-start: auto; }
