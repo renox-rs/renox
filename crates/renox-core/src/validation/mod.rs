@@ -1210,6 +1210,29 @@ impl Field<'_> {
         self
     }
 
+    /// A decimal quantity typed as `12.5`, with at most `scale` decimals
+    /// (`Quantity<3>` is `.quantity(3)`), never rounded: `12.500` passes,
+    /// `12.5001` fails. Use [`min`](Self::min) and [`max`](Self::max) for limits.
+    pub fn quantity(mut self, scale: u32) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && !crate::quantity::fits_scale(text, scale)
+        {
+            self.fail("quantity", &[("decimals", scale.to_string())]);
+        }
+        self
+    }
+
+    /// A unit code that `units` knows, e.g. `.unit(&units)` with a
+    /// [`UnitTable`](crate::quantity::UnitTable) from `Units::build`.
+    pub fn unit(mut self, units: &crate::quantity::UnitTable) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && !units.contains(text.trim())
+        {
+            self.fail("unit", &[]);
+        }
+        self
+    }
+
     /// An uploaded image within `limits`, e.g.
     /// `.dimensions(&Dimensions::new().min_width(400).ratio(16, 9))`; see
     /// [`Dimensions`]. A file that isn't an image fails.

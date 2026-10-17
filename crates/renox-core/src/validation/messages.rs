@@ -84,6 +84,8 @@ pub(crate) fn template(key: &str) -> &'static str {
         "lte.file" => "The :attribute must be at most as large as :other.",
         "lte.date" => "The :attribute must be the same as or before :other.",
         "currency" => "The :attribute must be a valid currency code.",
+        "quantity" => "The :attribute must be a number with at most :decimals decimal places.",
+        "unit" => "The :attribute must be a valid unit.",
         "money" => "The :attribute must be an amount with at most :decimals decimal places.",
         "decimal" => "The :attribute must have :decimal decimal places.",
         "dimensions" => "The :attribute has invalid image dimensions.",

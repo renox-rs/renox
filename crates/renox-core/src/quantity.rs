@@ -89,6 +89,18 @@ fn split_decimal(text: &str) -> Option<(bool, &str, &str)> {
     Some((negative, whole, fraction))
 }
 
+/// Whether `text` reads as a decimal that fits an `i64` at `scale` digits with
+/// nothing rounded (digits beyond the scale must all be zero). For the
+/// validation rule, where the scale is only known at run time.
+pub(crate) fn fits_scale(text: &str, scale: u32) -> bool {
+    let Some((_, whole, fraction)) = split_decimal(text) else {
+        return false;
+    };
+    let scale = scale.min(9) as usize;
+    let (kept, rest) = fraction.split_at(fraction.len().min(scale));
+    rest.bytes().all(|b| b == b'0') && format!("{whole}{kept:0<scale$}").parse::<i64>().is_ok()
+}
+
 /// A decimal quantity stored as an `i64` count of 10^-`SCALE` units.
 /// `SCALE` is at most 9, checked at compile time. Adding and subtracting
 /// return a `Result`; there are no panicking operators.

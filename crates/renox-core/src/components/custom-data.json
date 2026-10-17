@@ -1456,6 +1456,9 @@
             },
             {
               "name": "money"
+            },
+            {
+              "name": "quantity"
             }
           ]
         },
@@ -1599,6 +1602,16 @@
         {
           "description": "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
           "name": "currency",
+          "values": []
+        },
+        {
+          "description": "For type quantity: the decimals of the quantity (0 to 9); sets the step.",
+          "name": "scale",
+          "values": []
+        },
+        {
+          "description": "For type quantity: the unit shown as the suffix (kg, m, ...).",
+          "name": "unit",
           "values": []
         }
       ],

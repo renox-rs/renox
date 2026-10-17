@@ -383,6 +383,7 @@ First, a note on sizes. `min`, `max`, `between` and `size` measure whatever the 
 | Size | `min(n)`, `max(n)`, `between(min, max)`, `size(n)` |
 | Text | `email()`, `url()` (`http://` or `https://`), `matches(r"^[A-Z]{2}\d{4}$")` (a regex, a text pattern; anchor it with `^` and `$`), `not_matches(pattern)`, `alpha()`, `alpha_num()`, `alpha_dash()`, `ascii()`, `lowercase()`, `uppercase()`, `starts_with(&[…])`, `ends_with(&[…])`, `doesnt_start_with(&[…])`, `doesnt_end_with(&[…])`, `uuid()`, `ulid()`, `ip()`, `mac_address()`, `json()`, `timezone()` (an IANA name such as `Asia/Jakarta`), `hex_color()` (`#4f46e5`) |
 | Numbers | `numeric()` and `integer()` (for numbers typed into text fields), `decimal(min, max)` (how many decimal places: `decimal(2, 2)` for `12.50`), `multiple_of(n)`, `min_digits(n)`, `max_digits(n)` |
+| Quantity | `quantity(3)` (a decimal typed as `12.5` with at most that many decimals, the scale of a `Quantity<3>`; never rounded, so `12.5001` fails; limits with `min`/`max`), `unit(&table)` (a code the `UnitTable` from `Units::build` knows) |
 | Money | `currency()` (an ISO 4217 code such as `USD`), `money(&self.currency)` (an amount typed in whole units, `12.50`, with at most the currency's decimals: JPY 0, USD 2, KWD 3; never rounded) |
 | Digits | `digits(n)` (exactly `n` digits, e.g. a PIN), `digits_between(min, max)` (e.g. a phone number) |
 | Dates | `date()` (text such as `2026-10-01` or `2026-10-01T10:30`), `before(d)`, `before_or_equal(d)`, `after(d)`, `after_or_equal(d)`, where `d` is a `NaiveDate`, `NaiveDateTime` or `DateTime`, or text in the same forms as `date()` (a limit that isn't a date leaves the rule out) |
@@ -713,6 +714,9 @@ column then means editing the model only.
   name, once). They are checked together (`required`, `money(&self.<currency>)`, `currency`) and
   `fill` builds the `Money`; an empty `Option<Money>` amount clears it. Show it with
   `<rx-input type="money" currency="…"/>`.
+- A `Quantity<S>` or `Option<Quantity<S>>` field becomes a text field checked with `quantity(S)`
+  (`required` unless it is an `Option`); `fill` parses it exactly and an empty `Option` clears it.
+  Show it with `<rx-input type="quantity" scale="3" unit="kg"/>`.
 - Nested names (`lines[0][qty]`) work through the field types, such as `Json<Vec<Line>>` and
   `KeyValues`.
 - `#[form(...)]` without `#[model(form)]` is a compile error.

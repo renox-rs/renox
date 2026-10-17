@@ -261,6 +261,7 @@ const INPUT_TYPES: &[&str] = &[
     "color",
     "range",
     "money",
+    "quantity",
 ];
 
 const FORM_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -1195,6 +1196,16 @@ pub(crate) static BUILTIN: &[Contract] = &[
                 "currency",
                 false,
                 "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
+            ),
+            text(
+                "scale",
+                false,
+                "For type quantity: the decimals of the quantity (0 to 9); sets the step.",
+            ),
+            text(
+                "unit",
+                false,
+                "For type quantity: the unit shown as the suffix (kg, m, ...).",
             ),
         ],
         slots: &[],

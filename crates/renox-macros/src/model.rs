@@ -634,6 +634,29 @@ fn physical_columns(fields: &[Field]) -> Result<Vec<Physical>> {
     Ok(out)
 }
 
+/// The scale tokens of a `Quantity<S>` or `Option<Quantity<S>>` field type.
+fn quantity_scale(ty: &Type) -> Option<TokenStream> {
+    let last = |ty: &Type| match ty {
+        Type::Path(p) => p.path.segments.last().cloned(),
+        _ => None,
+    };
+    let args = |segment: &syn::PathSegment| match &segment.arguments {
+        syn::PathArguments::AngleBracketed(a) => a.args.first().cloned(),
+        _ => None,
+    };
+    let mut segment = last(ty)?;
+    if segment.ident == "Option" {
+        let Some(syn::GenericArgument::Type(inner)) = args(&segment) else {
+            return None;
+        };
+        segment = last(&inner)?;
+    }
+    if segment.ident != "Quantity" {
+        return None;
+    }
+    args(&segment).map(|scale| quote!(#scale))
+}
+
 fn is_option(ty: &Type) -> bool {
     matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "Option"))
 }
@@ -687,6 +710,17 @@ fn form_tokens(input: &DeriveInput, fields: &[Field], custom: Option<&str>) -> T
                 #field_vis #name: ::std::string::String
             };
         }
+        if let Some(scale) = quantity_scale(ty) {
+            // A `Quantity` is typed as text with at most `scale` decimals.
+            let required = (!is_option(ty)).then(|| quote! { required, });
+            let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
+            return quote! {
+                #[validate(#required quantity(#scale))]
+                #(#rules)*
+                #[serde(default)]
+                #field_vis #name: ::std::string::String
+            };
+        }
         if f.form.upload {
             let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
             return quote! {
@@ -722,6 +756,25 @@ fn form_tokens(input: &DeriveInput, fields: &[Field], custom: Option<&str>) -> T
                         && let ::core::result::Result::Ok(amount) = ::renox::money::Money::parse(&self.#name, code)
                     {
                         record.#name = amount;
+                    }
+                }
+            };
+        }
+        if let Some(scale) = quantity_scale(&f.ty) {
+            // Validation has passed by now; a value that still doesn't read
+            // leaves the record's field as it was.
+            return if is_option(&f.ty) {
+                quote! {
+                    if self.#name.trim().is_empty() {
+                        record.#name = ::core::option::Option::None;
+                    } else if let ::core::result::Result::Ok(q) = ::renox::quantity::Quantity::<#scale>::parse_exact(&self.#name) {
+                        record.#name = ::core::option::Option::Some(q);
+                    }
+                }
+            } else {
+                quote! {
+                    if let ::core::result::Result::Ok(q) = ::renox::quantity::Quantity::<#scale>::parse_exact(&self.#name) {
+                        record.#name = q;
                     }
                 }
             };

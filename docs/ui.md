@@ -294,6 +294,7 @@ Here are fields side by side, and a group with a title:
 <rx-form-grid columns="2">
   <rx-input name="price" label="Price" type="number" prefix="$" required step="0.01"/>
   <rx-input name="total" label="Total" type="money" currency="AED" hint="Steps by the currency's smallest unit."/>
+  <rx-input name="stock" label="Stock" type="quantity" scale="3" unit="kg" hint="Steps by 0.001; the unit is the suffix."/>
   <rx-input name="weight" label="Weight" type="number" suffix="kg"/>
   <rx-input name="city" label="City" :datalist="['Jakarta', 'Bandung', 'Surabaya']" span="full"/>
 </rx-form-grid>

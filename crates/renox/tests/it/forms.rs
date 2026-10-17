@@ -299,3 +299,113 @@ async fn rx_input_money_steps_by_the_currencys_smallest_unit() {
     assert!(html.contains(">JPY</span>") && html.contains(">KWD</span>"));
     assert!(html.contains("inputmode=\"decimal\""));
 }
+
+// #69 part 6: the quantity and unit rules, `#[model(form)]` for `Quantity`, and
+// `<rx-input type="quantity">`.
+
+#[renox::test]
+async fn quantity_and_unit_rules() {
+    let units = renox::quantity::Units::new()
+        .base("kg")
+        .unit("g", "kg", "0.001")
+        .build()
+        .unwrap();
+    let app = TestApp::new(App::new()).await;
+    let errors = errors_of(&app, |v| {
+        v.field("a", &"12.5").quantity(3);
+        v.field("b", &"12.500").quantity(3);
+        v.field("c", &"12.5000").quantity(3);
+        v.field("d", &"12.5001").quantity(3);
+        v.field("e", &"abc").quantity(3);
+        v.field("f", &"").quantity(3);
+        v.field("g", &"1.5").quantity(0);
+        v.field("h", &"99999999999999999999").quantity(3);
+        v.field("u_ok", &"g").unit(&units);
+        v.field("u_bad", &"lb").unit(&units);
+    })
+    .await;
+    for ok in ["a", "b", "c", "f", "u_ok"] {
+        assert!(errors.first(ok).is_none(), "{ok}");
+    }
+    for bad in ["d", "e", "g", "h", "u_bad"] {
+        assert!(errors.first(bad).is_some(), "{bad}");
+    }
+    assert_eq!(
+        errors.first("d"),
+        Some("The d must be a number with at most 3 decimal places.")
+    );
+    assert_eq!(
+        errors.first("u_bad"),
+        Some("The u bad must be a valid unit.")
+    );
+}
+
+#[derive(Model, serde::Serialize, Debug, Clone, PartialEq)]
+#[model(table = "bins", form)]
+struct Bin {
+    id: i64,
+    stock: renox::quantity::Quantity<3>,
+    spare: Option<renox::quantity::Quantity<3>>,
+}
+
+#[renox::test]
+async fn model_form_reads_and_checks_quantity() {
+    use renox::quantity::Quantity;
+    let app = TestApp::new(App::new()).await;
+    let form = |stock: &str, spare: &str| BinForm {
+        stock: stock.into(),
+        spare: spare.into(),
+    };
+    let check = |form: &BinForm| {
+        let v = Validator::rules_of(form);
+        let db = app.db();
+        async move { v.finish(db).await.unwrap() }
+    };
+    let mut bin = Bin {
+        id: 1,
+        stock: Quantity::from_raw(1),
+        spare: Some(Quantity::from_raw(5)),
+    };
+    let good = form("12.5", "");
+    assert!(check(&good).await.first("stock").is_none());
+    good.fill(&mut bin);
+    assert_eq!(bin.stock.raw(), 12_500);
+    assert_eq!(bin.spare, None);
+    form("0.001", "2").fill(&mut bin);
+    assert_eq!(
+        (bin.stock.raw(), bin.spare.map(|q| q.raw())),
+        (1, Some(2000))
+    );
+
+    let errors = check(&form("1.2345", "x")).await;
+    assert!(errors.first("stock").is_some());
+    assert!(errors.first("spare").is_some());
+    assert!(
+        check(&form("", "")).await.first("stock").is_some(),
+        "required"
+    );
+}
+
+#[renox::test]
+async fn rx_input_quantity_steps_by_the_scale_and_shows_the_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("m.html"),
+        "<rx-input name=\"a\" label=\"A\" type=\"quantity\" scale=\"3\" unit=\"kg\"/>\
+         <rx-input name=\"b\" label=\"B\" type=\"quantity\" scale=\"0\"/>\
+         <rx-input name=\"c\" label=\"C\" type=\"quantity\" scale=\"1\" unit=\"m\"/>",
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app =
+        TestApp::with_config(App::new().module(MoneyPages), move |c| c.views_path = path).await;
+    let html = app.get("/m").await.text();
+    assert!(html.contains("step=\"0.001\""), "{html}");
+    assert!(html.contains("step=\"1\""), "{html}");
+    assert!(html.contains("step=\"0.1\""), "{html}");
+    assert!(
+        html.contains(">kg</span>") && html.contains(">m</span>"),
+        "{html}"
+    );
+    assert!(html.contains("inputmode=\"decimal\"") && html.contains("type=\"number\""));
+}

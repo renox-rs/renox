@@ -683,6 +683,7 @@ impl Views {
                     crate::view_filters::money_input(code.as_deref().unwrap_or(&app_currency))
                 }
             });
+            env.add_function("quantity_input", crate::view_filters::quantity_input);
             env.add_function("rx_attr", crate::view_filters::rx_attr);
             env.add_function("rx_attr_value", crate::view_filters::attr_value);
             // The app's own functions and filters (`App::templates`).

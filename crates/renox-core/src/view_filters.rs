@@ -505,6 +505,21 @@ pub(crate) fn money_input(code: &str) -> Value {
     minijinja::context! { code, decimals, step }
 }
 
+/// `quantity_input(scale)`: `{decimals, step}` for `<rx-input type="quantity">`
+/// (`step` is one unit of the last digit: `1`, `0.1`, `0.001`).
+pub(crate) fn quantity_input(scale: Option<Value>) -> Value {
+    // The tag's `scale="3"` arrives as text, `:scale="3"` as a number.
+    let decimals = scale
+        .and_then(|v| v.to_string().trim().parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(9) as u32;
+    let step = match decimals {
+        0 => "1".to_owned(),
+        d => format!("0.{}1", "0".repeat(d as usize - 1)),
+    };
+    minijinja::context! { decimals, step }
+}
+
 /// `rx_attr("name", value)`: ` name`, ` name="text"` (escaped) or nothing, by [`attr_value`].
 /// What `?name="expr"` compiles to on an HTML element.
 pub(crate) fn rx_attr(name: String, value: Value) -> Value {
