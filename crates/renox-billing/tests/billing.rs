@@ -2533,3 +2533,73 @@ fn unsupported_names_the_gateway_and_the_operation() {
     assert_eq!(found.operation, "accept_dispute");
     assert!(Unsupported::of(&Error::NotFound).is_none());
 }
+
+/// A webhook signed with `secret`, posted to `path`.
+async fn signed_stripe(app: &TestApp, path: &str, id: &str, secret: &str) -> TestResponse {
+    let payload = json!({
+        "id": id, "object": "event", "type": "ping", "created": 1,
+        "data": { "object": {} },
+    })
+    .to_string();
+    let t = now(app).await;
+    let signature = renox::webhook::hmac_sha256_hex(secret, format!("{t}.{payload}"));
+    app.request()
+        .header("stripe-signature", &format!("t={t},v1={signature}"))
+        .post_body(path, "application/json", payload)
+        .await
+}
+
+#[renox::test]
+async fn webhooks_of_a_named_account_use_that_accounts_secret() {
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::from_config()));
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("STRIPE_SECRET", "sk_test_1"),
+            ("STRIPE_WEBHOOK_SECRET", "whsec_default"),
+            ("STRIPE_WEBHOOK_SECRET_ACME_LLC", "whsec_acme"),
+            ("STRIPE_WEBHOOK_SECRET_B", "whsec_b"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let acme = "/billing/webhooks/stripe/acme-llc";
+
+    // The account's secret verifies; the default's and another account's don't.
+    signed_stripe(&app, acme, "evt_1", "whsec_acme")
+        .await
+        .assert_ok();
+    signed_stripe(&app, acme, "evt_2", "whsec_default")
+        .await
+        .assert_unauthorized();
+    signed_stripe(&app, acme, "evt_3", "whsec_b")
+        .await
+        .assert_unauthorized();
+    // The default URL keeps the default secret only.
+    signed_stripe(&app, "/billing/webhooks/stripe", "evt_1", "whsec_default")
+        .await
+        .assert_ok();
+    signed_stripe(&app, "/billing/webhooks/stripe", "evt_4", "whsec_acme")
+        .await
+        .assert_unauthorized();
+    // Dedupe is per account: the same event id at the default account is
+    // another event; a repeat at the same account changes nothing.
+    app.assert_database_count("webhook_calls", 2).await;
+    signed_stripe(&app, acme, "evt_1", "whsec_acme")
+        .await
+        .assert_ok();
+    app.assert_database_count("webhook_calls", 2).await;
+
+    // An unknown or malformed account, or a gateway without accounts, is a 404.
+    for path in [
+        "/billing/webhooks/stripe/nobody",
+        "/billing/webhooks/stripe/bad%20name",
+        "/billing/webhooks/paypal/acme-llc",
+    ] {
+        signed_stripe(&app, path, "evt_9", "whsec_acme")
+            .await
+            .assert_not_found();
+    }
+}

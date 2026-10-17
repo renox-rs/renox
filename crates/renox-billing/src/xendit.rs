@@ -198,6 +198,34 @@ fn plan_remote(plan: &Value) -> Remote {
     remote
 }
 
+impl Xendit {
+    /// Checks the callback token against the account's (the default
+    /// account's when `account` is `None`); an account never falls back to
+    /// the default account's token.
+    fn verify_account(
+        &self,
+        config: &Config,
+        account: Option<&str>,
+        headers: &HeaderMap,
+        _body: &[u8],
+    ) -> Result {
+        let token = match account {
+            None => self
+                .callback_token
+                .require(config, "Xendit's callback token")?,
+            Some(_) => self
+                .callback_token
+                .resolve_account(config, account)
+                .ok_or(Error::Unauthorized)?,
+        };
+        let sent = headers
+            .get("x-callback-token")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        renox::webhook::ensure(renox::webhook::same(sent, &token))
+    }
+}
+
 impl Gateway for Xendit {
     fn name(&self) -> &str {
         "xendit"
@@ -372,15 +400,24 @@ impl Gateway for Xendit {
         })
     }
 
-    fn verify_webhook(&self, config: &Config, headers: &HeaderMap, _body: &[u8]) -> Result {
-        let token = self
-            .callback_token
-            .require(config, "Xendit's callback token")?;
-        let sent = headers
-            .get("x-callback-token")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default();
-        renox::webhook::ensure(renox::webhook::same(sent, &token))
+    fn verify_webhook(&self, config: &Config, headers: &HeaderMap, body: &[u8]) -> Result {
+        self.verify_account(config, None, headers, body)
+    }
+
+    fn has_account(&self, state: &AppState, account: &str) -> bool {
+        self.callback_token
+            .resolve_account(&state.config, Some(account))
+            .is_some()
+    }
+
+    fn verify_webhook_account(
+        &self,
+        state: &AppState,
+        account: Option<&str>,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result {
+        self.verify_account(&state.config, account, headers, body)
     }
 
     fn webhook_event_id(&self, headers: &HeaderMap, body: &[u8]) -> Result<String> {

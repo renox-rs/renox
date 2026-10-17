@@ -334,7 +334,11 @@ A gateway of your own implements `pauses`, `pause` and `unpause`.
 
 ## Webhooks
 
-The gateways call `POST /billing/webhooks/{gateway}`. It goes through `renox::webhook`:
+The gateways call `POST /billing/webhooks/{gateway}` (or `/billing/webhooks/{gateway}/{account}`
+for a named account of that gateway: it is verified with that account's secret, read from the
+default secret's name with the account appended, `STRIPE_WEBHOOK_SECRET_ACME_LLC` for `acme-llc`
+or `XENDIT_CALLBACK_TOKEN_ACME_LLC`; an account without one answers 404, and an event id is
+stored per account). It goes through `renox::webhook`:
 
 1. the gateway checks the call: Stripe's `Stripe-Signature` (an HMAC-SHA256 of the timestamp
    and the body with `STRIPE_WEBHOOK_SECRET`, at most five minutes old), Xendit's
@@ -556,7 +560,7 @@ The routes are `billing.plans` (`GET /billing`), `billing.checkout` and `billing
 (`GET /billing/return`), `billing.swap` (`POST /billing/swap/{plan}`), `billing.cancel` and
 `billing.resume`, `billing.pause` and `billing.unpause` (`POST /billing/cancel`, `/billing/resume`,
 `/billing/pause`, `/billing/unpause`), all for logged-in users, and
-`webhooks.billing` (`POST /billing/webhooks/{gateway}`).
+`webhooks.billing` (`POST /billing/webhooks/{gateway}` and `/billing/webhooks/{gateway}/{account}`).
 
 ## Testing
 

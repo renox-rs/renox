@@ -28,6 +28,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// [`Gateway::verify_webhook`], stores it once per
 /// [`Gateway::webhook_event_id`] (a provider's retry changes nothing), and a
 /// queue worker applies what [`Gateway::parse_webhook`] reads from it.
+/// `/billing/webhooks/{name}/{account}` is the same for a named account
+/// ([`Gateway::has_account`], [`Gateway::verify_webhook_account`]).
 pub trait Gateway: Send + Sync + 'static {
     /// The gateway's name in URLs and in the `subscriptions` and
     /// `billing_customers` tables: short, lower case, never changed.
@@ -153,6 +155,40 @@ pub trait Gateway: Send + Sync + 'static {
     /// with `state.config`, so existing gateways keep working.
     fn verify_webhook_with(&self, state: &AppState, headers: &HeaderMap, body: &[u8]) -> Result {
         self.verify_webhook(&state.config, headers, body)
+    }
+
+    /// Whether the gateway has an account called `account`, so that
+    /// `/billing/webhooks/{name}/{account}` is served (an unknown account
+    /// answers 404). The default is `false`: a gateway that knows nothing of
+    /// accounts only serves its default account's URL.
+    fn has_account(&self, _state: &AppState, _account: &str) -> bool {
+        false
+    }
+
+    /// [`Gateway::verify_webhook_with`] for the named account (`None` is
+    /// the default account). This is what the webhook route calls; the
+    /// default calls `verify_webhook_with`, so existing gateways keep
+    /// working.
+    fn verify_webhook_account(
+        &self,
+        state: &AppState,
+        _account: Option<&str>,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result {
+        self.verify_webhook_with(state, headers, body)
+    }
+
+    /// [`Gateway::parse_webhook_with`] for the named account (`None` is the
+    /// default account). This is what the queue worker calls; the default
+    /// calls `parse_webhook_with`.
+    fn parse_webhook_account(
+        &self,
+        state: &AppState,
+        _account: Option<&str>,
+        body: &[u8],
+    ) -> Result<Vec<Notice>> {
+        self.parse_webhook_with(state, body)
     }
 
     /// The webhook's event id, so a provider's retry is processed once. The
@@ -405,6 +441,18 @@ pub enum Notice {
 /// The account name a resolver gets for the gateway's default account.
 pub(crate) const DEFAULT_ACCOUNT: &str = "default";
 
+/// An account name as it appears in a configuration name (`acme-llc` is
+/// `ACME_LLC`); `None` for a name that isn't 1 to 64 letters, digits, `-` or
+/// `_`, which no account can have.
+pub(crate) fn account_suffix(account: &str) -> Option<String> {
+    let valid = !account.is_empty()
+        && account.len() <= 64
+        && account
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    valid.then(|| account.to_ascii_uppercase().replace('-', "_"))
+}
+
 /// A key looked up by the app on every use: gets the state and the account
 /// name, answers the key (`None` when the installation has none).
 pub(crate) type Resolver =
@@ -448,6 +496,23 @@ impl Secret {
             Self::Given(value) => Some(value.clone()).filter(|v| !v.is_empty()),
             Self::Config(name) => config.var(name),
             Self::Resolved(_) => None,
+        }
+    }
+
+    /// The webhook secret of `account` (`None`: the default account's, as
+    /// [`Secret::resolve`]). An account's secret is read from the same
+    /// configuration name with the account appended, upper case with `-` as
+    /// `_` (`STRIPE_WEBHOOK_SECRET_ACME_LLC` for `acme-llc`). A secret given
+    /// in code belongs to the default account only.
+    pub(crate) fn resolve_account(&self, config: &Config, account: Option<&str>) -> Option<String> {
+        let Some(account) = account else {
+            return self.resolve(config);
+        };
+        match self {
+            Self::Config(name) => config
+                .var(&format!("{name}_{}", account_suffix(account)?))
+                .filter(|v| !v.is_empty()),
+            _ => None,
         }
     }
 

@@ -33,7 +33,10 @@ pub(crate) fn routes() -> Routes {
         .name("billing.unpause")
         .require_auth();
     let webhooks = Routes::new()
-        .webhook::<BillingWebhook>("/billing/webhooks/{gateway}")
+        // One route (one name) for `/billing/webhooks/{gateway}` and
+        // `/billing/webhooks/{gateway}/{account}`: `mark` reads the URL and
+        // answers 404 for anything else.
+        .webhook::<BillingWebhook>("/billing/webhooks/{*target}")
         .route_layer(from_fn(mark));
     pages.merge(webhooks)
 }

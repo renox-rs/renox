@@ -19,8 +19,8 @@
 //! ```
 //!
 //! A plans page (`/billing`) sends the user to the gateway's payment page;
-//! the subscription arrives by webhook (`/billing/webhooks/{gateway}`,
-//! verified, stored once per event, applied by a queue worker) into the
+//! the subscription arrives by webhook (`/billing/webhooks/{gateway}`
+//! or `/billing/webhooks/{gateway}/{account}`, verified, stored once per event, applied by a queue worker) into the
 //! `subscriptions` table, and the account page shows it with "Change
 //! plan", "Cancel" and "Resume". In code, [`Billing::of`] answers
 //! `subscribed()`, `on_trial()`, `on_grace_period()` and does `checkout`,

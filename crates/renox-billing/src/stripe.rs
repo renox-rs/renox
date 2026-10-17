@@ -211,6 +211,36 @@ pub(crate) fn remote(sub: &Value) -> Remote {
     remote.ends_at(ends_at)
 }
 
+impl Stripe {
+    /// Checks the signature with the account's webhook secret (the default
+    /// account's when `account` is `None`).
+    fn verify_account(
+        &self,
+        config: &Config,
+        account: Option<&str>,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result {
+        // An account never falls back to the default account's secret.
+        let secret = match account {
+            None => self
+                .webhook_secret
+                .require(config, "Stripe's webhook signing secret")?,
+            Some(_) => self
+                .webhook_secret
+                .resolve_account(config, account)
+                .ok_or(Error::Unauthorized)?,
+        };
+        let header = headers
+            .get("stripe-signature")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default();
+        renox::webhook::ensure(renox::webhook::verify_timestamped(
+            secret, body, header, TOLERANCE,
+        ))
+    }
+}
+
 impl Gateway for Stripe {
     fn name(&self) -> &str {
         "stripe"
@@ -419,16 +449,23 @@ impl Gateway for Stripe {
     }
 
     fn verify_webhook(&self, config: &Config, headers: &HeaderMap, body: &[u8]) -> Result {
-        let secret = self
-            .webhook_secret
-            .require(config, "Stripe's webhook signing secret")?;
-        let header = headers
-            .get("stripe-signature")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or_default();
-        renox::webhook::ensure(renox::webhook::verify_timestamped(
-            secret, body, header, TOLERANCE,
-        ))
+        self.verify_account(config, None, headers, body)
+    }
+
+    fn has_account(&self, state: &AppState, account: &str) -> bool {
+        self.webhook_secret
+            .resolve_account(&state.config, Some(account))
+            .is_some()
+    }
+
+    fn verify_webhook_account(
+        &self,
+        state: &AppState,
+        account: Option<&str>,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result {
+        self.verify_account(&state.config, account, headers, body)
     }
 
     fn parse_webhook(&self, body: &[u8]) -> Result<Vec<Notice>> {
