@@ -107,6 +107,7 @@ pub mod nav;
 mod path;
 pub mod prompt;
 mod provided;
+pub mod quantity;
 pub mod queue;
 pub mod rate_limit;
 mod redirect;

@@ -357,7 +357,7 @@ impl fmt::Display for MoneyError {
 impl std::error::Error for MoneyError {}
 
 /// `num / den` rounded to a whole number with `rounding`. `den` is not 0.
-fn div_round(num: i128, den: i128, rounding: Rounding) -> i128 {
+pub(crate) fn div_round(num: i128, den: i128, rounding: Rounding) -> i128 {
     let (num, den) = if den < 0 { (-num, -den) } else { (num, den) };
     let q = num / den;
     let rem = num % den;
