@@ -97,6 +97,8 @@ pub struct AppStateInner {
     /// Secrets of the senders whose signed requests are accepted
     /// (`App::signing_key`), by key id.
     pub(crate) signing_keys: Arc<std::collections::HashMap<String, String>>,
+    /// The values modules contributed in `register` (`AppState::contributions`).
+    pub(crate) contributions: Arc<crate::Contributions>,
     /// The `Auth` module's settings, when the app has it.
     pub(crate) auth: Option<Arc<crate::auth::module::Settings>>,
     /// `App::detect_locale`: the browser's `Accept-Language` picks the locale.
@@ -208,6 +210,21 @@ impl Fakes {
 }
 
 impl AppState {
+    /// Every `T` modules contributed with `Registry::contribute`, in order:
+    /// the app's own first, then each module's as listed.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// struct Link(&'static str);
+    /// # fn demo(state: AppState) {
+    /// let links: &[Link] = state.contributions::<Link>();
+    /// # let _ = links;
+    /// # }
+    /// ```
+    pub fn contributions<T: 'static>(&self) -> &[T] {
+        self.contributions.all::<T>()
+    }
+
     /// The URL path of a named route, e.g. `state.url("products.show", &[&id])`.
     pub fn url(&self, name: &str, params: &[&dyn Display]) -> Result<String> {
         Ok(self.routes.url(name, params)?)

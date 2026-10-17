@@ -880,6 +880,11 @@ async fn one_time(State(state): State<AppState>) -> Result<String> {
 
 /// #36: brand themes: the theme and the themed mail inside a handler, and the
 /// per-request chooser registered on the app (its future has to be `Send`).
+/// `AppState::contributions` inside a handler (#31).
+async fn contributed(State(state): State<AppState>) -> Result<String> {
+    Ok(state.contributions::<&'static str>().join(","))
+}
+
 async fn branded(State(state): State<AppState>) -> Result<String> {
     use renox::theme::{Brand, Theme};
     let theme = Theme::from_brand(&Brand::new("#1E3A5F").second("#9A3412"))
@@ -1039,6 +1044,7 @@ impl Module for Handlers {
             .get("/uploaded", uploaded)
             .get("/one-time", one_time)
             .get("/branded", branded)
+            .get("/contributed", contributed)
     }
 }
 
@@ -1147,4 +1153,5 @@ async fn data_apis_work_in_routed_handlers() {
         .assert_ok()
         .assert_see("true true 8 0 true");
     app.get("/branded").await.assert_ok();
+    app.get("/contributed").await.assert_ok();
 }

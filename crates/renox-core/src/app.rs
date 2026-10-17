@@ -809,6 +809,7 @@ impl App {
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());
+            self.registry.contributions.set_module(module.name());
             module.register(&mut self.registry);
         }
         let Registry {
@@ -842,8 +843,7 @@ impl App {
             nav_links,
             nav_hidden,
             signing_keys,
-            // Handed to `Module::routes_with` and `AppState` in part 2 of #31.
-            contributions: _,
+            contributions,
         } = self.registry;
         if !settings_groups.is_empty() && !settings_module {
             return Err(anyhow!(
@@ -908,9 +908,11 @@ impl App {
         )> = Vec::new();
         let mut routes = RouteTable::default();
         let mut listing: Vec<RouteInfo> = Vec::new();
+        // Complete before any `routes_with` runs: every `register` is done.
+        let contributions = Arc::new(contributions);
         for module in &self.modules {
             tracing::debug!(module = module.name(), "registering module");
-            let parts = module.routes().into_parts();
+            let parts = module.routes_with(&contributions).into_parts();
             check_clashes(&listing, &parts.listing, None, module.name())?;
             router = merge_routes(router, parts.router, module.name())?;
             for (name, path) in parts.names {
@@ -1160,6 +1162,7 @@ impl App {
             second_factor: second_factor.map(Arc::new),
             nav: Arc::new(nav),
             signing_keys: Arc::new(signing_keys),
+            contributions,
             account_sections: {
                 account_sections.sort_by_key(|section| section.order);
                 Arc::new(account_sections)

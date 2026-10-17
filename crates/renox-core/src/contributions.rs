@@ -60,8 +60,6 @@ impl Contributions {
     }
 
     /// Names the module whose `register` runs next.
-    // Called by `App::boot` (part 2 of #31).
-    #[allow(dead_code)]
     pub(crate) fn set_module(&mut self, name: &str) {
         self.current = Some(name.to_owned());
     }

@@ -513,3 +513,68 @@ async fn modules_register_components_and_compile_their_templates() {
     res.assert_status(500);
     assert!(res.text().contains("volume"), "{}", res.text());
 }
+
+/// Reads what other modules contributed while building its routes.
+struct Reader;
+
+impl Module for Reader {
+    fn name(&self) -> &'static str {
+        "reader"
+    }
+
+    fn routes_with(&self, contributions: &Contributions) -> Routes {
+        let seen = contributions
+            .all_from::<&'static str>()
+            .map(|(module, value)| format!("{module}:{value}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        Routes::new().get("/seen", move || {
+            let seen = seen.clone();
+            async move { seen }
+        })
+    }
+}
+
+struct Writer;
+
+impl Module for Writer {
+    fn name(&self) -> &'static str {
+        "writer"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        app.contribute("a");
+        app.contribute("b");
+    }
+}
+
+#[renox::test]
+async fn routes_with_sees_contributions_whatever_the_module_order() {
+    for app in [
+        App::new().module(Reader).module(Writer),
+        App::new().module(Writer).module(Reader),
+    ] {
+        let app = TestApp::new(app).await;
+        app.get("/seen")
+            .await
+            .assert_ok()
+            .assert_see("writer:a,writer:b");
+        assert_eq!(app.state().contributions::<&'static str>(), &["a", "b"]);
+        assert!(app.state().contributions::<u8>().is_empty());
+    }
+}
+
+#[renox::test]
+async fn routes_with_defaults_to_routes() {
+    struct Plain;
+    impl Module for Plain {
+        fn name(&self) -> &'static str {
+            "plain"
+        }
+        fn routes(&self) -> Routes {
+            Routes::new().get("/plain", || async { "plain" })
+        }
+    }
+    let app = TestApp::new(App::new().module(Plain)).await;
+    app.get("/plain").await.assert_ok().assert_see("plain");
+}
