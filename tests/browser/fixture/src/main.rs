@@ -259,6 +259,15 @@ impl Module for Pages {
             .name("tabs.home")
             .get("/tabs/orders", || async { view("tabs.html", context! {}) })
             .name("tabs.orders")
+            // A sidebar drawn from a menu (`<rx-sidebar menu="staff"/>`).
+            .get("/menu", || async { view("menu.html", context! {}) })
+            .name("overview.index")
+            .get("/menu/reports", || async { view("menu.html", context! {}) })
+            .name("reports.index")
+            .get("/menu/reports/{id}", |Path(_id): Path<i64>| async {
+                view("menu.html", context! {})
+            })
+            .name("reports.show")
             .post("/toast", || async {
                 Toast::warning("Stock is low.")
                     .link("Unsafe", "javascript:alert(1)")
@@ -406,6 +415,29 @@ fn main() -> Result {
         .module(grid::Orders)
         .seeder(grid::seed)
         .module(Pages)
+        .nav(
+            "staff",
+            renox::nav::NavLink::route("overview.index", "Overview").order(1),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::route("reports.index", "Reports")
+                .group("Billing")
+                .order(10),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::url("/widgets", "Widgets")
+                .group("Billing")
+                .order(20),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::url("/secret", "Secret")
+                .group("Billing")
+                .order(30)
+                .gate("nobody"),
+        )
         .live_component::<Counter>()
         .job::<Touch>()
         .job::<Nap>()
