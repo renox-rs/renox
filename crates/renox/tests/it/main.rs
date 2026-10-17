@@ -21,6 +21,7 @@ mod calendar;
 mod commands;
 mod components;
 mod css_logical;
+mod custom_fields;
 mod dashboards;
 mod data_edges;
 mod data_layer;

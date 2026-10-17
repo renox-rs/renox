@@ -127,12 +127,13 @@ async fn migrations_run_in_batches_and_roll_back() {
 
     let rolled = kernel.rollback(1).await.unwrap();
     // Newest first; every app also gets the framework's jobs, cache,
-    // sessions, grid_preferences, import_batches, webhook_calls, webhook_endpoints, webhook_deliveries, sequences and state_transitions tables.
+    // sessions, grid_preferences, import_batches, webhook_calls, webhook_endpoints, webhook_deliveries, sequences, state_transitions and custom_fields tables.
     assert_eq!(
         rolled,
         [
             "20260102000000_create_notes",
             "20260101000000_create_products",
+            "00010101000430_create_custom_fields_table",
             "00010101000420_create_sequences_table",
             "00010101000410_create_state_transitions_table",
             "00010101000311_create_webhook_deliveries_table",
@@ -150,11 +151,11 @@ async fn migrations_run_in_batches_and_roll_back() {
     );
     assert!(Product::all(kernel.db()).await.is_err(), "table is gone");
 
-    assert_eq!(kernel.migrate().await.unwrap().len(), 15);
+    assert_eq!(kernel.migrate().await.unwrap().len(), 16);
     Product::create(kernel.db(), product("Coffee", 1, None))
         .await
         .unwrap();
-    assert_eq!(kernel.fresh().await.unwrap().len(), 15);
+    assert_eq!(kernel.fresh().await.unwrap().len(), 16);
     assert!(
         Product::all(kernel.db()).await.unwrap().is_empty(),
         "fresh drops data"

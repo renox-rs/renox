@@ -173,6 +173,22 @@ async fn numbering(State(db): State<Db>) -> Result<String> {
     Ok(format!("{n} {peeked} {loose} {last} {} {text}", rows.len()))
 }
 
+/// Custom field definitions: every `CustomField` call, inside a routed handler.
+async fn custom_field_defs(State(db): State<Db>) -> Result<String> {
+    use renox::custom_fields::CustomField;
+    let saved = CustomField::text("parties", "passport_no")
+        .label("Passport no.")
+        .save(&db)
+        .await?;
+    let found = CustomField::find(&db, saved.id).await?.is_some();
+    let active = CustomField::for_model(&db, "parties").await?.len();
+    CustomField::deactivate(&db, saved.id).await?;
+    CustomField::activate(&db, saved.id).await?;
+    let all = CustomField::all_for_model(&db, "parties").await?.len();
+    CustomField::delete(&db, saved.id).await?;
+    Ok(format!("{found} {active} {all}"))
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -1021,6 +1037,7 @@ impl Module for Handlers {
             .get("/queries", queries)
             .get("/typed", typed)
             .get("/numbering", numbering)
+            .get("/custom-field-defs", custom_field_defs)
             .get("/more", more)
             .get("/access", access)
             .get("/transitions", transitions)
@@ -1109,6 +1126,10 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("1 12 12 12 1 X-0001");
+    app.get("/custom-field-defs")
+        .await
+        .assert_ok()
+        .assert_see("true 1 1");
     app.get("/more")
         .await
         .assert_ok()

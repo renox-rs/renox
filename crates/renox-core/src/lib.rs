@@ -82,6 +82,7 @@ mod cookies;
 mod counters;
 mod crypto;
 mod csrf;
+pub mod custom_fields;
 pub mod db;
 mod domain;
 mod download;

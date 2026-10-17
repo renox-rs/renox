@@ -51,6 +51,8 @@ pub struct Db {
     schema: SchemaEpoch,
     /// Seals and opens `Encrypted` columns (`APP_KEY`, set at boot).
     key: Option<Arc<Key>>,
+    /// Custom field definitions, by model (`custom_fields.rs`).
+    custom_fields: crate::custom_fields::Cache,
 }
 
 /// When this process last changed the schema (migrations ran).
@@ -113,6 +115,7 @@ impl Db {
             pool,
             schema,
             key: None,
+            custom_fields: Default::default(),
         }
     }
 
@@ -130,6 +133,10 @@ impl Db {
     #[cfg(feature = "postgres")]
     pub(crate) fn from_postgres(pool: PgPool, schema: SchemaEpoch) -> Self {
         Self::with_epoch(Pool::Postgres(pool), schema)
+    }
+
+    pub(crate) fn custom_fields_cache(&self) -> &crate::custom_fields::Cache {
+        &self.custom_fields
     }
 
     /// Records that the schema changed, so older pooled connections aren't
