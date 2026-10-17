@@ -5,8 +5,9 @@ use renox::auth::permissions::Scope;
 use renox::db::Col;
 use renox::prelude::*;
 use renox::state_machine::{
-    Machine, StateMachine, Transition, TransitionCtx, TransitionError, TransitionRecord,
-    Transitioned, history,
+    Decision, Machine, Outcome, Preview, StateMachine, Transition, TransitionCtx, TransitionError,
+    TransitionInterceptor, TransitionRecord, TransitionRequest, Transitioned, clear_interceptor,
+    history, preview, set_interceptor,
 };
 use renox::testing::TestApp;
 
@@ -320,6 +321,8 @@ async fn run_moves_the_status_writes_history_and_emits_after_commit() {
         .meta(serde_json::json!({"via": "test"}))
         .run(app.state())
         .await
+        .unwrap()
+        .into_done()
         .unwrap();
     assert_eq!((done.from.as_str(), done.to.as_str()), ("open", "closed"));
     assert_eq!(done.meta["via"], "test");
@@ -429,4 +432,150 @@ async fn run_in_does_not_commit_or_emit() {
     done.emit(app.state()).await.unwrap();
     assert_eq!(app.emitted::<Transitioned<Ticket>>().len(), 1);
     assert_eq!(ticket_status(&app).await, "closed");
+}
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum DocStatus {
+    Open,
+    Signed,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "sm_docs")]
+struct Doc {
+    id: i64,
+    status: String,
+}
+
+impl StateMachine for Doc {
+    type State = DocStatus;
+    const COLUMN: Col<Self, DocStatus> = Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new().transition(
+            Transition::new("sign")
+                .from([DocStatus::Open])
+                .to(DocStatus::Signed)
+                .system()
+                .effect(|_d: &Doc, _ctx, tx| {
+                    Box::pin(async move {
+                        renox::db::sql("INSERT INTO sm_log (note) VALUES ('effect')")
+                            .execute(&mut *tx)
+                            .await?;
+                        Ok(())
+                    })
+                }),
+        )
+    }
+}
+
+/// Defers `sign` runs of `sm_docs` whose input is `"defer"` and stores a
+/// request row; lets every other run (and model) through.
+struct Approvals;
+
+impl TransitionInterceptor for Approvals {
+    fn intercept<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        tx: &'a mut renox::db::Transaction,
+    ) -> futures_util::future::BoxFuture<'a, renox::Result<Decision>> {
+        Box::pin(async move {
+            if request.model != "sm_docs" || request.input != "defer" {
+                return Ok(Decision::Proceed);
+            }
+            renox::db::sql("INSERT INTO sm_log (note) VALUES (?)")
+                .bind(format!("request {} {}", request.key, request.transition))
+                .execute(&mut *tx)
+                .await?;
+            Ok(Decision::Defer(serde_json::json!({"request": 1})))
+        })
+    }
+
+    fn preview<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        _db: &'a renox::db::Db,
+    ) -> futures_util::future::BoxFuture<'a, renox::Result<Preview>> {
+        Box::pin(async move {
+            Ok(if request.model == "sm_docs" && request.input == "defer" {
+                Preview::RequiresApproval
+            } else {
+                Preview::Proceed
+            })
+        })
+    }
+}
+
+#[tokio::test]
+async fn an_interceptor_defers_or_lets_a_run_proceed() {
+    let app = TestApp::new(App::new()).await;
+    app.fake_events();
+    let db = app.db();
+    for q in [
+        "CREATE TABLE sm_docs (id INTEGER PRIMARY KEY, status TEXT NOT NULL)",
+        "CREATE TABLE sm_log (id INTEGER PRIMARY KEY, note TEXT NOT NULL)",
+        "INSERT INTO sm_docs (id, status) VALUES (1, 'open')",
+    ] {
+        renox::db::sql(q).execute(db).await.unwrap();
+    }
+    set_interceptor(Approvals);
+    let doc = Doc {
+        id: 1,
+        status: "open".into(),
+    };
+    let status = || async {
+        renox::db::sql("SELECT status FROM sm_docs WHERE id = 1")
+            .scalar::<String>(db)
+            .await
+            .unwrap()
+    };
+    let notes = || async {
+        let rows = renox::db::sql("SELECT note FROM sm_log ORDER BY id")
+            .fetch_all(db)
+            .await
+            .unwrap();
+        rows.iter()
+            .map(|r| r.try_get::<String>("note").unwrap())
+            .collect::<Vec<_>>()
+    };
+
+    // Preview marks the action and writes nothing.
+    let req = TransitionRequest::new("sm_docs", 1, "sign", "open", "signed")
+        .with_input(serde_json::json!("defer"));
+    assert_eq!(preview(&req, db).await.unwrap(), Preview::RequiresApproval);
+    assert!(notes().await.is_empty());
+
+    // Defer: Ok(Pending), the interceptor's write is kept, nothing moved,
+    // no effect, no history, nothing emitted.
+    let outcome = doc
+        .transition("sign")
+        .by_system()
+        .input(&"defer")
+        .run(app.state())
+        .await
+        .unwrap();
+    match &outcome {
+        Outcome::Pending(p) => {
+            assert_eq!((p.from.as_str(), p.to.as_str()), ("open", "signed"));
+            assert_eq!(p.data["request"], 1);
+        }
+        Outcome::Done(_) => panic!("expected a pending outcome"),
+    }
+    assert_eq!(status().await, "open");
+    assert_eq!(notes().await, ["request 1 sign"]);
+    assert!(history(db, "sm_docs", 1).await.unwrap().is_empty());
+    assert!(app.emitted::<Transitioned<Doc>>().is_empty());
+
+    // Proceed: behaves normally.
+    let outcome = doc
+        .transition("sign")
+        .by_system()
+        .run(app.state())
+        .await
+        .unwrap();
+    assert!(!outcome.is_pending());
+    assert_eq!(status().await, "signed");
+    assert_eq!(notes().await, ["request 1 sign", "effect"]);
+    assert_eq!(app.emitted::<Transitioned<Doc>>().len(), 1);
+    clear_interceptor();
 }

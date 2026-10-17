@@ -71,7 +71,7 @@
 
 use std::fmt;
 use std::marker::PhantomData;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError, RwLock};
 
 use futures_util::future::BoxFuture;
 use serde::Serialize;
@@ -80,7 +80,7 @@ use serde_json::Value;
 use crate::auth::AuthUser;
 use crate::auth::permissions::Scope;
 use crate::db::{
-    Col, DateTime, DbError, Executor, Json, Migration, Model, Row, Transaction, now, sql,
+    Col, DateTime, Db, DbError, Executor, Json, Migration, Model, Row, Transaction, now, sql,
 };
 use crate::events::Event;
 use crate::{AppState, Result};
@@ -906,30 +906,33 @@ impl<M: StateMachine> TransitionBuilder<'_, M> {
     /// Runs it in its own transaction, commits, then emits [`Transitioned`]
     /// to the app's listeners. If a listener fails the status has changed
     /// already: the error is returned but nothing is rolled back.
-    pub async fn run(
-        self,
-        state: &AppState,
-    ) -> std::result::Result<Transitioned<M>, TransitionError> {
+    pub async fn run(self, state: &AppState) -> std::result::Result<Outcome<M>, TransitionError> {
         let mut tx = state.db.begin().await?;
-        let done = self.run_in(&mut tx).await?;
+        let outcome = self.run_in(&mut tx).await?;
         tx.commit().await?;
-        state.emit(done.clone()).await?;
-        Ok(done)
+        if let Outcome::Done(done) = &outcome {
+            state.emit(done.clone()).await?;
+        }
+        Ok(outcome)
     }
 
     /// Runs it inside `tx` and does not commit. Emit the returned
-    /// [`Transitioned`] with [`Transitioned::emit`] once the transaction has
-    /// committed.
+    /// [`Outcome`] with [`Outcome::emit`] once the transaction has committed.
     ///
     /// Checks, in order: who runs it (authentication, permission), the
     /// record's state, the guards, the reason; then moves the status with
     /// `UPDATE .. WHERE status = <the record's loaded status>` (no row
     /// updated means someone else moved it first: `Conflict`), writes the
     /// history row and runs the effects.
+    ///
+    /// When an interceptor is registered ([`set_interceptor`]) it runs after
+    /// the guards and the reason check. If it defers, nothing moves and no
+    /// effect runs: its own writes in `tx` stay, and the result is
+    /// [`Outcome::Pending`].
     pub async fn run_in(
         self,
         tx: &mut Transaction,
-    ) -> std::result::Result<Transitioned<M>, TransitionError> {
+    ) -> std::result::Result<Outcome<M>, TransitionError> {
         let machine = M::machine();
         let transition = machine.find(&self.name)?;
         let record = self.record;
@@ -961,6 +964,32 @@ impl<M: StateMachine> TransitionBuilder<'_, M> {
             .expect("a built machine has a `to` state")
             .to_owned();
 
+        if let Some(interceptor) = interceptor() {
+            let request = TransitionRequest {
+                model: M::TABLE,
+                key: record.id().to_string(),
+                transition: transition.name().to_owned(),
+                from: current.clone(),
+                to: to.clone(),
+                actor: actor.cloned(),
+                reason: self.reason.clone(),
+                input: ctx.input().clone(),
+                meta: self.meta.clone(),
+            };
+            if let Decision::Defer(data) = interceptor.intercept(&request, &mut *tx).await? {
+                return Ok(Outcome::Pending(Pending {
+                    key: record.id(),
+                    from: current,
+                    to,
+                    transition: transition.name().to_owned(),
+                    actor_id: actor.map(|u| u.id),
+                    reason: self.reason,
+                    meta: self.meta,
+                    data,
+                }));
+            }
+        }
+
         let column = M::COLUMN.name();
         let moved = sql(format!(
             "UPDATE {} SET {column} = ? WHERE id = ? AND {column} = ?",
@@ -987,7 +1016,7 @@ impl<M: StateMachine> TransitionBuilder<'_, M> {
         row.record(&mut *tx).await?;
         transition.run_effects(record, &ctx, tx).await?;
 
-        Ok(Transitioned {
+        Ok(Outcome::Done(Transitioned {
             key: record.id(),
             from: current,
             to,
@@ -996,7 +1025,7 @@ impl<M: StateMachine> TransitionBuilder<'_, M> {
             reason: self.reason,
             meta: self.meta,
             _model: PhantomData,
-        })
+        }))
     }
 }
 
@@ -1070,5 +1099,218 @@ impl<M: StateMachine> Transitioned<M> {
     /// Emits it to the app's listeners (after the commit).
     pub async fn emit(self, state: &AppState) -> Result {
         state.emit(self).await
+    }
+}
+
+/// What a transition run came to: it moved, or an interceptor deferred it.
+#[must_use = "emit a `Done` outcome after the transaction commits"]
+pub enum Outcome<M: StateMachine> {
+    /// The status moved; the history row and effects are in the transaction.
+    Done(Transitioned<M>),
+    /// An interceptor deferred it: the status did not move.
+    Pending(Pending<M>),
+}
+
+impl<M: StateMachine> Clone for Outcome<M> {
+    fn clone(&self) -> Self {
+        match self {
+            Outcome::Done(done) => Outcome::Done(done.clone()),
+            Outcome::Pending(pending) => Outcome::Pending(pending.clone()),
+        }
+    }
+}
+
+impl<M: StateMachine> Outcome<M> {
+    /// The [`Transitioned`] if the status moved.
+    pub fn into_done(self) -> Option<Transitioned<M>> {
+        match self {
+            Outcome::Done(done) => Some(done),
+            Outcome::Pending(_) => None,
+        }
+    }
+
+    /// Whether an interceptor deferred the run.
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Outcome::Pending(_))
+    }
+
+    /// Emits [`Transitioned`] to the app's listeners (after the commit) if
+    /// the status moved; does nothing for a pending run.
+    pub async fn emit(self, state: &AppState) -> Result {
+        match self {
+            Outcome::Done(done) => done.emit(state).await,
+            Outcome::Pending(_) => Ok(()),
+        }
+    }
+}
+
+/// A transition an interceptor deferred (for example until someone approves
+/// it). The status has not moved.
+#[non_exhaustive]
+pub struct Pending<M: StateMachine> {
+    /// The record's key.
+    pub key: M::Key,
+    /// The state it is still in.
+    pub from: String,
+    /// The state the transition would have entered.
+    pub to: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The user who asked for it; `None` for a system run.
+    pub actor_id: Option<i64>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The metadata given with the run (`null` when none).
+    pub meta: Value,
+    /// What the interceptor returned with [`Decision::Defer`], e.g. the id of
+    /// the request it stored.
+    pub data: Value,
+}
+
+impl<M: StateMachine> Clone for Pending<M> {
+    fn clone(&self) -> Self {
+        Pending {
+            key: self.key.clone(),
+            from: self.from.clone(),
+            to: self.to.clone(),
+            transition: self.transition.clone(),
+            actor_id: self.actor_id,
+            reason: self.reason.clone(),
+            meta: self.meta.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
+/// A transition about to run, as an interceptor sees it. It is the same for
+/// every machine, so the model is its table name and the key is text.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct TransitionRequest {
+    /// The model's table.
+    pub model: &'static str,
+    /// The record's key, as text.
+    pub key: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The state the record is in.
+    pub from: String,
+    /// The state the transition leads to.
+    pub to: String,
+    /// The user running it; `None` for a system run.
+    pub actor: Option<AuthUser>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The input given with the run (`null` when none).
+    pub input: Value,
+    /// The metadata given with the run (`null` when none).
+    pub meta: Value,
+}
+
+impl TransitionRequest {
+    /// A request for `transition` on record `key` of `model`, moving `from`
+    /// one state `to` another, with no actor, reason, input or metadata. For
+    /// calling [`preview`] by hand.
+    pub fn new(
+        model: &'static str,
+        key: impl ToString,
+        transition: impl Into<String>,
+        from: impl Into<String>,
+        to: impl Into<String>,
+    ) -> Self {
+        TransitionRequest {
+            model,
+            key: key.to_string(),
+            transition: transition.into(),
+            from: from.into(),
+            to: to.into(),
+            actor: None,
+            reason: None,
+            input: Value::Null,
+            meta: Value::Null,
+        }
+    }
+
+    /// Sets the input.
+    pub fn with_input(mut self, input: Value) -> Self {
+        self.input = input;
+        self
+    }
+}
+
+/// What an interceptor decides for a run.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decision {
+    /// Carry on: move the status and run the effects.
+    Proceed,
+    /// Do not move; the run ends as [`Outcome::Pending`] carrying this data.
+    Defer(Value),
+}
+
+/// What an interceptor says a run would do, without doing it (see
+/// [`preview`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preview {
+    /// It would go through.
+    Proceed,
+    /// It would be deferred: the action needs approval.
+    RequiresApproval,
+    /// A deferred run for this record and transition is already waiting.
+    Pending,
+}
+
+/// Hooks every transition of every machine, for things a guard can't do
+/// because it may only say no, such as approvals.
+///
+/// Register one with [`set_interceptor`]. It runs after permission, `from`
+/// and the guards, in the transition's transaction.
+pub trait TransitionInterceptor: Send + Sync + 'static {
+    /// Decides a run. Writes made through `tx` are kept whichever way it
+    /// decides (and roll back with the transaction if the run later fails).
+    fn intercept<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        tx: &'a mut Transaction,
+    ) -> BoxFuture<'a, Result<Decision>>;
+
+    /// What [`TransitionInterceptor::intercept`] would decide, with no side
+    /// effects: `available` calls it to mark actions. The default is
+    /// [`Preview::Proceed`].
+    fn preview<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        db: &'a Db,
+    ) -> BoxFuture<'a, Result<Preview>> {
+        let _ = (request, db);
+        Box::pin(async { Ok(Preview::Proceed) })
+    }
+}
+
+static INTERCEPTOR: RwLock<Option<Arc<dyn TransitionInterceptor>>> = RwLock::new(None);
+
+/// Registers the interceptor for all machines, replacing any earlier one.
+/// Call it once at startup.
+pub fn set_interceptor(interceptor: impl TransitionInterceptor) {
+    *INTERCEPTOR.write().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(interceptor));
+}
+
+/// Removes the registered interceptor.
+pub fn clear_interceptor() {
+    *INTERCEPTOR.write().unwrap_or_else(PoisonError::into_inner) = None;
+}
+
+fn interceptor() -> Option<Arc<dyn TransitionInterceptor>> {
+    INTERCEPTOR
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// Asks the registered interceptor what `request` would do, with no side
+/// effects; [`Preview::Proceed`] when none is registered.
+pub async fn preview(request: &TransitionRequest, db: &Db) -> Result<Preview> {
+    match interceptor() {
+        Some(interceptor) => interceptor.preview(request, db).await,
+        None => Ok(Preview::Proceed),
     }
 }
