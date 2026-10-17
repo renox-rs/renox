@@ -2356,10 +2356,60 @@ async fn a_contributed_resource_has_every_page_its_group_and_its_allows() {
     app.assert_database_count("categories", 1).await;
 }
 
+/// Adds the people to the panel named "ops".
+struct OpsCrew;
+
+impl Module for OpsCrew {
+    fn name(&self) -> &'static str {
+        "ops_crew"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        app.contribute(AdminEntry::new(People).panel("ops"));
+    }
+}
+
+#[renox::test]
+async fn two_named_panels_run_side_by_side() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(
+                Admin::new()
+                    .authorize(|_| true)
+                    .named("staff")
+                    .resource(Products),
+            )
+            .module(
+                Admin::new()
+                    .path("/ops")
+                    .authorize(|_| true)
+                    .named("ops")
+                    .resource(Products),
+            )
+            .module(Billing(Some("staff")))
+            .module(OpsCrew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    // Each panel has its own route names.
+    let url = |name: &str| app.state().url(name, &[]).unwrap();
+    assert_eq!(url("admin.staff.dashboard"), "/admin");
+    assert_eq!(url("admin.ops.dashboard"), "/ops");
+    assert_eq!(url("admin.staff.products.index"), "/admin/products");
+    assert_eq!(url("admin.ops.products.index"), "/ops/products");
+    app.get("/admin/products").await.assert_ok();
+    app.get("/ops/products").await.assert_ok();
+    // A contribution lands only in the panel it names.
+    app.get("/admin/categories").await.assert_ok();
+    app.get("/ops/categories").await.assert_not_found();
+    app.get("/ops/people").await.assert_ok();
+    app.get("/admin/people").await.assert_not_found();
+}
+
 #[renox::test]
 async fn a_named_panel_does_not_take_the_unnamed_entries() {
-    // Two `Admin`s can't share one app (their route names `admin.*` clash at
-    // boot), so the split is checked on one named panel.
     let app = booted(
         App::new()
             .module(Auth::new())

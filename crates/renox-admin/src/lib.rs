@@ -261,7 +261,9 @@ impl Admin {
     }
 
     /// Names the panel, so it takes the [`AdminEntry`]s aimed at that name
-    /// (`AdminEntry::panel`) instead of the unnamed ones.
+    /// (`AdminEntry::panel`) instead of the unnamed ones. A named panel has
+    /// its own route names, `admin.<name>.*` (`admin.staff.dashboard`), and
+    /// module name `admin.<name>`, so several panels can run in one app.
     pub fn named(mut self, name: &str) -> Self {
         self.name = Some(name.to_owned());
         self
@@ -274,7 +276,7 @@ impl Admin {
     }
 
     /// Where the panel lives (`/admin` by default). The route names stay
-    /// `admin.*`.
+    /// `admin.*` (`admin.<name>.*` for a [named](Self::named) panel).
     ///
     /// # Panics
     ///
@@ -377,6 +379,7 @@ impl Admin {
         panel::routes(Arc::new(Panel {
             path: self.path.clone(),
             title: self.title.clone(),
+            name: self.name.clone(),
             access: self.access.clone(),
             resources,
             settings: self.settings.clone(),
@@ -386,7 +389,11 @@ impl Admin {
 
 impl Module for Admin {
     fn name(&self) -> &'static str {
-        "admin"
+        match &self.name {
+            None => "admin",
+            // Once per panel at boot; the name must outlive the module list.
+            Some(name) => Box::leak(format!("admin.{name}").into_boxed_str()),
+        }
     }
 
     fn routes(&self) -> Routes {

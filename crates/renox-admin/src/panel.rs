@@ -35,6 +35,7 @@ pub(crate) type Access = Arc<dyn Fn(&AuthUser) -> bool + Send + Sync>;
 pub(crate) struct Panel {
     pub(crate) path: String,
     pub(crate) title: String,
+    pub(crate) name: Option<String>,
     pub(crate) access: Option<Access>,
     pub(crate) resources: Vec<Arc<dyn Listed>>,
     pub(crate) settings: Vec<Arc<dyn SettingsPage>>,
@@ -180,8 +181,13 @@ impl<R: AdminResource> Listed for Holder<R> {
     }
 }
 
-/// The panel's routes, under its path, named `admin.*`.
+/// The panel's routes, under its path, named `admin.*` (`admin.<name>.*`
+/// for a named panel).
 pub(crate) fn routes(panel: Arc<Panel>) -> Routes {
+    let prefix = match &panel.name {
+        Some(name) => format!("admin.{name}."),
+        None => "admin.".to_owned(),
+    };
     let mut inner = Routes::new()
         .get("/", dashboard)
         .name("dashboard")
@@ -193,7 +199,7 @@ pub(crate) fn routes(panel: Arc<Panel>) -> Routes {
     for page in &panel.settings {
         inner = inner.merge(page.routes(panel.clone()));
     }
-    Routes::new().group(&panel.path, "admin.", inner)
+    Routes::new().group(&panel.path, &prefix, inner)
 }
 
 /// What a resource's handlers share.

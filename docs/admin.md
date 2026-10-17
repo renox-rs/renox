@@ -82,7 +82,9 @@ pub fn app() -> App {
 What each part does:
 
 - `Admin::new()` makes a panel at `/admin`. `.path("/backoffice")` moves it; the route names
-  stay `admin.*`.
+  stay `admin.*`. A panel named with `.named("ops")` has the route names `admin.ops.*`
+  (`admin.ops.dashboard`, `admin.ops.products.index`) and the module name `admin.ops`, so two
+  panels at different paths can run in one app.
 - `.title(…)` names the panel in its sidebar and page titles.
 - `.authorize(|user| …)` says who may open the panel at all. **Nobody may until you say so**:
   without it every page answers 403 (forbidden). Guests are sent to log in. `.gate("admin")`
