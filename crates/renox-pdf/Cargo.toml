@@ -26,3 +26,4 @@ typst-pdf = "0.15.1"
 # `typst::compile` is generic over the output and `PagedDocument` (what
 # `typst-pdf` takes) is only defined here; already in the tree through `typst`.
 typst-layout = "0.15.1"
+tracing = "0.1.44"

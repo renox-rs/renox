@@ -10,3 +10,9 @@
 mod source;
 #[allow(dead_code)]
 mod world;
+
+mod error;
+#[allow(dead_code)]
+mod fonts;
+
+pub use error::PdfError;

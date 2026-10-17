@@ -3764,6 +3764,7 @@ name = "renox-pdf"
 version = "1.1.1"
 dependencies = [
  "renox",
+ "tracing",
  "typst",
  "typst-layout",
  "typst-pdf",
