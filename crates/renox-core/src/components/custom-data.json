@@ -277,6 +277,11 @@
     },
     {
       "attributes": [],
+      "description": "The request's brand stylesheet link, after `<rx-ui/>` (`renox_theme()`); nothing without a theme.",
+      "name": "rx-theme"
+    },
+    {
+      "attributes": [],
       "description": "The toast region (`toasts()`).",
       "name": "rx-toasts"
     },

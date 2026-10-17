@@ -625,6 +625,18 @@ impl Views {
                     styles.unwrap_or(true),
                 )))
             });
+            // The request's brand stylesheet (`App::theme`, `App::theme_for`):
+            // a `<link>` to the hashed route (`/_renox/theme/{hash}.css`, so
+            // nothing to escape), and nothing without a theme.
+            env.add_function("renox_theme", |state: &minijinja::State| {
+                let url = state
+                    .lookup(THEME_KEY)
+                    .and_then(|v| v.as_str().map(str::to_owned));
+                Value::from_safe_string(match url {
+                    Some(url) => format!("<link rel=\"stylesheet\" href=\"{url}\">"),
+                    None => String::new(),
+                })
+            });
             env.add_function("renox_calendar", || {
                 Value::from_safe_string(crate::assets::calendar_tags())
             });
@@ -1632,8 +1644,8 @@ pub(crate) async fn middleware(
     res
 }
 
-/// The key a request's brand stylesheet URL is shared under, for `renox_theme()`.
-pub(crate) const THEME_KEY: &str = "renox_theme";
+/// The key a request's brand stylesheet URL is shared under, for `renox_theme()` (not named like the function: a value would hide it).
+pub(crate) const THEME_KEY: &str = "renox_theme_url";
 
 /// Resolves the request's brand (`App::theme`, `App::theme_for`) and shares
 /// the URL of its stylesheet with the views; nothing is shared when the app

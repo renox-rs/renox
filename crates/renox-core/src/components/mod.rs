@@ -760,6 +760,7 @@ mod tests {
         let msg = |s: &str| compile("a.html", s, &builtin()).unwrap_err().message;
         assert_eq!(c("<rx-head/>"), "{{ renox_head() }}");
         assert_eq!(c("<rx-ui/>"), "{{ renox_ui() }}");
+        assert_eq!(c("<rx-theme/>"), "{{ renox_theme() }}");
         assert_eq!(
             c("<rx-ui :styles=\"false\"/>"),
             "{{ renox_ui(styles=(false)) }}"

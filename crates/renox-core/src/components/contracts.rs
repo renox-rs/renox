@@ -565,6 +565,17 @@ pub(crate) static BUILTIN: &[Contract] = &[
         parent: None,
     },
     Contract {
+        tag: "rx-theme",
+        doc: "The request's brand stylesheet link, after `<rx-ui/>` (`renox_theme()`); nothing without a theme.",
+        render: Render::Function("renox_theme"),
+        props: &[],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
         tag: "rx-toasts",
         doc: "The toast region (`toasts()`).",
         render: Render::Function("toasts"),

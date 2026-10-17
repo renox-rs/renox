@@ -25,7 +25,7 @@ async fn app(app: App) -> (TestApp, tempfile::TempDir) {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("page.html"),
-        "[{{ renox_theme | default('none') }}]",
+        "[{{ renox_theme_url | default('none') }}]",
     )
     .unwrap();
     let views = dir.path().to_path_buf();
@@ -104,4 +104,34 @@ async fn a_chooser_without_an_app_theme_leaves_other_hosts_unthemed() {
     };
     assert_eq!(page("north.test").await, format!("[{}]", url(&north)));
     assert_eq!(page("x.test").await, "[none]");
+}
+
+#[tokio::test]
+async fn renox_theme_renders_the_link_after_the_kit() {
+    let teal = theme("#0F766E");
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("page.html"),
+        "<head><rx-ui/><rx-theme/></head>|{{ renox_theme() }}",
+    )
+    .unwrap();
+    let views = dir.path().to_path_buf();
+    let themed = TestApp::with_config(App::new().module(Pages).theme(teal.clone()), {
+        let views = views.clone();
+        move |c| c.views_path = views
+    })
+    .await;
+    let link = format!("<link rel=\"stylesheet\" href=\"{}\">", url(&teal));
+    let body = themed.get("/").await.text();
+    assert_eq!(body.matches(&link).count(), 2, "{body}");
+    assert!(
+        body.find("<script src=").unwrap() < body.find(&link).unwrap(),
+        "the theme link comes after the kit: {body}"
+    );
+
+    // Without a theme: no link, no error.
+    let plain = TestApp::with_config(App::new().module(Pages), move |c| c.views_path = views).await;
+    let body = plain.get("/").await.text();
+    assert!(!body.contains("/_renox/theme/"), "{body}");
+    assert!(body.ends_with('|'), "{body}");
 }

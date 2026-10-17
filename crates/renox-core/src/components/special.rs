@@ -330,6 +330,7 @@ const RESERVED: &[&str] = &[
     "page_url",
     "method_field",
     "renox_ui",
+    "renox_theme",
     "renox_calendar",
     "renox_live",
     "renox_grid",
