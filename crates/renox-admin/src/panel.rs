@@ -487,7 +487,7 @@ impl<R: AdminResource> Ctx<R> {
                 .cloned()
                 .map(|mut field| {
                     field.translate(&|text| texts.label(slug, text));
-                    FieldView::new(field, None, true, decimals)
+                    FieldView::new(field, None, true, decimals, None)
                 })
                 .collect();
             let name = texts.label(slug, action.label());
@@ -545,7 +545,7 @@ impl<R: AdminResource> Ctx<R> {
     }
 
     /// The names of the form's money fields.
-    fn money_fields(&self) -> Vec<String> {
+    fn money_fields(&self) -> Vec<MoneyField> {
         money_fields(&*self.resource)
     }
 
@@ -664,14 +664,13 @@ pub(crate) fn record_title<R: AdminResource>(
     }
 }
 
-/// The names of `resource`'s money fields.
-pub(crate) fn money_fields<R: AdminResource>(resource: &R) -> Vec<String> {
-    resource
-        .fields()
-        .iter()
-        .filter(|field| field.kind() == FieldKind::Money)
-        .map(|field| field.name().to_owned())
-        .collect()
+/// A form's money field: its name and the field that holds its currency
+/// ([`Field::currency_from`]).
+pub(crate) type MoneyField = (String, Option<String>);
+
+/// `resource`'s money fields.
+pub(crate) fn money_fields<R: AdminResource>(resource: &R) -> Vec<MoneyField> {
+    money_names(&resource.fields())
 }
 
 /// `resource`'s form fields for a create page (`record` is `None`) or an
@@ -695,13 +694,25 @@ pub(crate) async fn form_fields<R: AdminResource>(
     .await
 }
 
-/// The names of the money fields among `fields`.
-pub(crate) fn money_names(fields: &[Field]) -> Vec<String> {
+/// The money fields among `fields`.
+pub(crate) fn money_names(fields: &[Field]) -> Vec<MoneyField> {
     fields
         .iter()
         .filter(|field| field.kind() == FieldKind::Money)
-        .map(|field| field.name().to_owned())
+        .map(|field| {
+            (
+                field.name().to_owned(),
+                field.currency_column().map(str::to_owned),
+            )
+        })
         .collect()
+}
+
+/// The decimals of a currency code (`jpy` → 0), if `code` looks like one.
+fn code_decimals(code: &str) -> Option<u32> {
+    let code = code.trim();
+    (code.len() == 3 && code.bytes().all(|b| b.is_ascii_alphabetic()))
+        .then(|| renox::currency_decimals(&code.to_ascii_uppercase()).min(6))
 }
 
 /// `fields` as a form draws them (see [`form_fields`]); `slug` scopes the
@@ -716,6 +727,12 @@ pub(crate) async fn fields_view(
 ) -> Result<Vec<FieldView>> {
     let (db, decimals) = (&state.db, money_decimals(state));
     let creating = record.is_none();
+    // The create page's currency of a `currency_from` field: the default of
+    // the field that holds it.
+    let defaults: BTreeMap<String, String> = fields
+        .iter()
+        .filter_map(|f| Some((f.name().to_owned(), f.default_text()?.to_owned())))
+        .collect();
     let mut views = Vec::new();
     for mut field in fields {
         if !field.shown(creating) || hidden.contains(&field.name()) {
@@ -730,8 +747,21 @@ pub(crate) async fn fields_view(
         {
             field = field.placeholder(&texts.get("select_placeholder", &[]));
         }
+        let currency = field.currency_column().and_then(|column| {
+            let code = match record {
+                Some(record) => record.get(column)?.as_str()?,
+                None => defaults.get(column)?,
+            };
+            code_decimals(code).map(|_| code.trim().to_ascii_uppercase())
+        });
         field.translate(&|text| texts.label(slug, text));
-        views.push(FieldView::new(field, record, creating, decimals));
+        views.push(FieldView::new(
+            field,
+            record,
+            creating,
+            decimals,
+            currency.as_deref(),
+        ));
     }
     Ok(views)
 }
@@ -770,12 +800,24 @@ pub(crate) struct FieldView {
     attrs: BTreeMap<String, String>,
     /// Shown but not changeable (edit pages, `readonly_on_edit`).
     locked: bool,
+    /// The code shown before a money field with `currency_from`.
+    currency_code: Option<String>,
 }
 
 impl FieldView {
     /// `decimals`: `APP_CURRENCY`'s, for money fields, which show whole
     /// units (`12.99`) of an amount kept in the smallest unit (`1299`).
-    pub(crate) fn new(field: Field, record: Option<&Value>, creating: bool, decimals: u32) -> Self {
+    ///
+    /// `currency`: the code of a money field's own currency
+    /// ([`Field::currency_from`]), whose decimals replace `decimals`.
+    pub(crate) fn new(
+        field: Field,
+        record: Option<&Value>,
+        creating: bool,
+        decimals: u32,
+        currency: Option<&str>,
+    ) -> Self {
+        let decimals = currency.and_then(code_decimals).unwrap_or(decimals);
         let json = renox::serde_json::to_value(&field).unwrap_or(Value::Null);
         let read = |key: &str| json.get(key).cloned().unwrap_or(Value::Null);
         let mut value = match record {
@@ -822,6 +864,7 @@ impl FieldView {
             value,
             attrs,
             locked,
+            currency_code: currency.map(str::to_owned),
         }
     }
 }
@@ -964,7 +1007,7 @@ pub(crate) fn check_input(
 pub(crate) async fn read_form<F>(
     state: &AppState,
     req: Request,
-    money: &[String],
+    money: &[MoneyField],
     fixed: &[(String, String)],
 ) -> std::result::Result<F, Box<Response>>
 where
@@ -1036,14 +1079,19 @@ pub(crate) fn smallest_unit(text: &str, decimals: u32) -> Option<String> {
 async fn rewrite_body(
     state: &AppState,
     req: Request,
-    money: &[String],
+    money: &[MoneyField],
     fixed: &[(String, String)],
 ) -> std::result::Result<Request, Box<Response>> {
     use renox::axum::body::{Body, Bytes};
     use renox::axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 
     let decimals = money_decimals(state);
-    let money: &[String] = if decimals == 0 { &[] } else { money };
+    // A field with its own currency is read with that currency's decimals
+    // whatever `APP_CURRENCY` has.
+    let money: Vec<&MoneyField> = money
+        .iter()
+        .filter(|(_, own)| own.is_some() || decimals > 0)
+        .collect();
     if money.is_empty() && fixed.is_empty() {
         return Ok(req);
     }
@@ -1063,6 +1111,7 @@ async fn rewrite_body(
         .await
         .map_err(|rejection| Box::new(rejection.into_response()))?;
     let changed = if form {
+        let posted = parse_pairs(&bytes);
         let text = String::from_utf8_lossy(&bytes);
         let mut pairs: Vec<String> = text
             .split('&')
@@ -1072,7 +1121,16 @@ async fn rewrite_body(
             })
             .map(|pair| {
                 let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-                if money.iter().any(|name| *name == url_decode(key))
+                let name = url_decode(key);
+                if let Some((_, own)) = money.iter().find(|(field, _)| *field == name)
+                    && let decimals = own
+                        .as_ref()
+                        .and_then(|column| {
+                            let (_, code) = posted.iter().rev().find(|(k, _)| k == column)?;
+                            code_decimals(code)
+                        })
+                        .unwrap_or(decimals)
+                    && decimals > 0
                     && let Some(amount) = smallest_unit(&url_decode(value), decimals)
                 {
                     format!("{key}={amount}")
@@ -1088,7 +1146,14 @@ async fn rewrite_body(
     } else {
         match renox::serde_json::from_slice::<Value>(&bytes) {
             Ok(Value::Object(mut object)) => {
-                for name in money {
+                for (name, own) in money {
+                    let decimals = own
+                        .as_ref()
+                        .and_then(|column| code_decimals(object.get(column)?.as_str()?))
+                        .unwrap_or(decimals);
+                    if decimals == 0 {
+                        continue;
+                    }
                     let amount = match object.get(name) {
                         Some(Value::String(text)) => smallest_unit(text, decimals),
                         Some(Value::Number(n)) => smallest_unit(&n.to_string(), decimals),

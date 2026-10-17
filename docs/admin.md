@@ -242,6 +242,29 @@ label. The kind decides which of the kit's fields draws it:
 > cent). For a currency without decimals (IDR, JPY) the amount is as typed. The view page's
 > `money` entries show `$12.99` too.
 
+A record that keeps its own currency (the `<field>_currency` column of a `#[model(money)]`
+field) says so with `currency_from`, on the field, the column and the entry:
+
+```rust,no_run
+# use renox_admin::{Entry, Field};
+# use renox::grid::Column;
+let column = Column::money("total", "Total").currency_from("total_currency");
+let entry = Entry::new("total", "Total").format("money").currency_from("total_currency");
+let fields = vec![
+    Field::money("total", "Total").currency_from("total_currency"),
+    Field::select("total_currency", "Currency", [("USD", "USD"), ("JPY", "JPY")])
+        .default_value("USD"),
+];
+```
+
+The list shows each row in its currency, the view page shows `¥1,250` or `$12.50`, and the
+form shows the amount with that currency's decimals and code (the create page uses the
+currency field's default value). On save the amount is read with the decimals of the
+currency posted with it, so `1250` is 1250 JPY and `1.250` is 1250 fils in KWD. The
+currency itself is an ordinary field of the form (a `select` of codes); validate it with
+`.currency()`. Without `currency_from` nothing changes: `APP_CURRENCY` applies.
+`Entry::from_column` carries a column's `currency_from` over.
+
 Options every field takes:
 
 - `.required()` marks it for people and the browser. The form's rules decide what's valid.

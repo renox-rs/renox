@@ -33,6 +33,7 @@ pub struct Entry {
     badge: bool,
     copyable: bool,
     span: Option<String>,
+    currency_from: Option<String>,
 }
 
 impl Entry {
@@ -47,6 +48,7 @@ impl Entry {
             badge: false,
             copyable: false,
             span: None,
+            currency_from: None,
         }
     }
 
@@ -72,6 +74,24 @@ impl Entry {
             .into_iter()
             .map(|(value, label)| (value.into(), label.into()))
             .collect();
+        self
+    }
+
+    /// For a `money` entry: shows the amount in the currency the record
+    /// keeps in its `key` field (an ISO 4217 code such as `total_currency`),
+    /// with that currency's symbol and decimals. Without it the entry uses
+    /// `APP_CURRENCY`.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let total = Entry::new("total", "Total")
+    ///     .format("money")
+    ///     .currency_from("total_currency");
+    /// # let _ = total;
+    /// ```
+    pub fn currency_from(mut self, key: &str) -> Self {
+        self.currency_from = Some(key.to_owned());
         self
     }
 
@@ -101,7 +121,13 @@ impl Entry {
         let entry = match column.kind() {
             Kind::Custom => return None,
             Kind::Number => entry.format("number"),
-            Kind::Money => entry.format("money"),
+            Kind::Money => {
+                let entry = entry.format("money");
+                match column.currency_column() {
+                    Some(key) => entry.currency_from(key),
+                    None => entry,
+                }
+            }
             Kind::Date => entry.format("date"),
             Kind::DateTime => entry.format("datetime"),
             Kind::Bool => entry.format("bool"),

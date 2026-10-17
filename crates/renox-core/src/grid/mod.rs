@@ -549,6 +549,12 @@ impl Column {
         self.kind
     }
 
+    /// The model column a money column reads each row's currency from
+    /// ([`currency_from`](Self::currency_from)), if it has one.
+    pub fn currency_column(&self) -> Option<&str> {
+        self.currency.as_deref()
+    }
+
     /// The column's heading.
     pub fn label(&self) -> &str {
         &self.label

@@ -17,6 +17,6 @@
 {%- elif f.kind == "date" %}
 {{ date_picker(f.name, f.label, value=f.value, min=f.attrs.min, max=f.attrs.max, hint=f.hint, required=f.required, readonly=f.locked, span=f.span) }}
 {%- else %}
-{{ input(f.name, f.label, type=types[f.kind] if types[f.kind] is defined else "text", value=f.value, hint=f.hint, required=f.required, autocomplete=f.autocomplete, placeholder=f.placeholder, attrs=f.attrs, prefix=(f.prefix or (currency if f.kind == "money" else none)), suffix=f.suffix, readonly=f.locked, span=f.span, revealable=(f.kind == "password")) }}
+{{ input(f.name, f.label, type=types[f.kind] if types[f.kind] is defined else "text", value=f.value, hint=f.hint, required=f.required, autocomplete=f.autocomplete, placeholder=f.placeholder, attrs=f.attrs, prefix=(f.prefix or (f.currency_code or currency if f.kind == "money" else none)), suffix=f.suffix, readonly=f.locked, span=f.span, revealable=(f.kind == "password")) }}
 {%- endif %}
 {%- endmacro %}

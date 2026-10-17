@@ -27,7 +27,7 @@
   {% call infolist(columns=2) %}
     {%- for e in entries %}
     {%- set value = record[e.key] if record[e.key] is defined else none %}
-    {{ entry(e.label, value, format=e.format, badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span) }}
+    {{ entry(e.label, value, format=e.format, badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span, currency=(record[e.currency_from] if e.currency_from and record[e.currency_from] is defined else none)) }}
     {%- endfor %}
   {% endcall %}
 {% endcall %}
