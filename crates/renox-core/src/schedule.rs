@@ -524,6 +524,10 @@ impl Schedule {
         }
     }
 
+    pub(crate) fn has(&self, name: &str) -> bool {
+        self.tasks.iter().any(|t| t.name == name)
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.tasks.is_empty()
     }

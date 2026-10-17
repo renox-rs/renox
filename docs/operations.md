@@ -62,6 +62,7 @@ the queue workers and the scheduler.
 | `webhook:endpoints`, `webhook:deliveries [--endpoint N] [--failed]`, `webhook:redeliver <id>`, `webhook:prune-deliveries [--days N]` | Outbound webhooks (see Outbound webhooks). |
 | `sequence:list` | Lists the numbering series (`Sequence`, docs/relations.md "Numbering documents") and the last number of each. |
 | `cache:prune`, `session:prune` | Deletes expired cache rows and database sessions. |
+| `idempotency:prune [--days N]` | Deletes the keys of `.offline()` routes older than N days (`IDEMPOTENCY_RETENTION_DAYS`, 7); scheduled daily when the app has such routes. |
 | `import:prune [--days N]` | Deletes the records of imports whose undo window ended more than N days ago (0): `renox::import::prune(&state, age)`. |
 | `schedule:list`, `schedule:run <task>`, `schedule:work` | The scheduler (`schedule:work` runs it alone, when `serve` runs with `SCHEDULER=false`). |
 | `db:check` | Compares the models registered with `App::model` with the tables the migrations build, and fails on a mismatch. |

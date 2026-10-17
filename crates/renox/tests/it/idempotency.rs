@@ -387,4 +387,79 @@ mod offline {
         assert_ne!(one.text(), two.text());
         assert_eq!(two.header("idempotent-replayed"), None);
     }
+
+    async fn age_keys(app: &TestApp, days: i64) {
+        renox::db::sql("UPDATE idempotency_keys SET created_at = ?")
+            .bind(renox::db::now() - renox::chrono::TimeDelta::days(days))
+            .execute(app.db())
+            .await
+            .unwrap();
+    }
+
+    async fn key_count(app: &TestApp) -> i64 {
+        renox::db::sql("SELECT COUNT(*) FROM idempotency_keys")
+            .scalar(app.db())
+            .await
+            .unwrap()
+    }
+
+    #[renox::test]
+    async fn the_csrf_endpoint_gives_a_token_nobody_caches_and_no_other_site() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        let res = app.get("/_renox/csrf").await;
+        res.assert_ok();
+        assert_eq!(res.header("cache-control"), Some("no-store"));
+        assert_eq!(res.header("access-control-allow-origin"), None);
+        let token = res.json_path("token");
+        assert!(token.as_str().is_some_and(|t| !t.is_empty()), "{token}");
+
+        let cross = app
+            .request()
+            .header("sec-fetch-site", "cross-site")
+            .get("/_renox/csrf")
+            .await;
+        cross.assert_status(403);
+        assert_eq!(cross.header("cache-control"), Some("no-store"));
+        assert!(!cross.text().contains(token.as_str().unwrap()));
+        app.request()
+            .header("sec-fetch-site", "same-origin")
+            .get("/_renox/csrf")
+            .await
+            .assert_ok();
+    }
+
+    #[renox::test]
+    async fn the_retention_setting_feeds_the_scheduled_prune() {
+        let app = TestApp::with_config(App::new().module(Field), |c| c.scheduler = true).await;
+        assert_eq!(app.state().config.idempotency_retention_days, 7);
+        post(&app, "/visits", Some("old"), "a")
+            .await
+            .assert_status(201);
+        age_keys(&app, 6).await;
+        app.run_scheduled("idempotency:prune").await.unwrap();
+        assert_eq!(key_count(&app).await, 1, "inside the 7 days");
+        age_keys(&app, 8).await;
+        app.run_scheduled("idempotency:prune").await.unwrap();
+        assert_eq!(key_count(&app).await, 0);
+
+        let short = TestApp::with_config(App::new().module(Field), |c| {
+            c.scheduler = true;
+            c.idempotency_retention_days = 2;
+        })
+        .await;
+        post(&short, "/visits", Some("k"), "a")
+            .await
+            .assert_status(201);
+        age_keys(&short, 3).await;
+        short.run_scheduled("idempotency:prune").await.unwrap();
+        assert_eq!(key_count(&short).await, 0);
+    }
+
+    #[renox::test]
+    async fn no_prune_task_without_offline_routes_or_scheduler() {
+        let plain = TestApp::with_config(App::new(), |c| c.scheduler = true).await;
+        assert!(plain.run_scheduled("idempotency:prune").await.is_err());
+        let off = TestApp::new(App::new().module(Field)).await;
+        assert!(off.run_scheduled("idempotency:prune").await.is_err());
+    }
 }

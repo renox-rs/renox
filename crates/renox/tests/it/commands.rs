@@ -183,6 +183,9 @@ async fn the_binarys_commands_run_through_run_args() {
     run(&["sequence:list"]).await.unwrap();
     run(&["cache:prune"]).await.unwrap();
     run(&["session:prune"]).await.unwrap();
+    run(&["idempotency:prune"]).await.unwrap();
+    run(&["idempotency:prune", "--days", "1"]).await.unwrap();
+    assert!(run(&["idempotency:prune", "--days", "x"]).await.is_err());
     run(&["import:prune"]).await.unwrap();
     assert!(run(&["queue:retry"]).await.is_err(), "needs an id or `all`");
 

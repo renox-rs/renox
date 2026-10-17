@@ -40,6 +40,8 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
 - **Outbound webhooks:** `WEBHOOK_DISABLE_AFTER` (20, at least 1: consecutive failed deliveries after
   which an endpoint is disabled), `WEBHOOK_TOLERANCE_SECS` (300, at least 1: how far a signed
   request's timestamp may be from now; also the replay window).
+- **Offline forms:** `IDEMPOTENCY_RETENTION_DAYS` (7, at least 1: how long the keys of `.offline()`
+  routes are kept; `idempotency:prune` and its daily scheduled task delete older ones).
 - **Storage:** `STORAGE_DISK` (local|s3), `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`,
   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `STORAGE_URL`.
 - **SEO/analytics** (used in production only): `GOOGLE_SITE_VERIFICATION`, `GA4_MEASUREMENT_ID`,

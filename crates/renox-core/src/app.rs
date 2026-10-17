@@ -66,6 +66,8 @@ Commands:
   sequence:list             List the numbering series (`Sequence`) and their last numbers
   cache:prune               Delete expired rows of the database cache store
   session:prune             Delete expired sessions (SESSION_DRIVER=database)
+  idempotency:prune [--days N]
+                            Delete offline-form keys older than N days (default 7)
   import:prune [--days N]   Delete the records of imports whose undo window ended N days ago (default 0)
   schedule:list             List scheduled tasks and when they run next
   schedule:run <task>       Run one scheduled task now
@@ -871,7 +873,7 @@ impl App {
         let Registry {
             jobs,
             listeners,
-            schedule,
+            mut schedule,
             duplicate_job,
             webhooks,
             webhook_events,
@@ -1048,6 +1050,19 @@ impl App {
             self.pwa_chooser.is_some(),
         ));
         listing.sort_by(|a, b| (&a.path, &a.method).cmp(&(&b.path, &b.method)));
+        // Keys of `.offline()` routes expire by themselves: prune them daily
+        // wherever the scheduler runs (unless the app scheduled it itself).
+        if config.scheduler
+            && listing
+                .iter()
+                .any(|info| info.middleware.iter().any(|m| m == "offline"))
+            && !schedule.has("idempotency:prune")
+        {
+            schedule.daily_at("03:30", "idempotency:prune", |state| async move {
+                crate::idempotency::prune_retained(&state, None).await?;
+                Ok(())
+            });
+        }
         // The current route's name follows the request's method (#299).
         for info in &listing {
             if let Some(name) = &info.name {
@@ -1644,6 +1659,13 @@ impl App {
                 "Deleted {} expired cache row(s).",
                 kernel.state.cache.prune().await?
             ),
+            "idempotency:prune" => {
+                let days = flag_value(args, "--days")?;
+                println!(
+                    "Deleted {} idempotency key(s) past retention.",
+                    crate::idempotency::prune_retained(&kernel.state, days).await?
+                );
+            }
             "import:prune" => {
                 let days = flag_value(args, "--days")?.unwrap_or(0);
                 let age = Duration::from_secs(u64::from(days) * 86_400);
@@ -1771,6 +1793,7 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "sequence:list",
     "cache:prune",
     "session:prune",
+    "idempotency:prune",
     "import:prune",
     "ui:publish",
     "schedule:list",
@@ -2035,6 +2058,7 @@ fn framework_routes(config: &Config, pwa: bool, pwa_for: bool) -> Vec<RouteInfo>
         route("POST", "/_renox/grid/{grid}/prefs"),
         route("DELETE", "/_renox/grid/{grid}/prefs"),
         route("POST", "/_renox/live/{component}/{action}"),
+        route("GET", "/_renox/csrf"),
         route("GET", "/storage/{*path}"),
     ];
     if pwa {
@@ -2297,6 +2321,7 @@ fn build_router(
     let router = router
         .merge(crate::storage::router())
         .merge(crate::grid::router())
+        .merge(csrf::router())
         .merge(crate::live_component::route::router());
     let router = if state.config.debug {
         router

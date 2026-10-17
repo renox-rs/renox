@@ -201,6 +201,14 @@ pub async fn prune(db: &Db, before: DateTime) -> Result<u64> {
         .await?)
 }
 
+/// Removes the keys older than the app's retention (`IDEMPOTENCY_RETENTION_DAYS`,
+/// 7 by default, or `days` when given); returns how many. What
+/// `my-app idempotency:prune` and the scheduled task run.
+pub(crate) async fn prune_retained(state: &crate::AppState, days: Option<u32>) -> Result<u64> {
+    let days = days.unwrap_or(state.config.idempotency_retention_days);
+    prune(&state.db, now() - chrono::TimeDelta::days(i64::from(days))).await
+}
+
 /// The header that carries the key of a request to an `.offline()` route.
 pub const KEY_HEADER: &str = "idempotency-key";
 

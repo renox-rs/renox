@@ -17,6 +17,31 @@ pub const XSRF_HEADER: &str = "x-xsrf-token";
 /// The form field that carries the CSRF token.
 pub const CSRF_FIELD: &str = "_token";
 
+/// `GET /_renox/csrf`: the session's CSRF token as `{ "token": "…" }`, for
+/// the offline outbox, which replays a post long after its page was
+/// rendered. Same-origin only (no CORS headers are sent, and a request the
+/// browser marks cross-site is refused), and never cached.
+pub(crate) fn router() -> axum::Router<crate::AppState> {
+    axum::Router::new().route("/_renox/csrf", axum::routing::get(token))
+}
+
+async fn token(headers: axum::http::HeaderMap, session: Session) -> Response {
+    let cross_site = headers
+        .get("sec-fetch-site")
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|site| !matches!(site, "same-origin" | "none"));
+    let mut res = if cross_site {
+        Error::Forbidden.into_response()
+    } else {
+        axum::Json(serde_json::json!({ "token": session.token() })).into_response()
+    };
+    res.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    res
+}
+
 /// Finds the text field `name` in a buffered multipart body. The body was
 /// already read within the app's `UPLOAD_MAX_SIZE`, so no other limit
 /// applies here (axum's `Multipart` would add its own 2 MB one).
