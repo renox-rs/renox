@@ -108,7 +108,7 @@ impl Document {
         self
     }
 
-    /// The code run before the template's own text, on its first line.
+    /// The code run before the template's own text, on a line of its own.
     fn prelude(&self) -> String {
         let data = if self.data.is_some() {
             format!("json({DATA_FILE:?})")
@@ -181,7 +181,7 @@ impl Document {
             PdfError::Compile(
                 errors
                     .iter()
-                    .map(|e| e.message.to_string())
+                    .map(|e| world.describe(e))
                     .collect::<Vec<_>>()
                     .join("\n"),
             )
@@ -380,6 +380,28 @@ mod tests {
             let doc = document("x").asset(bad, "x");
             assert!(matches!(doc.compile(), Err(PdfError::Invalid(_))), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_template_may_start_with_markup() {
+        let doc = document("= Heading\nbody").compile().unwrap();
+        let text = text_runs(&doc);
+        assert!(
+            text.contains("Heading") && !text.contains("= Heading"),
+            "{text:?}"
+        );
+    }
+
+    #[test]
+    fn an_error_names_the_template_line() {
+        let Err(PdfError::Compile(message)) =
+            document("= Title\n\n#unknown-function()\n").compile()
+        else {
+            panic!("expected a compile error");
+        };
+        assert!(message.contains("main.typ:3:"), "{message}");
+        let first = document("#unknown-function()").compile();
+        assert!(matches!(first, Err(PdfError::Compile(m)) if m.contains("main.typ:1:")));
     }
 
     #[test]

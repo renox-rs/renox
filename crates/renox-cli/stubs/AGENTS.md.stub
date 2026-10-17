@@ -58,6 +58,7 @@ rnx make:middleware StampRequests                      # also make:component (an
 rnx make:component --ui                                # copy the UI kit in to change it (same as rnx ui:publish)
 rnx make:deploy                                        # Dockerfile, systemd unit + socket, Litestream
 rnx make:pwa                                           # installable on phones: offline page, placeholder icons, .pwa(..)
+rnx make:pdf invoice                                   # PDF template (Typst + kit) in resources/views/pdf, renox-pdf, Pdf module
 rnx build                                              # release binary in dist/ (Tailwind CSS minified first)
 rnx tailwind --watch                                   # rebuild public/css/app.css (rnx serve does it for you)
 ```
@@ -294,6 +295,14 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   goes in the layout head after `<rx-theme/>`. Renox serves the manifest, `/sw.js` and the offline
   page; navigations are never cached, so don't expect signed-in pages offline. Per host:
   `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`.
+- PDFs: `rnx make:pdf invoice`, then `Pdf::document(&state, "invoice")?.locale(&lang).data(&order).render(&state).await?`
+  returns the bytes (`renox-pdf`; answer with them and `Content-Type: application/pdf`). The template is Typst in
+  `resources/views/pdf/invoice.typ`: `#import "@renox/kit:0.1.0": *` gives `money()`, `date()`,
+  `data-table`, `page-header` and the brand tokens; the data is the dictionary `data`. Lay out with
+  `start`/`end`, not left/right, so Arabic works (`.locale("ar")` sets language and direction). A
+  character no font has fails the render (`PdfError::MissingGlyphs`); `.font(bytes)` on `Pdf` adds
+  one. Renders are capped by `PDF_MAX_CONCURRENT` and `PDF_TIMEOUT`. Test with
+  `renox_pdf::testing::PdfAssertions` (`assert_pdf`, `assert_pdf_contains`).
 - Right-to-left: every layout writes `<html lang="{{ app.locale }}" dir="{{ app.dir }}">`, and
   `app.dir` is `rtl` for Arabic, Hebrew, Persian and the like. Keep `dir` on a layout you add,
   and in the app's own CSS use logical properties (`margin-inline-start`, `padding-inline`,

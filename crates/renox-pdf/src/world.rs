@@ -8,12 +8,12 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use typst::diag::{FileError, FileResult};
+use typst::diag::{FileError, FileResult, SourceDiagnostic};
 use typst::foundations::{Bytes, Datetime, Dict, Duration};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::{Library, LibraryExt, World};
+use typst::{Library, LibraryExt, World, WorldExt};
 
 use crate::source::Sources;
 
@@ -25,8 +25,9 @@ pub(crate) struct RenoxWorld {
     sources: Sources,
     assets: HashMap<String, Bytes>,
     main: FileId,
-    /// Code placed before the entry file's own text (on its first line, so
-    /// line numbers in errors stay right): `data` and the language settings.
+    /// Code placed before the entry file's own text, on a first line of its
+    /// own (`data` and the language settings); [`RenoxWorld::describe`] takes
+    /// that line off again, so error lines point at the template.
     prelude: String,
     /// Parsed sources, so a file imported twice is parsed once per render.
     cache: Mutex<HashMap<FileId, Source>>,
@@ -59,6 +60,26 @@ impl RenoxWorld {
     pub(crate) fn with_prelude(mut self, prelude: String) -> Self {
         self.prelude = prelude;
         self
+    }
+
+    /// An error's message, prefixed with `file:line:` when it points into a
+    /// file. The entry file's lines do not count the prelude.
+    pub(crate) fn describe(&self, error: &SourceDiagnostic) -> String {
+        let message = error.message.to_string();
+        let Some(id) = error.span.id() else {
+            return message;
+        };
+        let line = self
+            .range(error.span)
+            .and_then(|range| Some(self.source(id).ok()?.lines().byte_to_line(range.start)? + 1));
+        let Some(mut line) = line else {
+            return message;
+        };
+        if id == self.main {
+            line = line.saturating_sub(1).max(1);
+        }
+        let path = id.get().vpath().get_without_slash().to_owned();
+        format!("{path}:{line}: {message}")
     }
 
     /// Sets `sys.inputs`.
@@ -111,7 +132,7 @@ impl World for RenoxWorld {
         let bytes = self.bytes(id)?;
         let text = std::str::from_utf8(&bytes).map_err(|_| FileError::InvalidUtf8)?;
         let text = if id == self.main {
-            format!("{}{text}", self.prelude)
+            format!("{}\n{text}", self.prelude)
         } else {
             text.to_owned()
         };

@@ -8,6 +8,7 @@ mod generate;
 mod make;
 mod new;
 mod package;
+mod pdf;
 mod pwa;
 mod scaffold;
 mod serve;
@@ -300,6 +301,9 @@ enum Command {
         #[arg(long)]
         force: bool,
     },
+    /// A PDF template (Typst, with the Renox kit) in resources/views/pdf, and the `Pdf` module.
+    #[command(name = "make:pdf")]
+    MakePdf { name: String },
     /// Generate an APP_KEY and write it to `.env`.
     #[command(name = "key:generate")]
     KeyGenerate {
@@ -361,6 +365,7 @@ fn run(command: Command) -> Result<()> {
         Command::KeyGenerate { show } => key_generate(show),
         Command::Build => deploy::build(&app_root()?),
         Command::MakeDeploy => deploy::make_deploy(&app_root()?),
+        Command::MakePdf { name } => pdf::make_pdf(&app_root()?, &name),
         Command::MakePwa { force } => pwa::make_pwa(&app_root()?, force),
         Command::MakeMigration {
             name,
