@@ -95,6 +95,7 @@ mod htmx;
 pub mod http;
 pub mod i18n;
 mod icons;
+pub mod idempotency;
 pub mod import;
 mod inspector;
 mod live;

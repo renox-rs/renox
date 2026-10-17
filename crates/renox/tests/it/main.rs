@@ -38,6 +38,7 @@ mod forms;
 mod grid;
 mod grid_edges;
 mod i18n;
+mod idempotency;
 mod import;
 mod infolist;
 mod infra;

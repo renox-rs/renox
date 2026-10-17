@@ -861,6 +861,7 @@ impl App {
         migrations.push(crate::db::SEQUENCE_MIGRATION);
         migrations.push(crate::state_machine::MIGRATION);
         migrations.push(crate::custom_fields::MIGRATION);
+        migrations.push(crate::idempotency::MIGRATION);
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());

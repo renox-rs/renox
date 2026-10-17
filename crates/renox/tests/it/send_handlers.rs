@@ -216,6 +216,21 @@ async fn json_paths(State(db): State<Db>) -> Result<String> {
     Ok(format!("{checked}"))
 }
 
+/// Idempotency storage: every `idempotency` call, inside a routed handler.
+async fn idempotency_store(State(db): State<Db>) -> Result<String> {
+    use renox::idempotency::{self, Claim};
+    let hash = idempotency::body_hash(b"x");
+    let claimed = idempotency::claim(&db, "u", "/r", "k", &hash).await? == Claim::Claimed;
+    idempotency::complete(&db, "u", "/r", "k", 200, &[], b"ok").await?;
+    let replay = matches!(
+        idempotency::claim(&db, "u", "/r", "k", &hash).await?,
+        Claim::Replay(_)
+    );
+    idempotency::release(&db, "u", "/r", "k").await?;
+    let pruned = idempotency::prune(&db, renox::db::now()).await?;
+    Ok(format!("{claimed} {replay} {pruned}"))
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -1077,6 +1092,7 @@ impl Module for Handlers {
             .get("/typed", typed)
             .get("/numbering", numbering)
             .get("/custom-field-defs", custom_field_defs)
+            .get("/idempotency-store", idempotency_store)
             .get("/custom-field-values", custom_field_values)
             .get("/more", more)
             .get("/access", access)
@@ -1179,6 +1195,10 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true 1 1");
+    app.get("/idempotency-store")
+        .await
+        .assert_ok()
+        .assert_see("true true 1");
     app.get("/custom-field-values")
         .await
         .assert_ok()
