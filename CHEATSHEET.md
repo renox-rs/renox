@@ -1638,6 +1638,12 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // (`use renox::pwa::{Pwa, PwaBrand, PwaRequest}`; icons dir: icon-192.png, icon-512.png, icon-maskable-512.png; a missing one is a boot error)
 // .pwa_for(|req: PwaRequest| async move { Ok(Some(PwaBrand::new("North Bikes").theme_color("#0F766E"))) }) per host (Vary: Host); Ok(None) = static Pwa
 // Layout: <rx-pwa/> after <rx-theme/>; serves /manifest.webmanifest, /sw.js (versioned), /_renox/offline; navigations are never cached.
+// Offline forms (docs/ui.md "Offline forms"): a failed post waits in an IndexedDB outbox (not encrypted, cleared on logout), replays in order.
+// Routes::new().post("/stops/{id}/complete", complete_stop).offline()  // needs Idempotency-Key (400); same key+body = stored reply; other body = 422
+// .offline_with(Skew::new().past(Duration::from_secs(72 * 3600)).future(Duration::from_secs(60)))  // default 24 h past, 5 min ahead
+// async fn complete_stop(offline: Offline) -> Result<String> { offline.recorded_at / .received_at / .client_id / .skew_exceeded }
+// <rx-form action="/stops/7/complete" offline="stops"> ... </rx-form>  // loads renox-offline.js; GET /_renox/csrf gives a fresh token
+// `rnx idempotency:prune [--days N]` (IDEMPOTENCY_RETENTION_DAYS, 7). No Background Sync: posts are sent while a page of the app is open.
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`

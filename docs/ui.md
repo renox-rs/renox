@@ -35,6 +35,7 @@ full reload.
   - the page's frame (navigation bar, sidebar, page headers);
   - themes and type, and [brand themes](#brand-themes) (one colour in, readable accent tokens out);
   - [installing the app on phones](#install-on-phones): manifest, service worker, offline page;
+  - [offline forms](#offline-forms): posts that wait on the device for the network;
   - [right-to-left](#right-to-left) pages: `app.dir`, logical CSS, the Arabic font;
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
@@ -1217,9 +1218,105 @@ The responses send `Vary: Host`, the brand's icons are served under a path with 
 hash, and the hash is part of the worker version, so a changed brand installs a new worker.
 Icons are checked on first use; an invalid one is logged and the static icons stay, as they
 do when the closure returns an error. Keep the closure cheap. One manifest per app is the
-rule for now; a second manifest with its own scope is not supported. Offline data entry
-(forms that wait for the network) comes later as "Offline forms" (#52) and will be described
-next to this section.
+rule for now; a second manifest with its own scope is not supported.
+
+### Offline forms
+
+A form can wait for the network. Field work (a delivery driver, an inspector in a basement)
+often happens where the connection drops. Mark the form `offline="name"` and, when a post
+fails because the device is offline, the browser keeps it in an **outbox** on the device,
+shows it as waiting, and sends it once the network is back. Pages are not stored; only posts
+are (see "What Renox serves" above: the worker never caches a page).
+
+Three parts, all opt-in:
+
+```rust
+use renox::prelude::*;
+
+async fn complete_stop(offline: Offline) -> Result<String> {
+    if offline.skew_exceeded {
+        // The device clock is far from the server's: refuse, or accept for review.
+        return Err(Error::BadRequest("Check the clock on this device.".into()));
+    }
+    Ok(format!("Stop completed at {}", offline.recorded_at))
+}
+
+fn routes() -> Routes {
+    Routes::new()
+        .post("/stops/{id}/complete", complete_stop)
+        .offline()
+        .require_auth()
+}
+```
+
+```html
+<rx-form action="/stops/7/complete" offline="stops">
+  <rx-input name="note" label="Note"/>
+  <rx-button>Complete</rx-button>
+</rx-form>
+```
+
+- **The route** is marked `.offline()`. It then requires an `Idempotency-Key` header (400
+  without one), runs the handler once per key, and answers a repeat of the same key and body
+  with the stored response (header `Idempotent-Replayed`). The same key with a different body
+  is 422. A 5xx answer is not stored, so the browser may try again. Keys are kept per route
+  and per user or session, and `idempotency:prune` deletes the old ones
+  (`IDEMPOTENCY_RETENTION_DAYS`, 7 days; docs/operations.md).
+- **The handler** may take the `Offline` extractor: `recorded_at` (when the user acted, by
+  the device's clock), `received_at` (the server's time), `client_id` (the device's outbox,
+  from `X-Client-Id`) and `skew_exceeded`. Time is read through the clock, never
+  `SystemTime::now`.
+- **The form** is `<rx-form offline="name">` (a POST form; GET with `offline` is a compile
+  error). The page then loads `renox-offline.js`, a same-origin script with no inline code, so
+  it works under `CSP=strict`. Pages without an offline form do not load it. The texts of the
+  badge and the list are the `ui.offline.*` lang keys.
+
+**Skew.** A phone's clock can be wrong. By default `recorded_at` may be up to 24 hours in the
+past and 5 minutes ahead of the server. `.offline_with(Skew::new().past(..).future(..))`
+changes the limits. Outside them the handler still gets the device time as `recorded_at`, with
+`skew_exceeded` set to `true`; the app decides whether to refuse, accept for review or ask for
+approval. A missing or unreadable `X-Recorded-At` falls back to the server time with
+`skew_exceeded` false.
+
+**What happens in the browser.**
+
+- Only a network failure queues a post (the request itself failed, not an HTTP error). The
+  form shows a "saved, waiting to send" note and a count of waiting posts.
+- Waiting posts are sent strictly in the order they were recorded, one at a time, when the
+  page loads, when the browser goes back online, and on a timer that backs off while the
+  network is down. Each send carries `Idempotency-Key`, `X-Client-Id` and `X-Recorded-At`,
+  and a fresh CSRF token fetched from `GET /_renox/csrf` (`Cache-Control: no-store`, same
+  origin only), because the token on the page may be old by then. A post that was sent but
+  whose answer was lost is sent again with the same key, so it is applied once.
+- A 2xx or a redirect removes the post. A 5xx, 408, 419 or 429 stops the pass and tries
+  later. Any other 4xx (409, 422, ...) moves the post to **needs attention** and the pass
+  goes on with later posts. The list shows each one with **Review** (puts the fields back in
+  the form with the server's field errors; edit and send again, which keeps the client id
+  and takes a new key only when the body changed) and **Discard**.
+- If the session has ended (401, or a redirect to the login page), replay pauses and the
+  badge says to sign in to send. Signing in and loading a page sends the rest.
+
+**What is stored, and for how long.** The outbox is an IndexedDB database named
+`renox-offline` on that device and browser. Per post it keeps the form's action and method,
+the key, the client id, the recorded time and the fields, with chosen files as Blobs.
+Password fields and the CSRF token are never stored.
+
+> [!WARNING]
+> The outbox is **not encrypted**: anyone who can use the browser profile can read it. Keep
+> offline forms for data that may sit on the device, and tell the people who use shared
+> devices to sign out.
+
+The outbox is cleared on logout: a form whose action ends in `/logout`, or any element with
+`data-rx-logout`, on a page that loads the script, empties it before the logout goes on.
+Posts that are still waiting are lost then, which is the point on a shared device.
+
+**Background Sync is not used.** The Background Sync API exists only in Chromium browsers, and
+a replay needs a fresh CSRF token and a signed-in session, which a background worker without
+a page cannot be sure of. Posts are sent while a page of the app is open. Close the app and
+the posts wait for the next visit.
+
+Out of scope: reading pages offline, merging edits made on two devices, and storing anything
+other than posts.
 
 ### The type scale
 

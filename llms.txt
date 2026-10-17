@@ -404,6 +404,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/stability.md](docs/stability.md): what semver covers, which types may grow
   (`#[non_exhaustive]`), public dependencies (axum yes, sqlx only through escape hatches).
 - `rnx make:deploy` writes `deploy/README.md` (Docker, systemd, Litestream backups).
+- Offline forms (docs/ui.md "Offline forms"): `Routes::…post(..).offline()` (or `.offline_with(Skew::new().past(..).future(..))`) requires `Idempotency-Key`, replays the stored reply for the same key and body (422 for another body); the `Offline` extractor gives `recorded_at`, `received_at`, `client_id`, `skew_exceeded` (outside the limits the device time is still passed); `<rx-form offline="name">` queues failed posts in an unencrypted IndexedDB outbox that replays in order with a fresh token from `GET /_renox/csrf` and is cleared on logout; `idempotency:prune`; no Background Sync.
 - `rnx make:pwa` writes `resources/views/offline.html`, three placeholder icons in `public/icons/` and the `.pwa(..)` call (docs/ui.md "Install on phones").
 
 ## Where things are (for changing Renox itself)

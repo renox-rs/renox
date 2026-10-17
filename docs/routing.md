@@ -53,6 +53,7 @@ Some topics have their own guides:
 | Run code around requests | `App::layer` (every route), `Routes::route_layer` (some) |
 | Guard routes | `.require_auth()`, `.guest_only()`, `.require_gate(…)`, … |
 | Limit request rates | `.throttle(60, …)`, `.throttle_by("api")` + `App::rate_limiter` |
+| Accept posts made offline | `.offline()` / `.offline_with(Skew)` + the `Offline` extractor (docs/ui.md "Offline forms") |
 | Remember something per visitor | `Session` (`put`, `flash`, `push`, `increment`) |
 | A link that can't be altered | `state.signed_url(…)` + `ValidSignature` |
 
@@ -968,6 +969,9 @@ How to send the token, depending on what sends the request:
 - **htmx:** nothing to do. `{{ renox_head() }}` puts the token in a `<meta name="csrf-token">`
   tag, and Renox's script sends it as `X-CSRF-Token` on every htmx request.
 - **`fetch`:** send the `X-CSRF-Token` header yourself (read it from the meta tag).
+- **Offline forms:** the outbox fetches a fresh token from `GET /_renox/csrf` (a JSON
+  `{ "token": "…" }`, `Cache-Control: no-store`, same origin only) before it sends each waiting
+  post (docs/ui.md "Offline forms").
 - **API tokens** (`Authorization: Bearer`) skip CSRF: browsers never send them on their own,
   so the attack can't happen. A Bearer token that doesn't log anyone in gets 401.
 - **No session at all** (for example, a payment gateway calling your app): use

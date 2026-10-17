@@ -295,6 +295,10 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   goes in the layout head after `<rx-theme/>`. Renox serves the manifest, `/sw.js` and the offline
   page; navigations are never cached, so don't expect signed-in pages offline. Per host:
   `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`.
+- Offline forms: mark a POST route `.offline()` (it then needs an `Idempotency-Key`; the `Offline`
+  extractor gives `recorded_at`, `client_id` and `skew_exceeded`) and the form `<rx-form offline="name">`.
+  A post that fails for network reasons waits in an unencrypted IndexedDB outbox, replays in order and
+  is cleared on logout; no Background Sync. `idempotency:prune` deletes old keys (`IDEMPOTENCY_RETENTION_DAYS`).
 - PDFs: `rnx make:pdf invoice`, then `Pdf::document(&state, "invoice")?.locale(&lang).data(&order).render(&state).await?`
   returns the bytes (`renox-pdf`; answer with them and `Content-Type: application/pdf`). The template is Typst in
   `resources/views/pdf/invoice.typ`: `#import "@renox/kit:0.1.0": *` gives `money()`, `date()`,

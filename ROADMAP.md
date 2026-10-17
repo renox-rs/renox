@@ -1967,7 +1967,15 @@ Notes:
 - [x] Docs (ui.md "Install on phones"), CHEATSHEET.md, llms.txt, AGENTS.md.stub
 - [x] Browser test (`tests/browser/pwa.test.mjs`), `tests/cli/run.sh` make:pwa step, acceptance tests
   (`crates/renox/tests/it/pwa.rs`: manifest members and locale, worker version, boot errors, `pwa_for`, `<rx-pwa/>`, `route:list`)
-- [ ] Offline forms (#52), push notifications and several manifests per app are out of scope here
+- [ ] Push notifications and several manifests per app are out of scope here (offline forms: #52, below)
+
+### Offline forms (#52)
+- [x] Server: migration `…000440` (`idempotency_keys`), `renox::idempotency`, `Routes::offline()` / `offline_with(Skew)`,
+  the `Offline` extractor, `GET /_renox/csrf`, `idempotency:prune` and `IDEMPOTENCY_RETENTION_DAYS`
+- [x] Client: `<rx-form offline="name">`, `renox-offline.js` (IndexedDB outbox, ordered replay, needs attention, logout clearing)
+- [x] Docs (ui.md "Offline forms", routing.md, operations.md), CHEATSHEET.md, llms.txt, AGENTS.md.stub, env.stub
+- [ ] Browser and acceptance tests (part 8/8)
+- [ ] Background Sync, reading pages offline and merging edits from two devices are out of scope
 
 ### Brand themes (#36)
 - [x] `renox::theme`: `Brand`, `Theme::from_brand` (OKLCH, WCAG-checked, `ContrastError` with a passing
@@ -2084,6 +2092,12 @@ Notes:
 - **The service worker never stores pages** (#33): navigations go to the network and fall back to one offline page
   rendered at boot with no user, so a signed-in page cannot be served from a cache. `pwa_for` brands the manifest,
   icons, offline page and worker version per host (`Vary: Host`); several manifests per app are deferred.
+
+- **Offline forms keep posts, not pages, and replay only while the app is open** (#52): the outbox is an unencrypted
+  IndexedDB database cleared on logout, never stores passwords or the CSRF token (a fresh one comes from `GET /_renox/csrf`
+  before each replay), and replays in recorded order with an `Idempotency-Key`. Outside the skew limits the handler still
+  gets the device time with `skew_exceeded`, so the app decides. Background Sync is not used: it is Chromium-only and a
+  replay needs a page for the session and the token.
 
 - **Brand themes are hashed stylesheets only** (#36): no inline `<style>` and no `Vary: Host`, so a theme works
   under `CSP=strict` without a nonce and caches for a year. Every theme the app serves is kept in memory by hash.

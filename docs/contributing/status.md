@@ -561,6 +561,10 @@
   (`renox-cli/src/pwa.rs`). Several manifests per app are deferred; offline forms are #52.
   Guide: docs/ui.md "Install on phones". Tests: `crates/renox/tests/it/pwa.rs` (AC1-AC5, AC7), the browser test
   `tests/browser/pwa.test.mjs` (AC6) and the `make:pwa` step of `tests/cli/run.sh` (AC8).
+- **#52, offline forms** (parts 1-7): `renox-core/src/idempotency.rs` (store, `Skew`, `Offline`), migration `…000440`,
+  `Routes::offline()` / `offline_with`, `GET /_renox/csrf`, `idempotency:prune` with `IDEMPOTENCY_RETENTION_DAYS`, the
+  `rx-form offline` prop and `assets/renox-offline.js` (IndexedDB outbox, ordered replay, needs attention, cleared on
+  logout; Background Sync not used). Guide: docs/ui.md "Offline forms". Browser and acceptance tests are part 8/8.
 - **#36, brand themes**: `renox-core/src/theme.rs` (colour core: hex, sRGB/OKLCH with gamut clipping, WCAG ratio,
   nearest-passing lightness search; `Brand`, `Theme::from_brand`, `ContrastError`, `tokens()`/`dark_tokens()`,
   `css()` with the kit's three selector blocks, a 16-digit content hash). Text variants move in lightness
