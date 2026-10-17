@@ -168,3 +168,96 @@ async fn inactive_fields_are_hidden() {
         .assert_ok()
         .assert_dont_see("VIP");
 }
+
+#[renox::test]
+async fn the_definitions_resource_manages_fields() {
+    let app = app().await;
+    app.get("/admin/custom-fields")
+        .await
+        .assert_ok()
+        .assert_see("segment")
+        .assert_see("parties");
+    // A definition made in the panel shows up in the model's form at once.
+    app.htmx()
+        .post(
+            "/admin/custom-fields",
+            &[
+                ("model", "parties"),
+                ("key", "city"),
+                ("kind", "text"),
+                ("label", "City"),
+                ("translations", "es: Ciudad"),
+                ("max", "40"),
+                ("meta", r#"{"zone":"a"}"#),
+                ("active", "true"),
+            ],
+        )
+        .await
+        .assert_hx_redirect("/admin/custom-fields");
+    app.get("/admin/parties/create")
+        .await
+        .assert_ok()
+        .assert_see(r#"name="extra[city]""#);
+    let fields = CustomField::for_model(app.db(), "parties").await.unwrap();
+    let city = fields.iter().find(|f| f.key == "city").unwrap();
+    assert_eq!(city.label.0.get("es").map(String::as_str), Some("Ciudad"));
+    assert_eq!(city.rules.max, Some(40));
+    assert_eq!(city.meta["zone"], "a");
+    // The key, once chosen, is kept; the label changes.
+    app.htmx()
+        .put(
+            &format!("/admin/custom-fields/{}", city.id),
+            &[("key", "other"), ("label", "Town"), ("active", "true")],
+        )
+        .await
+        .assert_hx_redirect("/admin/custom-fields");
+    let fields = CustomField::for_model(app.db(), "parties").await.unwrap();
+    let city = fields.iter().find(|f| f.key == "city").unwrap();
+    assert_eq!(city.label.0.get("en").map(String::as_str), Some("Town"));
+    assert!(fields.iter().all(|f| f.key != "other"));
+    // Unticking "Active" hides it.
+    app.htmx()
+        .put(
+            &format!("/admin/custom-fields/{}", city.id),
+            &[("label", "Town")],
+        )
+        .await
+        .assert_hx_redirect("/admin/custom-fields");
+    app.get("/admin/parties/create")
+        .await
+        .assert_ok()
+        .assert_dont_see(r#"name="extra[city]""#);
+}
+
+#[renox::test]
+async fn the_definitions_resource_refuses_bad_input() {
+    let app = app().await;
+    for (name, value, field) in [
+        ("key", "Bad Key", "key"),
+        ("key", "segment", "key"),
+        ("model", "users", "model"),
+        ("kind", "choice", "options"),
+        ("kind", "file", "target"),
+        ("max", "x", "max"),
+        ("meta", "{nope", "meta"),
+    ] {
+        let mut body = vec![
+            ("model", "parties"),
+            ("key", "city"),
+            ("kind", "text"),
+            ("label", "City"),
+        ];
+        body.retain(|(n, _)| *n != name);
+        body.push((name, value));
+        app.htmx()
+            .post("/admin/custom-fields", &body)
+            .await
+            .assert_invalid(field);
+    }
+    // Definitions are deactivated, not deleted.
+    let id = CustomField::for_model(app.db(), "parties").await.unwrap()[0].id;
+    app.htmx()
+        .delete(&format!("/admin/custom-fields/{id}"))
+        .await
+        .assert_not_found();
+}

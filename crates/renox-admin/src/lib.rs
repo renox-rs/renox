@@ -51,6 +51,7 @@ use std::sync::Arc;
 
 use renox::prelude::*;
 
+mod custom_fields;
 pub mod entry;
 pub mod field;
 mod panel;
@@ -375,7 +376,17 @@ impl Admin {
 }
 
 impl Admin {
-    fn panel_routes(&self, resources: Vec<Arc<dyn Listed>>) -> Routes {
+    fn panel_routes(&self, mut resources: Vec<Arc<dyn Listed>>) -> Routes {
+        // Models with custom fields get the screen that manages them.
+        let models: Vec<(String, String)> = resources
+            .iter()
+            .filter_map(|r| r.custom_fields_model())
+            .collect();
+        if !models.is_empty() && resources.iter().all(|r| r.slug() != custom_fields::SLUG) {
+            resources.push(Arc::new(Holder(Arc::new(custom_fields::CustomFields {
+                models,
+            }))));
+        }
         panel::routes(Arc::new(Panel {
             path: self.path.clone(),
             title: self.title.clone(),

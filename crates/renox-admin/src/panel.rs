@@ -147,6 +147,8 @@ pub(crate) trait Listed: Send + Sync {
     /// How many records the list starts with.
     fn count(&self, db: Db) -> BoxFuture<'static, Result<u64>>;
     fn routes(&self, panel: Arc<Panel>) -> Routes;
+    /// The model's table and name when it declares `custom_fields`.
+    fn custom_fields_model(&self) -> Option<(String, String)>;
 }
 
 /// A resource behind [`Listed`].
@@ -172,6 +174,11 @@ impl<R: AdminResource> Listed for Holder<R> {
     fn count(&self, db: Db) -> BoxFuture<'static, Result<u64>> {
         let query = self.0.query();
         Box::pin(async move { query.count(&db).await })
+    }
+
+    fn custom_fields_model(&self) -> Option<(String, String)> {
+        R::Model::CUSTOM_FIELDS
+            .map(|_| (R::Model::TABLE.to_owned(), self.0.plural_label().to_owned()))
     }
 
     fn routes(&self, panel: Arc<Panel>) -> Routes {
