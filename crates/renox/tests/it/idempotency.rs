@@ -429,6 +429,30 @@ mod offline {
     }
 
     #[renox::test]
+    async fn a_replayed_post_is_accepted_with_a_token_from_the_endpoint() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        let token = app.get("/_renox/csrf").await.json_path("token");
+        let token = token.as_str().unwrap().to_owned();
+        let send = |csrf: Option<&str>| {
+            let mut request = app
+                .request()
+                .without_csrf()
+                .header("idempotency-key", "csrf-1");
+            if let Some(csrf) = csrf {
+                request = request.header("x-csrf-token", csrf);
+            }
+            request.post("/visits", &[("note", "a")])
+        };
+        send(None).await.assert_status(419);
+        let sent = send(Some(&token)).await;
+        sent.assert_status(201);
+        // The key was not spent by the refused post, and the retry replays.
+        let again = send(Some(&token)).await;
+        assert_eq!(again.text(), sent.text());
+        assert_eq!(again.header("idempotent-replayed"), Some("true"));
+    }
+
+    #[renox::test]
     async fn the_retention_setting_feeds_the_scheduled_prune() {
         let app = TestApp::with_config(App::new().module(Field), |c| c.scheduler = true).await;
         assert_eq!(app.state().config.idempotency_retention_days, 7);

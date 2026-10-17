@@ -207,6 +207,82 @@ async fn outbound_webhooks_store_and_prune_on_postgres() {
     assert_eq!(pruned, 1);
 }
 
+/// #52: the idempotency store on PostgreSQL: one claim wins, the answer
+/// replays byte for byte, a different body is a mismatch, and prune keeps newer keys.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn idempotency_keys_claim_replay_and_prune_on_postgres() {
+    use renox::idempotency::{self, Claim};
+    use renox::prelude::*;
+
+    if std::env::var("TEST_DATABASE_URL").is_err() {
+        eprintln!("skipped: TEST_DATABASE_URL is not set");
+        return;
+    }
+    let app = renox::testing::TestApp::new(App::new()).await;
+    let db = app.db();
+    assert_eq!(db.dialect(), Dialect::Postgres);
+    let hash = idempotency::body_hash(b"qty=3");
+    // Scopes unique to this run: the database may be shared with other tests.
+    let one = format!("u:{}", renox::db::now().timestamp_micros());
+    let two = format!("{one}:b");
+
+    let claims = futures_util::future::join_all(
+        (0..8).map(|_| idempotency::claim(db, &one, "/r", "pg-k", &hash)),
+    )
+    .await;
+    assert_eq!(
+        claims
+            .iter()
+            .filter(|c| matches!(c, Ok(Claim::Claimed)))
+            .count(),
+        1
+    );
+    let headers = vec![("content-type".to_owned(), "text/plain".to_owned())];
+    idempotency::complete(db, &one, "/r", "pg-k", 201, &headers, b"\x00done\xff")
+        .await
+        .unwrap();
+    let Claim::Replay(stored) = idempotency::claim(db, &one, "/r", "pg-k", &hash)
+        .await
+        .unwrap()
+    else {
+        panic!("expected a replay");
+    };
+    assert_eq!((stored.status, stored.headers), (201, headers));
+    assert_eq!(stored.body, b"\x00done\xff");
+    let other = idempotency::body_hash(b"qty=4");
+    assert_eq!(
+        idempotency::claim(db, &one, "/r", "pg-k", &other)
+            .await
+            .unwrap(),
+        Claim::Mismatch
+    );
+    // Another user or route is another key.
+    assert_eq!(
+        idempotency::claim(db, &two, "/r", "pg-k", &hash)
+            .await
+            .unwrap(),
+        Claim::Claimed
+    );
+
+    sql("UPDATE idempotency_keys SET created_at = ? WHERE scope = ?")
+        .bind(renox::db::now() - chrono::TimeDelta::days(8))
+        .bind(&one)
+        .execute(db)
+        .await
+        .unwrap();
+    let pruned = idempotency::prune(db, renox::db::now() - chrono::TimeDelta::days(7))
+        .await
+        .unwrap();
+    assert!(pruned >= 1);
+    let left: i64 = sql("SELECT COUNT(*) FROM idempotency_keys WHERE scope IN (?, ?)")
+        .bind(&one)
+        .bind(&two)
+        .scalar(db)
+        .await
+        .unwrap();
+    assert_eq!(left, 1, "only the new key is left");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_state_transitions_allow_exactly_one_on_postgres() {
     if std::env::var("TEST_DATABASE_URL").is_err() {

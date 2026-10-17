@@ -13,7 +13,10 @@ use std::path::{Path, PathBuf};
 
 /// The tags no example, fixture or built-in template uses yet, each with the reason. Remove a line when
 /// the tag is used somewhere real.
-const NOT_SHOWN_YET: &[(&str, &str)] = &[];
+const NOT_SHOWN_YET: &[(&str, &str)] = &[(
+    "rx-signature-pad",
+    "added in #53 part 1/5; a fixture or example page shows it in a later part of #53",
+)];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

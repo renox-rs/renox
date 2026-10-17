@@ -28,7 +28,8 @@
 //!     }
 //!     Claim::Replay(stored) => assert_eq!(stored.status, 200),
 //!     Claim::Mismatch => { /* same key, other body: answer 422 */ }
-//!     Claim::InProgress => { /* the first request is still running */ }
+//!     // `Claim::InProgress`: the first request is still running.
+//!     _ => {}
 //! }
 //! # Ok(()) }
 //! ```

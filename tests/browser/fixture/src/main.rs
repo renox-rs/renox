@@ -4,6 +4,7 @@
 //! renox-ui.js then do with it. The data grid's pages are in `grid.rs`.
 
 mod grid;
+mod offline;
 mod parties;
 mod pwa;
 mod tickets;
@@ -422,6 +423,8 @@ fn main() -> Result {
         .module(grid::Orders)
         .seeder(grid::seed)
         .module(Pages)
+        // An offline form and its `.offline()` route (offline-forms.test.mjs).
+        .module(offline::Visits)
         // Installable pages (pwa.test.mjs).
         .module(pwa::Installable)
         .pwa(

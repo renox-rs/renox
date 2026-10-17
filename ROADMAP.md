@@ -1974,7 +1974,8 @@ Notes:
   the `Offline` extractor, `GET /_renox/csrf`, `idempotency:prune` and `IDEMPOTENCY_RETENTION_DAYS`
 - [x] Client: `<rx-form offline="name">`, `renox-offline.js` (IndexedDB outbox, ordered replay, needs attention, logout clearing)
 - [x] Docs (ui.md "Offline forms", routing.md, operations.md), CHEATSHEET.md, llms.txt, AGENTS.md.stub, env.stub
-- [ ] Browser and acceptance tests (part 8/8)
+- [x] Acceptance tests: `tests/it/idempotency.rs` (AC1-AC6, PostgreSQL in `postgres.rs`), `tests/browser/offline-forms.test.mjs`
+  (AC7-AC11: offline emulation, ordered and interrupted replay, file, needs attention, logout, strict CSP) on the fixture's `/offline-form`
 - [ ] Background Sync, reading pages offline and merging edits from two devices are out of scope
 
 ### Brand themes (#36)
