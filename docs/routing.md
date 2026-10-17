@@ -584,6 +584,8 @@ Good to know:
 
 - A filename given to `Download` is made safe for the `Content-Disposition` header (the header
   that tells the browser the file's name).
+- To send a PDF you make from a template (an invoice, a receipt), render it with `renox-pdf` and
+  pass the bytes to `Download::bytes`: see [PDF documents](pdf.md#sending-it-download-or-mail).
 - `abort(status, msg)`, `abort_if` and `abort_unless` stop a handler with a status and a
   message that visitors see.
 

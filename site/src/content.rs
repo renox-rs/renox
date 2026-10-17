@@ -233,6 +233,14 @@ pub static PAGES: &[Page] = &[
         "Charge for plans with trials, upgrades and cancellations, with the renox-billing crate."
     ),
     page!(
+        "pdf",
+        "PDF documents",
+        Guides,
+        "file-text",
+        "docs/pdf.md",
+        "Invoices and receipts as PDF files from Typst templates, with Arabic text, with the renox-pdf crate."
+    ),
+    page!(
         "queue",
         "The queue",
         Guides,

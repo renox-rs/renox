@@ -2057,6 +2057,18 @@ Notes:
 - [x] Acceptance tests (AC1-AC12 audited; a PostgreSQL test) and a browser test (`tests/browser/custom-fields.test.mjs`, on the fixture's
   `/parties`); the sensitive flag that seals values with `APP_KEY` is deferred to the follow-up #71
 
+### PDF documents (#30)
+- [x] `crates/renox-pdf` (eleventh crate, same version, not in `renox`'s features): Typst compiled in the process with our own
+  `typst::World` (template root confinement, no network, `clock` for `today()`, in-memory assets)
+- [x] Fonts: Inter and Noto Sans Arabic bundled, `Pdf::font`, missing glyphs reported as `PdfError::MissingGlyphs` (`lenient()` logs)
+- [x] `Pdf::document(..).data(..).locale(..).asset(..).render(..)`; blocking-thread pool with `PDF_MAX_CONCURRENT` and `PDF_TIMEOUT`
+- [x] Templates from disk in debug, `renox::embedded!()` in release; the kit `@renox/kit:0.1.0` (tokens, `money()`, `date()`,
+  `page-header`, `data-table`)
+- [x] `renox_pdf::testing::{text_of, PdfAssertions}`, `rnx make:pdf`
+- [x] Docs (pdf.md, doctested through `Guide`; site page), CHEATSHEET.md, llms.txt, mail.md and routing.md cross-links
+- [ ] Release plumbing for the eleventh crate (11/12) and the bikeshop receipt PDF with its browser test (12/12)
+- [ ] App-vendored packages (`Pdf::package`), HTML-to-PDF, PAdES, PDF/A and form filling are out of scope
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2328,7 +2340,7 @@ Notes:
   `auto` height (`size: 80mm auto` is not valid CSS and Chrome drops the rule), so the receipt
   uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
   where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
-  A PDF receipt (#30) and ESC/POS printing stay out.
+  A PDF receipt (#30, `renox-pdf`) and ESC/POS printing stay out.
 - **Outbound webhooks** (#38, accepted as written 2026-10-16): the Standard Webhooks format
   (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64>`, secrets `whsec_<base64>`),
   not the proposal's own headers, so receivers can use existing libraries. No generic after-commit
@@ -2404,6 +2416,12 @@ Notes:
   PostgreSQL. `Column::custom_field` is the grid constructor because `Column::custom` already draws a template. Indexes are a
   helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag was accepted but deferred (#71). The tag's
   error lookup also tries the raw name, because custom-field errors are keyed `extra[key]`, not `extra.key`.
+- **PDFs are Typst templates compiled in the process** (#30): no headless browser and no service, so Arabic is shaped by the
+  compiler itself. The `typst::World` is ours, not `typst-kit`: a render reads only the template root and the document's own
+  assets and never touches the network, so the only package is the virtual `@renox/kit:0.1.0` (`Pdf::package` is deferred). A
+  glyph no font has fails the render by default (`MissingGlyphs`) because a silent empty box in an invoice is worse than an
+  error. Text extraction for tests reads the produced PDF (no PDF reader dependency), so a shaped Arabic word comes back as
+  several pieces; the guide says so. The brand tokens in the kit are constants and do not follow `Theme` yet.
 
 ## Not planned
 

@@ -2812,6 +2812,26 @@ let expired = Billing::expire_links(&state).await?;                // = command/
 ```
 (Compiled examples: [docs/billing.md](docs/billing.md).)
 
+PDF documents from Typst templates (the `renox-pdf` crate, no browser; `rnx make:pdf invoice` writes
+`resources/views/pdf/invoice.typ`):
+
+```text
+// use renox_pdf::{Pdf, PdfError}; use renox_pdf::testing::{PdfAssertions, text_of};
+App::new().module(Pdf::new())            // .font(bytes) adds a font, .lenient() logs missing glyphs,
+                                         // .templates(renox::embedded!()) for release builds
+let pdf: Vec<u8> = Pdf::document(&state, "invoice")?   // resources/views/pdf/invoice.typ
+    .locale("ar")                        // text language, and rtl direction for Arabic and the like
+    .data(&order)                        // any Serialize; the template reads the dictionary `data`
+    .asset("logo.png", logo_bytes)       // #image("logo.png"); flat names
+    .render(&state).await?;              // blocking thread; PDF_MAX_CONCURRENT (2), PDF_TIMEOUT (30 s)
+Ok(Download::bytes("INV-001.pdf", "application/pdf", pdf).inline())      // or Mail::attach("INV-001.pdf", "application/pdf", pdf)
+// Err(PdfError::MissingGlyphs(chars)) when no font has a character; Compile, Timeout, Setup, ...
+// template: #import "@renox/kit:0.1.0": *   → base, colors, money(cents), date("2026-10-01"), page-header(..), data-table(..)
+// tests: res.assert_pdf().assert_pdf_contains("INV-001").assert_pdf_pages(1); text_of(&bytes)
+//        (Arabic text is extracted as shaped pieces, not whole words)
+```
+([docs/pdf.md](docs/pdf.md).)
+
 With `CSP=strict`, an inline script needs `<script nonce="{{ csp_nonce() }}">`, and Alpine
 expressions must stay simple (move statements into `Alpine.data(...)`).
 

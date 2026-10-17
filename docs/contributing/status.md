@@ -648,3 +648,14 @@
   Tests: `crates/renox-billing/tests/billing.rs` with fixtures under `tests/fixtures/{stripe,xendit,ngenius}`, written from the
   gateways' public docs. Stripe disputes and dashboard refunds name only the PaymentIntent: the row stores it
   (`gateway_intent`, migration `…000920`) and `BillingPayment::find_named` matches by id or intent (13/14). Open (14/14): the bikeshop "pay by link" example and its browser test. Guide: docs/billing.md "One-off payments".
+
+- **#30, `renox-pdf`** (parts 1-10): PDFs from Typst templates compiled in the process. `world.rs`/`source.rs` are our `typst::World`
+  (sources from the template root or an embedded map, path confinement, `today()` from `clock`, the only package is the virtual
+  kit, per-document in-memory assets); `fonts.rs` bundles Inter and Noto Sans Arabic and collects missing glyphs into
+  `PdfError::MissingGlyphs` (`lenient()` logs them); `document.rs` is the `Document` builder (`data` as the `data` dictionary and
+  `sys.inputs`, `locale` with the direction rule of #28, `asset`); `pool.rs` runs renders on blocking threads under a semaphore
+  (`PDF_MAX_CONCURRENT`) with `PDF_TIMEOUT`, and a timed-out render keeps its permit until its thread ends; `module.rs` is the `Pdf`
+  module (`Setup` is provided to the registry); `templates.rs` reads the disk in debug and `embedded!()` in release; `kit.rs` serves
+  `kit/kit.typ`; `testing.rs` reads text from the PDF with a small reader of Typst's output (no new dependency), so Arabic comes
+  back as shaped pieces. `rnx make:pdf` and its stub are in renox-cli. Guide: docs/pdf.md (doctested through `Guide` in `lib.rs`,
+  site `PAGES`). Open: release plumbing (11/12) and the bikeshop receipt with its browser test (12/12).

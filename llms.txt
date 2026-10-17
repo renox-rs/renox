@@ -330,6 +330,12 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `--scope`), sealed groups (`<sealed>` unless `--reveal`), the cache and how other servers notice
   (a version row in `cache`), `Admin::settings` with `AdminSettings` in renox-admin,
   `TestApp::with_settings`.
+- [docs/pdf.md](docs/pdf.md): the renox-pdf crate: `Pdf` module (`font`, `lenient`, `templates`),
+  `Pdf::document(&state, "invoice")` then `.data(&value)`, `.locale("ar")`, `.asset(name, bytes)`,
+  `.render(&state).await` (bytes; blocking thread, `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), a Typst template in
+  `resources/views/pdf` (`rnx make:pdf`), the kit `@renox/kit:0.1.0` (`money`, `date`, `page-header`,
+  `data-table`, tokens), right-to-left and fonts, `PdfError` (`MissingGlyphs`), returning the bytes as a
+  `Download` or a `Mail::attach`, `renox_pdf::testing` (`text_of`, `PdfAssertions`).
 - [docs/billing.md](docs/billing.md): the renox-billing crate: `Billing` (plans, `stripe()`,
   `xendit()`, `generic_trials`, `without_proration`), `Plan` (price in the smallest unit,
   `trial_days`, `via`, `price_id` / `STRIPE_PRICE_<KEY>`), setting up Stripe and Xendit,
@@ -467,6 +473,12 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `form.html`, `fields.html`, `show.html`, `relation.html`, `settings.html`; `settings.rs` is
   `Admin::settings` / `AdminSettings`, a form for a settings group). Guide: [docs/admin.md](docs/admin.md); used in
   examples/bikeshop (resources authorized by permission).
+- `crates/renox-pdf`: the optional PDF plugin crate (same version as `renox`; Typst compiled in the process):
+  the `Pdf` module (`module.rs`), `Document` (`document.rs`: `data`, `locale`, `asset`, `render`), the render pool
+  (`pool.rs`: `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), our `typst::World` (`world.rs`, `source.rs`: confined to the
+  template root, no network, `clock` for `today()`), template loading (`templates.rs`), fonts (`fonts.rs`: Inter and
+  Noto Sans Arabic, missing glyphs), the kit (`kit.rs`, `kit/kit.typ`), `PdfError`, `testing.rs`. Guide:
+  [docs/pdf.md](docs/pdf.md); `rnx make:pdf` writes a starter template.
 - `crates/renox-billing`: the optional subscriptions plugin crate (same version as `renox`),
   Laravel's Cashier: the `Billing` module (`lib.rs`: plans, gateways, the provided settings,
   the account section, the listeners: a deleted account's subscriptions end, audit entries),
