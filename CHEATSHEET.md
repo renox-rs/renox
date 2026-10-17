@@ -2577,18 +2577,23 @@ Outbound webhooks (your app tells others; Standard Webhooks headers `webhook-id`
 `webhook-signature`; retries 5 s … 10 h, 8 tries; `docs/operations.md` "Outbound webhooks"):
 
 ```rust
+# use renox::prelude::*;
+# #[derive(Clone)] struct InvoicePaid { id: i64 }
+# impl Event for InvoicePaid {}
+# #[derive(serde::Deserialize)] struct Ping { note: String }
+# async fn demo(state: AppState, url: &str, body: serde_json::Value) -> Result {
 use renox::webhook::outbound::{emit_in, Endpoint, EndpointDisabled};
 
 // Module::register: name the event and its payload `data`.
-app.webhook_event::<InvoicePaid>("invoice.paid", |e| serde_json::json!({ "invoice": e.id }));
+let _ = App::new().webhook_event::<InvoicePaid>("invoice.paid", |e| serde_json::json!({ "invoice": e.id }));
 
 // Subscribe a URL (https; empty events = all). The `whsec_…` secret is returned once, stored sealed.
 let (endpoint, secret) = Endpoint::create(&state, "https://example.com/hooks", "Billing", &["invoice.paid"]).await?;
 Endpoint::list(&state.db).await?;                 // find, enable, disable(&db, id, reason), set_events, delete
 
-state.emit(InvoicePaid { .. });                   // queues a delivery per subscribed endpoint
+state.emit(InvoicePaid { id: 7 });                  // queues a delivery per subscribed endpoint
 let mut tx = state.db.begin().await?;             // from a database change: sent only if it commits
-emit_in(&state, &mut tx, &InvoicePaid { .. }).await?;
+emit_in(&state, &mut tx, &InvoicePaid { id: 7 }).await?;
 tx.commit().await?;
 // 410 disables an endpoint at once; WEBHOOK_DISABLE_AFTER (20) failed deliveries in a row disable it
 // and emit EndpointDisabled { endpoint_id }.
@@ -2597,6 +2602,7 @@ tx.commit().await?;
 state.http.post(url).json(&body).sign("billing", &secret).send().await?;  // after the body
 // App::signing_key("billing", "whsec_…"); handler: async fn(SignedRequest(ping): SignedRequest<Ping>)
 // WEBHOOK_TOLERANCE_SECS (300) is the timestamp window.
+# Ok(()) }
 ```
 
 Subscriptions ready-made (Laravel's Cashier): the `renox-billing` crate,
