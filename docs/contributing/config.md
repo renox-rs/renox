@@ -44,6 +44,14 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
 - **Social login** (`renox-oauth`, read with `config.var`): `GOOGLE_CLIENT_ID`/`_SECRET`,
   `GITHUB_CLIENT_ID`/`_SECRET`, `MICROSOFT_CLIENT_ID`/`_SECRET`, `MICROSOFT_TENANT` (a tenant id or
   domain; `organizations` by default).
+- **Billing** (`renox-billing`, read with `config.var`; a resolver given in code replaces them):
+  Stripe `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_<KEY>` (a plan's price id, e.g.
+  `STRIPE_PRICE_PRO`); Xendit `XENDIT_SECRET_KEY`, `XENDIT_CALLBACK_TOKEN`; N-Genius `NGENIUS_API_KEY`,
+  `NGENIUS_OUTLET_REF`, `NGENIUS_WEBHOOK_SECRET`. A named account (`Charge::account("acme-llc")`,
+  webhook URL `/billing/webhooks/{gateway}/acme-llc`) reads each gateway key with the account
+  appended, upper case with `-` as `_`: `STRIPE_SECRET_ACME_LLC`, `STRIPE_WEBHOOK_SECRET_ACME_LLC`,
+  `XENDIT_SECRET_KEY_ACME_LLC`, `NGENIUS_API_KEY_ACME_LLC`, and so on. An account never falls back
+  to the default account's keys.
 - **App-specific:** anything else through `config.var(name)` (`config.vars` first, then the
   environment; empty counts as missing).
 - **Settings kept in the database** are not environment variables: values an administrator
