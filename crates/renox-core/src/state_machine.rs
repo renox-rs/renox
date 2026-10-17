@@ -70,18 +70,20 @@
 //! ```
 
 use std::fmt;
+use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures_util::future::BoxFuture;
 use serde::Serialize;
 use serde_json::Value;
 
-use crate::Result;
 use crate::auth::AuthUser;
 use crate::auth::permissions::Scope;
 use crate::db::{
     Col, DateTime, DbError, Executor, Json, Migration, Model, Row, Transaction, now, sql,
 };
+use crate::events::Event;
+use crate::{AppState, Result};
 
 pub(crate) const MIGRATION: Migration = crate::db::framework_migration!(
     "state_machine",
@@ -258,6 +260,23 @@ pub trait StateMachine: Model {
     /// The states and transitions. Built on each call; cheap, so call it
     /// where you need it or keep the result.
     fn machine() -> Machine<Self>;
+
+    /// Starts running the transition called `name` on this record; chain
+    /// `by` (or `by_system`), optionally `reason`, `input` and `meta`, and end
+    /// with `run` or `run_in`.
+    fn transition(&self, name: &str) -> TransitionBuilder<'_, Self>
+    where
+        Self: Sized,
+    {
+        TransitionBuilder {
+            record: self,
+            name: name.to_owned(),
+            actor: Actor::Unset,
+            reason: None,
+            input: Ok(Value::Null),
+            meta: Value::Null,
+        }
+    }
 }
 
 /// Why a transition did not run.
@@ -829,4 +848,227 @@ fn mermaid_id(name: &str) -> String {
     name.chars()
         .map(|c| if c.is_alphanumeric() { c } else { '_' })
         .collect()
+}
+
+/// Who runs a transition.
+enum Actor {
+    /// Neither `by` nor `by_system` was called: refused as unauthenticated.
+    Unset,
+    User(Box<AuthUser>),
+    System,
+}
+
+/// A transition being set up, from [`StateMachine::transition`].
+#[must_use = "a transition only runs when you call `run` or `run_in`"]
+pub struct TransitionBuilder<'a, M: StateMachine> {
+    record: &'a M,
+    name: String,
+    actor: Actor,
+    reason: Option<String>,
+    input: std::result::Result<Value, String>,
+    meta: Value,
+}
+
+impl<M: StateMachine> TransitionBuilder<'_, M> {
+    /// The user running it.
+    pub fn by(mut self, user: &AuthUser) -> Self {
+        self.actor = Actor::User(Box::new(user.clone()));
+        self
+    }
+
+    /// Runs it as the system (a scheduled task, a listener): no user, no
+    /// actor in the history. Only `system` transitions accept this.
+    pub fn by_system(mut self) -> Self {
+        self.actor = Actor::System;
+        self
+    }
+
+    /// Why it is done (stored in the history).
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+
+    /// Data for guards and effects, read with [`TransitionCtx::input`]. One
+    /// that can't be turned into JSON fails the run.
+    pub fn input<T: Serialize>(mut self, input: &T) -> Self {
+        self.input = serde_json::to_value(input).map_err(|e| e.to_string());
+        self
+    }
+
+    /// Extra data stored in the history row's `metadata` and carried on
+    /// [`Transitioned`].
+    pub fn meta(mut self, meta: Value) -> Self {
+        self.meta = meta;
+        self
+    }
+
+    /// Runs it in its own transaction, commits, then emits [`Transitioned`]
+    /// to the app's listeners. If a listener fails the status has changed
+    /// already: the error is returned but nothing is rolled back.
+    pub async fn run(
+        self,
+        state: &AppState,
+    ) -> std::result::Result<Transitioned<M>, TransitionError> {
+        let mut tx = state.db.begin().await?;
+        let done = self.run_in(&mut tx).await?;
+        tx.commit().await?;
+        state.emit(done.clone()).await?;
+        Ok(done)
+    }
+
+    /// Runs it inside `tx` and does not commit. Emit the returned
+    /// [`Transitioned`] with [`Transitioned::emit`] once the transaction has
+    /// committed.
+    ///
+    /// Checks, in order: who runs it (authentication, permission), the
+    /// record's state, the guards, the reason; then moves the status with
+    /// `UPDATE .. WHERE status = <the record's loaded status>` (no row
+    /// updated means someone else moved it first: `Conflict`), writes the
+    /// history row and runs the effects.
+    pub async fn run_in(
+        self,
+        tx: &mut Transaction,
+    ) -> std::result::Result<Transitioned<M>, TransitionError> {
+        let machine = M::machine();
+        let transition = machine.find(&self.name)?;
+        let record = self.record;
+        let actor = match &self.actor {
+            Actor::Unset => return Err(TransitionError::Unauthenticated),
+            Actor::User(user) => Some(user.as_ref()),
+            Actor::System => None,
+        };
+        transition.check_access(record, actor)?;
+        let current = current_state(record)?;
+        transition.check_from(&current)?;
+        let input = self.input.map_err(|e| {
+            TransitionError::Failed(crate::Error::Internal(anyhow::anyhow!(
+                "the transition's input is not JSON: {e}"
+            )))
+        })?;
+        let mut ctx = TransitionCtx::new(actor.cloned())
+            .with_input(input)
+            .with_meta(self.meta.clone());
+        if let Some(reason) = &self.reason {
+            ctx = ctx.with_reason(reason.clone());
+        }
+        transition.check_guards(record, &ctx).await?;
+        if transition.needs_reason() && self.reason.as_deref().is_none_or(|r| r.trim().is_empty()) {
+            return Err(TransitionError::ReasonRequired);
+        }
+        let to = transition
+            .to_state()
+            .expect("a built machine has a `to` state")
+            .to_owned();
+
+        let column = M::COLUMN.name();
+        let moved = sql(format!(
+            "UPDATE {} SET {column} = ? WHERE id = ? AND {column} = ?",
+            M::TABLE
+        ))
+        .bind(to.as_str())
+        .bind(record.id())
+        .bind(current.as_str())
+        .execute(&mut *tx)
+        .await?;
+        if moved == 0 {
+            return Err(TransitionError::Conflict);
+        }
+
+        let mut row = TransitionRecord::new(M::TABLE, record.id(), to.as_str(), transition.name())
+            .from(current.as_str())
+            .metadata(self.meta.clone());
+        if let Some(user) = actor {
+            row = row.actor(user.id);
+        }
+        if let Some(reason) = &self.reason {
+            row = row.reason(reason.clone());
+        }
+        row.record(&mut *tx).await?;
+        transition.run_effects(record, &ctx, tx).await?;
+
+        Ok(Transitioned {
+            key: record.id(),
+            from: current,
+            to,
+            transition: transition.name().to_owned(),
+            actor_id: actor.map(|u| u.id),
+            reason: self.reason,
+            meta: self.meta,
+            _model: PhantomData,
+        })
+    }
+}
+
+/// The record's loaded status, as the text the machine uses.
+fn current_state<M: StateMachine>(record: &M) -> std::result::Result<String, TransitionError> {
+    let column = M::COLUMN.name();
+    let at = M::COLUMNS
+        .iter()
+        .filter(|c| **c != "id")
+        .position(|c| *c == column);
+    match at.and_then(|i| record.values().into_iter().nth(i)) {
+        Some(crate::db::DbValue::Text(state)) => Ok(state),
+        _ => Err(TransitionError::Failed(crate::Error::Internal(
+            anyhow::anyhow!("the status column `{column}` is not a text column of the model"),
+        ))),
+    }
+}
+
+/// A transition that happened. Listen for it with `App::listen`; it is
+/// emitted by `run` after the commit, or by you with [`Transitioned::emit`]
+/// after `run_in`'s transaction commits (it is not emitted on a rollback).
+#[must_use = "emit it after the transaction commits"]
+pub struct Transitioned<M: StateMachine> {
+    /// The record's key.
+    pub key: M::Key,
+    /// The state it left.
+    pub from: String,
+    /// The state it entered.
+    pub to: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The user who ran it; `None` for a system run.
+    pub actor_id: Option<i64>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The metadata stored with the history row (`null` when none).
+    pub meta: Value,
+    _model: PhantomData<fn() -> M>,
+}
+
+impl<M: StateMachine> Clone for Transitioned<M> {
+    fn clone(&self) -> Self {
+        Transitioned {
+            key: self.key.clone(),
+            from: self.from.clone(),
+            to: self.to.clone(),
+            transition: self.transition.clone(),
+            actor_id: self.actor_id,
+            reason: self.reason.clone(),
+            meta: self.meta.clone(),
+            _model: PhantomData,
+        }
+    }
+}
+
+impl<M: StateMachine> fmt::Debug for Transitioned<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transitioned")
+            .field("model", &M::TABLE)
+            .field("key", &self.key)
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("transition", &self.transition)
+            .finish()
+    }
+}
+
+impl<M: StateMachine> Event for Transitioned<M> {}
+
+impl<M: StateMachine> Transitioned<M> {
+    /// Emits it to the app's listeners (after the commit).
+    pub async fn emit(self, state: &AppState) -> Result {
+        state.emit(self).await
+    }
 }

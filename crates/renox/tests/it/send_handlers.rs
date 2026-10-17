@@ -877,6 +877,53 @@ async fn uploaded(State(state): State<AppState>) -> Result<String> {
     ))
 }
 
+#[derive(renox::DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum JobStatus {
+    Queued,
+    Done,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "sm_jobs")]
+struct SmJob {
+    id: i64,
+    status: String,
+}
+
+impl renox::state_machine::StateMachine for SmJob {
+    type State = JobStatus;
+    const COLUMN: renox::db::Col<Self, JobStatus> = renox::db::Col::new("status");
+
+    fn machine() -> renox::state_machine::Machine<Self> {
+        renox::state_machine::Machine::new().transition(
+            renox::state_machine::Transition::new("finish")
+                .from([JobStatus::Queued])
+                .to(JobStatus::Done),
+        )
+    }
+}
+
+/// `transition(..).run` and `.run_in` in a routed handler.
+async fn transitions(State(state): State<AppState>, user: AuthUser) -> Result<String> {
+    use renox::state_machine::StateMachine;
+    let job = SmJob {
+        id: 1,
+        status: "queued".into(),
+    };
+    let done = job
+        .transition("finish")
+        .by(&user)
+        .reason("done")
+        .input(&1)
+        .meta(serde_json::json!({}))
+        .run(&state)
+        .await;
+    let mut tx = state.db.begin().await?;
+    let moved = job.transition("finish").by_system().run_in(&mut tx).await;
+    tx.commit().await?;
+    Ok(format!("{} {}", done.is_ok(), moved.is_ok()))
+}
+
 impl Module for Handlers {
     fn name(&self) -> &'static str {
         "handlers"
@@ -890,6 +937,7 @@ impl Module for Handlers {
             .get("/numbering", numbering)
             .get("/more", more)
             .get("/access", access)
+            .get("/transitions", transitions)
             .get("/trends", trends)
             .get("/builder", builder)
             .get("/models", models)

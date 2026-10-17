@@ -5,8 +5,10 @@ use renox::auth::permissions::Scope;
 use renox::db::Col;
 use renox::prelude::*;
 use renox::state_machine::{
-    Machine, StateMachine, Transition, TransitionCtx, TransitionError, TransitionRecord, history,
+    Machine, StateMachine, Transition, TransitionCtx, TransitionError, TransitionRecord,
+    Transitioned, history,
 };
+use renox::testing::TestApp;
 
 #[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
 enum OrderStatus {
@@ -224,4 +226,207 @@ fn duplicate_transition_names_are_refused() {
             .to(OrderStatus::Placed)
     };
     let _ = Machine::new().transition(t()).transition(t());
+}
+
+// The engine.
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum TicketStatus {
+    Open,
+    Closed,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "tickets")]
+struct Ticket {
+    id: i64,
+    status: String,
+}
+
+impl StateMachine for Ticket {
+    type State = TicketStatus;
+    const COLUMN: Col<Self, TicketStatus> = Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new()
+            .transition(
+                Transition::new("close")
+                    .from([TicketStatus::Open])
+                    .to(TicketStatus::Closed)
+                    .system()
+                    .reason_required()
+                    .guard("not_locked", |_t: &Ticket, ctx| {
+                        Box::pin(async move {
+                            if ctx.input() == "locked" {
+                                Err("The ticket is locked.".into())
+                            } else {
+                                Ok(())
+                            }
+                        })
+                    })
+                    .effect(|_t: &Ticket, ctx, _tx| {
+                        Box::pin(async move {
+                            if ctx.input() == "boom" {
+                                Err(renox::Error::Internal(anyhow::anyhow!("boom")))
+                            } else {
+                                Ok(())
+                            }
+                        })
+                    }),
+            )
+            .transition(
+                Transition::new("staff_only")
+                    .from([TicketStatus::Open])
+                    .to(TicketStatus::Closed)
+                    .permission("tickets.close"),
+            )
+    }
+}
+
+async fn ticket_app() -> TestApp {
+    let app = TestApp::new(App::new()).await;
+    renox::db::sql("CREATE TABLE tickets (id INTEGER PRIMARY KEY, status TEXT NOT NULL)")
+        .execute(app.db())
+        .await
+        .unwrap();
+    renox::db::sql("INSERT INTO tickets (id, status) VALUES (1, 'open')")
+        .execute(app.db())
+        .await
+        .unwrap();
+    app
+}
+
+fn ticket() -> Ticket {
+    Ticket {
+        id: 1,
+        status: "open".into(),
+    }
+}
+
+async fn ticket_status(app: &TestApp) -> String {
+    renox::db::sql("SELECT status FROM tickets WHERE id = 1")
+        .scalar(app.db())
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn run_moves_the_status_writes_history_and_emits_after_commit() {
+    let app = ticket_app().await;
+    let done = ticket()
+        .transition("close")
+        .by_system()
+        .reason("resolved")
+        .meta(serde_json::json!({"via": "test"}))
+        .run(app.state())
+        .await
+        .unwrap();
+    assert_eq!((done.from.as_str(), done.to.as_str()), ("open", "closed"));
+    assert_eq!(done.meta["via"], "test");
+    assert_eq!(ticket_status(&app).await, "closed");
+    let log = history(app.db(), "tickets", 1).await.unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].reason.as_deref(), Some("resolved"));
+    assert_eq!(log[0].actor_id, None);
+    assert_eq!(log[0].metadata["via"], "test");
+}
+
+#[tokio::test]
+async fn checks_run_in_order_and_refuse_with_typed_errors() {
+    let app = ticket_app().await;
+    let state = app.state();
+    assert!(matches!(
+        ticket().transition("close").reason("r").run(state).await,
+        Err(TransitionError::Unauthenticated)
+    ));
+    assert!(matches!(
+        ticket().transition("nope").by_system().run(state).await,
+        Err(TransitionError::Unknown(_))
+    ));
+    assert!(matches!(
+        ticket()
+            .transition("staff_only")
+            .by_system()
+            .run(state)
+            .await,
+        Err(TransitionError::Unauthenticated)
+    ));
+    assert!(matches!(
+        ticket().transition("close").by_system().input(&"locked").run(state).await,
+        Err(TransitionError::Guard(m)) if m == "The ticket is locked."
+    ));
+    assert!(matches!(
+        ticket().transition("close").by_system().run(state).await,
+        Err(TransitionError::ReasonRequired)
+    ));
+    let closed = Ticket {
+        id: 1,
+        status: "closed".into(),
+    };
+    assert!(matches!(
+        closed.transition("close").by_system().reason("r").run(state).await,
+        Err(TransitionError::NotFrom(s)) if s == "closed"
+    ));
+    assert_eq!(ticket_status(&app).await, "open");
+}
+
+#[tokio::test]
+async fn a_stale_record_gets_a_conflict() {
+    let app = ticket_app().await;
+    let state = app.state();
+    let first = ticket();
+    let second = ticket();
+    let _ = first
+        .transition("close")
+        .by_system()
+        .reason("a")
+        .run(state)
+        .await
+        .unwrap();
+    assert!(matches!(
+        second
+            .transition("close")
+            .by_system()
+            .reason("b")
+            .run(state)
+            .await,
+        Err(TransitionError::Conflict)
+    ));
+    assert_eq!(history(app.db(), "tickets", 1).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn a_failing_effect_rolls_everything_back() {
+    let app = ticket_app().await;
+    let mut tx = app.db().begin().await.unwrap();
+    let err = ticket()
+        .transition("close")
+        .by_system()
+        .reason("r")
+        .input(&"boom")
+        .run_in(&mut tx)
+        .await;
+    assert!(matches!(err, Err(TransitionError::Failed(_))));
+    drop(tx);
+    assert_eq!(ticket_status(&app).await, "open");
+    assert!(history(app.db(), "tickets", 1).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn run_in_does_not_commit_or_emit() {
+    let app = ticket_app().await;
+    app.fake_events();
+    let mut tx = app.db().begin().await.unwrap();
+    let done = ticket()
+        .transition("close")
+        .by_system()
+        .reason("r")
+        .run_in(&mut tx)
+        .await
+        .unwrap();
+    assert!(app.emitted::<Transitioned<Ticket>>().is_empty());
+    tx.commit().await.unwrap();
+    done.emit(app.state()).await.unwrap();
+    assert_eq!(app.emitted::<Transitioned<Ticket>>().len(), 1);
+    assert_eq!(ticket_status(&app).await, "closed");
 }
