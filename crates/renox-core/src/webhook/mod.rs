@@ -49,3 +49,4 @@ pub mod outbound;
 pub mod signing;
 
 pub use inbound::*;
+pub use signing::SignedRequest;

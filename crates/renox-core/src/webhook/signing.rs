@@ -123,6 +123,92 @@ pub fn verify(
         })
 }
 
+/// A request signed by a known sender (`Request::sign` on their side,
+/// `App::signing_key` on yours), with its JSON body as `T`.
+///
+/// The extractor looks the `webhook-key-id` up among the registered keys,
+/// checks the signature over the raw body, refuses a timestamp more than
+/// `WEBHOOK_TOLERANCE_SECS` (300) away from now, and refuses a `webhook-id`
+/// it has seen already (kept in the cache for the window). Every failure is a
+/// `401` with the same generic message.
+///
+/// ```no_run
+/// use renox::prelude::*;
+///
+/// #[derive(serde::Deserialize)]
+/// struct Ping {
+///     note: String,
+/// }
+///
+/// async fn receive(SignedRequest(ping): SignedRequest<Ping>) -> String {
+///     ping.note
+/// }
+/// ```
+pub struct SignedRequest<T>(pub T);
+
+/// The same answer for every failure, so a sender learns nothing about why.
+fn unauthorized() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    (axum::http::StatusCode::UNAUTHORIZED, "Unauthorized").into_response()
+}
+
+impl<T> axum::extract::FromRequest<crate::AppState> for SignedRequest<T>
+where
+    T: serde::de::DeserializeOwned + Send,
+{
+    type Rejection = axum::response::Response;
+
+    async fn from_request(
+        req: axum::extract::Request,
+        state: &crate::AppState,
+    ) -> std::result::Result<Self, Self::Rejection> {
+        let headers = {
+            let header = |name: &str| {
+                req.headers()
+                    .get(name)
+                    .and_then(|v| v.to_str().ok())
+                    .map(str::to_owned)
+            };
+            (
+                header("webhook-key-id"),
+                header("webhook-id"),
+                header("webhook-timestamp"),
+                header("webhook-signature"),
+            )
+        };
+        let (Some(key_id), Some(id), Some(timestamp), Some(signature)) = headers else {
+            return Err(unauthorized());
+        };
+        let Some(secret) = state.signing_keys.get(&key_id) else {
+            return Err(unauthorized());
+        };
+        // Buffered under the app's body limit, which a too-large body trips.
+        let body = axum::body::Bytes::from_request(req, state)
+            .await
+            .map_err(|_| unauthorized())?;
+        let tolerance = Duration::from_secs(state.config.webhook_tolerance_secs);
+        if !verify(secret, &id, &timestamp, &signature, &body, tolerance) {
+            return Err(unauthorized());
+        }
+        // Only a correctly signed id is remembered, so a stranger can't use
+        // up ids. A timestamp may be `tolerance` ahead or behind: keep twice.
+        let fresh = state
+            .cache
+            .add(
+                &format!("webhook-replay:{key_id}:{id}"),
+                &true,
+                Some(tolerance * 2),
+            )
+            .await
+            .map_err(|_| unauthorized())?;
+        if !fresh {
+            return Err(unauthorized());
+        }
+        let value = serde_json::from_slice(&body).map_err(|_| unauthorized())?;
+        Ok(Self(value))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
