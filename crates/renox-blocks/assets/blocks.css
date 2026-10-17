@@ -496,6 +496,20 @@
   .rx-receipt__actions { display: none !important; }
 }
 
+/* ---------- signature pad ---------- */
+
+.rx-signature { display: grid; gap: var(--rx-space-2); min-width: 0; }
+/* The drawing area needs the script; without it only the typed name shows. */
+.rx-signature__pad { display: none; gap: var(--rx-space-2); justify-items: start; }
+.rx-signature[data-rx-blocks-ready] .rx-signature__pad { display: grid; }
+.rx-signature__canvas {
+  display: block; box-sizing: border-box; width: var(--rx-signature-width, 25rem); max-width: 100%;
+  aspect-ratio: var(--rx-signature-ratio, 5 / 2); touch-action: none; cursor: crosshair;
+  background: #fff; color: #111; border: var(--rx-surface-border); border-radius: var(--rx-radius-m);
+}
+.rx-signature__canvas:focus-visible { outline: 2px solid var(--rx-accent); outline-offset: 2px; }
+.rx-signature__tools { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); }
+
 /* ---------- Less motion ---------- */
 
 @media (prefers-reduced-motion: reduce) {

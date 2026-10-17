@@ -19,6 +19,7 @@ const PARTS = [
   ["history", "[data-rx-history]"],
   ["receipt", "[data-rx-receipt]"],
   ["week", "[data-rx-week]"],
+  ["signature", "[data-rx-signature]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

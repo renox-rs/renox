@@ -918,3 +918,143 @@ impl Module for Bad {
         Routes::new().get("/bad", || async { view("bad.html", context! {}) })
     }
 }
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDRsmall-but-valid-enough-for-sniffing";
+
+const SIGN_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import signature_pad %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/sign" enctype="multipart/form-data">
+{{ csrf_field() }}
+{{ signature_pad("signature", required=true, width=320, height=120, hint="Sign for the repair.") }}
+</form></body></html>"##;
+
+const SIGN_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/sign" enctype="multipart/form-data">
+<rx-signature-pad name="sig" label="Customer" name-label="Print your name"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct SignOff {
+    signature: Option<Upload>,
+    signature_name: Option<String>,
+}
+
+impl Validate for SignOff {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(100);
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+    }
+}
+
+struct Signing;
+
+impl Module for Signing {
+    fn name(&self) -> &'static str {
+        "signing"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/sign", || async { view("sign.html", ()) })
+            .get("/sign-tag", || async { view("sign-tag.html", ()) })
+            .post("/sign", |Valid(form): Valid<SignOff>| async move {
+                Json(json!({
+                    "file": form.signature.as_ref().map(|f| f.file_name().to_owned()),
+                    "size": form.signature.as_ref().map(|f| f.bytes().len()),
+                    "name": form.signature_name,
+                }))
+            })
+    }
+}
+
+async fn signing_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Signing)
+            .templates(|env| {
+                env.add_template("sign.html", SIGN_MACRO).unwrap();
+                renox::view::add_template(env, "sign-tag.html", SIGN_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The signature pad (#53): the macro and the tag print the canvas, its
+/// tools, a typed-name field named `{name}_name` linked to the help text, a
+/// hidden PNG file input and the part's file, only on that page.
+#[renox::test]
+async fn the_signature_pad_renders_as_a_macro_and_a_tag() {
+    let app = signing_app().await;
+    let html = app.get("/sign").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-signature data-rx-signature-width="320" data-rx-signature-height="120""#);
+    has(r#"aria-describedby="rx-signature-help rx-signature-hint rx-signature-error""#);
+    has(
+        r#"<canvas class="rx-signature__canvas" tabindex="0" role="img" aria-label="Signature area""#,
+    );
+    has("data-rx-signature-undo>Undo</button>");
+    has("data-rx-signature-clear>Clear</button>");
+    has(r#"<input type="file" hidden name="signature" accept="image/png" data-rx-signature-file>"#);
+    has(
+        r#"id="rx-signature-name" name="signature_name" value="" autocomplete="off" required data-rx-signature-required"#,
+    );
+    has(r#"<p class="rx-hint" id="rx-signature-help">Draw your signature"#);
+    has("Sign for the repair.");
+    has(r#"data-signature="/_renox/blocks/signature-"#);
+    // No handlers or style attributes: the size goes through the script (CSP=strict).
+    assert!(!html.contains("onclick") && !html.contains(r#" style="--rx-signature"#));
+
+    let html = app.get("/sign-tag").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"id="rx-sig-name" name="sig_name""#);
+    has(r#"name="sig" accept="image/png""#);
+    has(">Print your name</label>");
+    has("Customer");
+    has(r#"<span class="rx-required">(optional)</span>"#);
+    assert!(!html.contains("data-rx-signature-required"), "{html}");
+}
+
+/// A drawn signature arrives as an `Upload` that passes `image()` and
+/// `mimes(&["png"])`; a typed name arrives alone; neither, or a file that
+/// isn't an image, fails with the rule's message.
+#[renox::test]
+async fn a_drawn_or_typed_signature_arrives_through_valid() {
+    let app = signing_app().await;
+    app.get("/sign").await;
+
+    app.post_multipart("/sign", &[], &[("signature", "signature.png", PNG)])
+        .await
+        .assert_ok()
+        .assert_json_path("file", "signature.png")
+        .assert_json_path("size", PNG.len());
+
+    // The typed way: the name, and no file.
+    app.post_multipart("/sign", &[("signature_name", "Marta Ruiz")], &[])
+        .await
+        .assert_ok()
+        .assert_json_path("name", "Marta Ruiz");
+
+    app.request()
+        .json()
+        .post_multipart(
+            "/sign",
+            &[],
+            &[("signature", "signature.png", b"MZ not an image")],
+        )
+        .await
+        .assert_status(422)
+        .assert_invalid("signature")
+        .assert_see("must be an image");
+    app.request()
+        .json()
+        .post_multipart("/sign", &[], &[])
+        .await
+        .assert_status(422)
+        .assert_invalid("signature_name");
+}

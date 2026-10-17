@@ -3,7 +3,8 @@
 
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
-    Input:          quantity, range_slider, keypad, swatches, datetime_range
+    Input:          quantity, range_slider, keypad, swatches, datetime_range,
+                    signature_pad
     Showing data:   gallery, history, compare_plans, status_stepper
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
@@ -888,5 +889,56 @@
     {{ button(print_label or renox_blocks_t('blocks.receipt.print'), variant="primary", type="button", attrs={"data-rx-receipt-print": ""}) }}
   </div>
   {%- endif %}
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    signature_pad: a signature drawn with a finger, a pen or the mouse, or
+    typed as a name. It sends a PNG file in `name` (`signature.png`, on a
+    white background) or, when the name was typed, the text in `name_name`
+    and no file; the last way used wins and clears the other.
+
+    <form method="post" enctype="multipart/form-data">
+      {{ signature_pad("signature", required=true) }}
+
+    Read them as `signature: Option<Upload>` (rules `image()`,
+    `mimes(&["png"])`) and `signature_name: Option<String>`. The pad is
+    drawn only with the script; the typed name is a plain field that always
+    works, so the signature can be completed with the keyboard alone and
+    without JavaScript. `required` is met by either: the typed field is
+    `required` until the pad has ink. Undo takes back the last stroke.
+    `width` and `height` are the pad's size in CSS pixels at most (it
+    shrinks to fit a narrow screen).
+    ====================================================================== -#}
+{% macro signature_pad(name, label=none, name_label=none, required=false, width=400, height=160, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set typed = name ~ "_name" %}
+{%- set message = error(name, bag=bag) or error(typed, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.signature.label') %}
+{%- set texts = {
+  "drawn": renox_blocks_t('blocks.signature.drawn'),
+  "cleared": renox_blocks_t('blocks.signature.cleared'),
+  "undone": renox_blocks_t('blocks.signature.undone')
+} %}
+<div class="rx-field rx-signature" id="{{ id }}" data-rx-signature data-rx-signature-width="{{ width }}" data-rx-signature-height="{{ height }}" data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div class="rx-signature__pad" data-rx-signature-pad>
+    <canvas class="rx-signature__canvas" tabindex="0" role="img" aria-label="{{ renox_blocks_t('blocks.signature.area') }}" aria-describedby="{{ id }}-help" data-rx-signature-canvas></canvas>
+    <div class="rx-signature__tools">
+      <button class="rx-button rx-button--secondary rx-button--small" type="button" disabled data-rx-signature-undo>{{ renox_blocks_t('blocks.signature.undo') }}</button>
+      <button class="rx-button rx-button--secondary rx-button--small" type="button" disabled data-rx-signature-clear>{{ renox_blocks_t('blocks.signature.clear') }}</button>
+    </div>
+  </div>
+  <p class="rx-hint" id="{{ id }}-help">{{ renox_blocks_t('blocks.signature.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <label class="rx-label" for="{{ id }}-name">{{ name_label or renox_blocks_t('blocks.signature.typed') }}</label>
+  <input class="rx-input" type="text" id="{{ id }}-name" name="{{ typed }}" value="{{ old(typed, '') }}" autocomplete="off"
+    {%- if required %} required data-rx-signature-required{% endif %}
+    {%- if message %} aria-invalid="true"{% endif %} data-rx-signature-name>
+  <input type="file" hidden name="{{ name }}" accept="image/png" data-rx-signature-file>
+  <p class="rx-visually-hidden" role="status" data-rx-signature-status></p>
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
 </div>
 {%- endmacro %}
