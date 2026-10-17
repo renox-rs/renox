@@ -30,10 +30,11 @@
 //!   `keypad` (a point-of-sale number pad), `swatches` (variant chips),
 //!   `datetime_range` (a start and an end, each a day and a time),
 //!   `signature_pad` (a drawn or typed signature, sent as a PNG file or a name),
-//!   `camera_capture` (photos from the camera, sent as JPEG files).
+//!   `camera_capture` (photos from the camera, sent as JPEG files),
+//!   `map_picker` (a point, circle or polygon on a map, with typed coordinates).
 //! - Showing data: `gallery` (a carousel), `history` (a timeline),
 //!   `compare_plans` (a pricing table), `status_stepper` (a record's
-//!   progress through its statuses).
+//!   progress through its statuses), `map` (markers and shapes).
 //! - Scheduling and work: `month_calendar`, `availability` (resources
 //!   against hours), `week_calendar` (resources against a week, click a
 //!   free slot to book it), `kanban` (with `kanban_card`).
@@ -52,6 +53,7 @@ use renox::minijinja::{self, State};
 use renox::prelude::*;
 
 mod assets;
+mod map;
 mod texts;
 mod week;
 
@@ -67,12 +69,30 @@ const VIEWS: &[(&str, &str)] = &[(
 /// The blocks module: add it to the app, then import the macros from
 /// `renox-blocks/blocks.html`.
 #[derive(Debug, Clone, Default)]
-pub struct Blocks {}
+pub struct Blocks {
+    map_tiles: Option<String>,
+    map_attribution: Option<String>,
+}
 
 impl Blocks {
     /// The module with its defaults.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The map blocks' tile URL template (`https://tiles.example.com/{z}/{x}/{y}.png`),
+    /// instead of the `BLOCKS_MAP_TILES` variable. Without either, the map
+    /// blocks show an explanatory note and the picker its typed fields.
+    pub fn map_tiles(mut self, template: impl Into<String>) -> Self {
+        self.map_tiles = Some(template.into());
+        self
+    }
+
+    /// The text the maps show for their tiles' source, instead of the
+    /// `BLOCKS_MAP_ATTRIBUTION` variable.
+    pub fn map_attribution(mut self, text: impl Into<String>) -> Self {
+        self.map_attribution = Some(text.into());
+        self
     }
 }
 
@@ -83,7 +103,8 @@ impl Module for Blocks {
 
     fn register(&self, app: &mut Registry) {
         assets::register(app);
-        app.templates(|env| {
+        let (tiles, attribution) = (self.map_tiles.clone(), self.map_attribution.clone());
+        app.templates(move |env| {
             for (name, source) in VIEWS {
                 // The app's own file of that name wins.
                 if env.get_template(name).is_err() {
@@ -95,6 +116,10 @@ impl Module for Blocks {
             });
             env.add_function("renox_blocks_t", text);
             env.add_function("renox_week_grid", week::week_grid);
+            let (tiles, attribution) = (tiles.clone(), attribution.clone());
+            env.add_function("renox_blocks_map", move || {
+                map::settings(tiles.as_deref(), attribution.as_deref())
+            });
         });
         components(app);
     }
@@ -103,7 +128,7 @@ impl Module for Blocks {
 /// The blocks as tags: `<rx-quantity>`, `<rx-range-slider>`, `<rx-keypad>`,
 /// `<rx-swatches>`, `<rx-datetime-range>`, `<rx-gallery>`, `<rx-history>`,
 /// `<rx-compare-plans>`, `<rx-status-stepper>`, `<rx-month-calendar>`,
-/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-camera-capture>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
+/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-camera-capture>`, `<rx-map-picker>`, `<rx-map>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
 /// the same name, with its parameters as
 /// attributes (`value-start`, `hide-label`…).
 fn components(app: &mut Registry) {
@@ -226,6 +251,29 @@ fn components(app: &mut Registry) {
         .prop(Prop::text("hint"))
         .prop(Prop::text("id"))
         .prop(Prop::text("bag")),
+    );
+    app.component(
+        block(
+            "rx-map-picker",
+            "map_picker",
+            "A point, circle or polygon chosen on a map, with typed coordinates.",
+        )
+        .prop(Prop::text("name").required())
+        .prop(Prop::choice("mode", &["point", "circle", "polygon"]))
+        .prop(Prop::data("value"))
+        .prop(Prop::text("label"))
+        .prop(Prop::number("height"))
+        .prop(Prop::text("hint"))
+        .prop(Prop::text("id"))
+        .prop(Prop::text("bag")),
+    );
+    app.component(
+        block("rx-map", "map", "Markers and shapes on a map.")
+            .prop(Prop::data("markers"))
+            .prop(Prop::data("shapes"))
+            .prop(Prop::text("label"))
+            .prop(Prop::number("height"))
+            .prop(Prop::text("id")),
     );
     app.component(
         block("rx-gallery", "gallery", "A photo carousel with a zoom.")

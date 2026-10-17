@@ -57,6 +57,12 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
   appended, upper case with `-` as `_`: `STRIPE_SECRET_ACME_LLC`, `STRIPE_WEBHOOK_SECRET_ACME_LLC`,
   `XENDIT_SECRET_KEY_ACME_LLC`, `NGENIUS_API_KEY_ACME_LLC`, and so on. An account never falls back
   to the default account's keys.
+- **Map blocks** (`renox-blocks`, `<rx-map>`, `<rx-map-picker>`): `BLOCKS_MAP_TILES` (a tile URL
+  template with `{z}/{x}/{y}`, optional `{s}`; only `http(s)` is accepted, otherwise it counts as
+  unset; no default tile server) and `BLOCKS_MAP_ATTRIBUTION` (plain text shown on the map,
+  escaped). Read from the environment (`.env` included) when the blocks render, since a module
+  has no `Config`; `Blocks::map_tiles(..)` / `Blocks::map_attribution(..)` set them in code
+  instead. Without tiles the blocks show an explanatory note and the picker its typed fields.
 - **App-specific:** anything else through `config.var(name)` (`config.vars` first, then the
   environment; empty counts as missing).
 - **Settings kept in the database** are not environment variables: values an administrator

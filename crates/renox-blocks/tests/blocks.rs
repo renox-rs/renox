@@ -1209,3 +1209,121 @@ async fn camera_photos_arrive_through_valid() {
         .assert_status(422)
         .assert_invalid("photo");
 }
+
+const MAP_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import map_picker, map %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/place">
+{{ csrf_field() }}
+{{ map_picker("pickup", value={"lat": 40.4168, "lng": -3.7038}, hint="Where we meet.") }}
+{{ map_picker("zone", mode="polygon", value={"type": "Polygon", "coordinates": [[[-3.7, 40.4], [-3.6, 40.4], [-3.6, 40.5], [-3.7, 40.4]]]}) }}
+{{ map_picker("area", mode="circle", value={"center": {"lat": 40.4, "lng": -3.7}, "radius": 500}) }}
+</form>
+{{ map(markers=[{"lat": 40.4168, "lng": -3.7038, "label": "Workshop <Main>"}], shapes=[{"center": {"lat": 40.4, "lng": -3.7}, "radius": 500}]) }}
+</body></html>"##;
+
+const MAP_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/place">
+<rx-map-picker name="spot" label="Spot"/>
+<rx-map :markers="[{'lat': 1.5, 'lng': 2.5}]" id="places"/>
+</form></body></html>"##;
+
+struct Maps;
+
+impl Module for Maps {
+    fn name(&self) -> &'static str {
+        "maps"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/map", || async { view("map.html", ()) })
+            .get("/map-tag", || async { view("map-tag.html", ()) })
+    }
+}
+
+async fn maps_app(blocks: Blocks) -> TestApp {
+    TestApp::new(App::new().module(blocks).module(Maps).templates(|env| {
+        env.add_template("map.html", MAP_MACRO).unwrap();
+        renox::view::add_template(env, "map-tag.html", MAP_TAG).unwrap();
+    }))
+    .await
+}
+
+/// The map blocks (#47) without tiles: an explanatory note naming the
+/// variable, the picker's typed fields and the markers as text.
+#[renox::test]
+async fn the_map_blocks_explain_themselves_without_tiles() {
+    let app = maps_app(Blocks::new()).await;
+    let html = app.get("/map").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"<p class="rx-map__empty" role="note">The map is not shown: no map tiles are configured. Set BLOCKS_MAP_TILES"#,
+    );
+    assert!(!html.contains("data-rx-map-canvas"), "{html}");
+    assert!(!html.contains("data-rx-map-tiles"), "{html}");
+    // The point picker is two plain number fields in `name[lat]`, `name[lng]`.
+    has(r#"id="rx-pickup-lat" name="pickup[lat]" value="40.4168" min="-90" max="90" step="any""#);
+    has(r#"id="rx-pickup-lng" name="pickup[lng]" value="-3.7038" min="-180" max="180" step="any""#);
+    has("Where we meet.");
+    has(r#"data-rx-map-picker data-rx-map-mode="point""#);
+    // A polygon: typed `lat, lng` lines (closing vertex dropped) and a GeoJSON value in [lng, lat].
+    has("40.4, -3.7\n40.4, -3.6\n40.5, -3.6");
+    has(r#"name="zone" data-rx-map-value value='{"coordinates":[[[-3.7,40.4],"#);
+    // A circle: one typed line and a GeoJSON Point with a radius.
+    has("40.4, -3.7, 500");
+    has(
+        r#"name="area" data-rx-map-value value='{"coordinates":[-3.7,40.4],"radius":500,"type":"Point"}'"#,
+    );
+    // The read-only map lists its markers as text, escaped.
+    has("<li>Workshop &lt;Main&gt; (40.4168, -3.7038)</li>");
+    has(r#"data-rx-map-markers='[{"label":"Workshop "#);
+    assert!(!html.contains("Workshop <Main>"), "{html}");
+}
+
+/// With tiles (from the module's setting), the canvas and the tile data
+/// attributes appear, an unusable URL counts as unset, and the markers
+/// stay as a list for screen readers.
+#[renox::test]
+async fn the_map_blocks_carry_the_tiles_and_attribution() {
+    let tiles = "https://tiles.example.com/{z}/{x}/{y}.png";
+    let app = maps_app(
+        Blocks::new()
+            .map_tiles(tiles)
+            .map_attribution("Map data \"Example\""),
+    )
+    .await;
+    let html = app.get("/map").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(&format!(
+        r#"data-rx-map-tiles="{tiles}" data-rx-map-attribution="Map data &quot;Example&quot;""#
+    ));
+    has(
+        r#"role="application" aria-label="Map" aria-describedby="rx-pickup-help" data-rx-map-canvas"#,
+    );
+    has(r#"<ul class="rx-map__list rx-visually-hidden""#);
+    assert!(!html.contains("no map tiles are configured"), "{html}");
+    // No inline handlers or style attributes (CSP=strict): the height is data.
+    assert!(
+        !html.contains(" onclick=") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let app = maps_app(Blocks::new().map_tiles("ftp://tiles.example.com/{z}/{x}/{y}.png")).await;
+    let html = app.get("/map").await.assert_ok().text();
+    assert!(html.contains("no map tiles are configured"), "{html}");
+}
+
+/// The tags `<rx-map-picker>` and `<rx-map>` call the macros.
+#[renox::test]
+async fn the_map_blocks_are_tags_too() {
+    let app = maps_app(Blocks::new()).await;
+    let html = app.get("/map-tag").await.assert_ok().text();
+    for needle in [
+        r#"id="rx-spot-lat" name="spot[lat]""#,
+        r#"<span class="rx-label" id="rx-spot-label">Spot</span>"#,
+        r#"id="places" data-rx-map"#,
+        "<li>Place (1.5, 2.5)</li>",
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+}

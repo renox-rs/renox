@@ -181,6 +181,37 @@ pub const TEXTS: &[(&str, &str)] = &[
         "blocks.camera.failed",
         "The camera could not be started. Choose a photo from your device instead.",
     ),
+    ("blocks.map.label", "Map"),
+    ("blocks.map.picker", "Location"),
+    ("blocks.map.area", "Map"),
+    (
+        "blocks.map.no_tiles",
+        "The map is not shown: no map tiles are configured. Set :variable to a tile URL template.",
+    ),
+    (
+        "blocks.map.help_point",
+        "Click the map to place the point, or type its latitude and longitude.",
+    ),
+    (
+        "blocks.map.help_circle",
+        "Click the map for the centre, then click again for the radius, or type the centre and radius.",
+    ),
+    (
+        "blocks.map.help_polygon",
+        "Click the map to add vertices and press Enter to close the shape, or type one vertex per line.",
+    ),
+    ("blocks.map.latitude", "Latitude"),
+    ("blocks.map.longitude", "Longitude"),
+    (
+        "blocks.map.typed_circle",
+        "Centre and radius (latitude, longitude, metres)",
+    ),
+    (
+        "blocks.map.typed_polygon",
+        "Vertices (latitude, longitude, one per line)",
+    ),
+    ("blocks.map.markers", "Places on the map"),
+    ("blocks.map.marker", "Place"),
     ("blocks.receipt.label", "Receipt"),
     ("blocks.receipt.item", "Item"),
     ("blocks.receipt.amount", "Amount"),

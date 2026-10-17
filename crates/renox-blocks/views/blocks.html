@@ -4,8 +4,8 @@
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
     Input:          quantity, range_slider, keypad, swatches, datetime_range,
-                    signature_pad, camera_capture
-    Showing data:   gallery, history, compare_plans, status_stepper
+                    signature_pad, camera_capture, map_picker (a point, circle or polygon)
+    Showing data:   gallery, history, compare_plans, status_stepper, map
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
     Printing:       receipt (a till receipt, 80 mm or 58 mm)
@@ -991,5 +991,113 @@
   <p class="rx-hint" id="{{ id }}-help" role="status" data-rx-camera-status>{{ renox_blocks_t('blocks.camera.help') }}</p>
   {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
   <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+{#- ======================================================================
+    map_picker: choose a place on a map: a point, a circle or a polygon.
+    The tiles come from BLOCKS_MAP_TILES (see `map`); without them the
+    picker is the typed-coordinates form alone, so data entry never needs
+    a tile server. The typed fields also serve as the keyboard way to
+    place a shape on a map.
+
+    <form method="post">
+      {{ map_picker("location", label="Pick-up point") }}
+      {{ map_picker("zone", mode="polygon", value=zone) }}
+
+    `mode="point"` (the default) sends `name[lat]` and `name[lng]`, two
+    plain number fields: read them as a `renox::geo::Point`. `circle` and
+    `polygon` send a GeoJSON string in `name` (a circle is a GeoJSON `Point`
+    with a `radius` in metres, a polygon a GeoJSON `Polygon`, positions as
+    `[lng, lat]`), filled in by the script from the map or from the typed
+    `lat, lng` lines. `value` is a `Point`, `Circle` or `Polygon` (or its
+    JSON); `height` is the map's height in CSS pixels.
+    ====================================================================== -#}
+{% macro map_picker(name, mode="point", value=none, label=none, height=320, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set tiles = renox_blocks_map() %}
+{%- set message = error(name, bag=bag) or error(name ~ "[lat]", bag=bag) or error(name ~ "[lng]", bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.map.picker') %}
+{%- set help = renox_blocks_t('blocks.map.help_' ~ mode) %}
+<div class="rx-field rx-map-picker" id="{{ id }}" data-rx-map-picker data-rx-map-mode="{{ mode }}" data-rx-map-height="{{ height }}"
+  {%- if tiles %} data-rx-map-tiles="{{ tiles.tiles }}" data-rx-map-attribution="{{ tiles.attribution }}"{% endif %}
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}</span>
+  {%- if tiles %}
+  <div class="rx-map__canvas" tabindex="0" role="application" aria-label="{{ renox_blocks_t('blocks.map.area') }}" aria-describedby="{{ id }}-help" data-rx-map-canvas></div>
+  {%- else %}
+  <p class="rx-map__empty" role="note">{{ renox_blocks_t('blocks.map.no_tiles', variable='BLOCKS_MAP_TILES') }}</p>
+  {%- endif %}
+  <p class="rx-hint" id="{{ id }}-help">{{ help }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  {%- if mode == "point" %}
+  {%- set lat = value.lat if value and value.lat is defined else (value.coordinates[1] if value and value.coordinates else "") %}
+  {%- set lng = value.lng if value and value.lng is defined else (value.coordinates[0] if value and value.coordinates else "") %}
+  <div class="rx-map__fields">
+    <div class="rx-field">
+      <label class="rx-label" for="{{ id }}-lat">{{ renox_blocks_t('blocks.map.latitude') }}</label>
+      <input class="rx-input" type="number" inputmode="decimal" id="{{ id }}-lat" name="{{ name }}[lat]" value="{{ old(name ~ '[lat]', lat) }}" min="-90" max="90" step="any"
+        {%- if message %} aria-invalid="true"{% endif %} data-rx-map-lat>
+    </div>
+    <div class="rx-field">
+      <label class="rx-label" for="{{ id }}-lng">{{ renox_blocks_t('blocks.map.longitude') }}</label>
+      <input class="rx-input" type="number" inputmode="decimal" id="{{ id }}-lng" name="{{ name }}[lng]" value="{{ old(name ~ '[lng]', lng) }}" min="-180" max="180" step="any"
+        {%- if message %} aria-invalid="true"{% endif %} data-rx-map-lng>
+    </div>
+  </div>
+  {%- else %}
+  {%- set raw = old(name, "") %}
+  {%- set shape = value if value and value is not string else none %}
+  <label class="rx-label" for="{{ id }}-typed">{{ renox_blocks_t('blocks.map.typed_' ~ mode) }}</label>
+  <textarea class="rx-input rx-map__typed" id="{{ id }}-typed" rows="{{ 1 if mode == 'circle' else 4 }}" spellcheck="false" autocomplete="off"
+    {%- if message %} aria-invalid="true"{% endif %} data-rx-map-typed>
+    {%- if shape and mode == "circle" -%}
+      {{ shape.center.lat if shape.center else shape.coordinates[1] }}, {{ shape.center.lng if shape.center else shape.coordinates[0] }}, {{ shape.radius }}
+    {%- elif shape -%}
+      {%- set ring = shape.coordinates[0] -%}
+      {%- for p in ring -%}{%- if not (loop.last and p == ring[0] and ring | length > 1) -%}{{ p[1] }}, {{ p[0] }}{{ "\n" if not loop.last }}{%- endif -%}{%- endfor -%}
+    {%- endif -%}
+  </textarea>
+  <input type="hidden" name="{{ name }}" data-rx-map-value value='
+    {%- if raw -%}{{ raw }}
+    {%- elif shape and mode == "circle" -%}{{ {"type": "Point", "coordinates": [shape.center.lng, shape.center.lat] if shape.center else shape.coordinates, "radius": shape.radius} | tojson }}
+    {%- elif shape -%}{{ shape | tojson }}{%- endif -%}'>
+  {%- endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    map: show markers and shapes on a map (read only).
+
+    {{ map(markers=[{"lat": 40.4168, "lng": -3.7038, "label": "Workshop"}], shapes=[delivery_zone]) }}
+
+    `markers` are `{lat, lng, label}`; `shapes` are `Circle` or `Polygon`
+    values or their GeoJSON (a circle as a GeoJSON `Point` with `radius`).
+    The tiles and their attribution come from the app's
+    `BLOCKS_MAP_TILES` and `BLOCKS_MAP_ATTRIBUTION` variables (or
+    `Blocks::map_tiles`, `Blocks::map_attribution`). Without tiles the
+    block says so and lists the markers as text; with them the same list
+    stays for screen readers.
+    ====================================================================== -#}
+{% macro map(markers=[], shapes=[], label=none, height=320, id="rx-map") -%}
+{{- _assets() }}
+{%- set tiles = renox_blocks_map() %}
+{%- set label = label or renox_blocks_t('blocks.map.label') %}
+<div class="rx-map" id="{{ id }}" data-rx-map data-rx-map-height="{{ height }}" data-rx-map-markers='{{ markers | tojson }}' data-rx-map-shapes='{{ shapes | tojson }}'
+  {%- if tiles %} data-rx-map-tiles="{{ tiles.tiles }}" data-rx-map-attribution="{{ tiles.attribution }}"{% endif %}
+  role="group" aria-label="{{ label }}">
+  {%- if tiles %}
+  <div class="rx-map__canvas" tabindex="0" role="application" aria-label="{{ label }}" data-rx-map-canvas></div>
+  {%- else %}
+  <p class="rx-map__empty" role="note">{{ renox_blocks_t('blocks.map.no_tiles', variable='BLOCKS_MAP_TILES') }}</p>
+  {%- endif %}
+  {%- if markers %}
+  <ul class="rx-map__list{% if tiles %} rx-visually-hidden{% endif %}" aria-label="{{ renox_blocks_t('blocks.map.markers') }}">
+    {%- for marker in markers %}
+    <li>{{ marker.label or renox_blocks_t('blocks.map.marker') }} ({{ marker.lat }}, {{ marker.lng }})</li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
 </div>
 {%- endmacro %}
