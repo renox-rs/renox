@@ -1434,6 +1434,11 @@
               "name": "false"
             }
           ]
+        },
+        {
+          "description": "The name of an outbox: a post that fails for lack of network is kept and sent later. The route must be `.offline()`; the page loads the outbox script.",
+          "name": "offline",
+          "values": []
         }
       ],
       "description": "A form: the CSRF field and the method field are written for you.",

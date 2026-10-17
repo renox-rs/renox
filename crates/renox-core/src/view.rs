@@ -652,6 +652,9 @@ impl Views {
             env.add_function("renox_live", || {
                 Value::from_safe_string(crate::assets::live_tags())
             });
+            env.add_function("renox_offline", || {
+                Value::from_safe_string(crate::assets::offline_tags())
+            });
             // The kit's `icon(…)` macro: a Lucide icon as inline SVG.
             env.add_function(
                 "renox_icon",

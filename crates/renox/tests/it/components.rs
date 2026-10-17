@@ -1052,6 +1052,57 @@ async fn rx_form_rejects_a_bad_method() {
     assert!(r.contains("must be one of"), "{r}");
 }
 
+#[renox::test]
+async fn rx_form_offline_marks_the_form_and_loads_the_outbox_script_once() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("r.html"),
+        "<rx-form action=\"/save\" offline=\"visits\" class=\"a\">x</rx-form>\
+         <rx-form action=\"/save\" offline=\"notes\">y</rx-form>",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("m.html"),
+        "<rx-form action=\"/save\">z</rx-form>",
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app =
+        TestApp::with_config(App::new().module(FormPages), move |c| c.views_path = path).await;
+    let html = app.get("/r").await.assert_ok().text();
+    assert!(
+        html.contains(
+            "<form method=\"post\" action=\"/save\" data-rx-offline=\"visits\" data-rx-offline-csrf=\"/_renox/csrf\" class=\"a\">"
+        ),
+        "{html}"
+    );
+    assert!(html.contains("data-rx-offline=\"notes\""), "{html}");
+    assert_eq!(html.matches("/_renox/offline-").count(), 1, "{html}");
+    let start = html.find("/_renox/offline-").unwrap();
+    let url = &html[start..start + html[start..].find('"').unwrap()];
+    let script = app.get(url).await.assert_ok().text();
+    assert!(script.contains("data-rx-offline"), "{script}");
+
+    let plain = app.get("/m").await.assert_ok().text();
+    assert!(!plain.contains("offline"), "{plain}");
+}
+
+#[renox::test]
+async fn rx_form_offline_needs_a_writing_method() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("r.html"),
+        "<rx-form method=\"GET\" offline=\"q\"></rx-form>",
+    )
+    .unwrap();
+    std::fs::write(dir.path().join("m.html"), "").unwrap();
+    let path = dir.path().to_path_buf();
+    let app =
+        TestApp::with_config(App::new().module(FormPages), move |c| c.views_path = path).await;
+    let r = app.get("/r").await.text();
+    assert!(r.contains("needs a method that writes"), "{r}");
+}
+
 #[derive(serde::Deserialize)]
 struct Choices {
     plan: String,

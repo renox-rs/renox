@@ -1194,6 +1194,11 @@ pub(crate) static BUILTIN: &[Contract] = &[
                 "live",
                 "Checks the fields with the server as people leave them.",
             ),
+            text(
+                "offline",
+                false,
+                "The name of an outbox: a post that fails for lack of network is kept and sent later. The route must be `.offline()`; the page loads the outbox script.",
+            ),
         ],
         slots: &[DEFAULT_SLOT],
         events: &[],

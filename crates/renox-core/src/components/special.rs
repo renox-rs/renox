@@ -333,6 +333,7 @@ const RESERVED: &[&str] = &[
     "renox_theme",
     "renox_calendar",
     "renox_live",
+    "renox_offline",
     "renox_grid",
     "renox_icon",
     "sparkline",
@@ -1101,13 +1102,27 @@ pub(super) fn form(
         ),
         None => None,
     };
+    let offline = attr(attrs, "offline")
+        .map(|a| text_prop(a, "rx-form"))
+        .transpose()?;
     let get = method == "GET";
+    if offline.is_some() && get {
+        return Err(err(
+            line,
+            "<rx-form> \"offline\" needs a method that writes, not GET".to_owned(),
+        ));
+    }
     out.push_str(&format!(
         "<form method=\"{}\"",
         if get { "get" } else { "post" }
     ));
     if let Some(a) = action {
         out.push_str(&format!(" action=\"{{{{ {a} }}}}\""));
+    }
+    if let Some(name) = &offline {
+        out.push_str(&format!(
+            " data-rx-offline=\"{{{{ {name} }}}}\" data-rx-offline-csrf=\"/_renox/csrf\""
+        ));
     }
     match live.as_deref() {
         None | Some("false") => {}
@@ -1118,7 +1133,7 @@ pub(super) fn form(
     }
     for a in attrs {
         let n = bare(a.name);
-        if matches!(n, "action" | "route" | "method" | "live") {
+        if matches!(n, "action" | "route" | "method" | "live" | "offline") {
             continue;
         }
         if a.name.starts_with('?') {
@@ -1147,6 +1162,9 @@ pub(super) fn form(
     }
     if matches!(method.as_str(), "PUT" | "PATCH" | "DELETE") {
         out.push_str(&format!("{{{{ method_field(\"{method}\") }}}}"));
+    }
+    if offline.is_some() {
+        out.push_str("{% if once('rx-offline') %}{{ renox_offline() }}{% endif %}");
     }
     cx.nodes(children, "rx-form", out)?;
     out.push_str("</form>");

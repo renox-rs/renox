@@ -69,6 +69,9 @@ const IDIOMORPH: &str = include_str!("../assets/idiomorph-0.7.3.min.js");
 /// The live components' script (renox-live.js).
 pub(crate) const LIVE_JS: &str = include_str!("../assets/renox-live.js");
 
+/// The offline forms' script (renox-offline.js), loaded by pages with an offline form.
+pub(crate) const OFFLINE_JS: &str = include_str!("../assets/renox-offline.js");
+
 /// The kit's fonts (SIL Open Font License 1.1; assets/fonts has the
 /// licences): Inter for text, Poppins for titles and figures, Latin subsets,
 /// and Noto Sans Arabic for Arabic-script text (loaded only by pages that use it).
@@ -132,6 +135,15 @@ static LIVE_URLS: LazyLock<[String; 2]> = LazyLock::new(|| {
 pub(crate) fn live_tags() -> String {
     let [idiomorph, live] = &*LIVE_URLS;
     format!("<script src=\"{idiomorph}\" defer></script>\n<script src=\"{live}\" defer></script>")
+}
+
+static OFFLINE_URL: LazyLock<String> =
+    LazyLock::new(|| format!("/_renox/offline-{:016x}.js", fnv1a(OFFLINE_JS)));
+
+/// `{{ renox_offline() }}` (once per page, from `<rx-form offline>`): the
+/// offline outbox script.
+pub(crate) fn offline_tags() -> String {
+    format!("<script src=\"{}\" defer></script>", *OFFLINE_URL)
 }
 
 static UI_URLS: LazyLock<[String; 2]> = LazyLock::new(|| {
@@ -367,6 +379,7 @@ pub(crate) fn router() -> Router<AppState> {
         .route(&GRID_URLS[2], get(|| async { js(CALLY) }))
         .route(&LIVE_URLS[0], get(|| async { js(IDIOMORPH) }))
         .route(&LIVE_URLS[1], get(|| async { js(LIVE_JS) }))
+        .route(&OFFLINE_URL, get(|| async { js(OFFLINE_JS) }))
         .route(htmx, get(|| async { js(HTMX) }))
         .route(alpine, get(|| async { js(ALPINE) }))
         .route(renox, get(|| async { js(RENOX) }))
