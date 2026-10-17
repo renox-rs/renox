@@ -189,6 +189,22 @@ async fn custom_field_defs(State(db): State<Db>) -> Result<String> {
     Ok(format!("{found} {active} {all}"))
 }
 
+/// Custom field values: `CustomValues::validate`, inside a routed handler.
+async fn custom_field_values(State(state): State<AppState>) -> Result<String> {
+    use renox::custom_fields::CustomValues;
+    let input = serde_json::Map::new();
+    let outcome = CustomValues::validate(
+        &state,
+        "parties",
+        "extra",
+        &input,
+        &Default::default(),
+        "en",
+    )
+    .await?;
+    Ok(format!("{}", outcome.is_ok()))
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -1047,6 +1063,7 @@ impl Module for Handlers {
             .get("/typed", typed)
             .get("/numbering", numbering)
             .get("/custom-field-defs", custom_field_defs)
+            .get("/custom-field-values", custom_field_values)
             .get("/more", more)
             .get("/access", access)
             .get("/transitions", transitions)
@@ -1139,6 +1156,10 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true 1 1");
+    app.get("/custom-field-values")
+        .await
+        .assert_ok()
+        .assert_see("true");
     app.get("/more")
         .await
         .assert_ok()

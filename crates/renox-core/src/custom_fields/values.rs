@@ -1,0 +1,230 @@
+//! The values of the custom fields of one record, and their validation.
+
+use std::collections::BTreeMap;
+
+use chrono::NaiveDate;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+
+use super::{CustomField, DEFAULT_LABEL_LOCALE, FieldKind};
+use crate::AppState;
+use crate::Result;
+use crate::db::{quote, sql};
+use crate::upload::Upload;
+use crate::validation::Errors;
+
+/// The custom field values of one record, by field key: the type of a
+/// `Json<CustomValues>` column. Serializes as the plain JSON object.
+///
+/// ```
+/// use renox::custom_fields::CustomValues;
+///
+/// let mut values = CustomValues::default();
+/// values.set("segment", "retail");
+/// assert_eq!(values.get("segment").and_then(|v| v.as_str()), Some("retail"));
+/// assert_eq!(serde_json::to_string(&values).unwrap(), r#"{"segment":"retail"}"#);
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct CustomValues(pub BTreeMap<String, Value>);
+
+impl CustomValues {
+    /// The value stored under `key`.
+    pub fn get(&self, key: &str) -> Option<&Value> {
+        self.0.get(key)
+    }
+
+    /// Stores `value` under `key`.
+    pub fn set(&mut self, key: impl Into<String>, value: impl Into<Value>) {
+        self.0.insert(key.into(), value.into());
+    }
+
+    /// Removes the value stored under `key`.
+    pub fn remove(&mut self, key: &str) -> Option<Value> {
+        self.0.remove(key)
+    }
+
+    /// Whether no value is stored.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// Validates the submitted `input` (key to value; form text or native
+    /// JSON) against the active definitions of `model`.
+    ///
+    /// Returns the cleaned values, or the errors keyed `column[key]` (for
+    /// example `extra[passport_no]`) with messages that name the field's label
+    /// in `locale`. Keys without an active definition are dropped. Each kind
+    /// is checked: required, text length / number range (`min`, `max`), a
+    /// number, a `YYYY-MM-DD` date, a yes/no, membership of the options, a
+    /// reference that exists as a row of the target table, and a file taken
+    /// from `uploads` (by key) and stored on the target disk. Files are stored
+    /// only when every field is valid; the stored key is the value kept.
+    ///
+    /// A blank optional value is left out, so the result holds only what was
+    /// filled in. Merging with the values already stored (to keep those of
+    /// deactivated fields and of untouched files) is the caller's job.
+    ///
+    /// ```
+    /// use renox::custom_fields::{CustomField, CustomValues};
+    /// use serde_json::json;
+    ///
+    /// # async fn demo(state: renox::AppState) -> renox::Result<()> {
+    /// CustomField::number("parties", "age").max(120).save(&state.db).await?;
+    /// let input = json!({"age": "200", "other": "dropped"});
+    /// let outcome = CustomValues::validate(
+    ///     &state, "parties", "extra", input.as_object().unwrap(), &Default::default(), "en",
+    /// ).await?;
+    /// assert!(outcome.unwrap_err().has("extra[age]"));
+    /// # Ok(()) }
+    /// ```
+    pub async fn validate(
+        state: &AppState,
+        model: &str,
+        column: &str,
+        input: &Map<String, Value>,
+        uploads: &BTreeMap<String, Upload>,
+        locale: &str,
+    ) -> Result<std::result::Result<CustomValues, Errors>> {
+        let fields = CustomField::for_model(&state.db, model).await?;
+        let mut values = CustomValues::default();
+        let mut errors = Errors::new();
+        let mut files = Vec::new();
+        for field in fields.iter() {
+            let name = format!("{column}[{}]", field.key);
+            let label = field.label_for(locale, DEFAULT_LABEL_LOCALE);
+            let required = format!("The {label} field is required.");
+            if field.kind == FieldKind::File {
+                match uploads.get(&field.key).filter(|u| u.size() > 0) {
+                    Some(upload) => files.push((field, upload)),
+                    None if field.rules.required => errors.add(&name, required),
+                    None => {}
+                }
+                continue;
+            }
+            match check(state, field, input.get(&field.key)).await? {
+                Ok(Some(value)) => values.set(field.key.clone(), value),
+                Ok(None) if field.rules.required => errors.add(&name, required),
+                Ok(None) => {}
+                Err(message) => errors.add(&name, message.replace("{label}", &label)),
+            }
+        }
+        if !errors.is_empty() {
+            return Ok(Err(errors));
+        }
+        for (field, upload) in files {
+            let disk = state.disk_named(field.rules.target.as_deref().unwrap_or_default())?;
+            let dir = format!("custom-fields/{model}/{}", field.key);
+            values.set(field.key.clone(), upload.store(disk, &dir).await?);
+        }
+        Ok(Ok(values))
+    }
+}
+
+/// The text of a submitted value, if it is a scalar.
+fn text(value: &Value) -> Option<String> {
+    match value {
+        Value::String(s) => Some(s.trim().to_owned()),
+        Value::Number(n) => Some(n.to_string()),
+        Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+/// Checks one non-file field. `Ok(None)` is a blank value; `Err` is a message
+/// (`{label}` stands for the field's label).
+async fn check(
+    state: &AppState,
+    field: &CustomField,
+    raw: Option<&Value>,
+) -> Result<std::result::Result<Option<Value>, String>> {
+    let rules = &field.rules;
+    if field.kind == FieldKind::Bool {
+        let on = match raw.and_then(text).map(|t| t.to_ascii_lowercase()) {
+            None => false,
+            Some(t) => match t.as_str() {
+                "1" | "true" | "on" | "yes" => true,
+                "" | "0" | "false" | "off" | "no" => false,
+                _ => return Ok(Err("The {label} field must be yes or no.".into())),
+            },
+        };
+        if rules.required && !on {
+            return Ok(Err("The {label} field must be accepted.".into()));
+        }
+        return Ok(Ok(Some(Value::Bool(on))));
+    }
+    let Some(t) = raw.and_then(text).filter(|t| !t.is_empty()) else {
+        return Ok(Ok(None));
+    };
+    let invalid = |message: String| Ok(Err(message));
+    let value = match field.kind {
+        FieldKind::Text => {
+            let len = t.chars().count() as i64;
+            if let Some(max) = rules.max
+                && len > max
+            {
+                return invalid(format!(
+                    "The {{label}} field must not be longer than {max} characters."
+                ));
+            }
+            if let Some(min) = rules.min
+                && len < min
+            {
+                return invalid(format!(
+                    "The {{label}} field must be at least {min} characters."
+                ));
+            }
+            Value::String(t)
+        }
+        FieldKind::Number => {
+            let number = match t.parse::<i64>() {
+                Ok(i) => Value::from(i),
+                Err(_) => match t.parse::<f64>().ok().filter(|f| f.is_finite()) {
+                    Some(f) => Value::from(f),
+                    None => return invalid("The {label} field must be a number.".into()),
+                },
+            };
+            let n = number.as_f64().unwrap_or_default();
+            if let Some(max) = rules.max
+                && n > max as f64
+            {
+                return invalid(format!("The {{label}} field must not be above {max}."));
+            }
+            if let Some(min) = rules.min
+                && n < min as f64
+            {
+                return invalid(format!("The {{label}} field must be at least {min}."));
+            }
+            number
+        }
+        FieldKind::Date => match NaiveDate::parse_from_str(&t, "%Y-%m-%d") {
+            Ok(date) => Value::String(date.format("%Y-%m-%d").to_string()),
+            Err(_) => return invalid("The {label} field must be a date (YYYY-MM-DD).".into()),
+        },
+        FieldKind::Choice => {
+            if !rules.options.iter().any(|o| o.value == t) {
+                return invalid("The selected {label} is not valid.".into());
+            }
+            Value::String(t)
+        }
+        FieldKind::Reference => {
+            let target = rules.target.as_deref().unwrap_or_default();
+            let Ok(id) = t.parse::<i64>() else {
+                return invalid("The selected {label} does not exist.".into());
+            };
+            let found: bool = sql(format!(
+                "SELECT EXISTS(SELECT 1 FROM {} WHERE \"id\" = ?)",
+                quote(target)
+            ))
+            .bind(id)
+            .scalar(&state.db)
+            .await?;
+            if !found {
+                return invalid("The selected {label} does not exist.".into());
+            }
+            Value::from(id)
+        }
+        FieldKind::Bool | FieldKind::File => return Ok(Ok(None)),
+    };
+    Ok(Ok(Some(value)))
+}

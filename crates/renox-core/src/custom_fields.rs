@@ -34,6 +34,12 @@
 //! so renaming a field is changing its label. Deactivating a field hides it
 //! but keeps the values stored for it.
 //!
+//! # Values
+//!
+//! The values of a record are a [`CustomValues`] (a map from key to JSON),
+//! the type of a `Json<CustomValues>` column. [`CustomValues::validate`] checks
+//! submitted input against the active definitions of a model.
+//!
 //! # Cache
 //!
 //! [`CustomField::for_model`] keeps the active definitions of each model in
@@ -43,6 +49,10 @@
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Mutex};
+
+mod values;
+
+pub use values::CustomValues;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
