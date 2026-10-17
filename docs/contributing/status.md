@@ -513,7 +513,7 @@
   `make:migration` timestamp form with the package name; the `0001…` prefix stays the
   framework's. A virtual workspace is supported (`--register`, `renox.workspace = true`).
   `--resource` reuses `scaffold::resource` with the package as target. `--with admin` errors until
-  `Registry::contribute` (#31) exists. Guide: docs/development.md "Packages".
+  it uses `renox_admin::contribute` (the mechanism exists since #31; the stub is not written yet). Guide: docs/development.md "Packages".
 - **#35, `rnx new --from`**: `renox-cli/src/template.rs` (`Config` for `renox-template.toml` with
   unknown keys rejected, `Source` = `Path` | `Git`, the copy walker, `parse_set`/`answers`) and
   `new::run_from` (the same `make_app` body as `rnx new`, with a prepared template instead of the
@@ -521,9 +521,19 @@
   written; a failure afterwards removes the folder. Git goes through `tools::git_clone` (shallow, no
   submodules, no `ext::`); nothing from the template is executed. There is no built-in `Source`:
   the stubs stay on the old path. Guide: docs/development.md "Start from your own template".
+- **#31, contributions and admin resources from modules**: `renox-core/src/contributions.rs`
+  (`Contributions`: one ordered list per type, each value with the name of the module whose `register`
+  added it; `all`, `all_from`), `Registry::contribute`, `Module::routes_with` (default calls `routes`),
+  `AppState::contributions`. `App::boot` sets the module name on the `Registry` before each `register`
+  ("app" for the app's own) and builds routes only after every `register` ran, so module order does not
+  matter. renox-admin: `AdminEntry` (`.panel(name)`), `renox_admin::contribute`, `Admin::named`,
+  `Admin::only_own_resources`; `Admin::routes_with` appends the entries after its own resources through
+  the same path as `Admin::resource`; a slug clash or an entry for an unknown panel panics at boot. Bikeshop:
+  `app::purchasing` contributes the suppliers resource. Tests: `tests/it/extension_points.rs`,
+  `send_handlers.rs`, `renox-admin/tests/admin.rs`. Guide: docs/admin.md "Resources from modules".
 - **#37, navigation menus**: `renox-core/src/nav.rs` (`NavLink`, the menu builder), stored in a
-  dedicated `Registry` field like `account_sections` (swap for `Registry::contribute` when #31
-  lands; the public API stays). Keys default to the route name; a duplicate key in one menu is a
+  dedicated `Registry` field like `account_sections` (swapping it for `Registry::contribute`, which #31
+  added, is not done; the public API stays). Keys default to the route name; a duplicate key in one menu is a
   boot error. Visibility order: `nav_hide`, `.permission` (`AuthUser::has_permission_anywhere`,
   global or any scope; without the Permissions module it falls back to the gate), `.gate`,
   `.when`. Menus and badges are built before render, only for the menus a page's templates name

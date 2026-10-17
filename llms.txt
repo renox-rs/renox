@@ -297,7 +297,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `relations` with `RelationManager::has_many`/`belongs_to_many`), actions that take input
   (`AdminAction::form`, `cx.input`), the abilities the model's `Policy` is asked, soft deletes
   and the trash, exports, the routes `admin.{slug}.*`, the `renox.admin.*` translation keys,
-  `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates.
+  `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates, resources from modules
+  (`renox_admin::contribute`, `AdminEntry::panel`, `Admin::named`, `only_own_resources`; built on
+  `Registry::contribute`, `Contributions`, `Module::routes_with`, `AppState::contributions`; example:
+  [purchasing/mod.rs](examples/bikeshop/src/app/purchasing/mod.rs)).
 - [docs/settings.md](docs/settings.md): typed settings kept in the database: `Settings` (the
   opt-in module: the `settings` table and `settings:get|set|list`), `SettingsGroup` (`KEY`,
   `ENCRYPTED`), `App::settings::<T>()` / `settings_in_views` (`{{ settings.company.name }}`) /

@@ -1581,6 +1581,14 @@ Notes from M34:
 - [x] renox-admin: `Admin::settings::<T>(label)` and `AdminSettings` (fields, a policy, read-only
   fields, sealed groups never printed)
 - [ ] Settings pages contributed by a module through `Registry::contribute` (after #31)
+### Contributions and admin resources from modules (#31)
+- [x] `Registry::contribute`, `Contributions` (`all`, `all_from`), `Module::routes_with`, `AppState::contributions`
+- [x] renox-admin: `AdminEntry`, `renox_admin::contribute`, `Admin::named`, `Admin::only_own_resources`; slug clash and
+  unknown panel fail at boot
+- [x] Bikeshop `Purchasing` module contributes the suppliers resource
+- [x] Docs (admin.md "Resources from modules"), CHEATSHEET.md, llms.txt
+- [ ] Settings pages and dashboard widgets from modules, module auto-discovery (out of scope)
+
 ### Gapless sequences (#40)
 - [x] `renox::db::Sequence` (series, scope, period): `next(&mut tx)` takes the number in the
       caller's transaction, `peek`, `last`, `set_start`, `list`, `next_allowing_gaps(&db)`;
@@ -2222,6 +2230,13 @@ Notes:
   carries the actor, the changed field names and the old and new JSON (`null` for sealed groups).
   A seed file (`App::settings_from`) fills a group the first time it is read and has no row.
   Admin pages use the default scope; per-field abilities and module-contributed pages are not done.
+
+- **Contributions are a typed list, not an event bus** (#31): `Registry::contribute::<T>` keeps values per type in
+  order (the app's first, then modules in the order listed) with the contributing module's name, so a clash can name
+  both sides. `Module::routes_with` runs after every `register`, so a consumer sees contributions from modules listed
+  after it; the default calls `routes`, so existing modules are unchanged. An `Admin` takes unnamed `AdminEntry`s;
+  `Admin::named` opts into entries for a name, an unknown name or a slug clash is a boot error. Navigation links (#37)
+  and settings pages still use their own `Registry` fields; moving them over is not done.
 
 - **Imports beyond CSV** (#50, 2026-10): Excel is read with `calamine` under the existing `xlsx`
   feature (MIT, pure Rust; it reuses the `zip` and `quick-xml` already built for exports), as

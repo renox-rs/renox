@@ -37,7 +37,8 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/state.rs             AppState (Clone): config, routes, views, db, mailer, queue, cache,
                            storage, translator, listeners, key, gates/async gates, shares,
                            channels, provided values, throttle, security, webhooks, live
-  src/module.rs            Module trait: name, routes, migrations, register
+  src/module.rs            Module trait: name, routes, routes_with, migrations, register
+  src/contributions.rs     Contributions: typed, ordered lists modules add with `Registry::contribute` (#31)
   src/registry.rs          Registry: jobs, listeners, schedule, commands, channels, shares, templates,
                            assets (`Registry::asset`: files served before the session),
                            provide (a module's values for `state.provided`, under the app's),
@@ -348,7 +349,8 @@ examples/                  two workspace members (#351 removed the other fifteen
                            factories.rs, explain.rs: an entry per GET route, tests/about.rs
                            fails without one): about, access (permission catalogue, active
                            store, ABAC policy: owner/location/operating store), accounts, api,
-                           catalog, home, multistore, plans, rentals, reports, sales, staff,
+                           catalog, home, multistore, plans, purchasing (contributes the suppliers
+                           admin resource, #31), rentals, reports, sales, staff,
                            stock, workshop; src/seed/ (`db:seed`, `demo:seed --size large`,
                            test fixtures); the blocks from renox-blocks (#347; /about/blocks
                            shows them; public/blocks/blocks.css styles that page);

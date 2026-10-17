@@ -1339,6 +1339,13 @@ with `impl AdminResource for ProductResource` (`type Model`, `type Form`, `colum
 above, `fields()` with `Field::text`/`select`/`money`/`belongs_to`…, `fill`), and the model's
 `Policy` asked for `viewAny`, `create`, `update`, `delete`… ([docs/admin.md](docs/admin.md),
 [the bike shop's panel](examples/bikeshop/src/app/staff/admin.rs)).
+A module adds a resource to the app's panel from `register`: `renox_admin::contribute(app, SupplierResource)`
+(or `app.contribute(AdminEntry::new(r).panel("staff"))` for a panel named with `Admin::named("staff")`;
+`Admin::only_own_resources()` ignores contributions; a slug clash or an unknown panel fails at boot).
+It rests on `Registry::contribute::<T>(value)` (any `Send + Sync + 'static` type, app first, then modules
+in order), read with `Contributions::all::<T>()` / `all_from::<T>()` (with the module's name) in
+`Module::routes_with(&self, &Contributions)`, or `state.contributions::<T>()` in a handler
+([docs/admin.md](docs/admin.md), [the bike shop's module](examples/bikeshop/src/app/purchasing/mod.rs)).
 
 ## Seeders and factories
 
