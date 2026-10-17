@@ -77,6 +77,7 @@ pub mod command;
 mod components;
 mod config;
 pub mod context;
+mod contributions;
 mod cookies;
 mod counters;
 mod crypto;
@@ -147,6 +148,7 @@ pub use config::{
     AnalyticsConfig, CacheStore, Config, CspMode, Environment, LogFormat, PermissionsMode,
     SessionDriver,
 };
+pub use contributions::Contributions;
 pub use cookies::{Cookies, SetCookie};
 pub use crypto::{generate_key, random_token};
 pub use csrf::{CSRF_FIELD, CSRF_HEADER, XSRF_COOKIE, XSRF_HEADER};

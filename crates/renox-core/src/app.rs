@@ -842,6 +842,8 @@ impl App {
             nav_links,
             nav_hidden,
             signing_keys,
+            // Handed to `Module::routes_with` and `AppState` in part 2 of #31.
+            contributions: _,
         } = self.registry;
         if !settings_groups.is_empty() && !settings_module {
             return Err(anyhow!(

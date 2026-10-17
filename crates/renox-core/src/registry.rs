@@ -54,6 +54,8 @@ pub struct Registry {
     /// Secrets of the senders whose signed requests are accepted
     /// (`signing_key`), by key id.
     pub(crate) signing_keys: HashMap<String, String>,
+    /// Values modules contribute for other modules to collect (`contribute`).
+    pub(crate) contributions: crate::Contributions,
 }
 
 /// A seeder registered with `App::seeder` or `Registry::seeder`.
@@ -479,6 +481,29 @@ impl Registry {
     pub fn signing_key(&mut self, key_id: &str, secret: &str) -> &mut Self {
         self.signing_keys
             .insert(key_id.to_owned(), secret.to_owned());
+        self
+    }
+
+    /// Adds a value of type `T` for another module to collect. Many values
+    /// of one type are kept in order: the app's first, then each module's.
+    /// They are read through [`crate::Contributions::all`].
+    ///
+    /// ```
+    /// use renox::prelude::*;
+    ///
+    /// struct Widget(&'static str);
+    ///
+    /// struct Shop;
+    /// impl Module for Shop {
+    ///     fn name(&self) -> &'static str { "shop" }
+    ///     fn register(&self, app: &mut Registry) {
+    ///         app.contribute(Widget("orders"));
+    ///     }
+    /// }
+    /// # let _ = Shop;
+    /// ```
+    pub fn contribute<T: Send + Sync + 'static>(&mut self, value: T) -> &mut Self {
+        self.contributions.push(value);
         self
     }
 
