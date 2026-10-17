@@ -45,6 +45,7 @@ columns are what to write in your migration's `CREATE TABLE`, for SQLite or Post
 | `type=number step=0.01` (measures) | `f64` | `REAL` | `DOUBLE PRECISION` |
 | `type=number step=0.01`, single precision | `f32` | `REAL` | `REAL` |
 | money | `i64` in the smallest unit (cents), never `f64` | `INTEGER` | `BIGINT` |
+| money in its own currency (`type=money` plus a currency `<select>`) | `Money` (`renox::money`), with `#[model(money)]`: a string and a code in the form (`#[model(form)]` writes both) | `INTEGER` amount + `TEXT` code | `BIGINT` amount + `TEXT` code |
 | `type=checkbox` (one) | `bool`: with `Valid<T>`, `on` (or `1`, `yes`, `checked`) → `true`, unchecked (nothing sent; or `off`, `0`, `no`) → `false` (see [Checkboxes](#checkboxes)) | `INTEGER` 0/1 | `BOOLEAN` |
 | `<select>` | an enum with `#[derive(DbEnum)]` | `TEXT` | `TEXT` |
 | `<select multiple>`, checkboxes sharing a name | `Vec<String>` with `#[serde(default)]`; stored as `Json<Vec<String>>` | `TEXT` | `JSONB` |
@@ -182,14 +183,55 @@ Advice for the cases where the wrong type causes trouble later.
 
 ### Money
 
-Use `i64` in the smallest unit, `price: i64 // cents`, and format it for display (the
-`money` template filter, in `APP_CURRENCY`, which is `USD` by default). So 12.50 dollars is
-stored as `1250` cents, and `{{ 1250 | money }}` shows `$12.50`. A currency without decimals
-(IDR, JPY) stores the amount as it is.
+For a shop with one currency, use `i64` in the smallest unit, `price: i64 // cents`, and format
+it for display (the `money` template filter, in `APP_CURRENCY`, which is `USD` by default). So
+12.50 dollars is stored as `1250` cents, and `{{ 1250 | money }}` shows `$12.50`. A currency
+without decimals (IDR, JPY) stores the amount as it is.
+
+When records carry their own currency (invoices in dollars and dirhams, a deposit in yen), use
+`Money` from `renox::money`: the amount in the smallest unit plus its ISO 4217 `Currency`.
+`#[model(money)]` stores it in two columns, `<field>` (`BIGINT`) and `<field>_currency`
+(`TEXT`); `Option<Money>` makes both columns nullable, set or cleared together. Several fields
+can share one currency column with `#[model(money(currency = "currency"))]`.
+
+```rust
+# use renox::prelude::*;
+use renox::money::{Money, Rounding};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "invoices", form)]
+struct Invoice {
+    id: i64,
+    #[model(money(currency = "currency"))]
+    subtotal: Money,
+    #[model(money(currency = "currency"))]
+    tax: Money,
+    #[model(money)]
+    deposit: Option<Money>, // deposit + deposit_currency, both NULL when none
+}
+
+# fn demo() -> Result<(), renox::money::MoneyError> {
+let subtotal = Money::aed(10_000);
+let tax = subtotal.percent(500, Rounding::HalfUp)?; // 5%, the rounding is always your choice
+assert_eq!(subtotal.checked_add(tax)?.to_string(), "AED 105.00");
+// Different currencies never add up by accident.
+assert!(Money::usd(1).checked_add(Money::jpy(1)).is_err());
+// A split loses no minor unit: 100 in three parts is 34, 33, 33.
+assert_eq!(Money::usd(100).allocate(3)?[0], Money::usd(34));
+# Ok(())
+# }
+```
+
+Show it with `{{ invoice.total | money }}` (its own currency and decimals: `¥1,250`,
+`KWD 12.345`), `Column::money(..).currency_from("total_currency")` in a grid and
+`Field::money(..).currency_from(..)` in renox-admin. In a form, `<rx-input type="money"
+currency="JPY"/>` steps by the currency's smallest unit and the server rejects too many
+decimals (`10.5` yen) instead of rounding. The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs)
+keeps a deposit this way, in USD, JPY or KWD.
 
 Why not a float (`f64`)? Floats round: `0.1 + 0.2 != 0.3`. And why not a decimal type? sqlx
 (the database library Renox uses) deliberately has no decimal type on SQLite, so a `Decimal`
-would behave differently on the two databases.
+would behave differently on the two databases. A fixed currency stays a plain `i64`.
 
 ### Time zones
 

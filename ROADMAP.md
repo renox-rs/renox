@@ -1986,6 +1986,21 @@ Notes:
 - [ ] Approval workflows themselves, `.approved(ref)` replay, run-time targets (`to_one_of`) and a
   by-name `run(model, key, transition)` registry are follow-up issues; work orders stay as they are
 
+### Money in several currencies (#45)
+- [x] `renox::money::{Money, Currency, Rounding}`: one ISO 4217 table (also behind `currency_decimals`/`format_money`),
+  `checked_add`/`checked_sub`, `allocate`/`allocate_by`, `mul_ratio`/`percent`/`convert` with an explicit
+  `Rounding` and exact decimal rates, display and parsing with the currency's decimals and the locale's separators, serde
+- [x] The `money` filter takes a `Money`; storage as `<field>` BIGINT + `<field>_currency` TEXT (`#[model(money)]`,
+  `money(currency = "…")` to share one column, `Option<Money>`), `try_get_money`; `make:migration --auto`, `rnx db:check` and
+  `assert_models_match_schema` know the pair
+- [x] Validation `.currency()` / `.money(&self.currency)`, `Money` in `#[model(form)]`, `<rx-input type="money">`
+- [x] Grid `Column::money(..).currency_from(..)` (per-row formatting, one summary per currency, `cur.<col>` filter, CSV/XLSX/print),
+  renox-admin `Field::money(..).currency_from(..)` for list, form and infolist
+- [x] Tests per acceptance criterion (core, model, grid, forms, admin; PostgreSQL storage in `postgres.rs`), bikeshop
+  `/about/fields` deposit in USD, JPY or KWD (`tests/fields.rs`, `bikeshop-fields.test.mjs`)
+- [x] Docs (types.md "Money", ui.md, validation.md, grid.md, admin.md, postgresql.md), CHEATSHEET.md, llms.txt
+- [ ] Quantities and units went to #69; exchange-rate tables and a `rust_decimal` conversion are not planned
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2283,6 +2298,16 @@ Notes:
   Bikeshop rentals use `.system()` transitions because every caller (store-scoped counter,
   kiosk token, the customer's own reservation, the scheduler) is authorised by its area first;
   the staff member goes into the history `metadata`. Work orders were not moved.
+
+- **Money in several currencies** (#45, assumptions A1-A13): `Money { minor: i64, currency }` is two columns, never one;
+  a shop with one currency keeps `i64`. No operators and no `Sum`: `checked_add`/`checked_sub` return `MoneyError`
+  (`CurrencyMismatch`, `Overflow`). `percent`, `mul_ratio` and `convert` have no default rounding; rates are exact
+  decimals (`&str` or a fraction), never `f64`, and there is no decimal crate in the public API. `allocate` gives the
+  remainder to the first parts (100 in three: 34, 33, 33). Amounts typed in a form are parsed with the currency's
+  decimals and refused, not rounded (`10.5` JPY). A grid never sums across currencies: one figure per currency.
+  The currency of a form is an ordinary field beside the amount (bikeshop: a select), so the input's step follows
+  the stored currency and changes on the next render, not as the select changes. Bikeshop keeps the deposit as an
+  `Option<Money>` added by a new migration, not by editing the released one.
 
 ## Not planned
 

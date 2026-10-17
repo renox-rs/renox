@@ -16,6 +16,8 @@
                 :suffix-actions="[{'label': t('fields.edit'), 'icon': 'edit', 'url': route('about.fields.edit', sample.id)}]"/>
       <rx-entry :label="t('fields.form.brand')" :value="sample.brand"/>
       <rx-entry :label="t('fields.form.price')" :value="sample.price" format="money"/>
+      {#- A `Money` value shows in its own currency: `$25.00`, `¥2,500`, `KWD 5.000`. -#}
+      <rx-entry :label="t('fields.form.deposit')" :value="sample.deposit" format="money" :placeholder="t('fields.show.none')"/>
       <rx-entry :label="t('fields.form.description')" :value="sample.description" format="markdown" span="full" :placeholder="t('fields.show.none')"/>
       <rx-entry :label="t('fields.form.stock')" :value="sample.stock" format="number" :suffix="t('fields.show.in_stock')"
                 :suffix-actions="[{'label': t('fields.title'), 'icon': 'box', 'url': route('about.fields')}]"/>

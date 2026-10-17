@@ -1169,6 +1169,42 @@ struct ProductForm {
 }
 ```
 
+Money in a currency of its own: `Money` (`renox::money`) is the amount in the smallest unit plus its
+ISO 4217 `Currency`; `#[model(money)]` stores it as `<field>` (`BIGINT`) and `<field>_currency` (`TEXT`)
+(docs/types.md, docs/validation.md). A fixed currency stays an `i64`.
+
+```rust
+use renox::money::{Currency, Money, Rounding};
+use renox::prelude::*;
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "invoices", form)] // InvoiceForm: "12.50" + "usd" texts, checked together; fill() builds the Money
+struct Invoice {
+    id: i64,
+    #[model(money(currency = "currency"))] // subtotal, tax and total share the `currency` column
+    subtotal: Money,
+    #[model(money(currency = "currency"))]
+    tax: Money,
+    #[model(money)] // deposit + deposit_currency, both NULL for None
+    deposit: Option<Money>,
+}
+
+fn money() -> Result<(), renox::money::MoneyError> {
+    let total = Money::usd(1999).percent(500, Rounding::HalfUp)?; // always an explicit rounding: $1.00
+    let sum = total.checked_add(Money::usd(1))?;                  // Err(CurrencyMismatch) across currencies
+    let parts = Money::usd(100).allocate(3)?;                     // 34, 33, 33: no minor unit lost
+    let yen = sum.convert("150.25", Currency::JPY, Rounding::HalfEven)?; // an exact decimal rate, never f64
+    assert_eq!(Money::parse("12.50", Currency::USD)?.format("de"), "$12,50"); // too many decimals is an error
+    let _ = (parts, yen, Money::kwd(12_345).to_string()); // "KWD 12.345"; {"minor":12345,"currency":"KWD"} in JSON
+    Ok(())
+}
+```
+
+`{{ invoice.total | money }}` shows a `Money` in its own currency (an `i64` still uses `APP_CURRENCY`);
+`<rx-input name="deposit" type="money" currency="JPY"/>` steps by the currency's smallest unit;
+`Column::money("total", "Total").currency_from("total_currency")` (grid: per-row currency, one summary
+per currency, `?cur.total=JPY`) and `Field::money("total", "Total").currency_from("total_currency")` (admin).
+
 ## Pagination
 
 Show a long list one page at a time. `Page` reads the page number from `?page=` in the URL.

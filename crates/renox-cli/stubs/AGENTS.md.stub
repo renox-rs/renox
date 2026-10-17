@@ -142,7 +142,9 @@ rnx tailwind --watch                                   # rebuild public/css/app.
 - A handler that won't compile as a route ("the trait `Handler` is not implemented", or
   "`Send` is not general enough"): don't keep a closure or iterator that borrows a local across
   an `.await`; collect into a `Vec` first.
-- Money is `i64` in the smallest unit (cents for USD, the default `APP_CURRENCY`), never `f64`.
+- Money is `i64` in the smallest unit (cents for USD, the default `APP_CURRENCY`), never `f64`. A record with its own
+  currency is a `renox::money::Money` (`#[model(money)]`: `<field>` + `<field>_currency` columns); rounding is always
+  explicit (`Rounding`).
 - Read forms with `Valid<T>`, even a form with no rules (`#[derive(Deserialize, Validate)]`,
   no `#[validate]` attributes): it turns a ticked checkbox's `on` into `true`, an unticked one
   into `false`, and empty inputs into `None`. The prelude's `Form<T>` is axum's and doesn't: a

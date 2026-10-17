@@ -7,6 +7,7 @@
 use bikeshop::app::about::fields::{FieldSample, FrameSize};
 use bikeshop::app::catalog::model::Brand;
 use renox::chrono::{NaiveDate, NaiveTime};
+use renox::money::Money;
 use renox::prelude::*;
 use renox::testing::{TestApp, TestResponse};
 
@@ -328,6 +329,96 @@ async fn the_sample_page_formats_every_field() {
         .assert_see(">01 Oct 2026, 10:30<")
         .assert_see(">27 Sep 2026<")
         .assert_see(">just now</time>");
+}
+
+/// #45: the deposit is a `Money` pair, so one form takes an amount in USD and
+/// another in JPY, each checked with its own currency's decimals.
+#[renox::test]
+async fn the_deposit_is_an_amount_in_its_own_currency() {
+    let (app, _) = app().await;
+    let with =
+        |amount: &'static str, currency: &'static str| -> Vec<(&'static str, &'static str)> {
+            let mut form: Vec<(&str, &str)> = FULL.to_vec();
+            form.extend([("deposit", amount), ("deposit_currency", currency)]);
+            form
+        };
+
+    // USD has two decimals, JPY none.
+    app.post("/about/fields", &with("25.50", "USD"))
+        .await
+        .assert_status(303);
+    app.post("/about/fields", &with("2500", "JPY"))
+        .await
+        .assert_status(303);
+    let mut deposits: Vec<_> = FieldSample::query()
+        .get(app.db())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| s.deposit)
+        .collect();
+    deposits.sort_by_key(|d| d.map(|m| m.currency.code()));
+    assert_eq!(deposits, [Some(Money::jpy(2500)), Some(Money::usd(2550))]);
+
+    // Each is read back in its own currency, on the page and in the edit form.
+    let usd = FieldSample::query()
+        .where_(FieldSample::DEPOSIT_CURRENCY.eq("USD"))
+        .first(app.db())
+        .await
+        .unwrap()
+        .unwrap();
+    app.get(&format!("/about/fields/{}", usd.id))
+        .await
+        .assert_see("$25.50");
+    app.get(&format!("/about/fields/{}/edit", usd.id))
+        .await
+        .assert_see(r#"name="deposit" type="number" inputmode="decimal" value="25.50""#)
+        .assert_see(r#"step="0.01""#);
+    let jpy = FieldSample::query()
+        .where_(FieldSample::DEPOSIT_CURRENCY.eq("JPY"))
+        .first(app.db())
+        .await
+        .unwrap()
+        .unwrap();
+    app.get(&format!("/about/fields/{}", jpy.id))
+        .await
+        .assert_see("¥2,500");
+    app.get(&format!("/about/fields/{}/edit", jpy.id))
+        .await
+        .assert_see(r#"name="deposit" type="number" inputmode="decimal" value="2500""#)
+        .assert_see(r#"step="1""#);
+
+    // Too many decimals for the currency, or a currency that is not offered.
+    app.htmx()
+        .post("/about/fields", &with("10.5", "JPY"))
+        .await
+        .assert_invalid("deposit");
+    app.htmx()
+        .post("/about/fields", &with("1.234", "USD"))
+        .await
+        .assert_invalid("deposit");
+    app.htmx()
+        .post("/about/fields", &with("5", "EUR"))
+        .await
+        .assert_invalid("deposit_currency");
+
+    // Emptying the amount clears the pair.
+    app.put(
+        &format!("/about/fields/{}", usd.id),
+        &[
+            ("name", "Commuter 3"),
+            ("stock", "0"),
+            ("weight_kg", "0"),
+            ("price", "0"),
+            ("size", "small"),
+            ("deposit", ""),
+            ("deposit_currency", "USD"),
+        ],
+    )
+    .await
+    .assert_status(303);
+    let cleared = FieldSample::find_or_404(app.db(), usd.id).await.unwrap();
+    assert_eq!(cleared.deposit, None);
 }
 
 #[renox::test]

@@ -71,6 +71,7 @@ test('every kind of field comes back as it was sent', () =>
     await page.type('#rx-stock', '12', { clear: true });
     await page.type('#rx-weight_kg', '10.75', { clear: true });
     await page.type('#rx-price', '612.99', { clear: true });
+    await page.type('#rx-deposit', '25.50', { clear: true });
     await page.click('label[for="rx-available"], #rx-available');
     await page.click('label[for="rx-size-3"]');
     await page.click('label[for="rx-colors-2"]');
@@ -109,13 +110,40 @@ test('every kind of field comes back as it was sent', () =>
     await page.goto(`${app.url}${show}/edit`);
     const back = await values('#sample-form');
     const pick = (pairs, name) => pairs.filter(([k]) => k === name).map(([, v]) => v);
-    for (const name of ['name', 'brand', 'description', 'stock', 'price', 'available', 'size', 'colors', 'tags', 'specs[0][key]', 'specs[0][value]', 'settings', 'pickup_at', 'released_on']) {
+    for (const name of ['name', 'brand', 'description', 'stock', 'price', 'deposit', 'deposit_currency', 'available', 'size', 'colors', 'tags', 'specs[0][key]', 'specs[0][value]', 'settings', 'pickup_at', 'released_on']) {
       assert.deepEqual(pick(back, name).map((v) => v.replace(/:00$/, '')), pick(sent, name).map((v) => v.replace(/:00$/, '')), name);
     }
     assert.equal(Number(pick(back, 'weight_kg')[0]), 10.75);
     assert.match(pick(back, 'launch_at')[0], /^2026-11-01T09:30/);
     assert.match(pick(back, 'details')[0], /Serviced yearly/);
     page.assertClean();
+  }));
+
+// #45: the deposit is a Money pair; the same form takes an amount in another currency.
+test('a deposit in yen is saved and shown in yen, and a decimal is refused', () =>
+  browser.with(async (page) => {
+    await logIn(page);
+    await page.goto(`${app.url}/about/fields`);
+    await page.type('#rx-name', 'Yen deposit');
+    await page.type('#rx-stock', '1', { clear: true });
+    await page.type('#rx-weight_kg', '10', { clear: true });
+    await page.type('#rx-price', '100', { clear: true });
+    await page.click('label[for="rx-size-1"]');
+    await page.eval(() => {
+      const select = document.getElementById('rx-deposit_currency');
+      select.value = 'JPY';
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.type('#rx-deposit', '10.5', { clear: true });
+    await page.press('Tab');
+    await page.waitFor(() => document.querySelector('[name=deposit]').getAttribute('aria-invalid') === 'true', { message: 'a decimal is refused in JPY' });
+    await page.type('#rx-deposit', '2500', { clear: true });
+    await page.waitFor(() => !document.querySelector('[name=deposit]').hasAttribute('aria-invalid'), { message: 'the error gone' });
+    await submitAndLoad(page, '#sample-form button[type=submit]');
+    assert.match(await page.eval(() => location.pathname), /^\/about\/fields\/[0-9a-f-]{36}$/, 'saved, on its page');
+    assert.ok(await page.eval(() => document.body.textContent.includes('¥2,500')), 'shown in yen');
+    page.assertClean({ allow: [/422/] });
   }));
 
 test('the pages fit a phone and a desktop, light and dark', async () => {

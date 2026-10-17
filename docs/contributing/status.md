@@ -572,3 +572,15 @@
   `counter.rs`, `reserve.rs` and `tasks.rs` set the other columns, `save`, then `transition(..).run_in(&mut tx)`, and emit
   after the commit; all transitions are `.system()` (the areas authorise first). Guide: docs/state-machines.md
   (doctest `StateMachinesGuide`, site page `state-machines`).
+
+- **#45, money in several currencies**: `renox-core/src/money.rs` holds `Currency` (the single ISO 4217 table; `view_filters.rs`
+  reads it), `Rounding`, `Rate`, `MoneyError` and `Money`. `ToDbValue` stores the amount and `Currency` as TEXT; `Row::try_get_money`
+  and `try_get_money_opt` read a pair. The `Model`/`FromRow` derives map `#[model(money)]` / `#[row(money)]` to two columns (or
+  one shared column) and `Option<Money>` to two nullable ones; `schema_check`/`schema_diff`/`auto_migration` expect the same pair.
+  `Validator` has `currency()` and `money(&str)`; `#[model(form)]` writes text fields for the pair and `fill` builds the `Money`.
+  `<rx-input type="money">` is a variant of the `input` macro (`money_input` helper, no new built-in file). The grid keeps
+  `Column::currency` and formats each row with `money(currency=row[...])`; its summaries are grouped by currency; the
+  admin `Field`/`Column`/`Entry` carry `currency_from`. Tests: `tests/it/money.rs`, `money_model.rs`, `forms.rs`, `grid.rs`,
+  `auto_migrations.rs`, `postgres.rs` (a pair on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), and
+  `renox-admin/tests/money.rs`. Bikeshop `/about/fields` has a deposit pair (migration `20261017090000`). Guide:
+  docs/types.md "Money".

@@ -25,6 +25,7 @@
 use renox::Download;
 use renox::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use renox::db::Json as DbJson;
+use renox::money::{Currency, Money};
 use renox::prelude::*;
 use renox::uuid::Uuid;
 use renox::validation::Dimensions;
@@ -42,6 +43,10 @@ pub enum FrameSize {
     Medium,
     Large,
 }
+
+/// The currencies a deposit can be in: two decimals, none and three, so the
+/// form shows what changes from one currency to the next.
+pub const DEPOSIT_CURRENCIES: &[&str] = &["USD", "JPY", "KWD"];
 
 /// The colours a sample can come in: CSS colour names, so the read-only
 /// page draws them as swatches (`entry(…, format="color")`).
@@ -61,6 +66,11 @@ pub struct FieldSample {
     pub weight_kg: f64,
     /// Money in the smallest unit (cents with USD), never a float.
     pub price: i64,
+    /// A deposit in its own currency: two columns, `deposit` (the amount in
+    /// the currency's smallest unit) and `deposit_currency` (its ISO 4217
+    /// code), both NULL when there is none.
+    #[model(money)]
+    pub deposit: Option<Money>,
     pub available: bool,
     pub size: FrameSize,
     pub colors: DbJson<Vec<String>>,
@@ -179,6 +189,14 @@ pub const REFERENCE: &[TypeRow] = &[
         "i64 (cents)",
         "INTEGER",
         "BIGINT",
+    ),
+    row(
+        "deposit",
+        "input(type=\"money\", currency=…) + select",
+        "Option<String> + String (code)",
+        "Option<Money>",
+        "INTEGER + TEXT (deposit_currency)",
+        "BIGINT + TEXT (deposit_currency)",
     ),
     row(
         "available",
@@ -326,6 +344,9 @@ pub struct SampleForm {
     stock: i64,                  // <input type="number">
     weight_kg: f64,              // <input type="number" step="0.01">
     price: f64,                  // <input type="number" step="0.01">: dollars, stored as cents
+    deposit: Option<String>,     // <rx-input type="money">: whole units, the currency's decimals
+    #[serde(default = "usd")]
+    deposit_currency: String, // the select beside it: an ISO 4217 code
     #[serde(default)]
     available: bool, // <input type="checkbox">: "on", or nothing → false
     size: FrameSize,             // the kit's radio group: one value of the enum
@@ -349,6 +370,29 @@ pub struct SampleForm {
     manual: Option<Upload>, // <input type="file" accept="application/pdf">
 }
 
+fn usd() -> String {
+    "USD".into()
+}
+
+/// A deposit as the form takes it: whole units with the currency's decimals
+/// (`12.50` USD, `1250` JPY, `1.250` KWD), from the minor amount without a float.
+fn whole_units(deposit: Money) -> String {
+    let places = deposit.currency.decimals();
+    let scale = 10_i64.pow(places);
+    let abs = deposit.minor.unsigned_abs();
+    let sign = if deposit.minor < 0 { "-" } else { "" };
+    if places == 0 {
+        return format!("{sign}{abs}");
+    }
+    let scale = scale as u64;
+    format!(
+        "{sign}{}.{:0width$}",
+        abs / scale,
+        abs % scale,
+        width = places as usize
+    )
+}
+
 /// The name of the thumbnail the upload pipeline derives from a photo (src/lib.rs).
 const THUMB: &str = "thumb";
 
@@ -364,6 +408,11 @@ impl Validate for SampleForm {
             .min(0)
             .max(100_000)
             .decimal(0, 2);
+        // The deposit follows its currency's decimals: "10.5" JPY is refused.
+        v.field("deposit_currency", &self.deposit_currency)
+            .one_of(DEPOSIT_CURRENCIES);
+        v.field("deposit", &self.deposit)
+            .money(&self.deposit_currency);
         // Rules for each item of a list: errors are keyed `colors.0`,
         // `colors.1`…, and `error('colors')` shows the first.
         v.each("colors", &self.colors, |colour| colour.one_of(COLOURS));
@@ -403,6 +452,15 @@ impl SampleForm {
         sample.stock = self.stock;
         sample.weight_kg = self.weight_kg;
         sample.price = crate::money::from_whole(self.price, &state.config.currency);
+        // The rules checked the amount against the code; an empty amount
+        // clears both columns together.
+        sample.deposit = match (
+            self.deposit.as_deref().map(str::trim),
+            Currency::parse(&self.deposit_currency),
+        ) {
+            (Some(text), Ok(currency)) if !text.is_empty() => Money::parse(text, currency).ok(),
+            _ => None,
+        };
         sample.available = self.available;
         sample.size = self.size;
         sample.colors = DbJson(self.colors);
@@ -450,8 +508,13 @@ async fn form_context(
         .map(|b| b.name)
         .collect();
     let scale = crate::money::scale(&state.config.currency) as f64;
+    let stored = sample.and_then(|s| s.deposit);
     Ok(context! {
         sample,
+        // The deposit in whole units, and its currency (USD for a new one).
+        deposit => stored.map(whole_units),
+        deposit_currency => stored.map(|m| m.currency.code()).unwrap_or("USD"),
+        deposit_currencies => DEPOSIT_CURRENCIES,
         // The price in dollars, as the form takes it.
         price => sample.map(|s| format!("{:.2}", s.price as f64 / scale)),
         colours => COLOURS,

@@ -217,3 +217,45 @@ async fn concurrent_state_transitions_allow_exactly_one_on_postgres() {
     assert_eq!(app.db().dialect(), Dialect::Postgres);
     crate::state_machine::race_for_one_winner(&app, 8).await;
 }
+
+/// #45: a `Money` is a `BIGINT` amount and a `TEXT` code on PostgreSQL, and
+/// the pair reads back (an empty pair is `None`).
+#[tokio::test]
+async fn money_pairs_round_trip_on_postgres() {
+    use renox::money::Money;
+    let Some(db) = db().await else {
+        eprintln!("skipped: TEST_DATABASE_URL is not set");
+        return;
+    };
+    let mut tx = db.begin().await.unwrap();
+    sql("CREATE TEMPORARY TABLE money_pairs (id BIGINT PRIMARY KEY, total BIGINT, total_currency TEXT)")
+        .execute(&mut tx)
+        .await
+        .unwrap();
+    let cases = [
+        (1_i64, Some(Money::kwd(12_345))),
+        (2, Some(Money::jpy(-1_250))),
+        (3, None),
+    ];
+    for (id, money) in cases {
+        sql("INSERT INTO money_pairs (id, total, total_currency) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(money.map(|m| m.minor))
+            .bind(money.map(|m| m.currency.code()))
+            .execute(&mut tx)
+            .await
+            .unwrap();
+    }
+    for (id, want) in cases {
+        let row = sql("SELECT total, total_currency FROM money_pairs WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut tx)
+            .await
+            .unwrap();
+        assert_eq!(
+            row.try_get_money_opt("total", "total_currency").unwrap(),
+            want
+        );
+    }
+    tx.rollback().await.unwrap();
+}
