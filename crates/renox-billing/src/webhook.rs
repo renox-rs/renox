@@ -12,7 +12,7 @@ use renox::prelude::*;
 
 use crate::Notice;
 use crate::gateway::account_suffix;
-use crate::sync::{apply, payment};
+use crate::sync::{apply, dispute, one_off, payment, refund_update};
 
 /// The gateway the call is for, set from the URL (any sent one is dropped).
 const GATEWAY: &str = "x-renox-billing-gateway";
@@ -71,8 +71,9 @@ impl Webhook for BillingWebhook {
                     apply(&state, &setup, gateway.name(), remote).await?;
                 }
                 Notice::Payment(paid) => payment(&state, gateway.name(), paid).await?,
-                // One-off payment notices are not applied yet.
-                Notice::OneOff(_) | Notice::Refund(_) | Notice::Dispute(_) => {}
+                Notice::OneOff(update) => one_off(&state, gateway.name(), update).await?,
+                Notice::Refund(update) => refund_update(&state, gateway.name(), update).await?,
+                Notice::Dispute(update) => dispute(&state, gateway.name(), update).await?,
             }
         }
         Ok(())

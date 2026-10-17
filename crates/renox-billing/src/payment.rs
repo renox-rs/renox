@@ -8,7 +8,6 @@ use renox::money::Money;
 use renox::prelude::*;
 use serde::Serialize;
 
-use crate::events::{PaymentRefunded, RefundSucceeded};
 use crate::{Billing, Owner};
 
 /// What a payment is (`billing_payments.kind`).
@@ -366,33 +365,23 @@ impl Billing {
         row.status = result.status;
         row.save(&state.db).await?;
         if row.status == RefundStatus::Succeeded {
-            payment.refunded_amount += row.amount;
-            payment.status = if payment.refunded_amount >= payment.amount.minor {
-                PaymentStatus::Refunded
-            } else {
-                PaymentStatus::PartiallyRefunded
-            };
-            payment.save(&state.db).await?;
-            state
-                .emit(RefundSucceeded {
-                    payment: payment.clone(),
-                    amount: row.amount,
-                })
-                .await?;
-            state.emit(PaymentRefunded { payment }).await?;
+            crate::sync::refund_done(state, &mut payment, row.amount).await?;
         }
         Ok(row)
     }
 
     /// Asks the gateway where the payment `payment_id` stands now (with the
-    /// account it was made through). It reports; it does not change the
-    /// row.
+    /// account it was made through), applies the answer to the row and its
+    /// refunds the way a webhook would (a success always wins over failed
+    /// or expired; a failure never undoes a success) and returns it.
     pub async fn payment_status(state: &AppState, payment_id: i64) -> Result<PaymentState> {
         let payment = BillingPayment::find(&state.db, payment_id)
             .await?
             .ok_or(Error::NotFound)?;
         let gateway = crate::setup(state)?.payment_gateway(state, Some(&payment.gateway))?;
-        gateway.payment_status(state, &payment).await
+        let reported = gateway.payment_status(state, &payment).await?;
+        crate::sync::apply_state(state, payment, &reported).await?;
+        Ok(reported)
     }
 }
 

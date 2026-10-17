@@ -2704,8 +2704,49 @@ impl renox_billing::Gateway for PayHub {
     ) -> Result {
         Ok(())
     }
-    fn parse_webhook(&self, _body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
-        Ok(Vec::new())
+    fn parse_webhook(&self, body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
+        use renox_billing::{
+            DisputeState, DisputeUpdate, Notice, PaymentStatus, PaymentUpdate, RefundStatus,
+            RefundUpdate,
+        };
+        let json: renox::serde_json::Value = renox::serde_json::from_slice(body)?;
+        let text = |key: &str| json[key].as_str().unwrap_or_default().to_owned();
+        let at = json["at"].as_i64();
+        let status = match text("status").as_str() {
+            "succeeded" => PaymentStatus::Succeeded,
+            "failed" => PaymentStatus::Failed,
+            "expired" => PaymentStatus::Expired,
+            _ => PaymentStatus::Pending,
+        };
+        Ok(match text("kind").as_str() {
+            "payment" => {
+                let mut update = PaymentUpdate::new(text("pay"), status);
+                update.at = at;
+                vec![Notice::OneOff(update)]
+            }
+            "refund" => {
+                let refund_status = match text("status").as_str() {
+                    "succeeded" => RefundStatus::Succeeded,
+                    "failed" => RefundStatus::Failed,
+                    _ => RefundStatus::Pending,
+                };
+                let mut update =
+                    RefundUpdate::new(text("refund"), refund_status).payment(text("pay"));
+                update.reason = json["reason"].as_str().map(str::to_owned);
+                vec![Notice::Refund(update)]
+            }
+            "dispute" => {
+                let state = match text("status").as_str() {
+                    "won" => DisputeState::Won,
+                    "lost" => DisputeState::Lost,
+                    _ => DisputeState::Opened,
+                };
+                vec![Notice::Dispute(
+                    DisputeUpdate::new(text("pay"), state).evidence_due_by(renox::db::now()),
+                )]
+            }
+            _ => Vec::new(),
+        })
     }
     fn charge<'a>(
         &'a self,
@@ -2922,4 +2963,111 @@ async fn one_off_payments_are_stored_refunded_and_checked() {
         .unwrap_err();
     assert_eq!(Unsupported::of(&err).unwrap().operation, "refund");
     assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), rows);
+}
+
+/// Payment, refund and dispute notices are applied to the rows once, a late
+/// success is applied and a late failure is not, and each change carries the
+/// reference in its event.
+#[renox::test]
+async fn payment_webhooks_are_applied_once_with_the_late_success_rule() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, Charge, DisputeLost, DisputeOpened, DisputeWon, PaymentFailed,
+        PaymentRefunded, PaymentStatus, PaymentSucceeded, Refund, RefundFailed, RefundSucceeded,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let user = user(&app, "Mia").await;
+    let state = app.state();
+    let make = |reference: i32| {
+        let user = &user;
+        async move {
+            Billing::of(state, user)
+                .charge(Charge::new(Money::usd(4_500)).reference("job", reference))
+                .await
+                .unwrap()
+        }
+    };
+    let hook = |body: renox::serde_json::Value| {
+        let app = &app;
+        async move {
+            app.post_body(
+                "/billing/webhooks/payhub",
+                "application/json",
+                body.to_string(),
+            )
+            .await;
+            app.run_jobs().await;
+        }
+    };
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+
+    // Expired, then paid late: the success is applied and evented.
+    let a = make(1).await;
+    let pay = a.gateway_id.clone().unwrap();
+    hook(json!({"id": "e1", "kind": "payment", "pay": pay, "status": "expired", "at": 100})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Expired);
+    hook(json!({"id": "e2", "kind": "payment", "pay": pay, "status": "succeeded", "at": 50})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.reference_id.as_deref() == Some("1") && e.reference_type.as_deref() == Some("job")
+    });
+    // A failure after the success is ignored, and a redelivery fires nothing.
+    hook(json!({"id": "e3", "kind": "payment", "pay": pay, "status": "failed", "at": 200})).await;
+    hook(json!({"id": "e2", "kind": "payment", "pay": pay, "status": "succeeded", "at": 50})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Succeeded);
+
+    // Refund: pending, failed with a reason, then done after all (a refund's
+    // success is never refused), once; a later failure is ignored.
+    let refund = Billing::refund(state, a.id, Refund::new(Money::usd(1_000)))
+        .await
+        .unwrap();
+    let rid = refund.gateway_id.clone().unwrap();
+    hook(json!({"id": "e4", "kind": "refund", "pay": pay, "refund": rid, "status": "failed", "reason": "closed"})).await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("closed"));
+    assert_eq!(reload(a.id).await.refunded_amount, 0);
+    hook(json!({"id": "e5", "kind": "refund", "pay": pay, "refund": rid, "status": "succeeded"}))
+        .await;
+    let stored = reload(a.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    hook(json!({"id": "e6", "kind": "refund", "pay": pay, "refund": rid, "status": "succeeded"}))
+        .await;
+    hook(json!({"id": "e7", "kind": "refund", "pay": pay, "refund": rid, "status": "failed"}))
+        .await;
+    assert_eq!(reload(a.id).await.refunded_amount, 1_000);
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    app.assert_emitted::<PaymentRefunded>(|e| e.payment.id == a.id);
+
+    // Disputes: opened, won (back to partially refunded), opened, lost.
+    hook(json!({"id": "e8", "kind": "dispute", "pay": pay, "status": "opened"})).await;
+    let stored = reload(a.id).await;
+    assert_eq!(stored.status, PaymentStatus::Disputed);
+    assert!(stored.evidence_due_by.is_some());
+    app.assert_emitted::<DisputeOpened>(|e| e.payment.id == a.id && e.evidence_due_by.is_some());
+    hook(json!({"id": "e9", "kind": "dispute", "pay": pay, "status": "won"})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::PartiallyRefunded);
+    app.assert_emitted::<DisputeWon>(|e| e.payment.id == a.id);
+    hook(json!({"id": "e10", "kind": "dispute", "pay": pay, "status": "opened"})).await;
+    hook(json!({"id": "e11", "kind": "dispute", "pay": pay, "status": "lost"})).await;
+    let stored = reload(a.id).await;
+    assert_eq!(
+        (stored.status, stored.refundable().minor),
+        (PaymentStatus::Refunded, 0)
+    );
+    app.assert_emitted::<DisputeLost>(|e| e.payment.id == a.id);
+
+    // A failed payment that is later asked about is paid: the status check
+    // applies it like a webhook.
+    let b = make(2).await;
+    let pay_b = b.gateway_id.clone().unwrap();
+    hook(json!({"id": "e12", "kind": "payment", "pay": pay_b, "status": "failed", "at": 10})).await;
+    assert_eq!(reload(b.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.reference_id.as_deref() == Some("2"));
+    Billing::payment_status(state, b.id).await.unwrap();
+    assert_eq!(reload(b.id).await.status, PaymentStatus::Succeeded);
 }
