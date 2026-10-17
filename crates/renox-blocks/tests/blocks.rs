@@ -1476,3 +1476,61 @@ async fn a_rating_posts_a_plain_integer_through_valid() {
     );
     assert_eq!(html.matches(" checked").count(), 1, "{html}");
 }
+
+/// Every text of the signature pad and the camera capture is a `blocks.*`
+/// key (#53): an app's lang file replaces each one, the texts the script
+/// speaks (`data-rx-blocks-texts`) included, and the rest stays English.
+#[renox::test]
+async fn an_app_translates_the_signature_and_camera_texts() {
+    let dir = std::env::temp_dir().join(format!("renox-blocks-{}", renox::random_token()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("es.json"),
+        r#"{"blocks": {
+            "signature": {"area": "Zona de firma", "undo": "Deshacer", "clear": "Borrar",
+                "typed": "O escribe tu nombre", "drawn": "Firma hecha.", "help": "Dibuja la firma."},
+            "camera": {"shutter": "Hacer foto", "denied": "Sin permiso de cámara."}
+        }}"#,
+    )
+    .unwrap();
+    let lang = dir.clone();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Blocks::new())
+            .module(Signing)
+            .module(Photographing)
+            .templates(|env| {
+                env.add_template("sign.html", SIGN_MACRO).unwrap();
+                renox::view::add_template(env, "sign-tag.html", SIGN_TAG).unwrap();
+                env.add_template("photos.html", CAMERA_MACRO).unwrap();
+                renox::view::add_template(env, "photos-tag.html", CAMERA_TAG).unwrap();
+            }),
+        move |c| {
+            c.locale = "es".into();
+            c.lang_path = lang;
+        },
+    )
+    .await;
+    let html = app.get("/sign").await.assert_ok().text();
+    for text in [
+        r#"aria-label="Zona de firma""#,
+        "data-rx-signature-undo>Deshacer</button>",
+        "data-rx-signature-clear>Borrar</button>",
+        ">O escribe tu nombre</label>",
+        "Dibuja la firma.",
+        "Firma hecha.",
+        // Not translated by this app: English.
+        "Last stroke removed.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/photos-tag").await.assert_ok().text();
+    for text in [
+        "data-rx-camera-shutter>Hacer foto</button>",
+        "Sin permiso de cámara.",
+        "Photo removed.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

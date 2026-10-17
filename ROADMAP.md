@@ -2468,6 +2468,15 @@ Notes:
   nested names), a circle or polygon one GeoJSON string; a circle is a GeoJSON `Point` with a `radius`. `map.js` is fetched on a
   page with a map block, Leaflet only when there are tiles to show. The browser test runs on the browser fixture, not the bikeshop,
   because only the fixture can allow the local stub's `http` origin in `img-src` from the test's environment.
+- **Files from the browser are real files, set through `DataTransfer`** (#53): the signature pad and the camera
+  capture put a PNG or JPEGs on a file input, not a data URL in a text field, so a handler reads `Upload`s and the
+  existing `image()` / `mimes()` / `max()` rules (and `Upload::store`) apply with no new extractor. The pad's two
+  ways (drawing, typing) never post both, because the last one used clears the other; `required` is met by either,
+  so the file input itself is never `required` and the typed field is only while the pad is empty. The camera's
+  fallback is the same file input made visible (and visible by default without JavaScript), not a second input,
+  so what a phone's camera app or a file picker returns is downsized by the same code. A photo from the stream is
+  cut to `max_width` on a canvas in the browser; processing on the server (#43) is not wired into the block.
+  The browser tests fake the camera with Chrome's flags and stub `getUserMedia` for the denied and missing cases.
 
 ## Not planned
 

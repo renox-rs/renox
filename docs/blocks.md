@@ -2,7 +2,7 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds fourteen such components (and two for maps), as template macros
+of cards to drag. The `renox-blocks` crate adds eighteen such components, as template macros
 built on the kit:
 
 | Input | Showing data | Scheduling and work | Printing and maps |
@@ -13,6 +13,8 @@ built on the kit:
 | [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns | |
 | [`datetime_range`](#datetime_range): a start and an end, with times | | | [`map_picker`](#map_picker): a point, circle or polygon on a map |
 | | | | [`map`](#map): markers and areas on a map |
+| [`signature_pad`](#signature_pad): a drawn or typed signature, sent as a PNG | | | |
+| [`camera_capture`](#camera_capture): photos from the camera, sent as JPEG files | | | |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
 blocks' script only when it has a block, and then only the code of the blocks it has.
@@ -258,6 +260,133 @@ This block needs JavaScript (the sent fields are written by it).
 | `step` | `60` | minutes between the times offered |
 | `opens`, `closes` | `8`, `20` | the first and last hour offered |
 | `required`, `hint`, `id`, `bag` | | as for the kit's fields |
+
+### signature_pad
+
+A signature drawn with a finger, a pen or the mouse, or the name typed instead. It sends a
+real file, so the form must be `multipart/form-data`:
+
+```html
+<form method="post" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <rx-signature-pad name="signature" label="Customer signature" required/>
+  <rx-button label="Sign off"/>
+</form>
+```
+
+Exactly one of two things is sent: `signature`, a PNG named `signature.png` on a white
+background (so it reads on any page), or `signature_name`, the typed text (`{name}_name`),
+with no file. The last way used wins and clears the other: typing drops a drawing, and
+drawing empties the name. Read both as options, and let either satisfy `required`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct SignOff {
+    signature: Option<Upload>,
+    signature_name: Option<String>,
+}
+
+impl Validate for SignOff {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(1024); // kilobytes
+        v.field("signature_name", &self.signature_name).max(120);
+        // Either way of signing is enough.
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+    }
+}
+```
+
+The pad is a canvas drawn with pointer events (mouse, pen and touch alike; it is sized for the
+screen's pixel density and redrawn when it resizes). **Undo** takes back the last stroke and
+**Clear** empties the pad; the file follows each change. The pad is white with dark ink in light and
+dark mode alike, and so is the exported picture. With `required`, the typed field is `required` only
+while the pad is empty, and the file input itself never is, so the browser does not stop a
+submit that has a drawing.
+
+The typed name is a plain text field beside the pad, always there and without JavaScript, so a
+signature can be completed with the keyboard alone: Tab goes past the pad to the field. The
+canvas is a labelled region (it never traps keys), and the help text that says so is linked
+with `aria-describedby`. A change is said in a live region ("Signature drawn.", "Last stroke
+removed."). Nothing is animated.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the file field's name; the typed one is `{name}_name` |
+| `label` | "Signature" | the group's label |
+| `name_label` | "Or type your name" | the typed field's label |
+| `required` | `false` | a drawing or a name is needed |
+| `width`, `height` | 400, 160 | the pad's size in CSS pixels at most (it shrinks to fit a phone) |
+| `hint`, `id`, `bag` | | as for the kit's fields (`id` defaults to `rx-{name}`) |
+
+A failed submit shows the old typed name and the error of `name` or `{name}_name` under the
+block. A drawing is not put back (a file cannot be): the person draws again.
+
+### camera_capture
+
+Photos taken with the device's camera, sent as files, with a plain file input when there is no
+camera. Like the pad it needs a `multipart/form-data` form:
+
+```html
+<rx-camera-capture name="photos" label="Photos of the work" :max="3" facing="environment"/>
+```
+
+The shutter takes a frame from a live preview, draws it at most `max_width` pixels wide (the
+aspect kept) and keeps it as `photo-N.jpg`, a JPEG of the given `quality`. The photos are put
+on a file input named `name` (with `multiple` when `max` is above 1), each with a thumbnail and
+a **Remove** button; the shutter greys out at `max`. Read them as `Vec<Upload>` (or
+`Option<Upload>` for one photo) and count them with `max`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Photos {
+    #[serde(default)]
+    photos: Vec<Upload>,
+}
+
+impl Validate for Photos {
+    fn rules(&self, v: &mut Validator) {
+        v.field("photos", &self.photos).max(3);
+        v.each("photos", &self.photos, |photo| {
+            photo.image().mimes(&["jpg", "jpeg"]).max(5120)
+        });
+    }
+}
+```
+
+Storing them (`Upload::store`) and any processing are the handler's; the block does neither.
+
+**When there is no camera.** Without JavaScript the same file input is simply visible, and
+on a phone `capture` opens the camera app. With JavaScript, when the browser has no camera API,
+the person says no to the permission prompt, there is no device or it fails, the preview and
+the shutter give way to that same file input, made visible, with a message that says why
+("Camera access was denied. Choose a photo from your device instead."). What it picks is
+downsized the same way and shown as thumbnails, so the server sees the same kind of file
+either way. The browser only offers the camera on a secure page (HTTPS, or `localhost`). The
+camera is switched off when the block is removed (an htmx swap) or the page is left.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the file field's name |
+| `label` | "Photos" | the group's label |
+| `facing` | `"environment"` | `"user"` (the front camera) or `"environment"` (the back one); also the input's `capture` |
+| `max` | 1 | how many photos (above 1, the input is `multiple`) |
+| `max_width` | 2048 | the widest a photo is kept, in pixels |
+| `quality` | 0.85 | the JPEG quality, 0.1 to 1 |
+| `accept` | `"image/*"` | the file input's `accept` |
+| `required` | `false` | a photo is needed (the visible input is `required` only while it is the way in) |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+The bike shop uses both on a work order's bench page (a customer sign-off, kept as notes with
+private photos) and shows them on `/about/blocks`.
 
 ## Showing data
 
@@ -820,7 +949,8 @@ JavaScript module. The module looks at the page (and at whatever htmx swaps in l
 imports a block's code only when the page has that block: a product page with a gallery and a
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
 `status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
-`week.js` for its keyboard, `map_picker` and `map` load `map.js` (and Leaflet, only when they have tiles to show), and `receipt` has a few lines, for its Print button.
+`week.js` for its keyboard, `map_picker` and `map` load `map.js` (and Leaflet, only when they have tiles to show), and `receipt` has a few lines, for its Print button. `signature_pad` loads `signature.js` and
+`camera_capture` loads `camera.js`, so a page with neither downloads neither.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

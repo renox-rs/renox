@@ -263,7 +263,8 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            slots, times through the `date` filter), assets.rs (hashed files
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
-                           datetime_range, gallery, history, compare_plans, status_stepper,
+                           datetime_range, signature_pad, camera_capture, gallery, history,
+                           compare_plans, status_stepper,
                            month_calendar, availability, week_calendar, kanban + kanban_card,
                            receipt, map_picker, map; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
@@ -274,7 +275,9 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            LICENSE, NOTICE) added by assets/parts/map.js only on a page with
                            a map block; its own tests/; guide docs/blocks.md
                            (doctested from lib.rs `Guide`); browser tests
-                           tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks,
+                           tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks
+                           (the signature pad and camera capture: blocks-capture.test.mjs,
+                           with Chrome's fake camera through `Browser.launch({ args })`),
                            tests/browser/maps.test.mjs on the fixture's /maps (local tile stub)
 crates/renox-oauth/        the social login plugin (#147): OAuth module (lib.rs: providers,
                            `oauth_providers` shared with every view for the buttons, the

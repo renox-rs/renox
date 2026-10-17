@@ -139,6 +139,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | Rental counter, walk-ins (`renox::select`), pick-up and return with damage photos, receipts (`Morph`) | `/staff/rentals`, `/staff/rentals/{rental}` | [src/app/rentals/counter.rs](src/app/rentals/counter.rs) |
 | Fleet board: `renox::grid` with `poll`, `cards_on_mobile`, badges, related columns | `/staff/fleet` | [src/app/rentals/fleet.rs](src/app/rentals/fleet.rs) |
 | Workshop board: the `kanban` block (drag or keyboard), the bench, parts from stock | `/staff/workshop`, `/staff/workshop/{order}` | [src/app/workshop/board.rs](src/app/workshop/board.rs), [src/app/workshop/order.rs](src/app/workshop/order.rs) |
+| Job sign-off on the bench: the `signature_pad` and `camera_capture` blocks post a signature (or a typed name) and up to three photos, kept as notes with private files and signed photo links (#53) | `/staff/workshop/{order}/signoff` | [src/app/workshop/order.rs](src/app/workshop/order.rs), [resources/views/workshop/order.html](resources/views/workshop/order.html) |
 | Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`), gapless receipt numbers (`Sequence`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
 | Orders: ready, handed over, cancelled, returned (`action_sheet`) | `/staff/orders` | [src/app/sales/staff.rs](src/app/sales/staff.rs) |
 | Stock: one ledger (`stock_movements`, `Morph` to its cause), a database view as a model, stock takes | `/staff/stock`, `/staff/stock/{level}`, `/staff/stock/take` | [src/app/stock/levels.rs](src/app/stock/levels.rs), [src/app/stock/ledger.rs](src/app/stock/ledger.rs), [src/app/stock/take.rs](src/app/stock/take.rs) |
@@ -263,7 +264,7 @@ its category (`content::product_photo`: photo `(id % n) + 1`); migration
 The epic's rule was that a missing basic component stops the page and goes to the Renox team.
 **The owner decided otherwise for this example** (2026-10-06, a comment on #231): the components
 the kit didn't have were built here first, as **blocks**, written like a small library so they
-could move to a crate. They since have (#347): twelve of them are the
+could move to a crate. They since have (#347): most of them are the
 [renox-blocks](../../crates/renox-blocks) plugin (guide: [docs/blocks.md](../../docs/blocks.md)),
 which the app adds with `.module(renox_blocks::Blocks::new())` and a page uses like a kit
 component (a tag such as `<rx-gallery …/>`). Their classes are `rx-` ones
@@ -289,6 +290,8 @@ with `disabled_dates` and `closed_weekdays`. Form blocks send plain fields, so `
 | `history(items, label, date_format)` | A vertical timeline | a bike's service history |
 | `compare_plans(plans, features, highlight, …)` | Pricing cards and a comparison table | service plans |
 | `receipt(lines, totals, width, title, header, number, date, footer, …)` | An 80 mm or 58 mm till receipt that prints alone, with a code slot (#48) | a counter sale's receipt |
+| `signature_pad(name, label, name_label, required, width, height, …)` | A drawn signature sent as `signature.png`, or a typed name (`signature_name`), the last way used winning (#53) | a work order's sign-off, `/about/blocks` |
+| `camera_capture(name, label, facing, max, max_width, quality, …)` | Photos from the camera, downsized to JPEG files; a visible file input when the camera is denied or missing (#53) | a work order's sign-off, `/about/blocks` |
 | `map_picker(name, mode, value, label, height, hint, id, bag)` + `map(markers, shapes, label, height, id)` | Pick a point, circle or polygon (typed coordinates as the keyboard way) and show markers and areas, on tiles from `BLOCKS_MAP_TILES`; without it each block says what is missing (#47) | the blocks page only |
 
 ## The JSON API (#241)

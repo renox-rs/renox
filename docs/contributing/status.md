@@ -303,6 +303,20 @@
   right-to-left aware). `blocks.week.*` and `blocks.stepper.*` texts; shown on the bike shop's
   /about/blocks; tests in crates/renox-blocks/tests/blocks.rs and
   tests/browser/blocks.test.mjs.
+- **#53, signature pad and camera capture** (part 1 of #32; parts 1-5): renox-blocks gets `signature_pad`
+  (`<rx-signature-pad>`) and `camera_capture` (`<rx-camera-capture>`), macros plus tags with contracts, parts
+  `assets/parts/signature.js` and `camera.js` (loaded only on a page that has the block, PARTS in `assets.rs`),
+  `blocks.signature.*` and `blocks.camera.*` texts. Both put their result on a hidden or visible `<input type=file>`
+  through `DataTransfer`, so the handler gets `Upload`s through `Valid<T>` and `image()` / `mimes()` / `max()` apply
+  unchanged: the pad posts `signature.png` (white background, strokes kept as fractions for Undo, Clear and resize)
+  or, typed, `{name}_name` with no file, the last way used winning; the camera downsizes each frame to `max_width`
+  and posts `photo-N.jpg`, and when `getUserMedia` is missing or refused the same input is shown with a status
+  saying why (what it picks is downsized the same way). The bike shop's work order has a "Customer sign-off" form
+  (`POST /staff/workshop/{order}/signoff`, `NoteKind::Signoff`, no migration: the kind is text) and `/about/blocks`
+  a demo (`POST /about/blocks/sign`). Tests: crates/renox-blocks/tests/blocks.rs (render, `Valid<T>`, translations),
+  examples/bikeshop tests `workshop.rs` and `blocks.rs`, and in a browser tests/browser/blocks-capture.test.mjs
+  (mouse strokes, keyboard, the fake camera through `Browser.launch({ args })`, a denied and a missing camera, RTL,
+  reduced motion, the parts loaded) and bikeshop-workshop.test.mjs (the sign-off). Guide: docs/blocks.md.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 

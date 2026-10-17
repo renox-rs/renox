@@ -22,7 +22,11 @@ const CHROME = process.env.CHROME_BIN || 'google-chrome';
 const TIMEOUT = Number(process.env.BROWSER_TIMEOUT_MS || 10_000);
 
 export class Browser {
-  static async launch() {
+  /**
+   * `args` adds Chrome flags, e.g. the fake camera of the capture tests:
+   * `['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']`.
+   */
+  static async launch({ args: extra = [] } = {}) {
     const profile = mkdtempSync(join(tmpdir(), 'renox-chrome-'));
     const args = [
       '--headless=new',
@@ -36,6 +40,7 @@ export class Browser {
       '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
+      ...extra,
       'about:blank',
     ];
     const proc = spawn(CHROME, args, { stdio: ['ignore', 'ignore', 'pipe'] });

@@ -583,6 +583,16 @@ The renox-blocks crate (`.module(Blocks::new())`, guide docs/blocks.md) adds tag
   slot-url="/bookings" slot-target="#week" id="week"/>                           {# a free slot POSTs resource, start, end (hx-post + static hx-vals); days, from, to, step #}
 ```
 
+and two that post files (the form needs `enctype="multipart/form-data"`):
+
+```html
+<rx-signature-pad name="signature" label="Customer" name-label="Or type the name" required/>  {# posts signature (signature.png) OR signature_name; width, height, hint #}
+<rx-camera-capture name="photos" :max="3" facing="environment" :max-width="2048"/>            {# posts photos: photo-N.jpg, a file input when there is no camera; quality, accept, required #}
+```
+
+Read them as `signature: Option<Upload>` (`.image().mimes(&["png"])`), `signature_name: Option<String>` (required when there is no
+signature) and `#[serde(default)] photos: Vec<Upload>` (`.max(3)`, then `v.each` with `.image().mimes(&["jpg", "jpeg"])`).
+
 ### Component events (details in docs/ui.md "Components and the page: three directions")
 
 ```html

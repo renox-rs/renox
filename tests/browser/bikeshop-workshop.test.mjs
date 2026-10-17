@@ -2,7 +2,8 @@
 // customer books a service on a phone (390 px), the estimate following the
 // form through htmx; North's manager moves a work order across the board
 // with the keyboard (desktop) and the board fits a phone; the work order's
-// page. Every page with a clean console and no sideways scroll.
+// page; a mechanic signs a job off with a drawn signature and a photo (#53).
+// Every page with a clean console and no sideways scroll.
 // Screenshots go to BIKESHOP_SCREENS when it's set.
 
 import { after, before, describe, test } from 'node:test';
@@ -20,7 +21,8 @@ let browser;
 let app;
 
 before(async () => {
-  browser = await Browser.launch();
+  // A fake camera, for the sign-off's photos (#53).
+  browser = await Browser.launch({ args: ['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream'] });
   app = await start('bikeshop', 'examples/bikeshop', { seed: true, env: STAFF_2FA_OPTIONAL });
 });
 
@@ -127,4 +129,48 @@ describe('the workshop board', () => {
       await shot(page, 'workshop-board-phone');
       page.assertClean();
     }, PHONE));
+});
+
+describe('the job sign-off', () => {
+  test('a mechanic draws the customer\'s signature, takes a photo, and both appear on the order', () =>
+    browser.with(async (page) => {
+      await login(page, 'manager.north@bikeshop.test');
+      await page.goto(`${app.url}/staff/workshop`);
+      await page.waitFor(() => !!document.querySelector('[data-rx-kanban][data-rx-blocks-ready]'), { message: 'the board is ready' });
+      const id = await page.eval(() => document.querySelector('[data-rx-kanban-column="in_progress"] [data-rx-kanban-card]')?.dataset.rxKanbanCard);
+      assert.ok(id, 'North has work in progress');
+      await page.goto(`${app.url}/staff/workshop/${id}`);
+      const form = '#signoff-form';
+      await page.waitFor(() => !!document.querySelector('#signoff-form [data-rx-signature][data-rx-blocks-ready]') && !!document.querySelector('#signoff-form [data-rx-camera][data-rx-blocks-ready]'), { message: 'the sign-off blocks are set up' });
+      // A drawn signature, with the mouse.
+      const box = await page.eval(() => {
+        const r = document.querySelector('#signoff-form [data-rx-signature-canvas]');
+        r.scrollIntoView({ block: 'center' });
+        const b = r.getBoundingClientRect();
+        return { x: b.left, y: b.top, w: b.width, h: b.height };
+      });
+      const at = (fx, fy) => ({ x: box.x + box.w * fx, y: box.y + box.h * fy });
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...at(0.2, 0.5), button: 'none', buttons: 0 });
+      await page.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...at(0.2, 0.5), button: 'left', buttons: 1, clickCount: 1 });
+      for (const [fx, fy] of [[0.4, 0.2], [0.6, 0.8], [0.8, 0.4]]) {
+        await page.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...at(fx, fy), button: 'left', buttons: 1 });
+      }
+      await page.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...at(0.8, 0.4), button: 'left', buttons: 0, clickCount: 1 });
+      await page.waitFor(() => document.querySelector('#signoff-form [data-rx-signature-file]').files.length === 1, { message: 'the signature in the file' });
+      // A photo from the fake camera.
+      await page.waitFor(() => document.querySelector('#signoff-form [data-rx-camera-video]').videoWidth > 0 && !document.querySelector('#signoff-form [data-rx-camera-shutter]').disabled, { message: 'the camera running' });
+      await page.click('#signoff-form [data-rx-camera-shutter]');
+      await page.waitFor(() => document.querySelectorAll('#signoff-form [data-rx-camera-shots] li').length === 1, { message: 'a thumbnail' });
+      assert.ok(await fitsWidth(page));
+      await shot(page, 'workshop-signoff-desktop');
+      await page.click(`${form} button[type=submit]`);
+      await page.waitFor(() => /Signed off\./.test(document.body.textContent), { message: 'the sign-off recorded' });
+      // The notes list the sign-off and the photo, each a signed link to a private file.
+      const notes = await page.text('main');
+      assert.match(notes, /Sign-off/);
+      const links = await page.eval(() => [...document.querySelectorAll('.rx-history a[href*="/notes/"][href$="/photo"]')].length);
+      assert.ok(links >= 2, `a link for the signature and one for the photo (${links})`);
+      assert.ok(await fitsWidth(page));
+      page.assertClean();
+    }));
 });
