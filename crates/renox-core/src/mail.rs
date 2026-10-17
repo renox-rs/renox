@@ -82,6 +82,11 @@ pub struct Mail {
     pub attachments: Vec<Attachment>,
 }
 
+/// The inline colours `Mail::theme` replaces; they match
+/// `views/mail/button.html` and `components.html` (a test checks it).
+const MAIL_BUTTON_COLORS: &str = "background:#1c1917;color:#ffffff;";
+const MAIL_PANEL_STRIPE: &str = "border-left:4px solid #1c1917;";
+
 /// A file sent with a mail.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[non_exhaustive]
@@ -202,6 +207,42 @@ impl Mail {
             "invite.ics"
         };
         self.attach(name, ics.content_type(), ics.to_bytes())
+    }
+
+    /// Applies a brand [`Theme`](crate::theme::Theme) to the HTML body: the
+    /// `button` background and text colour and the `panel` stripe of
+    /// `renox/mail/components.html` take the theme's light `--rx-accent` and
+    /// `--rx-on-accent`. The colours are written into the HTML now, so a mail
+    /// queued afterwards needs no theme at send time. Call it after
+    /// [`AppState::mail_view`]; a mail without an HTML body is unchanged.
+    ///
+    /// ```
+    /// use renox::mail::Mail;
+    /// use renox::theme::{Brand, Theme};
+    ///
+    /// let theme = Theme::from_brand(&Brand::new("#1E3A5F")).unwrap();
+    /// let html = r#"<a style="background:#1c1917;color:#ffffff;">Pay</a>"#;
+    /// let mail = Mail::new("ana@example.com", "Hi", "Hi").html(html).theme(&theme);
+    /// assert!(!mail.html.unwrap().contains("#1c1917"));
+    /// ```
+    pub fn theme(mut self, theme: &crate::theme::Theme) -> Self {
+        let tokens = theme.tokens();
+        if let (Some(html), Some(accent), Some(on_accent)) = (
+            self.html.as_mut(),
+            tokens.get("--rx-accent"),
+            tokens.get("--rx-on-accent"),
+        ) {
+            *html = html
+                .replace(
+                    MAIL_BUTTON_COLORS,
+                    &format!("background:{accent};color:{on_accent};"),
+                )
+                .replace(
+                    MAIL_PANEL_STRIPE,
+                    &format!("border-left:4px solid {accent};"),
+                );
+        }
+        self
     }
 
     /// Whether `address` is among `to`, `cc` or `bcc`.
@@ -906,6 +947,35 @@ async fn show(State(state): State<AppState>, Path(id): Path<u64>) -> Result<Html
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn theme_colours_the_mail_components_and_survives_queueing() {
+        let components = include_str!("../views/mail/components.html");
+        let button = include_str!("../views/mail/button.html");
+        assert!(components.contains(MAIL_BUTTON_COLORS));
+        assert!(components.contains(MAIL_PANEL_STRIPE));
+        assert!(button.contains(MAIL_BUTTON_COLORS));
+
+        let theme = crate::theme::Theme::from_brand(&crate::theme::Brand::new("#1E3A5F")).unwrap();
+        let tokens = theme.tokens();
+        let html = format!(
+            "<a style=\"x;{MAIL_BUTTON_COLORS}y\">Go</a><td style=\"{MAIL_PANEL_STRIPE}\">"
+        );
+        let mail = Mail::new("a@b.c", "s", "t").html(html).theme(&theme);
+        let html = mail.html.clone().unwrap();
+        assert!(html.contains(&format!(
+            "background:{};color:{};",
+            tokens["--rx-accent"], tokens["--rx-on-accent"]
+        )));
+        assert!(html.contains(&format!("border-left:4px solid {};", tokens["--rx-accent"])));
+        assert!(!html.contains("#1c1917"));
+        // The colours are in the mail itself, so a queued copy keeps them.
+        let queued: Mail = serde_json::from_str(&serde_json::to_string(&mail).unwrap()).unwrap();
+        assert_eq!(queued, mail);
+        // No HTML body: nothing to do.
+        let plain = Mail::new("a@b.c", "s", "t").theme(&theme);
+        assert_eq!(plain.html, None);
+    }
 
     #[test]
     fn html_becomes_readable_text() {
