@@ -41,6 +41,11 @@ const PARTS: [(&str, &str); 14] = [
 const LEAFLET_JS: &str = include_str!("../assets/vendor/leaflet/leaflet.js");
 const LEAFLET_CSS: &str = include_str!("../assets/vendor/leaflet/leaflet.css");
 
+/// `@zxing/library` 0.23.0, vendored (assets/vendor/NOTICE). `barcode.js` adds
+/// it to a page only when the camera is opened in a browser without
+/// `BarcodeDetector`.
+const ZXING_JS: &str = include_str!("../assets/vendor/zxing/zxing-library-0.23.0.min.js");
+
 const JS: &str = "text/javascript; charset=utf-8";
 
 /// A served file.
@@ -60,7 +65,7 @@ fn file(name: &str, extension: &str, content_type: &'static str, body: &'static 
 }
 
 /// The stylesheet, the loader, each block's code (in `PARTS` order), then
-/// Leaflet's script and stylesheet.
+/// Leaflet's script and stylesheet, then the zxing script.
 static FILES: LazyLock<Vec<File>> = LazyLock::new(|| {
     let mut files = vec![
         file("blocks", "css", "text/css; charset=utf-8", CSS),
@@ -74,6 +79,7 @@ static FILES: LazyLock<Vec<File>> = LazyLock::new(|| {
         "text/css; charset=utf-8",
         LEAFLET_CSS,
     ));
+    files.push(file("zxing", "js", JS, ZXING_JS));
     files
 });
 
@@ -93,9 +99,10 @@ pub(crate) fn tags() -> String {
         .map(|((name, _), file)| format!(" data-{name}=\"{}\"", file.path))
         .collect();
     let leaflet = &FILES[2 + PARTS.len()..];
+    let zxing = &FILES[4 + PARTS.len()];
     format!(
-        "<link rel=\"stylesheet\" href=\"{}\">\n<script type=\"module\" src=\"{}\" data-renox-blocks{parts} data-leaflet-js=\"{}\" data-leaflet-css=\"{}\"></script>",
-        FILES[0].path, FILES[1].path, leaflet[0].path, leaflet[1].path
+        "<link rel=\"stylesheet\" href=\"{}\">\n<script type=\"module\" src=\"{}\" data-renox-blocks{parts} data-leaflet-js=\"{}\" data-leaflet-css=\"{}\" data-zxing=\"{}\"></script>",
+        FILES[0].path, FILES[1].path, leaflet[0].path, leaflet[1].path, zxing.path
     )
 }
 
@@ -115,7 +122,7 @@ mod tests {
     #[test]
     fn the_tag_names_every_part_the_loader_knows() {
         let tag = tags();
-        assert_eq!(FILES.len(), PARTS.len() + 4);
+        assert_eq!(FILES.len(), PARTS.len() + 5);
         for (name, _) in PARTS {
             assert!(
                 tag.contains(&format!(" data-{name}=\"/_renox/blocks/{name}-")),
@@ -146,6 +153,28 @@ mod tests {
         assert!(licence.contains("BSD 2-Clause"));
         let notice = std::fs::read_to_string(format!("{dir}/NOTICE")).unwrap();
         assert!(notice.contains("Leaflet 1.9.4"));
+    }
+
+    // zxing is named for barcode.js to add, never loaded by the loader, and its
+    // licence and NOTICE ship with it.
+    #[test]
+    fn zxing_is_served_but_only_named() {
+        let tag = tags();
+        assert!(tag.contains(" data-zxing=\"/_renox/blocks/zxing-"), "{tag}");
+        assert!(super::ZXING_JS.contains("ZXing"));
+        assert!(!super::LOADER.contains("zxing"));
+        assert!(super::PARTS.iter().all(|(name, _)| *name != "zxing"));
+        let barcode = super::PARTS
+            .iter()
+            .find(|(n, _)| *n == "barcode")
+            .unwrap()
+            .1;
+        assert!(barcode.contains("data-zxing"));
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/vendor");
+        let licence = std::fs::read_to_string(format!("{dir}/zxing/LICENSE")).unwrap();
+        assert!(licence.contains("Apache License"));
+        let notice = std::fs::read_to_string(format!("{dir}/NOTICE")).unwrap();
+        assert!(notice.contains("@zxing/library 0.23.0") && notice.contains("sha256"));
     }
 
     // map.js reads the paths the tag carries, and the loader starts it for

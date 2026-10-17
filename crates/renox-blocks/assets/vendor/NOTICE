@@ -1,0 +1,19 @@
+Third-party files in this directory, compiled into renox-blocks and served
+to pages that need them (src/assets.rs). Nothing here is loaded on a page
+that does not need it. (Leaflet has its own NOTICE in leaflet/.)
+
+zxing/zxing-library-0.23.0.min.js
+  @zxing/library 0.23.0, the ZXing barcode reader ported to TypeScript, by
+  the ZXing contributors. Apache-2.0 licence (zxing/LICENSE). The package
+  carries no NOTICE file.
+  Source: https://registry.npmjs.org/@zxing/library/-/library-0.23.0.tgz
+  (package/umd/index.min.js, package/LICENSE). It is the smallest UMD
+  browser bundle that has the multi-format reader; it sets the global
+  "ZXing". Change: none (the file has no sourceMappingURL line), only the
+  name, which carries the version.
+  barcode.js adds it to a page only when the camera is opened in a browser
+  without BarcodeDetector.
+
+sha256
+  3ede94153fb0c5b67a12d7adff6decd827c2b22714fdc6faecf27a8f20937ea6  zxing/zxing-library-0.23.0.min.js
+  849b3ff4527ff587eecc78736b5685bbba7a44b071f3b944da914e832292f6c0  zxing/LICENSE

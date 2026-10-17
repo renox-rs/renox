@@ -9,21 +9,83 @@
 // camera is closed, on Escape, when the page is hidden or left, and when the
 // block is removed. Nothing is animated.
 //
-// Part 4/6 hook: `detectorFor` is the one place that decides how frames are
-// decoded. When the browser has no BarcodeDetector it returns null and the
-// camera panel is not opened; the vendored fallback decoder plugs in there.
+// Where the browser has no BarcodeDetector, the vendored @zxing/library
+// (data-zxing on the loader's tag, served from 'self') decodes the frames
+// instead. It is fetched only when the camera is opened, once per page.
 
 const WEDGE_MS = 50;
 const POLL_MS = 100;
 
-/** A decoder for `formats`: { detect(video) -> Promise<string|null> }, or null when the browser has none. */
-function detectorFor(formats) {
-  if (typeof window.BarcodeDetector !== "function") return null;
-  const detector = new window.BarcodeDetector(formats.length ? { formats } : undefined);
+let zxingLoading = null;
+
+/** @zxing/library, added to the page once (a classic script that sets window.ZXing). */
+function zxing() {
+  if (window.ZXing && window.ZXing.MultiFormatReader) return Promise.resolve(window.ZXing);
+  if (!zxingLoading) {
+    const tag = document.querySelector("script[data-renox-blocks]");
+    const src = tag && tag.getAttribute("data-zxing");
+    zxingLoading = new Promise((resolve, reject) => {
+      if (!src) return reject(new Error("renox-blocks: no file for zxing"));
+      const script = document.createElement("script");
+      script.src = src;
+      script.onload = () => resolve(window.ZXing);
+      script.onerror = () => {
+        zxingLoading = null;
+        reject(new Error("renox-blocks: zxing did not load"));
+      };
+      document.head.append(script);
+    });
+  }
+  return zxingLoading;
+}
+
+/** A decoder for `formats` (BarcodeDetector names): { detect(video) -> Promise<string|null> }, or null when none can be had. */
+async function detectorFor(formats) {
+  if (typeof window.BarcodeDetector === "function") {
+    const detector = new window.BarcodeDetector(formats.length ? { formats } : undefined);
+    return {
+      async detect(video) {
+        const found = await detector.detect(video);
+        return found && found.length && found[0].rawValue ? found[0].rawValue : null;
+      },
+    };
+  }
+  try {
+    return zxingDetector(await zxing(), formats);
+  } catch (error) {
+    console.warn(error);
+    return null;
+  }
+}
+
+/** The same interface over zxing: a frame is drawn on a canvas and decoded. */
+function zxingDetector(Z, formats) {
+  const reader = new Z.MultiFormatReader();
+  const known = formats.filter((name) => {
+    const ok = Z.BarcodeFormat[name.toUpperCase()] !== undefined;
+    if (!ok) console.warn(`renox-blocks: unknown barcode format "${name}"`);
+    return ok;
+  });
+  const hints = new Map();
+  if (known.length) hints.set(Z.DecodeHintType.POSSIBLE_FORMATS, known.map((name) => Z.BarcodeFormat[name.toUpperCase()]));
+  hints.set(Z.DecodeHintType.TRY_HARDER, true);
+  reader.setHints(hints);
+  const canvas = document.createElement("canvas");
+  const context = canvas.getContext("2d", { willReadFrequently: true });
   return {
     async detect(video) {
-      const found = await detector.detect(video);
-      return found && found.length && found[0].rawValue ? found[0].rawValue : null;
+      const width = video.videoWidth;
+      const height = video.videoHeight;
+      if (!width || !height) return null;
+      canvas.width = width;
+      canvas.height = height;
+      context.drawImage(video, 0, 0, width, height);
+      try {
+        const source = new Z.HTMLCanvasElementLuminanceSource(canvas);
+        return reader.decodeWithState(new Z.BinaryBitmap(new Z.HybridBinarizer(source))).getText() || null;
+      } catch (_) {
+        return null; // nothing readable in this frame
+      }
     },
   };
 }
@@ -145,9 +207,8 @@ export function setup(el, kit) {
     opening = true;
     try {
       const formats = await supportedFormats(wanted);
-      const detector = detectorFor(formats);
+      const detector = await detectorFor(formats);
       if (!detector) {
-        // Part 4/6: the vendored decoder is loaded here instead.
         say(texts.unsupported);
         input.focus();
         return;
