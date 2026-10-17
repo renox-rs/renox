@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
-use super::column::{CondKind, Condition, IntoColumn};
+use super::column::{CondKind, Condition, IntoColumn, JsonOp};
+use super::json::JsonPath;
 use super::paginate::{CursorPage, SimplePage};
 use super::{Db, DbValue, Dialect, Executor, FromDb, Model, Paginated, ToDbValue, now, quote, sql};
 use crate::Result;
@@ -74,6 +75,44 @@ enum Filter {
     /// A full-text search on a model's index, already rendered per
     /// database (`search::filter_sql`), with one `?`.
     Search { sqlite: String, postgres: String },
+    /// A key of a JSON column; `key` matches `[a-z][a-z0-9_]*`. `cast` is the
+    /// PostgreSQL type the text is compared as (`numeric`, `boolean`).
+    JsonKey {
+        column: String,
+        key: String,
+        op: JsonOp,
+        marks: usize,
+        cast: Option<&'static str>,
+    },
+}
+
+/// The SQL of a key of a JSON column. `key` was checked by `is_valid_key`, so
+/// it is safe inside the literal.
+fn json_key_sql(dialect: Dialect, column: &str, key: &str, cast: Option<&str>) -> String {
+    match (dialect, cast) {
+        (Dialect::Sqlite, _) => format!("json_extract({column}, '$.{key}')"),
+        (Dialect::Postgres, None) => format!("({column}::jsonb ->> '{key}')"),
+        (Dialect::Postgres, Some(cast)) => format!("({column}::jsonb ->> '{key}')::{cast}"),
+    }
+}
+
+/// The type a custom field of this kind is compared as on PostgreSQL.
+fn json_cast(kind: crate::custom_fields::FieldKind) -> Option<&'static str> {
+    use crate::custom_fields::FieldKind;
+    match kind {
+        FieldKind::Number => Some("numeric"),
+        FieldKind::Bool => Some("boolean"),
+        _ => None,
+    }
+}
+
+/// The type a bound value is compared as when no definition says.
+fn value_cast(value: &DbValue) -> Option<&'static str> {
+    match value {
+        DbValue::Integer(_) | DbValue::Real(_) => Some("numeric"),
+        DbValue::Bool(_) => Some("boolean"),
+        _ => None,
+    }
 }
 
 /// One `ORDER BY` term.
@@ -84,19 +123,49 @@ enum Order {
     /// Full-text relevance (`search::rank_sql`) per database, with one `?`
     /// in `order_binds`.
     Relevance { sqlite: String, postgres: String },
+    /// A key of a JSON column (see `Filter::JsonKey`).
+    JsonKey {
+        column: String,
+        key: String,
+        desc: bool,
+        cast: Option<&'static str>,
+    },
 }
 
 impl Order {
-    fn render(&self, dialect: Dialect) -> &str {
+    fn render(&self, dialect: Dialect) -> String {
         match (self, dialect) {
-            (Order::Sql(sql), _) => sql,
-            (Order::Relevance { sqlite, .. }, Dialect::Sqlite) => sqlite,
-            (Order::Relevance { postgres, .. }, Dialect::Postgres) => postgres,
+            (Order::Sql(sql), _) => sql.clone(),
+            (Order::Relevance { sqlite, .. }, Dialect::Sqlite) => sqlite.clone(),
+            (Order::Relevance { postgres, .. }, Dialect::Postgres) => postgres.clone(),
+            (
+                Order::JsonKey {
+                    column,
+                    key,
+                    desc,
+                    cast,
+                },
+                _,
+            ) => format!(
+                "{} {}",
+                json_key_sql(dialect, column, key, *cast),
+                if *desc { "DESC" } else { "ASC" }
+            ),
         }
     }
 }
 
 impl Filter {
+    /// Calls `f` with the key and cast of every JSON key condition inside.
+    fn visit_json(&mut self, f: &mut dyn FnMut(&str, &mut Option<&'static str>)) {
+        match self {
+            Filter::JsonKey { key, cast, .. } => f(key, cast),
+            Filter::Group { filters, .. } => filters.iter_mut().for_each(|x| x.visit_json(f)),
+            Filter::Not(filter) => filter.visit_json(f),
+            _ => {}
+        }
+    }
+
     fn render(&self, dialect: Dialect) -> String {
         match self {
             Filter::Sql(sql) => sql.clone(),
@@ -110,6 +179,24 @@ impl Filter {
                 format!("{column} {op} ?")
             }
             Filter::JsonIn { kind, column } => json_in(kind, column, dialect),
+            Filter::JsonKey {
+                column,
+                key,
+                op,
+                marks,
+                cast,
+            } => {
+                let expr = json_key_sql(dialect, column, key, *cast);
+                match op {
+                    JsonOp::Cmp("like") if dialect == Dialect::Postgres => {
+                        format!("{expr} ILIKE ?")
+                    }
+                    JsonOp::Cmp(op) => format!("{expr} {} ?", op.to_uppercase()),
+                    JsonOp::Null(true) => format!("{expr} IS NULL"),
+                    JsonOp::Null(false) => format!("{expr} IS NOT NULL"),
+                    JsonOp::In => format!("{expr} IN ({})", vec!["?"; *marks].join(", ")),
+                }
+            }
             Filter::Group { any, filters } => {
                 if filters.is_empty() {
                     // Nothing to match for `any`, nothing to restrict for AND.
@@ -299,7 +386,101 @@ impl<M: Model> Query<M> {
             CondKind::Null(column, true) => self.where_null(column),
             CondKind::Null(column, false) => self.where_not_null(column),
             CondKind::In(column, values) => self.where_in(column, values),
+            CondKind::Json(column, key, op, values) => self.where_json(column, key, op, values),
         }
+    }
+
+    fn where_json(
+        mut self,
+        column: &'static str,
+        key: String,
+        op: JsonOp,
+        values: Vec<DbValue>,
+    ) -> Self {
+        let Some(column) = self.column(column) else {
+            return self;
+        };
+        if !crate::custom_fields::is_valid_key(&key) {
+            self.error
+                .get_or_insert_with(|| format!("`{}` is not a valid JSON key", key.escape_debug()));
+            return self;
+        }
+        if matches!(op, JsonOp::In) && values.is_empty() {
+            self.filters.push(Filter::Sql("0 = 1".into()));
+            return self;
+        }
+        let cast = values.first().and_then(value_cast);
+        self.filters.push(Filter::JsonKey {
+            column,
+            key,
+            op,
+            marks: values.len(),
+            cast,
+        });
+        self.binds.extend(values);
+        self
+    }
+
+    /// Sorts by a key of a JSON column, ascending, like
+    /// `Party::EXTRA.json("segment")`.
+    pub fn order_by_json(self, path: JsonPath<M>) -> Self {
+        self.order_json(path, false)
+    }
+
+    /// Sorts by a key of a JSON column, descending.
+    pub fn order_by_json_desc(self, path: JsonPath<M>) -> Self {
+        self.order_json(path, true)
+    }
+
+    fn order_json(mut self, path: JsonPath<M>, desc: bool) -> Self {
+        if let Some(column) = self.column(path.column) {
+            if crate::custom_fields::is_valid_key(&path.key) {
+                self.order.push(Order::JsonKey {
+                    column,
+                    key: path.key,
+                    desc,
+                    cast: None,
+                });
+            } else {
+                let key = path.key;
+                self.error.get_or_insert_with(|| {
+                    format!("`{}` is not a valid JSON key", key.escape_debug())
+                });
+            }
+        }
+        self
+    }
+
+    /// Checks the JSON keys of the query's conditions and ordering against the
+    /// active custom field definitions of the model (its table name), and
+    /// compares numbers and booleans as such on PostgreSQL. A key without a
+    /// definition makes the query return an error. The definitions are cached
+    /// (`CustomField::for_model`), so calling this on every query is cheap.
+    pub async fn with_custom_fields(mut self, db: &Db) -> Result<Self> {
+        let fields = crate::custom_fields::CustomField::for_model(db, M::TABLE).await?;
+        let mut missing = None;
+        let mut resolve = |key: &str, cast: &mut Option<&'static str>| match fields
+            .iter()
+            .find(|f| f.key == key)
+        {
+            Some(field) => *cast = json_cast(field.kind),
+            None => {
+                missing
+                    .get_or_insert_with(|| format!("`{}` has no custom field `{key}`", M::TABLE));
+            }
+        };
+        for filter in &mut self.filters {
+            filter.visit_json(&mut resolve);
+        }
+        for order in &mut self.order {
+            if let Order::JsonKey { key, cast, .. } = order {
+                resolve(key, cast);
+            }
+        }
+        if let Some(missing) = missing {
+            self.error.get_or_insert(missing);
+        }
+        Ok(self)
     }
 
     /// Filters with a comparison: `=`, `!=`, `<>`, `<`, `<=`, `>`, `>=`, `like`, `not like`.
@@ -788,7 +969,7 @@ impl<M: Model> Query<M> {
         );
         sql.push_str(&self.group_sql());
         if !self.order.is_empty() {
-            let terms: Vec<&str> = self.order.iter().map(|o| o.render(dialect)).collect();
+            let terms: Vec<String> = self.order.iter().map(|o| o.render(dialect)).collect();
             sql.push_str(&format!(" ORDER BY {}", terms.join(", ")));
         }
         match (self.limit, self.offset) {

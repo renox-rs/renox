@@ -205,6 +205,17 @@ async fn custom_field_values(State(state): State<AppState>) -> Result<String> {
     Ok(format!("{}", outcome.is_ok()))
 }
 
+/// Typed JSON paths and the definition check, inside a routed handler.
+async fn json_paths(State(db): State<Db>) -> Result<String> {
+    use renox::custom_fields::CustomValues;
+    use renox::db::{Col, Json};
+    struct Doc;
+    const EXTRA: Col<Doc, Json<CustomValues>> = Col::new("extra");
+    let _ = EXTRA.json("segment").eq("retail");
+    let checked = Note::query().with_custom_fields(&db).await.is_ok();
+    Ok(format!("{checked}"))
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -1062,6 +1073,7 @@ impl Module for Handlers {
         Routes::new()
             .get("/relations", relations)
             .get("/queries", queries)
+            .get("/json-paths", json_paths)
             .get("/typed", typed)
             .get("/numbering", numbering)
             .get("/custom-field-defs", custom_field_defs)
@@ -1205,6 +1217,7 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true true 8 0 true");
+    app.get("/json-paths").await.assert_ok().assert_see("true");
     app.get("/branded").await.assert_ok();
     app.get("/contributed").await.assert_ok();
 }
