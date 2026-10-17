@@ -128,6 +128,21 @@ impl ToDbValue for String {
     }
 }
 
+/// The currency's ISO 4217 code, stored as `TEXT` (`"USD"`).
+impl ToDbValue for crate::money::Currency {
+    fn to_db_value(&self) -> DbValue {
+        DbValue::Text(self.code().to_owned())
+    }
+}
+
+/// The amount in minor units, stored as `BIGINT`. The currency goes in its
+/// own column: bind `money.currency` next to it.
+impl ToDbValue for crate::money::Money {
+    fn to_db_value(&self) -> DbValue {
+        DbValue::Integer(self.minor)
+    }
+}
+
 impl ToDbValue for Vec<u8> {
     fn to_db_value(&self) -> DbValue {
         DbValue::Blob(self.clone())

@@ -2,6 +2,7 @@
 //! rounding, conversion with exact decimal rates, display and serde.
 
 use renox::money::{Currency, Money, MoneyError, Rate, Rounding};
+use renox::prelude::*;
 
 fn minors(v: Vec<Money>) -> Vec<i64> {
     v.into_iter().map(|m| m.minor).collect()
@@ -426,4 +427,63 @@ async fn the_money_filter_uses_the_values_own_currency() {
     app.get("/m").await.assert_see(
         "AED 125.00|¥1,250|-KWD 12.345|AED 125.00|AED 12,500.00|AED 125|$75.00|Rp 7,500",
     );
+}
+
+#[test]
+fn money_and_currency_bind_as_bigint_and_text() {
+    use renox::db::{DbValue, ToDbValue};
+    assert_eq!(Money::kwd(-12345).to_db_value(), DbValue::Integer(-12345));
+    assert_eq!(Currency::AED.to_db_value(), DbValue::Text("AED".into()));
+}
+
+#[renox::test]
+async fn money_pairs_round_trip_through_columns() {
+    let app = renox::testing::TestApp::new(App::new()).await;
+    let db = app.db();
+    renox::db::sql(
+        "CREATE TABLE invoices (id BIGINT PRIMARY KEY, total BIGINT, total_currency TEXT)",
+    )
+    .execute(db)
+    .await
+    .unwrap();
+    let paid = Money::kwd(12_345);
+    renox::db::sql("INSERT INTO invoices (id, total, total_currency) VALUES (?, ?, ?)")
+        .bind(1)
+        .bind(paid)
+        .bind(paid.currency)
+        .execute(db)
+        .await
+        .unwrap();
+    for rest in ["(2, NULL, NULL)", "(3, 5, NULL)", "(4, 5, 'XXX1')"] {
+        renox::db::sql(format!(
+            "INSERT INTO invoices (id, total, total_currency) VALUES {rest}"
+        ))
+        .execute(db)
+        .await
+        .unwrap();
+    }
+    let row = |id: i64| {
+        renox::db::sql("SELECT total, total_currency FROM invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+    };
+
+    let r = row(1).await.unwrap();
+    assert_eq!(r.try_get_money("total", "total_currency").unwrap(), paid);
+    assert_eq!(
+        r.try_get_money_opt("total", "total_currency").unwrap(),
+        Some(paid)
+    );
+    let r = row(2).await.unwrap();
+    assert_eq!(
+        r.try_get_money_opt("total", "total_currency").unwrap(),
+        None
+    );
+    assert!(r.try_get_money("total", "total_currency").is_err());
+    // Only one of the pair set, or a code that is not a currency.
+    let r = row(3).await.unwrap();
+    assert!(r.try_get_money_opt("total", "total_currency").is_err());
+    let r = row(4).await.unwrap();
+    let err = r.try_get_money("total", "total_currency").unwrap_err();
+    assert!(err.to_string().contains("total_currency"), "{err}");
 }
