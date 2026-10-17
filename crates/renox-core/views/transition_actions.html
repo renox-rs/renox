@@ -1,0 +1,20 @@
+{#- The rx-transition-actions component: one button per transition the user may run now
+    (`StateMachine::available`), each a small form that posts to
+    `{action}/{name}` (see `state_machine::routes`). A transition that needs
+    a reason shows a required text field next to its button; one that waits
+    for approval says so under it. -#}
+{%- from "renox/ui.html" import button %}
+{% macro transition_actions(actions, action, label=none, reason_label="Reason", approval_label="Needs approval", id=none) -%}
+<div class="rx-transition-actions"{% if id %} id="{{ id }}"{% endif %} role="group"{% if label %} aria-label="{{ label }}"{% endif %} data-rx-transition-actions style="display:flex;flex-wrap:wrap;gap:.75rem;align-items:flex-start">
+  {%- for a in actions %}
+  <form method="post" action="{{ action }}/{{ a.name }}" class="rx-transition-actions__item" data-transition="{{ a.name }}" style="display:flex;flex-direction:column;gap:.25rem">
+    {{ csrf_field() }}
+    {%- if a.needs_reason %}
+    <input type="text" name="reason" required placeholder="{{ reason_label }}" aria-label="{{ reason_label }}" class="rx-input">
+    {%- endif %}
+    {{ button(a.label, variant=("danger" if a.tone == "danger" else "secondary")) }}
+    {%- if a.requires_approval %}<small class="rx-transition-actions__note">{{ approval_label }}</small>{% endif %}
+  </form>
+  {%- endfor %}
+</div>
+{%- endmacro %}

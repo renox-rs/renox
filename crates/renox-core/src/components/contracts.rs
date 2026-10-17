@@ -1089,6 +1089,46 @@ pub(crate) static BUILTIN: &[Contract] = &[
         parent: None,
     },
     Contract {
+        tag: "rx-transition-actions",
+        doc: "A button for each state machine transition the user may run now.",
+        render: Render::Macro {
+            module: Module::Custom {
+                path: "renox/transition_actions.html",
+                alias: "__rx_transitions",
+            },
+            name: "transition_actions",
+        },
+        props: &[
+            data(
+                "actions",
+                true,
+                "The list from `record.available(&user, &db)`.",
+            ),
+            text(
+                "action",
+                true,
+                "The address transitions post to (`/orders/1/transitions`); each button adds `/name`.",
+            ),
+            text("label", false, "The group's accessible name."),
+            text(
+                "reason-label",
+                false,
+                "The placeholder of the reason field.",
+            ),
+            text(
+                "approval-label",
+                false,
+                "The note under a button that waits for approval.",
+            ),
+            text("id", false, "The element's id."),
+        ],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
         tag: "rx-form",
         doc: "A form: the CSRF field and the method field are written for you.",
         render: Render::Special(Special::Form),

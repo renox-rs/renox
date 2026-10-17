@@ -1599,3 +1599,100 @@ pub fn machine_names() -> Vec<String> {
         .cloned()
         .collect()
 }
+
+/// The routes `<rx-transition-actions>` posts to: `POST
+/// /{id}/transitions/{name}` runs the transition `name` on record `id` of
+/// `M` as the logged-in user, with the form's optional `reason`, then goes
+/// back to the page the form was on. Mount it under the model's path:
+///
+/// ```
+/// use renox::prelude::*;
+/// use renox::state_machine::{self, StateMachine};
+///
+/// fn orders<M: StateMachine + Send + Sync + 'static>() -> Routes {
+///     // POST /orders/{id}/transitions/{name}
+///     Routes::new().group("/orders", "orders.", state_machine::routes::<M>())
+/// }
+/// ```
+///
+/// A refusal answers like [`TransitionError::into_error`]: 401 when nobody is
+/// logged in, 403 when the user may not run it (a system transition can't
+/// be run from here), 404 for an unknown record or transition, 422 for a
+/// state or guard that says no.
+pub fn routes<M: StateMachine + Send + Sync + 'static>() -> crate::routing::Routes {
+    crate::routing::Routes::new().post("/{id}/transitions/{name}", run_transition::<M>)
+}
+
+#[derive(serde::Deserialize)]
+struct ReasonForm {
+    reason: Option<String>,
+}
+
+async fn run_transition<M: StateMachine + Send + Sync + 'static>(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    user: AuthUser,
+    axum::extract::Path((id, name)): axum::extract::Path<(String, String)>,
+    back: crate::Back,
+    axum::extract::Form(form): axum::extract::Form<ReasonForm>,
+) -> Result<crate::Back> {
+    let key = id.parse::<M::Key>().map_err(|_| crate::Error::NotFound)?;
+    let record = M::find(&state.db, key)
+        .await?
+        .ok_or(crate::Error::NotFound)?;
+    let mut run = record.transition(&name).by(&user);
+    let reason = form.reason.unwrap_or_default();
+    let reason = reason.trim();
+    if !reason.is_empty() {
+        run = run.reason(reason);
+    }
+    // `run` emitted `Transitioned`; a deferred run (`Pending`) has nothing
+    // more to do here, the page shows the state it is still in.
+    let _outcome = run.run(&state).await.map_err(TransitionError::into_error)?;
+    Ok(back)
+}
+
+/// A record's history rows ([`history`]) as the items `<rx-history>` shows
+/// (`time`, `title`, `body`, `kind`): the title is the transition and the
+/// states it moved between, the body the reason, and the kind follows the
+/// tone of the state entered (`danger` is `error`; `success` and `warning`
+/// stay; anything else is `info`).
+///
+/// ```
+/// # async fn demo(db: renox::db::Db) -> renox::Result {
+/// let log = renox::state_machine::history(&db, "orders", 42).await?;
+/// let items = renox::state_machine::timeline(&log, None);
+/// // <rx-history :items="items"/>
+/// # let _ = items; Ok(()) }
+/// ```
+///
+/// Pass the model's [`MachineInfo`] (`info_of::<M>()`) to take the kind from
+/// the states' tones and the title from the transitions' labels; without it
+/// every item is `info` and titled with the transition's name.
+pub fn timeline(rows: &[StateTransition], machine: Option<&MachineInfo>) -> Vec<Value> {
+    rows.iter()
+        .map(|row| {
+            let label = machine
+                .and_then(|m| m.transitions.iter().find(|t| t.name == row.transition))
+                .map_or_else(|| row.transition.clone(), |t| t.label.clone());
+            let kind = machine
+                .and_then(|m| m.states.iter().find(|s| s.name == row.to_state))
+                .and_then(|s| s.tone.as_deref())
+                .map_or("info", |tone| match tone {
+                    "danger" | "error" => "error",
+                    "success" => "success",
+                    "warning" => "warning",
+                    _ => "info",
+                });
+            let title = match &row.from_state {
+                Some(from) => format!("{label}: {from} \u{2192} {}", row.to_state),
+                None => format!("{label}: {}", row.to_state),
+            };
+            serde_json::json!({
+                "time": row.at.to_rfc3339(),
+                "title": title,
+                "body": row.reason,
+                "kind": kind,
+            })
+        })
+        .collect()
+}

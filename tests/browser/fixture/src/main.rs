@@ -4,6 +4,7 @@
 //! renox-ui.js then do with it. The data grid's pages are in `grid.rs`.
 
 mod grid;
+mod tickets;
 
 use renox::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -415,6 +416,9 @@ fn main() -> Result {
         .module(grid::Orders)
         .seeder(grid::seed)
         .module(Pages)
+        // A ticket with a state machine (transition-actions.test.mjs).
+        .module(tickets::Tickets)
+        .state_machine::<tickets::Ticket>()
         .nav(
             "staff",
             renox::nav::NavLink::route("overview.index", "Overview").order(1),

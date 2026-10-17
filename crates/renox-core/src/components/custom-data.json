@@ -1319,6 +1319,42 @@
     {
       "attributes": [
         {
+          "description": "(required) The list from `record.available(&user, &db)`.",
+          "name": ":actions",
+          "values": []
+        },
+        {
+          "description": "(required) The address transitions post to (`/orders/1/transitions`); each button adds `/name`.",
+          "name": "action",
+          "values": []
+        },
+        {
+          "description": "The group's accessible name.",
+          "name": "label",
+          "values": []
+        },
+        {
+          "description": "The placeholder of the reason field.",
+          "name": "reason-label",
+          "values": []
+        },
+        {
+          "description": "The note under a button that waits for approval.",
+          "name": "approval-label",
+          "values": []
+        },
+        {
+          "description": "The element's id.",
+          "name": "id",
+          "values": []
+        }
+      ],
+      "description": "A button for each state machine transition the user may run now.",
+      "name": "rx-transition-actions"
+    },
+    {
+      "attributes": [
+        {
           "description": "The address; or use route. Left out, the page's own.",
           "name": "action",
           "values": []

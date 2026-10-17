@@ -871,3 +871,109 @@ async fn inserts_honour_initial_and_insert_in_state_records_no_from() {
     };
     fresh.insert(db).await.unwrap();
 }
+
+// The UI: `<rx-transition-actions>`, the generic route and the history items.
+
+struct TicketPages;
+
+impl Module for TicketPages {
+    fn name(&self) -> &'static str {
+        "ticket-pages"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get(
+                "/tickets/{id}",
+                |State(state): State<AppState>, user: AuthUser, Path(id): Path<i64>| async move {
+                    let ticket = Ticket::find(&state.db, id).await?.unwrap();
+                    let actions = ticket.available(&user, &state.db).await?;
+                    Ok::<_, renox::Error>(view("ticket.html", context! { actions }))
+                },
+            )
+            .group(
+                "/tickets",
+                "tickets.",
+                renox::state_machine::routes::<Ticket>(),
+            )
+            .require_auth()
+    }
+}
+
+#[tokio::test]
+async fn transition_actions_render_post_and_log() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("ticket.html"),
+        r#"<rx-transition-actions :actions="actions" action="/tickets/1/transitions" label="Ticket actions"/>"#,
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Auth::new())
+            .module(renox::auth::Permissions)
+            .module(TicketPages),
+        move |c| c.views_path = path,
+    )
+    .await;
+    let db = app.db();
+    renox::db::sql("CREATE TABLE tickets (id INTEGER PRIMARY KEY, status TEXT NOT NULL)")
+        .execute(db)
+        .await
+        .unwrap();
+    renox::db::sql("INSERT INTO tickets (id, status) VALUES (1, 'open')")
+        .execute(db)
+        .await
+        .unwrap();
+    let ana = User::register(db, "Ana", "ana@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&ana);
+
+    // No permission: no button, and the route refuses.
+    app.get("/tickets/1")
+        .await
+        .assert_ok()
+        .assert_dont_see("data-transition");
+    app.post("/tickets/1/transitions/staff_only", &[])
+        .await
+        .assert_status(403);
+
+    renox::auth::permissions::define_role(db, "support", &["tickets.close"])
+        .await
+        .unwrap();
+    ana.assign_role(db, "support").await.unwrap();
+    app.get("/tickets/1")
+        .await
+        .assert_ok()
+        .assert_see(r#"data-transition="staff_only""#)
+        .assert_see(r#"action="/tickets/1/transitions/staff_only""#)
+        .assert_dont_see(r#"data-transition="close""#);
+
+    app.post("/tickets/1/transitions/nope", &[])
+        .await
+        .assert_status(404);
+    app.post("/tickets/9/transitions/staff_only", &[])
+        .await
+        .assert_status(404);
+    // The system transition can't be run from the page.
+    app.post("/tickets/1/transitions/close", &[("reason", "x")])
+        .await
+        .assert_status(403);
+    assert_eq!(ticket_status(&app).await, "open");
+
+    app.post("/tickets/1/transitions/staff_only", &[("reason", " done ")])
+        .await
+        .assert_redirect("/");
+    assert_eq!(ticket_status(&app).await, "closed");
+    let log = history(db, "tickets", 1).await.unwrap();
+    assert_eq!(log[0].reason.as_deref(), Some("done"));
+    assert_eq!(log[0].actor_id, Some(ana.id));
+
+    let info = renox::state_machine::info_of::<Ticket>();
+    let items = renox::state_machine::timeline(&log, Some(&info));
+    assert_eq!(items[0]["title"], "Staff only: open \u{2192} closed");
+    assert_eq!(items[0]["body"], "done");
+    assert_eq!(items[0]["kind"], "info");
+}
