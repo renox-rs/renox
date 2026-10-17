@@ -4,6 +4,7 @@
 //! renox-ui.js then do with it. The data grid's pages are in `grid.rs`.
 
 mod grid;
+mod maps;
 mod offline;
 mod parties;
 mod pwa;
@@ -432,6 +433,9 @@ fn main() -> Result {
                 .icons("pwa-icons")
                 .offline_page("offline.html"),
         )
+        // The map blocks (maps.test.mjs): tiles from BLOCKS_MAP_TILES.
+        .module(renox_blocks::Blocks::new())
+        .module(maps::Maps)
         // A ticket with a state machine (transition-actions.test.mjs).
         .module(tickets::Tickets)
         // Parties with custom fields (custom-fields.test.mjs).
@@ -492,6 +496,12 @@ fn main() -> Result {
             );
             Ok(())
         });
+    // The tile host of the map blocks may be a local http stub: allow it for images.
+    if let Some(origin) = maps::tiles_origin() {
+        app = app.csp(|csp| {
+            csp.allow("img-src", &origin);
+        });
+    }
     // A task that can never run (hourly, but only between 10:30 and 10:40),
     // only when asked: `schedule:list` shows "never" (tests/process).
     if std::env::var("FIXTURE_NEVER").is_ok() {

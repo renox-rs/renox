@@ -34,6 +34,9 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/app.rs               App builder, boot(), Kernel, router assembly, app-binary commands;
                            serve takes systemd's socket (listenfd, LISTEN_FDS) before binding
   src/config.rs            Config from env/.env (see §5)
+  src/geo.rs               `renox::geo` (#47): Point, Circle, Polygon (haversine, ray casting, GeoJSON
+                           [lng, lat] and lat/lng form (de)serialization); the `latitude`, `longitude`
+                           and `point` rules are in validation/mod.rs; tests/it/geo_forms.rs
   src/state.rs             AppState (Clone): config, routes, views, db, mailer, queue, cache,
                            storage, translator, listeners, key, gates/async gates, shares,
                            channels, provided values, throttle, security, webhooks, live
@@ -262,13 +265,17 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            views/blocks.html (quantity, range_slider, keypad, swatches,
                            datetime_range, gallery, history, compare_plans, status_stepper,
                            month_calendar, availability, week_calendar, kanban + kanban_card,
-                           receipt; `rx-` classes,
+                           receipt, map_picker, map; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
                            assets/blocks.css, assets/blocks.js (the loader: imports
                            assets/parts/<block>.js only when a page has that block; Web
-                           Animations, no library); its own tests/; guide docs/blocks.md
+                           Animations, no library); map.rs (BLOCKS_MAP_TILES and
+                           BLOCKS_MAP_ATTRIBUTION), assets/vendor/leaflet/ (Leaflet 1.9.4,
+                           LICENSE, NOTICE) added by assets/parts/map.js only on a page with
+                           a map block; its own tests/; guide docs/blocks.md
                            (doctested from lib.rs `Guide`); browser tests
-                           tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks
+                           tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks,
+                           tests/browser/maps.test.mjs on the fixture's /maps (local tile stub)
 crates/renox-oauth/        the social login plugin (#147): OAuth module (lib.rs: providers,
                            `oauth_providers` shared with every view for the buttons, the
                            account section, events to the audit log when `audit_logs`

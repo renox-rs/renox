@@ -387,6 +387,7 @@ First, a note on sizes. `min`, `max`, `between` and `size` measure whatever the 
 | Money | `currency()` (an ISO 4217 code such as `USD`), `money(&self.currency)` (an amount typed in whole units, `12.50`, with at most the currency's decimals: JPY 0, USD 2, KWD 3; never rounded) |
 | Digits | `digits(n)` (exactly `n` digits, e.g. a PIN), `digits_between(min, max)` (e.g. a phone number) |
 | Dates | `date()` (text such as `2026-10-01` or `2026-10-01T10:30`), `before(d)`, `before_or_equal(d)`, `after(d)`, `after_or_equal(d)`, where `d` is a `NaiveDate`, `NaiveDateTime` or `DateTime`, or text in the same forms as `date()` (a limit that isn't a date leaves the rule out) |
+| Places | `latitude()` (a number or text such as `25.2048`, from -90 to 90), `longitude()` (from -180 to 180), `point()` (JSON text, `{"lat": 25.2, "lng": 55.3}` or a GeoJSON `Point` with `[lng, lat]`; an out-of-range coordinate gets the `latitude` or `longitude` message). The values are `renox::geo`'s ([types.md](types.md#places-points-circles-and-areas)) |
 | Choices | `one_of(&[…])` (Laravel's `in`), `none_of(&[…])` (`not_in`) |
 | Other fields | `confirmed(&self.password_confirmation)`, `same("email", &self.email)`, `different("old_email", &self.old_email)`, `gt("min_price", &self.min_price)`, `gte(…)`, `lt(…)`, `lte(…)` |
 | Database | `unique(table, column)`, `exists(table, column)`, then `ignore(id)`, `where_eq(column, value)`, `where_null(column)`, `where_not_null(column)` |
@@ -937,6 +938,7 @@ The keys:
 | `numeric`, `integer`, `decimal`, `multiple_of`, `digits`, `digits_between`, `min_digits`, `max_digits` | number and digit rules |
 | `gt.numeric`, `gt.string`, `gt.array`, `gt.file`, `gt.date` (and the same for `gte`, `lt`, `lte`) | comparisons with another field (`:other` is its label) |
 | `json`, `ulid`, `timezone`, `mac_address`, `ascii`, `hex_color`, `doesnt_start_with`, `doesnt_end_with`, `not_regex` | more text rules (`not_regex` is `not_matches`) |
+| `latitude`, `longitude`, `point` | place rules |
 | `prohibits`, `declined` | presence rules |
 | `dimensions` | an image's size in pixels |
 | `date`, `before`, `before_or_equal`, `after`, `after_or_equal` | date rules |

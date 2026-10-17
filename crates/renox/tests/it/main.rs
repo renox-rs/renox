@@ -35,6 +35,7 @@ mod embed;
 mod extension_points;
 mod external_login;
 mod forms;
+mod geo_forms;
 mod grid;
 mod grid_edges;
 mod i18n;

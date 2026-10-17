@@ -2084,6 +2084,20 @@ Notes:
   the limits' configuration and a responsive runtime through the public API); `cargo deny check` and the C-crypto check pass
 - [ ] App-vendored packages (`Pdf::package`), HTML-to-PDF, PAdES, PDF/A and form filling are out of scope
 
+### Maps and geographic checks (#47)
+- [x] `renox::geo::{Point, Circle, Polygon, GeoError}` (no dependency): validated `(lat, lng)`, haversine `distance_to` in metres,
+  `Circle::contains`, `Polygon::contains` (ray casting, holes, antimeridian), GeoJSON `[lng, lat]` and lat/lng form (de)serialization
+- [x] Validation `.latitude()`, `.longitude()`, `.point()` with English messages
+- [x] `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION` (and `Blocks::map_tiles` / `map_attribution`); no default tile service, an
+  explanatory empty state without tiles (config.md, `env.stub`)
+- [x] `map_picker` (point, circle, polygon; typed coordinates as the keyboard way) and `map` (markers, shapes) blocks with the
+  `<rx-map-picker>` / `<rx-map>` tags; vendored Leaflet 1.9.4 (licence, NOTICE) and `map.js`, fetched only on a page with a map block
+- [x] Tests per acceptance criterion (`geo.rs` unit tests, `validation/mod.rs`, `tests/it/geo_forms.rs`, `renox-blocks/tests/blocks.rs`
+  and `assets.rs`, bikeshop `tests/blocks.rs`), `tests/browser/maps.test.mjs` with a local tile stub under `CSP=strict`
+- [x] Docs (blocks.md "Maps", types.md "Places", validation.md, config.md), CHEATSHEET.md, llms.txt, the blocks crate README,
+  bikeshop `/about/blocks` (English and Spanish)
+- [ ] Geocoding, routing, spatial indexes (PostGIS) and live tracking are out of scope
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2443,6 +2457,17 @@ Notes:
   glyph no font has fails the render by default (`MissingGlyphs`) because a silent empty box in an invoice is worse than an
   error. Text extraction for tests reads the produced PDF (no PDF reader dependency), so a shaped Arabic word comes back as
   several pieces; the guide says so. The brand tokens in the kit are constants and do not follow `Theme` yet.
+- **Maps: tiles are configuration, edges are decided once** (#47, assumptions A1-A13): the API is `(lat, lng)` and GeoJSON is
+  `[lng, lat]`, converted in one place and tested both ways. A point on a circle's radius, a polygon's edge or a vertex is inside
+  (with a tiny tolerance for float error), and a hole is open; a polygon crosses the antimeridian by shifting longitudes relative to
+  its first vertex, so one wider than 180 degrees is not supported. There is no default tile server: `BLOCKS_MAP_TILES` is read per
+  use and must be `http(s)`, and without it the blocks say so while the picker still works from its typed coordinates (so entering a
+  place never depends on a third party). Leaflet 1.9.4 is vendored and served by the app (`'self'`, no inline script, so
+  `CSP=strict` works); the default `img-src` already allows `https:`, an `http` tile host needs `App::csp`. Leaflet.draw is not
+  vendored: `map.js` draws points, circles and polygons itself. A point posts `name[lat]` and `name[lng]` (read as `Point` through the
+  nested names), a circle or polygon one GeoJSON string; a circle is a GeoJSON `Point` with a `radius`. `map.js` is fetched on a
+  page with a map block, Leaflet only when there are tiles to show. The browser test runs on the browser fixture, not the bikeshop,
+  because only the fixture can allow the local stub's `http` origin in `img-src` from the test's environment.
 
 ## Not planned
 

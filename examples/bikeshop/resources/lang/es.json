@@ -676,7 +676,8 @@
         "2": "Cada bloque de formulario envía campos normales (un número, los dígitos del teclado, una fecha y hora por extremo, el valor de un radio), así que `Valid<BlocksForm>` los lee como cualquier formulario: `between(1, 5)`, `gt(\"starts_at\", …)` para el final, y `one_of` sin la talla agotada. Su hook `after` vuelve a rechazar en el servidor un alquiler que empieza en el pasado: cualquiera puede enviar cualquier fecha.",
         "3": "El filtro de precio es un formulario GET: los dos tiradores del rango se convierten en `?price_min=…&price_max=…`, las flechas del calendario en `?month=…` y un hueco libre de la línea de disponibilidad en `?slot=…`. Cada estado tiene su propia URL, y un mes que no se puede mostrar vuelve al actual.",
         "4": "Un chip de variante pide a `GET /about/blocks/variant` el precio y el stock (`hx-get` con `hx-include`) e inserta `about/_variant.html`, no la página entera. Las flechas del calendario son enlaces con boost y `hx-select=\"#calendar\"`, así que solo cambia el calendario. Mover una tarjeta del kanban es un POST de htmx desde un formulario oculto, que recibe la cabecera CSRF de Renox como cualquier petición htmx.",
-        "5": "Las diapositivas de la galería y las tarjetas del kanban se deslizan con las Web Animations del propio navegador sobre `transform` (sin biblioteca); con `prefers-reduced-motion` saltan directamente."
+        "5": "Las diapositivas de la galería y las tarjetas del kanban se deslizan con las Web Animations del propio navegador sobre `transform` (sin biblioteca); con `prefers-reduced-motion` saltan directamente.",
+        "6": "Un punto, un círculo o un polígono elegido en un mapa, y marcadores y zonas mostrados en uno. Las teselas son configuración (`BLOCKS_MAP_TILES`, nunca un servicio por defecto): sin ella cada bloque explica qué falta y el selector sigue funcionando con sus coordenadas escritas. Leaflet se descarga solo en una página con mapa."
       }
     },
     "about.data": {
@@ -2352,6 +2353,21 @@
       "amount": "Importe",
       "print": "Imprimir recibo"
     },
+    "map": {
+      "label": "Mapa",
+      "picker": "Ubicación",
+      "area": "Mapa",
+      "no_tiles": "El mapa no se muestra: no hay teselas configuradas. Define :variable con una plantilla de URL de teselas.",
+      "help_point": "Haz clic en el mapa para colocar el punto, o escribe su latitud y longitud.",
+      "help_circle": "Haz clic en el mapa para el centro y otra vez para el radio, o escribe el centro y el radio.",
+      "help_polygon": "Haz clic en el mapa para añadir vértices y pulsa Intro para cerrar la figura, o escribe un vértice por línea.",
+      "latitude": "Latitud",
+      "longitude": "Longitud",
+      "typed_circle": "Centro y radio (latitud, longitud, metros)",
+      "typed_polygon": "Vértices (latitud, longitud, uno por línea)",
+      "markers": "Lugares en el mapa",
+      "marker": "Lugar"
+    },
     "page": {
       "title": "Bloques de la tienda",
       "lead": "Las piezas de interfaz que el kit de Renox no tiene, del crate renox-blocks (y una propia de la tienda), como macros sobre los tokens del kit. Cada una funciona aquí, con su firma.",
@@ -2389,6 +2405,10 @@
       "sign_typed": "un nombre escrito (:name)",
       "signed": "Recibido: :signature y :photos fotos (una demostración: no se guarda nada).",
       "plans": "Los planes de servicio, uno junto a otro y comparados.",
+      "maps": "Elige un punto o dibuja una zona, con las coordenadas escritas como alternativa de teclado, y muestra las tiendas en un mapa. Las teselas salen de BLOCKS_MAP_TILES; sin ella, cada bloque explica qué falta.",
+      "maps_pickup": "Punto de recogida",
+      "maps_zone": "Zona de reparto",
+      "maps_stores": "Nuestras tiendas",
       "receipt": "El recibo de caja del mostrador a 80 mm y a 58 mm. Imprime la página: solo se imprime el recibo, al ancho del rollo.",
       "variant": "Precio y stock",
       "in_stock": ":n en stock",

@@ -675,3 +675,14 @@
   mail goes without it. Acceptance: `crates/renox-pdf/tests/acceptance.rs` (public API), bikeshop `tests/rentals.rs`, browser test
   `tests/browser/bikeshop-receipt-pdf.test.mjs`. Timeout and the concurrency cap are proven on the pool (`src/pool.rs`), since a
   timed-out render keeps its thread; the "visual reference" of AC2 is the text-run reference `tests/assets/arabic.expected.txt`.
+- **#47, maps and geographic checks** (complete): `renox::geo` (`geo.rs` in renox-core, no dependency) has `Point` (validated, haversine
+  `distance_to`), `Circle` and `Polygon` (ray casting, holes, antimeridian, boundary inclusive), GeoJSON `[lng, lat]` and lat/lng form
+  (de)serialization; the rules `.latitude()`, `.longitude()` and `.point()` are in `validation/mod.rs` with their messages. In
+  renox-blocks: `map.rs` (tile settings from `Blocks::map_tiles` / `map_attribution` or `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION`),
+  the `map_picker` and `map` macros and tags, `assets/parts/map.js` (own point/circle/polygon drawing, typed coordinates in sync) and
+  Leaflet 1.9.4 in `assets/vendor/leaflet/` (LICENSE, NOTICE with a checksum), added by `map.js` from the loader tag's
+  `data-leaflet-js` / `data-leaflet-css` only when a block has tiles. Bikeshop `/about/blocks` has a maps section (English and
+  Spanish texts). Tests: `geo.rs` and `validation/mod.rs` unit tests, `tests/it/geo_forms.rs` (what the picker posts, read by `Valid<T>`),
+  `crates/renox-blocks/tests/blocks.rs` and `src/assets.rs`, bikeshop `tests/blocks.rs`, and `tests/browser/maps.test.mjs` on the browser
+  fixture's `/maps` (a Node tile stub, `CSP=strict`, `App::csp` allowing the stub's origin). Guides: blocks.md "Maps", types.md
+  "Places", validation.md.

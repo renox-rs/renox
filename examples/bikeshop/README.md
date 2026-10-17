@@ -289,6 +289,7 @@ with `disabled_dates` and `closed_weekdays`. Form blocks send plain fields, so `
 | `history(items, label, date_format)` | A vertical timeline | a bike's service history |
 | `compare_plans(plans, features, highlight, …)` | Pricing cards and a comparison table | service plans |
 | `receipt(lines, totals, width, title, header, number, date, footer, …)` | An 80 mm or 58 mm till receipt that prints alone, with a code slot (#48) | a counter sale's receipt |
+| `map_picker(name, mode, value, label, height, hint, id, bag)` + `map(markers, shapes, label, height, id)` | Pick a point, circle or polygon (typed coordinates as the keyboard way) and show markers and areas, on tiles from `BLOCKS_MAP_TILES`; without it each block says what is missing (#47) | the blocks page only |
 
 ## The JSON API (#241)
 

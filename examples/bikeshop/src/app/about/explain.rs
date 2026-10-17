@@ -191,6 +191,14 @@ pub fn entries() -> Vec<Explanation> {
                       browser's own Web Animations on `transform` (no library); under \
                       `prefers-reduced-motion` they jump instead.",
                 },
+                Feature {
+                    api: "map_picker, map",
+                    why: "A point, circle or polygon chosen on a map, and markers and areas \
+                      shown on one. The tiles are configuration (`BLOCKS_MAP_TILES`, never a \
+                      default service): without it each block explains what is missing and \
+                      the picker still works from its typed coordinates. Leaflet is fetched \
+                      only on a page with a map.",
+                },
             ],
             under_hood: "No database. `src/app/about/blocks.rs` builds the demo data (a \
                      month of visits on fixed days of whichever month is shown, today's \

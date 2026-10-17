@@ -682,7 +682,7 @@ impl Validate for ProductForm {
         v.each("photos", &self.photos, |photo| photo.image().max(2048));
         // Also: digits(n), digits_between(a, b), date(), before…, after_or_equal(d), one_of, same, different,
         // alpha, alpha_num, alpha_dash, lowercase, uppercase, starts_with(&["08"]), ends_with,
-        // uuid, ulid, ip, mac_address, json, timezone, hex_color, ascii, size(n), required_without(&other),
+        // uuid, ulid, ip, mac_address, json, timezone, hex_color, latitude, longitude, point (JSON/GeoJSON text), ascii, size(n), required_without(&other),
         // required_with_all(&[&a, &b]), prohibited(), prohibited_if(cond), prohibits("other", &other),
         // declined(), numeric(), integer(), decimal(2, 2), currency(), money(&self.currency), multiple_of(500), min_digits(n), not_matches(re),
         // gt("min_price", &self.min_price) / gte / lt / lte (numbers, dates, lengths), mimes(&["pdf", "jpg"])
@@ -1238,6 +1238,32 @@ fn quantities() -> Result<(), QuantityError> {
 `2.500 kg`; `<rx-input name="stock" type="quantity" scale="3" unit="kg"/>` steps by the scale; rules `.quantity(3)`,
 `.quantity_min("0")`, `.quantity_max("100")`, `.unit(&units)`; `Column::quantity("stock", "Stock").unit_from("stock_unit")` (grid:
 one summary per unit) and `Field::quantity("stock", "Stock").unit_from("stock_unit")` (admin).
+
+Places (`renox::geo`, no dependency; docs/types.md): the API order is `(lat, lng)`, GeoJSON is `[lng, lat]`. A point on a
+circle's radius, a polygon's edge or vertex counts as inside; a hole is open; a polygon over 180 degrees of longitude is not supported.
+
+```rust
+use renox::geo::{Circle, GeoError, Point, Polygon};
+
+fn places() -> Result<(), GeoError> {
+    let here = Point::new(25.2048, 55.2708)?;                          // Err(Latitude/Longitude) out of range or NaN
+    let site = Circle::new(Point::new(25.2050, 55.2710)?, 150.0)?;     // metres; Err(Radius) when not positive and finite
+    let _ = (site.contains(here), here.distance_to(site.center()));    // haversine, metres
+    let area: Polygon = renox::serde_json::from_str(r#"{"type":"Polygon","coordinates":[[[55.0,25.0],[56.0,25.0],[56.0,26.0],[55.0,25.0]]]}"#).unwrap();
+    let _ = area.contains(here);                                       // ray casting, holes supported
+    Ok(())
+}
+```
+
+A `Point` reads from `{"lat","lng"}`, a GeoJSON Point and the form fields `lat`/`lng` (`spot: Option<Point>` from `spot[lat]`,
+`spot[lng]`); rules `.latitude()`, `.longitude()`, `.point()`. Store two `REAL` columns or JSON. Map blocks (renox-blocks, docs/blocks.md):
+
+```html
+<rx-map-picker name="spot" label="Meeting point"/>                             {# posts spot[lat], spot[lng] #}
+<rx-map-picker name="zone" mode="polygon" :value="zone"/>                     {# posts GeoJSON text in [lng, lat]; mode circle posts a Point with radius (m) #}
+<rx-map :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Workshop'}]" :shapes="[zone]" id="places"/>
+{# tiles: BLOCKS_MAP_TILES=https://…/{z}/{x}/{y}.png, BLOCKS_MAP_ATTRIBUTION; none set: an explanatory note, typed coordinates still work #}
+```
 
 Custom fields an administrator adds without a migration: definitions in the `custom_fields` table, values in one
 `Json<CustomValues>` column named by `custom_fields = "extra"` (docs/types.md).

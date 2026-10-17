@@ -9,7 +9,7 @@ value arrives safely at every one.
 - one big table: for each kind of form field, the Rust type and the database column to use;
 - enums (a fixed list of choices, like a status);
 - what browsers really send from forms, and how Renox reads it;
-- advice for the tricky cases: money, quantities, custom fields, time zones, keys, deleted rows and PostgreSQL.
+- advice for the tricky cases: money, quantities, places, custom fields, time zones, keys, deleted rows and PostgreSQL.
 
 ### Words you'll meet
 
@@ -288,6 +288,54 @@ Two pieces of advice. The scale lives in the Rust type, not in the schema: `db:c
 (`Money`, `i64`) are the smallest unit of a price, thousandths are a quantity's chosen precision.
 The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs) keeps a load limit
 this way, in kg, g or t.
+
+### Places: points, circles and areas
+
+A check-in, a delivery stop or a service area is a place on the earth. `renox::geo` has the
+three shapes, with no GIS stack behind them: a `Point` (latitude and longitude, checked), a
+`Circle` (a centre and a radius in metres) and a `Polygon` (an outer ring and optional holes).
+Everything is plain Rust and runs on the server, so a reported location can be verified
+instead of trusted.
+
+```rust
+use renox::geo::{Circle, Point, Polygon};
+
+# fn demo() -> Result<(), renox::geo::GeoError> {
+// The API order is (lat, lng). GeoJSON is the other way round: [lng, lat].
+let here = Point::new(25.2048, 55.2708)?;
+assert!(Point::new(91.0, 0.0).is_err()); // out of range or not finite: an error, never a panic
+
+// Distances are haversine, in metres, the short way round (also across the antimeridian).
+let site = Circle::new(Point::new(25.2050, 55.2710)?, 150.0)?;
+assert!(site.contains(here)); // on the radius counts as inside
+
+// A GeoJSON Polygon (or a Feature holding one) reads as is; holes are supported.
+let area: Polygon = renox::serde_json::from_str(
+    r#"{"type":"Polygon","coordinates":[[[55.0,25.0],[56.0,25.0],[56.0,26.0],[55.0,26.0],[55.0,25.0]]]}"#,
+)
+.unwrap();
+assert!(area.contains(here));
+assert!(here.distance_to(Point::new(25.3, 55.3)?) < 15_000.0);
+# Ok(())
+# }
+```
+
+The edges are decided once: a point exactly on a circle's radius, on a polygon's edge or on a
+vertex is inside; the boundary of a hole is inside the polygon too (the hole is open). A
+polygon is tested on the flat plane of longitude and latitude, with longitudes shifted
+relative to its first vertex, so one that crosses the antimeridian works; one that spans more
+than 180 degrees of longitude is not supported. A ring needs three distinct vertices, and a
+radius must be positive and finite.
+
+A `Point` reads from the JSON `{"lat": .., "lng": ..}`, from a GeoJSON `Point` and from the
+form fields `lat` and `lng`, so a struct field `spot: Option<Point>` is filled by the fields
+`spot[lat]` and `spot[lng]` that the `map_picker` block posts ([blocks.md](blocks.md#maps)).
+A `Circle` is `{center, radius}` and a `Polygon` the GeoJSON `Polygon`; a picker posts a circle
+as a GeoJSON `Point` with a `radius` in metres and a polygon as a GeoJSON string, which you
+read with `serde_json::from_str`. A bad coordinate is a validation error: `.latitude()`,
+`.longitude()` and `.point()` (a JSON or GeoJSON point as text) are rules
+([validation.md](validation.md)). Store a point as two `REAL` columns (`lat`, `lng`) or as
+JSON text; there is no column type and no migration for it.
 
 ### Custom fields: columns an administrator adds
 

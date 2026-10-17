@@ -2,16 +2,17 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds fourteen such components, as template macros
+of cards to drag. The `renox-blocks` crate adds fourteen such components (and two for maps), as template macros
 built on the kit:
 
-| Input | Showing data | Scheduling and work | Printing |
+| Input | Showing data | Scheduling and work | Printing and maps |
 |---|---|---|---|
 | [`quantity`](#quantity): a stepper | [`gallery`](#gallery): photos in a carousel | [`month_calendar`](#month_calendar): a month of events | [`receipt`](#receipt): a till receipt for a thermal printer |
 | [`range_slider`](#range_slider): two handles on one track | [`history`](#history): a timeline | [`availability`](#availability): resources against hours | |
 | [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`week_calendar`](#week_calendar): resources against a week, click to book | |
 | [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns | |
-| [`datetime_range`](#datetime_range): a start and an end, with times | | | |
+| [`datetime_range`](#datetime_range): a start and an end, with times | | | [`map_picker`](#map_picker): a point, circle or polygon on a map |
+| | | | [`map`](#map): markers and areas on a map |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
 blocks' script only when it has a block, and then only the code of the blocks it has.
@@ -25,6 +26,7 @@ In this guide:
 - [Input blocks](#input-blocks)
 - [Showing data](#showing-data)
 - [Scheduling and work](#scheduling-and-work)
+- [Maps](#maps)
 - [Printing](#printing)
 - [Texts in other languages](#texts-in-other-languages)
 - [Changing the look](#changing-the-look)
@@ -587,6 +589,131 @@ After the server answered, the board sends `rx:kanban-moved` with
 `kanban_card(card)` prints one card, for a fragment that adds a card to a board already on the
 page; the board sets it up when htmx swaps it in.
 
+## Maps
+
+Two blocks put a place on a map: `map_picker` chooses one (a point, a circle or a polygon) and
+`map` shows markers and areas. The map library is [Leaflet](https://leafletjs.com) 1.9.4
+(BSD-2-Clause), vendored in the crate with its licence; the drawing is the crate's own. A page
+fetches `map.js` only when it has a map block, and Leaflet only when that block has tiles
+to show: a page without a map block requests neither.
+
+**The tiles are configuration, not a default.** Renox does not choose a tile service for you.
+Set a URL template, and the text the map shows for its source:
+
+```text
+BLOCKS_MAP_TILES=https://tiles.example.com/{z}/{x}/{y}.png
+BLOCKS_MAP_ATTRIBUTION=© Example maps contributors
+```
+
+or `Blocks::new().map_tiles("…").map_attribution("…")`. The template must be an `http(s)` URL
+(anything else counts as unset); `{s}` is a subdomain if your provider has them. Check your
+provider's terms: the public OpenStreetMap servers, for one, are not meant for an app's
+traffic. Without tiles each block says so in a note that names `BLOCKS_MAP_TILES`, and the
+picker still works from its typed coordinates, so entering a place never depends on a tile
+server.
+
+**Content-Security-Policy.** The default policy lets images come from `'self'`, `data:`,
+`blob:` and any `https:` host, so an `https` tile host needs nothing. Leaflet's code and
+stylesheet are served by your app (`'self'`), with no inline script, so `CSP=strict` works. A
+tile host that is not `https` (a local or internal server) must be added:
+
+```rust
+use renox::prelude::*;
+
+fn app() -> App {
+    App::new()
+        .module(renox_blocks::Blocks::new())
+        .csp(|csp| {
+            csp.allow("img-src", "http://tiles.internal:8080");
+        })
+}
+```
+
+### map_picker
+
+```html
+<form method="post" action="/deliveries">
+  {{ csrf_field() }}
+  <rx-map-picker name="spot" label="Meeting point"/>
+  <rx-map-picker name="zone" mode="polygon" label="Delivery zone"/>
+  <rx-map-picker name="range" mode="circle" label="Service circle"/>
+</form>
+```
+
+| Mode | What you do | What is posted |
+|---|---|---|
+| `point` (the default) | click the map, or drag the pin | two number fields, `spot[lat]` and `spot[lng]` |
+| `circle` | click the centre, then click again for the radius | `range`: a GeoJSON `Point` with a `radius` in metres |
+| `polygon` | click a vertex per click; double-click or Enter closes it | `zone`: a GeoJSON `Polygon` |
+
+**The keyboard.** Everything the pointer does has a typed way: a point has latitude and
+longitude fields; a circle one line, `lat, lng, radius` (metres); a polygon one `lat, lng`
+line per vertex. They stay in step with the map in both directions, and give the same value
+as drawing does. On the map itself, Tab to it, then Enter closes a polygon, Backspace removes
+the last vertex (or the circle or the point), Escape discards the drawing, and the arrow keys
+and `+` / `-` move and zoom as in any Leaflet map. A shape that is not complete (a polygon with
+fewer than three vertices, a line that does not parse) posts nothing, so a `required` rule
+catches it.
+
+GeoJSON order is `[lng, lat]`; Renox's API and the typed fields are `(lat, lng)`. The posted
+values read with `renox::geo` ([types.md](types.md#places-points-circles-and-areas)), and
+the server checks them again, as for every block:
+
+```rust
+use renox::geo::{Point, Polygon};
+use renox::prelude::*;
+
+#[derive(serde::Deserialize, Validate)]
+struct Delivery {
+    spot: Option<Point>, // spot[lat] and spot[lng]: a bad coordinate is a validation error
+    #[validate(required, json)]
+    zone: String, // the GeoJSON text
+}
+
+/// Is the meeting point inside the delivery zone?
+async fn check(Valid(form): Valid<Delivery>) -> Result<String> {
+    let zone: Polygon = renox::serde_json::from_str(&form.zone)
+        .map_err(|_| Error::BadRequest("The zone is not a polygon.".into()))?;
+    let inside = form.spot.is_some_and(|spot| zone.contains(spot));
+    Ok(format!("inside: {inside}"))
+}
+```
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field name (`name[lat]` and `name[lng]` for a point) |
+| `mode` | `"point"` | `"point"`, `"circle"` or `"polygon"` |
+| `value` | none | the place to start from: a `Point` (or `{lat, lng}`), `Circle` or `Polygon`, or its GeoJSON |
+| `label` | "Location" | the picker's label |
+| `height` | 320 | the map's height in CSS pixels |
+| `hint`, `id`, `bag` | | as for the kit's fields; the error shows under the block |
+
+### map
+
+```html
+<rx-map id="places" label="Our stores"
+  :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Workshop'}]"
+  :shapes="[delivery_zone]"/>
+```
+
+A read-only map that fits its view to what it shows. A marker is `{lat, lng, label?}` (the
+label is its tooltip and its popup); a shape is a `Circle` or `Polygon` value or its GeoJSON
+(a circle as a `Point` with `radius`). The markers are also a list for screen readers, and
+the only thing shown when there are no tiles. The attribution for the tiles sits in the
+corner, as the tile providers require.
+
+| Option | Default | What it does |
+|---|---|---|
+| `markers` | `[]` | a list of `{lat, lng, label?}` |
+| `shapes` | `[]` | a list of circles and polygons |
+| `label` | "Map" | the map's name for screen readers |
+| `height` | 320 | the map's height in CSS pixels |
+| `id` | `"rx-map"` | the block's id |
+
+The texts are `blocks.map.*` keys ([Texts in other languages](#texts-in-other-languages)).
+[examples/bikeshop](../examples/bikeshop)'s `/about/blocks` shows both; set `BLOCKS_MAP_TILES`
+there to see the tiles.
+
 ## Printing
 
 ### receipt
@@ -693,7 +820,7 @@ JavaScript module. The module looks at the page (and at whatever htmx swaps in l
 imports a block's code only when the page has that block: a product page with a gallery and a
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
 `status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
-`week.js` for its keyboard, and `receipt` has a few lines, for its Print button.
+`week.js` for its keyboard, `map_picker` and `map` load `map.js` (and Leaflet, only when they have tiles to show), and `receipt` has a few lines, for its Print button.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

@@ -232,6 +232,11 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `{{ stock | quantity(unit="kg") }}`, `Column::quantity(..).unit_from(..)` (grid), `Field::quantity(..).unit_from(..)` (admin); the scale
   is not in the schema. docs/types.md#quantities-and-units; shown in `examples/bikeshop`'s `/about/fields`
   (`src/app/about/fields.rs`, `tests/fields.rs`).
+- Places (`renox::geo`: `Point`, `Circle`, `Polygon`, `GeoError`; no dependency): `Point::new(lat, lng)` is validated, `distance_to` is
+  haversine in metres, `Circle::contains` and `Polygon::contains` (ray casting, holes, antimeridian; the boundary is inside) check a
+  reported location on the server; GeoJSON is `[lng, lat]`, the API `(lat, lng)`; a `Point` reads from `{lat,lng}`, GeoJSON or the form
+  fields `lat`/`lng` (`spot[lat]`); `.latitude()` / `.longitude()` / `.point()` validation; the `map_picker` and `map` blocks (docs/blocks.md#maps)
+  show and pick them. docs/types.md#places-points-circles-and-areas.
 - Custom fields (`renox::custom_fields`: `CustomField`, `FieldKind`, `LocaleMap`, `CustomValues`): definitions an administrator
   adds at run time (text, number, date, bool, choice, reference, file; label and choice labels per locale with fallback; free
   `meta` JSON) in the `custom_fields` table (migration 430), values in one `Json<CustomValues>` column named by
@@ -362,8 +367,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `month_calendar`, `availability`, `week_calendar` (resources against a week, hx-post from a
   free slot, grid keys), `status_stepper` (a record's statuses), `kanban` (+ `kanban_card`, htmx POST per move,
   `rx:kanban-moved`), `receipt` (`<rx-receipt width="80mm|58mm">`: a till receipt that prints alone
-  on a roll, with a code slot and a Print button); each block's options, keyboard use, translations (`renox_blocks::TEXTS`,
-  `blocks.*` keys), how the files load.
+  on a roll, with a code slot and a Print button), `map_picker` (a point, circle or polygon: clicks or typed coordinates;
+  `name[lat]`/`name[lng]` or GeoJSON `[lng, lat]`) and `map` (markers and shapes; Leaflet 1.9.4 vendored, tiles from
+  `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION`, never a default); each block's options, keyboard use, translations
+  (`renox_blocks::TEXTS`, `blocks.*` keys), how the files load.
 - [docs/grid.md](docs/grid.md): data grids (`renox::grid` + `renox/grid.html`): columns and their
   kinds, filters per heading, search, filter chips, the advanced filter, preferences (per user
   or in the session), details under a row, editing in place, reordering rows, merged cells,
@@ -443,11 +450,11 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - `crates/renox-blocks`: the optional blocks plugin crate (same version as `renox`): the
   `Blocks` module (`lib.rs`: its views registered unless the app has the file, `renox_blocks()`
   for the tags, `renox_blocks_t()` for texts), `texts.rs` (`TEXTS`, the English), `assets.rs`
-  (hashed URLs, `Registry::asset`), `views/blocks.html` (the twelve macros),
-  `assets/blocks.css`, `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
+  (hashed URLs, `Registry::asset`), `views/blocks.html` (the macros),
+  `map.rs` (the tile settings), `assets/vendor/leaflet/` (Leaflet 1.9.4, licence, NOTICE), `assets/blocks.css`, `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
   code, imported only when a page has it; Web Animations, no library). Guide:
   [docs/blocks.md](docs/blocks.md); used in examples/bikeshop (every page with a block, and
-  `/about/blocks`); browser tests tests/browser/blocks.test.mjs.
+  `/about/blocks`); browser tests tests/browser/blocks.test.mjs and tests/browser/maps.test.mjs (a local tile stub).
 - Passwordless login (#42): `Auth::new().magic_link()` and `.login_codes(LoginCodes::new()..)`
   (renox-core `auth/passwordless.rs`: the routes `login.link.*` / `login.code.*`, the queued
   `SendLoginSecret` job, `LoginCodes`, `LoginCodeDelivery`; views `views/auth/login-link*.html`,

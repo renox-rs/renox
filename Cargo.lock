@@ -437,6 +437,7 @@ name = "browser-fixture"
 version = "0.0.0"
 dependencies = [
  "renox",
+ "renox-blocks",
  "serde",
 ]
 

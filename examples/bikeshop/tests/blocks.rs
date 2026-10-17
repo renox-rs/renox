@@ -45,6 +45,9 @@ async fn the_page_shows_every_block_with_its_signature() {
         "class=\"rx-plans\"",
         "class=\"rx-receipt rx-receipt--w80\"",
         "class=\"rx-receipt rx-receipt--w58\"",
+        "data-rx-map-picker data-rx-map-mode=\"point\"",
+        "data-rx-map-picker data-rx-map-mode=\"polygon\"",
+        "id=\"demo-map\" data-rx-map",
     ] {
         page.assert_see(marker);
     }
@@ -66,6 +69,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "history(items",
         "compare_plans(plans, features=[]",
         "receipt(lines, totals=[]",
+        "map_picker(name, mode=\"point\"",
+        "map(markers=[], shapes=[]",
     ] {
         page.assert_see(signature);
     }
@@ -365,5 +370,23 @@ async fn the_page_speaks_spanish() {
         .assert_see("Foto anterior")
         .assert_see("Reservar Trail 5 a las 09:00")
         .assert_see("Reservar Bay 1, ")
-        .assert_see("paso actual");
+        .assert_see("paso actual")
+        // The map blocks, with no tiles configured: the note, in Spanish.
+        .assert_see("Punto de recogida")
+        .assert_see("El mapa no se muestra: no hay teselas configuradas. Define BLOCKS_MAP_TILES");
+}
+
+/// Without `BLOCKS_MAP_TILES` the demo maps explain what is missing, and the
+/// picker's typed coordinates still work (no canvas, no tiles host).
+#[renox::test]
+async fn the_demo_maps_explain_a_missing_tile_setting() {
+    let app = TestApp::new(bikeshop::app()).await;
+    let page = app.get("/about/blocks").await;
+    page.assert_ok()
+        .assert_see("The map is not shown: no map tiles are configured. Set BLOCKS_MAP_TILES")
+        .assert_see("name=\"pickup[lat]\"")
+        .assert_see("name=\"zone\" data-rx-map-value")
+        .assert_dont_see("data-rx-map-tiles")
+        // The vertices stay a typed field with its own label.
+        .assert_see("Vertices (latitude, longitude, one per line)");
 }

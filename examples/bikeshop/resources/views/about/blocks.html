@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['maps', 'map_picker · map'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -190,6 +190,31 @@ kanban_card(card)</app-about-signature>
               label=none, table=true, id="rx-plans")
   plans: [{key, name, price, interval?, description?, perks?, url?, cta?, price_label?}]
   features: [{label, values: {plan key: true | false | text}}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="maps">
+  <rx-card title="map_picker · map" :subtitle="t('blocks.page.maps')">
+    <div class="bs-showcase__pair">
+      <div class="bs-showcase__demo">
+        <rx-map-picker name="pickup" :label="t('blocks.page.maps_pickup')" :value="{'lat': 40.4168, 'lng': -3.7038}" id="demo-pickup"/>
+        <app-about-signature>map_picker(name, mode="point", value=none, label=none, height=320,
+           hint=none, id=none, bag=none)
+  mode: "point" (name[lat], name[lng]) | "circle" | "polygon" (GeoJSON, [lng, lat])</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-map-picker name="zone" mode="polygon" :label="t('blocks.page.maps_zone')" id="demo-zone"/>
+        <app-about-signature>map_picker("zone", mode="polygon")
+  posts the GeoJSON Polygon as text; renox::geo::Polygon reads it</app-about-signature>
+      </div>
+    </div>
+    <div class="bs-showcase__demo">
+      <rx-map id="demo-map" :label="t('blocks.page.maps_stores')"
+        :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Harbour store'}, {'lat': 40.4530, 'lng': -3.6883, 'label': 'Hill store'}]"
+        :shapes="[{'center': {'lat': 40.4168, 'lng': -3.7038}, 'radius': 1500}]"/>
+      <app-about-signature>map(markers=[], shapes=[], label=none, height=320, id="rx-map")
+  markers: [{lat, lng, label?}]   shapes: GeoJSON Polygon | {center: {lat, lng}, radius}</app-about-signature>
+    </div>
   </rx-card>
   </div>
 </div>

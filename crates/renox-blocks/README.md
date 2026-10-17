@@ -29,7 +29,11 @@ The blocks:
   `week_calendar` (resources against a week; a free slot posts its resource and times with
   htmx), `kanban` (cards dragged or moved by keyboard, each move sent with htmx);
 - printing: `receipt` (an 80 mm or 58 mm till receipt that prints alone, with a code slot and a
-  Print button).
+  Print button);
+- maps: `map_picker` (a point, circle or polygon, by clicking or by typed coordinates) and `map`
+  (markers and areas). They use Leaflet 1.9.4, vendored here with its licence, fetched only on a
+  page with a map block; the tiles are yours to choose (`BLOCKS_MAP_TILES`,
+  `BLOCKS_MAP_ATTRIBUTION`), there is no default tile service.
 
 The input blocks send plain form fields, so `Valid<T>` reads them; every block works with the
 keyboard, says its states in words, follows `prefers-reduced-motion`, works under
