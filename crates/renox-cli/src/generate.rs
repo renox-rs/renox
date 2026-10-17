@@ -198,7 +198,7 @@ pub(crate) fn register_in_main(main_rs: &Path, path: &str) -> Result<()> {
 
 /// Adds `call` (e.g. `.seeder(…)`) after the last `.module(` call in
 /// `lib.rs`/`main.rs`; prints it when the file doesn't look like that.
-fn register_call(main_rs: &Path, call: &str) -> Result<()> {
+pub(crate) fn register_call(main_rs: &Path, call: &str) -> Result<()> {
     let hint = || println!("Register it where the App is built: {call}");
     let Ok(source) = fs::read_to_string(main_rs) else {
         hint();

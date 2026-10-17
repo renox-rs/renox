@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 use heck::ToTitleCase;
 
 /// The package name from `Cargo.toml`.
-fn package_name(root: &Path) -> Result<String> {
+pub(crate) fn package_name(root: &Path) -> Result<String> {
     let manifest = fs::read_to_string(root.join("Cargo.toml")).context("no Cargo.toml here")?;
     let mut in_package = false;
     for line in manifest.lines().map(str::trim) {

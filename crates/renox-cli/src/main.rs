@@ -8,6 +8,7 @@ mod generate;
 mod make;
 mod new;
 mod package;
+mod pwa;
 mod scaffold;
 mod serve;
 mod tailwind;
@@ -292,6 +293,13 @@ enum Command {
     /// Create a Dockerfile, a systemd unit, a Litestream config and a deploy guide.
     #[command(name = "make:deploy")]
     MakeDeploy,
+    /// Make the app installable: an offline page, placeholder icons and `.pwa(..)`.
+    #[command(name = "make:pwa")]
+    MakePwa {
+        /// Overwrite the offline page and icons if they exist.
+        #[arg(long)]
+        force: bool,
+    },
     /// Generate an APP_KEY and write it to `.env`.
     #[command(name = "key:generate")]
     KeyGenerate {
@@ -353,6 +361,7 @@ fn run(command: Command) -> Result<()> {
         Command::KeyGenerate { show } => key_generate(show),
         Command::Build => deploy::build(&app_root()?),
         Command::MakeDeploy => deploy::make_deploy(&app_root()?),
+        Command::MakePwa { force } => pwa::make_pwa(&app_root()?, force),
         Command::MakeMigration {
             name,
             path,
