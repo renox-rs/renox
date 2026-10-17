@@ -2856,15 +2856,15 @@ impl renox_billing::Gateway for PayHub {
         _state: &'a AppState,
         payment: &'a renox_billing::BillingPayment,
     ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentState>> {
-        let paid =
-            payment.gateway_id.is_some() && payment.reference_type.as_deref() != Some("unpaid");
-        Box::pin(async move {
-            Ok(renox_billing::PaymentState::new(if paid {
-                renox_billing::PaymentStatus::Succeeded
-            } else {
-                renox_billing::PaymentStatus::Pending
-            }))
-        })
+        use renox_billing::PaymentStatus;
+        let status = match payment.reference_type.as_deref() {
+            Some("unpaid") => PaymentStatus::Pending,
+            Some("declined") => PaymentStatus::Failed,
+            Some("gone") => PaymentStatus::Expired,
+            _ if payment.gateway_id.is_some() => PaymentStatus::Succeeded,
+            _ => PaymentStatus::Pending,
+        };
+        Box::pin(async move { Ok(renox_billing::PaymentState::new(status)) })
     }
 }
 
@@ -4457,4 +4457,191 @@ fn ngenius_parses_webhook_events() {
         )
         .unwrap();
     assert_eq!(id, "evt-0001");
+}
+
+/// A status check turns a pending payment into failed or expired like a
+/// webhook would (the event carries the reference), an expiry from a webhook
+/// announces the link, and a late success after either is still applied.
+#[renox::test]
+async fn status_checks_and_expiry_webhooks_apply_like_webhooks() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, PaymentFailed, PaymentLink, PaymentLinkExpired, PaymentStatus,
+        PaymentSucceeded,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let state = app.state();
+    let link = |reference: &'static str| {
+        Billing::payment_link(
+            state,
+            PaymentLink::new(Money::usd(900)).reference(reference, 5),
+        )
+    };
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+
+    let declined = link("declined").await.unwrap();
+    let reported = Billing::payment_status(state, declined.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Failed);
+    assert_eq!(reload(declined.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.reference_type.as_deref() == Some("declined"));
+
+    let gone = link("gone").await.unwrap();
+    let reported = Billing::payment_status(state, gone.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    assert_eq!(reload(gone.id).await.status, PaymentStatus::Expired);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == gone.id);
+
+    // The gateway's own expiry webhook announces the link too, once.
+    let hooked = link("unpaid").await.unwrap();
+    let pay = hooked.gateway_id.clone().unwrap();
+    for id in ["x1", "x1"] {
+        app.post_body(
+            "/billing/webhooks/payhub",
+            "application/json",
+            json!({"id": id, "kind": "payment", "pay": pay, "status": "expired"}).to_string(),
+        )
+        .await;
+        app.run_jobs().await;
+    }
+    assert_eq!(reload(hooked.id).await.status, PaymentStatus::Expired);
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 2);
+
+    // Paid after all: the success wins over both and is evented.
+    for payment in [&declined, &gone] {
+        // Their reference says declined or gone; a webhook says paid.
+        let pay = payment.gateway_id.clone().unwrap();
+        app.post_body(
+            "/billing/webhooks/payhub",
+            "application/json",
+            json!({"id": format!("late-{pay}"), "kind": "payment", "pay": pay, "status": "succeeded"})
+                .to_string(),
+        )
+        .await;
+        app.run_jobs().await;
+        assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    }
+    assert_eq!(app.emitted::<PaymentSucceeded>().len(), 2);
+}
+
+/// Two accounts of one gateway keep their own keys; a key rotated in the
+/// store reaches the next call, a refund included; an account without a key
+/// fails without a request and without showing any key.
+#[renox::test]
+async fn accounts_keep_their_keys_and_a_rotated_key_reaches_refunds() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, PaymentStatus, Refund};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    let keys: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::from([
+        ("a".to_string(), "sk_test_fake_a1".to_string()),
+        ("b".to_string(), "sk_test_fake_b1".to_string()),
+    ])));
+    let shared = keys.clone();
+    let stripe = Stripe::resolved_accounts(move |_state, account: &str| {
+        let key = shared.lock().unwrap().get(account).cloned();
+        async move { Ok(key) }
+    });
+    assert!(!format!("{stripe:?}").contains("sk_"));
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(stripe));
+    let app = TestApp::with_config(app, |config| {
+        config
+            .vars
+            .insert("STRIPE_WEBHOOK_SECRET".into(), "whsec_test".into());
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    // (Answers for one URL are given in turn: a's session, then b's.)
+    let mut second = fixture("checkout_session");
+    second["id"] = json!("cs_test_b2");
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, second),
+    );
+    let mut second_refund = fixture("refund_pending");
+    second_refund["id"] = json!("re_b2");
+    for refund in [fixture("refund_pending"), second_refund] {
+        http.on(
+            &format!("POST {STRIPE}/refunds"),
+            FakeResponse::json(200, refund),
+        );
+    }
+    let mut paid_b = fixture("checkout_session_paid");
+    paid_b["id"] = json!("cs_test_b2");
+    for (id, body) in [
+        ("cs_test_a1B2c3", fixture("checkout_session_paid")),
+        ("cs_test_b2", paid_b),
+    ] {
+        http.on(
+            &format!("GET {STRIPE}/checkout/sessions/{id}"),
+            FakeResponse::json(200, body),
+        );
+    }
+    let mut paid = Vec::new();
+    for account in ["a", "b"] {
+        let mut payment = Billing::of(state, &ana)
+            .charge(stripe_charge().account(account))
+            .await
+            .unwrap();
+        assert_eq!(payment.account.as_deref(), Some(account));
+        payment.status = PaymentStatus::Succeeded;
+        payment.save(&state.db).await.unwrap();
+        paid.push(payment);
+    }
+    // a's key is rotated; the refund of a's payment uses the new one, b's
+    // refund keeps b's.
+    keys.lock()
+        .unwrap()
+        .insert("a".into(), "sk_test_fake_a2".into());
+    for payment in &paid {
+        Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+            .await
+            .unwrap();
+    }
+    let auth: Vec<_> = http
+        .sent()
+        .iter()
+        .map(|r| {
+            let key = r.header("authorization").unwrap_or_default().to_owned();
+            (
+                format!("{} {}", r.method, r.url.rsplit('/').next().unwrap()),
+                key,
+            )
+        })
+        .collect();
+    let bearer = |key: &str| format!("Bearer {key}");
+    assert_eq!(
+        auth,
+        [
+            ("POST sessions".to_string(), bearer("sk_test_fake_a1")),
+            ("POST sessions".to_string(), bearer("sk_test_fake_b1")),
+            ("GET cs_test_a1B2c3".to_string(), bearer("sk_test_fake_a2")),
+            ("POST refunds".to_string(), bearer("sk_test_fake_a2")),
+            ("GET cs_test_b2".to_string(), bearer("sk_test_fake_b1")),
+            ("POST refunds".to_string(), bearer("sk_test_fake_b1")),
+        ]
+    );
+
+    // An account without a key: no request, no key in the message or the row.
+    let rows = BillingPayment::query().count(&state.db).await.unwrap();
+    let err = Billing::of(state, &ana)
+        .charge(stripe_charge().account("c"))
+        .await
+        .unwrap_err();
+    assert!(!err.to_string().contains("sk_"), "{err}");
+    assert_eq!(http.sent().len(), 6);
+    assert_eq!(
+        BillingPayment::query().count(&state.db).await.unwrap(),
+        rows
+    );
 }
