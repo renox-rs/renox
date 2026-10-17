@@ -271,3 +271,66 @@ fn units_handle_non_decimal_ratios_exactly() {
     assert_eq!(t.convert(pcs, "pc", "box", HalfEven).unwrap().raw(), 2);
     assert_eq!(t.convert(pcs, "pc", "box", HalfUp).unwrap().raw(), 3);
 }
+
+struct QuantityPage;
+
+impl renox::prelude::Module for QuantityPage {
+    fn name(&self) -> &'static str {
+        "quantity_page"
+    }
+    fn routes(&self) -> renox::prelude::Routes {
+        use renox::prelude::*;
+        Routes::new().get("/q", || async {
+            view(
+                "q.html",
+                context! {
+                    q => Quantity::<3>::from_raw(1_234_567),
+                    neg => Quantity::<3>::from_raw(-2500),
+                    big => Quantity::<3>::from_raw(i64::MAX),
+                },
+            )
+        })
+    }
+}
+
+#[renox::test]
+async fn the_quantity_filter_shows_exact_digits_units_and_locale_separators() {
+    use renox::prelude::*;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("q.html"),
+        "{{ q | quantity }}|{{ q | quantity(unit='kg') }}|{{ q | quantity(decimals=1) }}|{{ q | quantity(decimals=5) }}|{{ neg | quantity(decimals=0) }}|{{ 7 | quantity }}|{{ '0.0004' | quantity(decimals=3) }}|{{ '9.9996' | quantity(decimals=3) }}|{{ big | quantity }}",
+    )
+    .unwrap();
+    for (locale, expected) in [
+        (
+            "en",
+            "1,234.567|1,234.567 kg|1,234.6|1,234.56700|-3|7|0.000|10.000|9,223,372,036,854,775.807",
+        ),
+        (
+            "es",
+            "1.234,567|1.234,567 kg|1.234,6|1.234,56700|-3|7|0,000|10,000|9.223.372.036.854.775,807",
+        ),
+    ] {
+        let path = dir.path().to_path_buf();
+        let app = renox::testing::TestApp::with_config(App::new().module(QuantityPage), move |c| {
+            c.views_path = path;
+            c.locale = locale.into();
+        })
+        .await;
+        app.get("/q").await.assert_see(expected);
+    }
+}
+
+#[renox::test]
+async fn the_quantity_filter_rejects_text_that_is_not_a_decimal() {
+    use renox::prelude::*;
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("q.html"), "{{ '1e3' | quantity }}").unwrap();
+    let path = dir.path().to_path_buf();
+    let app = renox::testing::TestApp::with_config(App::new().module(QuantityPage), move |c| {
+        c.views_path = path
+    })
+    .await;
+    app.get("/q").await.assert_status(500);
+}

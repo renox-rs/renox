@@ -672,6 +672,7 @@ impl Views {
             env.add_filter("date", crate::view_filters::date(zone));
             env.add_filter("since", crate::view_filters::since(zone));
             env.add_filter("money", crate::view_filters::money(currency.clone()));
+            env.add_filter("quantity", crate::view_filters::quantity);
             env.add_filter("words", crate::view_filters::words);
             env.add_filter("markdown", crate::view_filters::markdown);
             env.add_function("chart", crate::chart::chart(currency.clone()));

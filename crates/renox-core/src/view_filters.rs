@@ -1,4 +1,4 @@
-//! Filters every template gets: `number`, `money`, `date`, `since`,
+//! Filters every template gets: `number`, `money`, `quantity`, `date`, `since`,
 //! `words` and `markdown`.
 
 use minijinja::value::Kwargs;
@@ -99,6 +99,100 @@ fn money_object(value: &Value) -> Result<Option<crate::money::Money>, Error> {
     let currency = crate::money::Currency::parse(code)
         .map_err(|e| Error::new(ErrorKind::InvalidOperation, format!("money: {e}")))?;
     Ok(Some(crate::money::Money { minor, currency }))
+}
+
+/// `{{ stock | quantity }}` → `2,500.000` for a `Quantity<3>` (or the text
+/// `"2500.000"`) in `en`, `2.500,000` in `es`. The digits are read as exact
+/// decimal text, never through a float, so nothing is lost. Without
+/// `decimals` every digit of the value is kept (`"2.500"` stays `2.500`);
+/// `decimals=n` pads or rounds half-up (for display only). `unit="kg"` is
+/// appended after a space. Separators follow the page's locale, as in
+/// `number`.
+pub(crate) fn quantity(state: &State, value: Value, kwargs: Kwargs) -> Result<String, Error> {
+    let decimals: Option<u32> = kwargs.get("decimals")?;
+    let unit: Option<String> = kwargs.get("unit")?;
+    kwargs.assert_all_used()?;
+    let text = match value.as_str() {
+        Some(s) => s.trim().to_owned(),
+        None => value.to_string(),
+    };
+    let (negative, whole, fraction) = split_decimal(&text).ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidOperation,
+            format!("quantity: `{text}` is not a decimal number"),
+        )
+    })?;
+    let (whole, fraction) = round_decimal(whole, fraction, decimals);
+    let (thousands, point) = separators(&locale(state));
+    let mut out = String::new();
+    if negative && whole.chars().chain(fraction.chars()).any(|c| c != '0') {
+        out.push('-');
+    }
+    for (i, digit) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            out.push_str(thousands);
+        }
+        out.push(digit);
+    }
+    if !fraction.is_empty() {
+        out.push_str(point);
+        out.push_str(&fraction);
+    }
+    if let Some(unit) = unit.filter(|u| !u.is_empty()) {
+        out.push(' ');
+        out.push_str(&unit);
+    }
+    Ok(out)
+}
+
+/// `-12.50` as (negative, "12", "50"); `None` unless it is a plain decimal
+/// (optional sign, digits, optional `.digits`; no exponent or separators).
+fn split_decimal(text: &str) -> Option<(bool, &str, &str)> {
+    let (negative, rest) = match text.as_bytes().first()? {
+        b'-' => (true, &text[1..]),
+        b'+' => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let (whole, fraction) = rest.split_once('.').unwrap_or((rest, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if whole.is_empty() || !digits(whole) || !digits(fraction) || rest.ends_with('.') {
+        return None;
+    }
+    Some((negative, whole, fraction))
+}
+
+/// The digits of `whole.fraction` at `decimals` places (all of them when
+/// `None`), padded with zeros or rounded half-up on the magnitude.
+fn round_decimal(whole: &str, fraction: &str, decimals: Option<u32>) -> (String, String) {
+    let whole = whole.trim_start_matches('0');
+    let whole = if whole.is_empty() { "0" } else { whole };
+    let Some(n) = decimals.map(|d| d as usize) else {
+        return (whole.into(), fraction.into());
+    };
+    if fraction.len() <= n {
+        return (whole.into(), format!("{fraction:0<n$}"));
+    }
+    let round_up = fraction.as_bytes()[n] >= b'5';
+    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(n)).collect();
+    if round_up {
+        let mut i = digits.len();
+        loop {
+            if i == 0 {
+                digits.insert(0, b'1');
+                break;
+            }
+            i -= 1;
+            if digits[i] == b'9' {
+                digits[i] = b'0';
+            } else {
+                digits[i] += 1;
+                break;
+            }
+        }
+    }
+    let split = digits.len() - n;
+    let text = String::from_utf8(digits).unwrap_or_default();
+    (text[..split].to_owned(), text[split..].to_owned())
 }
 
 /// What an amount in `code`'s smallest unit is divided by to give whole
