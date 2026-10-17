@@ -89,6 +89,7 @@ mod download;
 mod embedded;
 mod error;
 pub mod events;
+pub mod geo;
 pub mod grid;
 mod health;
 mod htmx;
