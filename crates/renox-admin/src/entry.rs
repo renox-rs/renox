@@ -9,7 +9,7 @@ use renox::grid::{Column, Kind};
 use serde::Serialize;
 
 /// One labelled value on a record's view page. `format` is one of the
-/// kit's `entry` formats: `date`, `datetime`, `since`, `money`, `number`,
+/// kit's `entry` formats: `date`, `datetime`, `since`, `money`, `quantity`, `number`,
 /// `bool`, `color`, `image`, `markdown`, or none for text.
 ///
 /// ```
@@ -34,6 +34,8 @@ pub struct Entry {
     copyable: bool,
     span: Option<String>,
     currency_from: Option<String>,
+    scale: u32,
+    unit_from: Option<String>,
 }
 
 impl Entry {
@@ -49,6 +51,8 @@ impl Entry {
             copyable: false,
             span: None,
             currency_from: None,
+            scale: 0,
+            unit_from: None,
         }
     }
 
@@ -95,6 +99,37 @@ impl Entry {
         self
     }
 
+    /// For a `quantity` entry: the decimals of its `Quantity<SCALE>` (at
+    /// most 9), so `2.5` shows as `2.500` with `3`.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let stock = Entry::new("stock", "Stock").format("quantity").scale(3);
+    /// # let _ = stock;
+    /// ```
+    pub fn scale(mut self, scale: u32) -> Self {
+        self.scale = scale.min(9);
+        self
+    }
+
+    /// For a `quantity` entry: shows the quantity with the unit the record
+    /// keeps in its `key` field (such as `stock_unit`), after the value.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let stock = Entry::new("stock", "Stock")
+    ///     .format("quantity")
+    ///     .scale(3)
+    ///     .unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn unit_from(mut self, key: &str) -> Self {
+        self.unit_from = Some(key.to_owned());
+        self
+    }
+
     /// Shows the value as a badge.
     pub fn badge(mut self) -> Self {
         self.badge = true;
@@ -125,6 +160,13 @@ impl Entry {
                 let entry = entry.format("money");
                 match column.currency_column() {
                     Some(key) => entry.currency_from(key),
+                    None => entry,
+                }
+            }
+            Kind::Quantity => {
+                let entry = entry.format("quantity").scale(column.quantity_scale());
+                match column.unit_column() {
+                    Some(key) => entry.unit_from(key),
                     None => entry,
                 }
             }

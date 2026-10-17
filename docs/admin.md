@@ -268,6 +268,29 @@ currency itself is an ordinary field of the form (a `select` of codes); validate
 `.currency()`. Without `currency_from` nothing changes: `APP_CURRENCY` applies.
 `Entry::from_column` carries a column's `currency_from` over.
 
+An exact quantity (a `Quantity<S>` field of the model) is `Field::quantity`, with the
+scale of its type and, when the record keeps a unit, the field that holds it:
+
+```rust,no_run
+# use renox_admin::{Entry, Field};
+# use renox::grid::Column;
+let column = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+let entry = Entry::new("stock", "Stock").format("quantity").scale(3).unit_from("stock_unit");
+let fields = vec![
+    Field::quantity("stock", "Stock").scale(3).unit_from("stock_unit"),
+    Field::select("stock_unit", "Unit", [("kg", "kg"), ("g", "g")]).default_value("kg"),
+];
+```
+
+The list shows each row as `2.500 kg` (the grid's quantity column), the view page shows
+`2,500.000 g` and the form shows the decimal text with the scale's digits, a step of the last
+digit and the unit after the input (the create page uses the unit field's default). A
+quantity travels as decimal text (`"2.500"`), so unlike money nothing is converted on save:
+the form's field is a `Quantity<S>` or a `String` (`#[validate(quantity(3))]`, then
+`Quantity::parse_exact` in `fill`). The unit is an ordinary field of the form (a `select` of
+codes; check it with `.unit(&units)`). Without `scale` the field has no decimals, without
+`unit_from` no unit. `Entry::from_column` carries a column's scale and `unit_from` over.
+
 Options every field takes:
 
 - `.required()` marks it for people and the browser. The form's rules decide what's valid.

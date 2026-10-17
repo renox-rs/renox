@@ -5,7 +5,7 @@
 {% from "renox/ui.html" import input, textarea, select, checkbox, date_picker %}
 
 {% macro field(f, currency=none) -%}
-{%- set types = {"email": "email", "password": "password", "url": "url", "tel": "tel", "number": "number", "money": "number", "date_time": "datetime-local"} %}
+{%- set types = {"email": "email", "password": "password", "url": "url", "tel": "tel", "number": "number", "money": "number", "quantity": "quantity", "date_time": "datetime-local"} %}
 {%- if f.kind == "textarea" %}
 {{ textarea(f.name, f.label, value=f.value, rows=f.rows, hint=f.hint, required=f.required, placeholder=f.placeholder, readonly=f.locked, span=f.span) }}
 {%- elif f.kind in ["select", "belongs_to"] %}
@@ -17,6 +17,6 @@
 {%- elif f.kind == "date" %}
 {{ date_picker(f.name, f.label, value=f.value, min=f.attrs.min, max=f.attrs.max, hint=f.hint, required=f.required, readonly=f.locked, span=f.span) }}
 {%- else %}
-{{ input(f.name, f.label, type=types[f.kind] if types[f.kind] is defined else "text", value=f.value, hint=f.hint, required=f.required, autocomplete=f.autocomplete, placeholder=f.placeholder, attrs=f.attrs, prefix=(f.prefix or (f.currency_code or currency if f.kind == "money" else none)), suffix=f.suffix, readonly=f.locked, span=f.span, revealable=(f.kind == "password")) }}
+{{ input(f.name, f.label, type=types[f.kind] if types[f.kind] is defined else "text", value=f.value, hint=f.hint, required=f.required, autocomplete=f.autocomplete, placeholder=f.placeholder, attrs=f.attrs, prefix=(f.prefix or (f.currency_code or currency if f.kind == "money" else none)), suffix=f.suffix, readonly=f.locked, span=f.span, revealable=(f.kind == "password"), scale=(f.scale if f.kind == "quantity" else none), unit=f.unit_code) }}
 {%- endif %}
 {%- endmacro %}

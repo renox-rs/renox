@@ -760,14 +760,19 @@ pub(crate) async fn fields_view(
             };
             code_decimals(code).map(|_| code.trim().to_ascii_uppercase())
         });
+        // The unit of a `unit_from` field, the same way.
+        let unit = field.unit_column().and_then(|column| {
+            let code = match record {
+                Some(record) => record.get(column)?.as_str()?,
+                None => defaults.get(column)?,
+            }
+            .trim();
+            (!code.is_empty()).then(|| code.to_owned())
+        });
         field.translate(&|text| texts.label(slug, text));
-        views.push(FieldView::new(
-            field,
-            record,
-            creating,
-            decimals,
-            currency.as_deref(),
-        ));
+        let mut view = FieldView::new(field, record, creating, decimals, currency.as_deref());
+        view.unit_code = unit;
+        views.push(view);
     }
     Ok(views)
 }
@@ -808,6 +813,8 @@ pub(crate) struct FieldView {
     locked: bool,
     /// The code shown before a money field with `currency_from`.
     currency_code: Option<String>,
+    /// The unit shown after a quantity field with `unit_from`.
+    unit_code: Option<String>,
 }
 
 impl FieldView {
@@ -871,6 +878,7 @@ impl FieldView {
             attrs,
             locked,
             currency_code: currency.map(str::to_owned),
+            unit_code: None,
         }
     }
 }

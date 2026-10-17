@@ -27,7 +27,10 @@
   {% call infolist(columns=2) %}
     {%- for e in entries %}
     {%- set value = record[e.key] if record[e.key] is defined else none %}
-    {{ entry(e.label, value, format=e.format, badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span, currency=(record[e.currency_from] if e.currency_from and record[e.currency_from] is defined else none)) }}
+    {%- if e.format == "quantity" and value is not none %}
+    {%- set value = value | quantity(decimals=e.scale, unit=(record[e.unit_from] if e.unit_from and record[e.unit_from] is defined else none)) %}
+    {%- endif %}
+    {{ entry(e.label, value, format=(none if e.format == "quantity" else e.format), badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span, currency=(record[e.currency_from] if e.currency_from and record[e.currency_from] is defined else none)) }}
     {%- endfor %}
   {% endcall %}
 {% endcall %}

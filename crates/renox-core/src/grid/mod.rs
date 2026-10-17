@@ -608,6 +608,12 @@ impl Column {
         self.currency.as_deref()
     }
 
+    /// The decimals of a quantity column ([`scale`](Self::scale)), 0 for
+    /// other kinds.
+    pub fn quantity_scale(&self) -> u32 {
+        self.scale
+    }
+
     /// The model column a quantity column reads each row's unit from
     /// ([`unit_from`](Self::unit_from)), if it has one.
     pub fn unit_column(&self) -> Option<&str> {

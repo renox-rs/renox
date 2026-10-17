@@ -1,0 +1,5 @@
+CREATE TABLE stock_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    stock INTEGER NOT NULL DEFAULT 0,
+    stock_unit TEXT NOT NULL DEFAULT 'kg'
+);
