@@ -206,3 +206,14 @@ async fn outbound_webhooks_store_and_prune_on_postgres() {
         .unwrap();
     assert_eq!(pruned, 1);
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_state_transitions_allow_exactly_one_on_postgres() {
+    if std::env::var("TEST_DATABASE_URL").is_err() {
+        eprintln!("skipped: TEST_DATABASE_URL is not set");
+        return;
+    }
+    let app = crate::state_machine::ticket_app().await;
+    assert_eq!(app.db().dialect(), Dialect::Postgres);
+    crate::state_machine::race_for_one_winner(&app, 8).await;
+}

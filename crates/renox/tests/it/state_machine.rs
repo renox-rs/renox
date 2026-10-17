@@ -284,7 +284,7 @@ impl StateMachine for Ticket {
     }
 }
 
-async fn ticket_app() -> TestApp {
+pub(crate) async fn ticket_app() -> TestApp {
     let app = TestApp::new(App::new()).await;
     renox::db::sql("CREATE TABLE tickets (id INTEGER PRIMARY KEY, status TEXT NOT NULL)")
         .execute(app.db())
@@ -434,6 +434,60 @@ async fn run_in_does_not_commit_or_emit() {
     assert_eq!(ticket_status(&app).await, "closed");
 }
 
+/// Starts `contenders` transitions on the same ticket at once and checks that
+/// exactly one wins, the others get `Conflict`, and one history row remains.
+/// Shared with the PostgreSQL run in `postgres.rs`.
+pub(crate) async fn race_for_one_winner(app: &TestApp, contenders: usize) {
+    let mut tasks = Vec::new();
+    for i in 0..contenders {
+        let state = app.state().clone();
+        tasks.push(tokio::spawn(async move {
+            let reason = format!("racer {i}");
+            ticket()
+                .transition("close")
+                .by_system()
+                .reason(&reason)
+                .run(&state)
+                .await
+                .map(|_| ())
+        }));
+    }
+    let mut won = 0;
+    for task in tasks {
+        match task.await.unwrap() {
+            Ok(()) => won += 1,
+            Err(TransitionError::Conflict) => {}
+            Err(other) => panic!("expected success or a conflict, got {other:?}"),
+        }
+    }
+    assert_eq!(won, 1, "exactly one concurrent transition succeeds");
+    assert_eq!(ticket_status(app).await, "closed");
+    assert_eq!(history(app.db(), "tickets", 1).await.unwrap().len(), 1);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_transitions_on_one_record_allow_exactly_one() {
+    let app = ticket_app().await;
+    race_for_one_winner(&app, 8).await;
+}
+
+#[tokio::test]
+async fn a_failing_effect_through_run_emits_nothing_and_keeps_the_old_status() {
+    let app = ticket_app().await;
+    app.fake_events();
+    let err = ticket()
+        .transition("close")
+        .by_system()
+        .reason("r")
+        .input(&"boom")
+        .run(app.state())
+        .await;
+    assert!(matches!(err, Err(TransitionError::Failed(_))));
+    assert_eq!(ticket_status(&app).await, "open");
+    assert!(history(app.db(), "tickets", 1).await.unwrap().is_empty());
+    assert!(app.emitted::<Transitioned<Ticket>>().is_empty());
+}
+
 #[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
 enum DocStatus {
     Open,
@@ -506,8 +560,12 @@ impl TransitionInterceptor for Approvals {
     }
 }
 
+/// The interceptor is process-global: tests that register one hold this lock.
+static INTERCEPTOR_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 #[tokio::test]
 async fn an_interceptor_defers_or_lets_a_run_proceed() {
+    let _one_interceptor = INTERCEPTOR_LOCK.lock().await;
     let app = TestApp::new(App::new()).await;
     app.fake_events();
     let db = app.db();
@@ -578,6 +636,135 @@ async fn an_interceptor_defers_or_lets_a_run_proceed() {
     assert_eq!(notes().await, ["request 1 sign", "effect"]);
     assert_eq!(app.emitted::<Transitioned<Doc>>().len(), 1);
     clear_interceptor();
+}
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum MemoStatus {
+    Draft,
+    Published,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "sm_memos")]
+struct Memo {
+    id: i64,
+    status: String,
+}
+
+impl StateMachine for Memo {
+    type State = MemoStatus;
+    const COLUMN: Col<Self, MemoStatus> = Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new().transition(
+            Transition::new("publish")
+                .from([MemoStatus::Draft])
+                .to(MemoStatus::Published),
+        )
+    }
+}
+
+/// Asks for approval of every `sm_memos` run and counts what it is asked.
+struct CountingApprovals {
+    intercepts: &'static std::sync::atomic::AtomicUsize,
+    previews: &'static std::sync::atomic::AtomicUsize,
+}
+
+impl TransitionInterceptor for CountingApprovals {
+    fn intercept<'a>(
+        &'a self,
+        _request: &'a TransitionRequest,
+        _tx: &'a mut renox::db::Transaction,
+    ) -> futures_util::future::BoxFuture<'a, renox::Result<Decision>> {
+        self.intercepts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async { Ok(Decision::Proceed) })
+    }
+
+    fn preview<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        _db: &'a renox::db::Db,
+    ) -> futures_util::future::BoxFuture<'a, renox::Result<Preview>> {
+        self.previews
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Box::pin(async move {
+            Ok(if request.model == "sm_memos" {
+                Preview::RequiresApproval
+            } else {
+                Preview::Proceed
+            })
+        })
+    }
+}
+
+struct MemoRoutes;
+
+impl Module for MemoRoutes {
+    fn name(&self) -> &'static str {
+        "memo-routes"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get(
+                "/memo-available",
+                |State(state): State<AppState>, user: AuthUser| async move {
+                    let memo = Memo {
+                        id: 1,
+                        status: "draft".into(),
+                    };
+                    let list = memo.available(&user, &state.db).await?;
+                    Ok::<_, renox::Error>(Json(list))
+                },
+            )
+            .require_auth()
+    }
+}
+
+static MEMO_INTERCEPTS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+static MEMO_PREVIEWS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+#[tokio::test]
+async fn available_marks_approval_from_the_preview_without_side_effects() {
+    use std::sync::atomic::Ordering;
+    let _one_interceptor = INTERCEPTOR_LOCK.lock().await;
+    let app = TestApp::new(App::new().module(Auth::new()).module(MemoRoutes)).await;
+    let db = app.db();
+    for q in [
+        "CREATE TABLE sm_memos (id INTEGER PRIMARY KEY, status TEXT NOT NULL)",
+        "INSERT INTO sm_memos (id, status) VALUES (1, 'draft')",
+    ] {
+        renox::db::sql(q).execute(db).await.unwrap();
+    }
+    let ana = User::register(db, "Ana", "ana@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&ana);
+
+    // No interceptor: nothing needs approval.
+    clear_interceptor();
+    let body: serde_json::Value = app.get("/memo-available").await.assert_ok().json();
+    assert_eq!(body[0]["name"], "publish");
+    assert_eq!(body[0]["requires_approval"], false);
+
+    set_interceptor(CountingApprovals {
+        intercepts: &MEMO_INTERCEPTS,
+        previews: &MEMO_PREVIEWS,
+    });
+    let body: serde_json::Value = app.get("/memo-available").await.assert_ok().json();
+    clear_interceptor();
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["requires_approval"], true);
+    // `available` only previews: it never intercepts, moves or logs anything.
+    assert_eq!(MEMO_PREVIEWS.load(Ordering::SeqCst), 1);
+    assert_eq!(MEMO_INTERCEPTS.load(Ordering::SeqCst), 0);
+    let status: String = renox::db::sql("SELECT status FROM sm_memos WHERE id = 1")
+        .scalar(db)
+        .await
+        .unwrap();
+    assert_eq!(status, "draft");
+    assert!(history(db, "sm_memos", 1).await.unwrap().is_empty());
 }
 
 struct OrderRoutes;
