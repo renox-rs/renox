@@ -799,7 +799,12 @@ fn form_tokens(input: &DeriveInput, fields: &[Field], custom: Option<&str>) -> T
             let cleaned = self.__custom_cleaned.lock().unwrap_or_else(|e| e.into_inner()).take();
             if let ::core::option::Option::Some(cleaned) = cleaned {
                 for key in self.#column.0.keys() {
-                    record.#column.remove(key);
+                    // A blank sensitive field keeps its stored sealed value.
+                    let kept = !cleaned.0.contains_key(key)
+                        && record.#column.get(key).is_some_and(::renox::custom_fields::is_sealed);
+                    if !kept {
+                        record.#column.remove(key);
+                    }
                 }
                 for (key, value) in cleaned.0 {
                     record.#column.set(key, value);

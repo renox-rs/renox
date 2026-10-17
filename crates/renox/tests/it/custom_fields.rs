@@ -510,6 +510,128 @@ mod values {
     }
 }
 
+#[renox::test]
+async fn the_sensitive_flag_round_trips_and_only_fits_some_kinds() {
+    let app = TestApp::new(App::new()).await;
+    let db = app.db();
+    let saved = CustomField::text("parties", "tax_id")
+        .reveal_with("see-tax-ids")
+        .save(db)
+        .await
+        .unwrap();
+    let found = CustomField::find(db, saved.id).await.unwrap().unwrap();
+    assert!(found.rules.sensitive);
+    assert_eq!(found.rules.reveal.as_deref(), Some("see-tax-ids"));
+    let plain = CustomField::text("parties", "nick").save(db).await.unwrap();
+    assert!(!plain.rules.sensitive && plain.rules.reveal.is_none());
+    assert!(
+        CustomField::reference("parties", "boss", "people")
+            .sensitive()
+            .save(db)
+            .await
+            .is_err()
+    );
+    assert!(
+        CustomField::file("parties", "scan", "docs")
+            .sensitive()
+            .save(db)
+            .await
+            .is_err()
+    );
+}
+
+// Sealed storage of sensitive values (fake test values only).
+mod sealed {
+    use std::collections::BTreeMap;
+
+    use renox::custom_fields::{CustomField, CustomValues, Opened, SEALED_PREFIX, is_sealed};
+    use renox::prelude::*;
+    use renox::testing::TestApp;
+    use serde_json::{Value, json};
+
+    async fn run(app: &TestApp, input: Value) -> Result<CustomValues, renox::validation::Errors> {
+        CustomValues::validate(
+            app.state(),
+            "parties",
+            "extra",
+            input.as_object().unwrap(),
+            &BTreeMap::new(),
+            "en",
+        )
+        .await
+        .unwrap()
+    }
+
+    #[renox::test]
+    async fn a_value_is_validated_then_sealed_with_a_fresh_nonce() {
+        let app = TestApp::new(App::new()).await;
+        let db = app.db();
+        CustomField::text("parties", "tax_id")
+            .sensitive()
+            .required()
+            .max(8)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::number("parties", "salary")
+            .sensitive()
+            .save(db)
+            .await
+            .unwrap();
+        let errors = run(&app, json!({"tax_id": "123456789"})).await.unwrap_err();
+        assert!(errors.has("extra[tax_id]"));
+        let errors = run(&app, json!({"tax_id": ""})).await.unwrap_err();
+        assert!(errors.has("extra[tax_id]"));
+
+        let first = run(&app, json!({"tax_id": "TX-1234", "salary": "5200"}))
+            .await
+            .unwrap();
+        let again = run(&app, json!({"tax_id": "TX-1234", "salary": "5200"}))
+            .await
+            .unwrap();
+        let stored = serde_json::to_string(&first).unwrap();
+        assert!(!stored.contains("TX-1234") && !stored.contains("5200"));
+        assert!(is_sealed(first.get("tax_id").unwrap()));
+        assert!(
+            first
+                .get("tax_id")
+                .and_then(Value::as_str)
+                .unwrap()
+                .starts_with(SEALED_PREFIX)
+        );
+        assert_ne!(first.get("tax_id"), again.get("tax_id"));
+        assert_eq!(
+            first.open(db, "tax_id"),
+            Some(Opened::Value(json!("TX-1234")))
+        );
+        assert_eq!(first.open(db, "salary"), Some(Opened::Value(json!(5200))));
+        assert_eq!(first.open(db, "missing"), None);
+    }
+
+    #[renox::test]
+    async fn blank_is_left_out_and_plain_or_damaged_values_read_back_safely() {
+        let app = TestApp::new(App::new()).await;
+        let db = app.db();
+        CustomField::text("parties", "tax_id")
+            .sensitive()
+            .save(db)
+            .await
+            .unwrap();
+        let values = run(&app, json!({"tax_id": ""})).await.unwrap();
+        assert!(values.is_empty());
+
+        let mut stored = CustomValues::default();
+        stored.set("old", "plain text");
+        stored.set("broken", format!("{SEALED_PREFIX}not-a-token"));
+        assert_eq!(
+            stored.open(db, "old"),
+            Some(Opened::Value(json!("plain text")))
+        );
+        assert_eq!(stored.open(db, "broken"), Some(Opened::Unreadable));
+        assert!(!format!("{:?}", Opened::Value(json!("secret-x"))).contains("secret-x"));
+    }
+}
+
 // The kit tag `<rx-custom-fields>`.
 mod tag {
     use renox::custom_fields::{CustomField, CustomValues, LocaleMap};

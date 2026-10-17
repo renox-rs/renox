@@ -135,6 +135,11 @@ impl Db {
         Self::with_epoch(Pool::Postgres(pool), schema)
     }
 
+    /// The `APP_KEY`-derived key, when this Db was made by an app.
+    pub(crate) fn seal_key(&self) -> Option<&Key> {
+        self.key.as_deref()
+    }
+
     pub(crate) fn custom_fields_cache(&self) -> &crate::custom_fields::Cache {
         &self.custom_fields
     }

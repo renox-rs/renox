@@ -9,9 +9,57 @@ use serde_json::{Map, Value};
 use super::{CustomField, DEFAULT_LABEL_LOCALE, FieldKind};
 use crate::AppState;
 use crate::Result;
-use crate::db::{quote, sql};
+use crate::db::{Db, quote, sql};
 use crate::upload::Upload;
 use crate::validation::Errors;
+
+/// What a sealed value starts with in the JSON column:
+/// `rx-sealed:1:<token>`, where the token is the value's JSON text sealed
+/// with `APP_KEY` (as an `Encrypted` column is).
+pub const SEALED_PREFIX: &str = "rx-sealed:1:";
+
+/// Whether a stored value is a sealed one (decided by its prefix, not by the
+/// field's current flag).
+///
+/// ```
+/// use renox::custom_fields::is_sealed;
+/// use serde_json::json;
+///
+/// assert!(is_sealed(&json!("rx-sealed:1:abc")));
+/// assert!(!is_sealed(&json!("retail")));
+/// ```
+pub fn is_sealed(value: &Value) -> bool {
+    value.as_str().is_some_and(|s| s.starts_with(SEALED_PREFIX))
+}
+
+/// A stored value read back with [`CustomValues::open`]. `Debug` never shows
+/// the value.
+#[derive(Clone, PartialEq)]
+pub enum Opened {
+    /// The plain value (opened, or never sealed).
+    Value(Value),
+    /// Sealed, but it can't be opened with this `APP_KEY`.
+    Unreadable,
+}
+
+impl std::fmt::Debug for Opened {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opened::Value(_) => f.write_str("Opened::Value(..)"),
+            Opened::Unreadable => f.write_str("Opened::Unreadable"),
+        }
+    }
+}
+
+/// Seals a plain value for storage.
+fn seal_value(db: &Db, plain: &Value) -> Result<Value> {
+    let key = db.seal_key().ok_or_else(|| {
+        anyhow::anyhow!("a sensitive custom field needs the app's Db (it has the APP_KEY)")
+    })?;
+    let json = serde_json::to_string(plain).map_err(anyhow::Error::from)?;
+    let token = crate::db::encrypted::seal(key, &json);
+    Ok(Value::String(format!("{SEALED_PREFIX}{token}")))
+}
 
 /// The custom field values of one record, by field key: the type of a
 /// `Json<CustomValues>` column. Serializes as the plain JSON object.
@@ -39,6 +87,35 @@ impl CustomValues {
         self.0.insert(key.into(), value.into());
     }
 
+    /// The value stored under `key`, opened if it is sealed. `None` when
+    /// nothing is stored; [`Opened::Unreadable`] when `APP_KEY` changed since
+    /// it was sealed. A plain value is returned as it is, whatever the field's
+    /// flag is now.
+    ///
+    /// ```
+    /// use renox::custom_fields::{CustomValues, Opened};
+    ///
+    /// # fn demo(db: &renox::db::Db) {
+    /// let mut values = CustomValues::default();
+    /// values.set("segment", "retail");
+    /// assert_eq!(
+    ///     values.open(db, "segment"),
+    ///     Some(Opened::Value("retail".into()))
+    /// );
+    /// # }
+    /// ```
+    pub fn open(&self, db: &Db, key: &str) -> Option<Opened> {
+        let value = self.0.get(key)?;
+        let Some(token) = value.as_str().and_then(|s| s.strip_prefix(SEALED_PREFIX)) else {
+            return Some(Opened::Value(value.clone()));
+        };
+        let opened = db
+            .seal_key()
+            .and_then(|k| crate::db::encrypted::open(k, token))
+            .and_then(|json| serde_json::from_str(&json).ok());
+        Some(opened.map_or(Opened::Unreadable, Opened::Value))
+    }
+
     /// Removes the value stored under `key`.
     pub fn remove(&mut self, key: &str) -> Option<Value> {
         self.0.remove(key)
@@ -60,6 +137,10 @@ impl CustomValues {
     /// reference that exists as a row of the target table, and a file taken
     /// from `uploads` (by key) and stored on the target disk. Files are stored
     /// only when every field is valid; the stored key is the value kept.
+    ///
+    /// A sensitive field's value is validated as plain text and then sealed
+    /// (see [`SEALED_PREFIX`]); a blank one is left out like any blank value,
+    /// and the merge (the `#[model(form)]` one does it) keeps what is stored.
     ///
     /// A blank optional value is left out, so the result holds only what was
     /// filled in. Merging with the values already stored (to keep those of
@@ -103,6 +184,9 @@ impl CustomValues {
                 continue;
             }
             match check(state, field, input.get(&field.key)).await? {
+                Ok(Some(value)) if field.rules.sensitive => {
+                    values.set(field.key.clone(), seal_value(&state.db, &value)?)
+                }
                 Ok(Some(value)) => values.set(field.key.clone(), value),
                 Ok(None) if field.rules.required => errors.add(&name, required),
                 Ok(None) => {}

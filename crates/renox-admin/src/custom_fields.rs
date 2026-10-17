@@ -329,7 +329,11 @@ impl AdminResource for CustomFields {
             options.push(choice);
         }
         let target = form.target.trim();
+        // The sensitive flag has no form input yet: keep what is stored.
+        let stored: FieldRules = serde_json::from_str(&record.rules).unwrap_or_default();
         let rules = FieldRules {
+            sensitive: stored.sensitive,
+            reveal: stored.reveal,
             required: form.required,
             min: number(&form.min).flatten(),
             max: number(&form.max).flatten(),

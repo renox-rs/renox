@@ -5,7 +5,7 @@
 pub(crate) mod auto_migration;
 mod column;
 mod conn;
-mod encrypted;
+pub(crate) mod encrypted;
 mod error;
 mod factory;
 mod from_row;

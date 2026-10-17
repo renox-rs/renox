@@ -52,7 +52,7 @@ use std::sync::{Arc, Mutex};
 
 mod values;
 
-pub use values::CustomValues;
+pub use values::{CustomValues, Opened, SEALED_PREFIX, is_sealed};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -210,6 +210,14 @@ pub struct FieldRules {
     /// name of the disk it is stored on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<String>,
+    /// The value is sealed with `APP_KEY` before it is stored (see
+    /// [`CustomField::sensitive`]).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub sensitive: bool,
+    /// The ability (a gate name) that lets a viewer see a sensitive value;
+    /// `None` means the app-wide `custom_fields.reveal`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reveal: Option<String>,
 }
 
 /// The definition of one custom field of a model.
@@ -407,6 +415,40 @@ impl CustomField {
         self
     }
 
+    /// Marks the field sensitive: its value is sealed with `APP_KEY`
+    /// (AES-256-GCM, like an `Encrypted` column) inside the JSON column, so the
+    /// database never holds the plain text. Only text, number, date, yes/no
+    /// and choice fields can be sensitive; [`save`](CustomField::save) rejects
+    /// the others. Switching the flag affects new writes only.
+    ///
+    /// ```
+    /// use renox::custom_fields::CustomField;
+    ///
+    /// let field = CustomField::text("parties", "tax_id").sensitive();
+    /// assert!(field.rules.sensitive);
+    /// ```
+    pub fn sensitive(mut self) -> Self {
+        self.rules.sensitive = true;
+        self
+    }
+
+    /// Names the ability (a gate) that lets a viewer see this field's sealed
+    /// value, instead of the app-wide `custom_fields.reveal`. Marks the field
+    /// sensitive too.
+    ///
+    /// ```
+    /// use renox::custom_fields::CustomField;
+    ///
+    /// let field = CustomField::text("parties", "tax_id").reveal_with("see-tax-ids");
+    /// assert_eq!(field.rules.reveal.as_deref(), Some("see-tax-ids"));
+    /// assert!(field.rules.sensitive);
+    /// ```
+    pub fn reveal_with(mut self, ability: &str) -> Self {
+        self.rules.sensitive = true;
+        self.rules.reveal = Some(ability.to_owned());
+        self
+    }
+
     /// Sets the order in forms and columns (lower first).
     pub fn position(mut self, position: i64) -> Self {
         self.position = position;
@@ -497,6 +539,21 @@ impl CustomField {
                 self.kind.as_str(),
                 self.key
             ));
+        }
+        if self.rules.sensitive && matches!(self.kind, FieldKind::Reference | FieldKind::File) {
+            return bad(format!(
+                "{} field `{}` can't be sensitive: a sealed id or file key would not protect the record or file",
+                self.kind.as_str(),
+                self.key
+            ));
+        }
+        if self
+            .rules
+            .reveal
+            .as_deref()
+            .is_some_and(|r| r.trim().is_empty())
+        {
+            return bad(format!("field `{}`: the reveal ability is empty", self.key));
         }
         if let (Some(min), Some(max)) = (self.rules.min, self.rules.max)
             && min > max

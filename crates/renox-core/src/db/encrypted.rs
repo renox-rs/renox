@@ -133,7 +133,7 @@ pub(crate) fn seal(key: &Key, plain: &str) -> String {
         .unwrap_or_default()
 }
 
-fn open(key: &Key, sealed: &str) -> Option<String> {
+pub(crate) fn open(key: &Key, sealed: &str) -> Option<String> {
     cookie::CookieJar::new()
         .private(key)
         .decrypt(cookie::Cookie::new(COLUMN, sealed.to_owned()))
