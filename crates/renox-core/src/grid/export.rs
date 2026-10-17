@@ -176,7 +176,7 @@ impl Grid {
                         "label": c.label,
                         "numeric": matches!(c.kind, Kind::Number | Kind::Money),
                     })).collect::<Vec<_>>(),
-                    rows => rows.iter().map(|row| columns.iter().map(|(c, _)| table.display(c, row.get(&c.key))).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                    rows => rows.iter().map(|row| columns.iter().map(|(c, _)| table.display(c, row)).collect::<Vec<_>>()).collect::<Vec<_>>(),
                     total => rows.len(),
                     printed => crate::db::now().to_rfc3339(),
                     back => format!("{}?{}", request.path, serde_html_form::to_string(
@@ -327,6 +327,12 @@ impl Workbook {
     }
 }
 
+/// The currency code a money column with `currency_from` has in `row`.
+fn currency_of<'r>(column: &Column, row: &'r Map<String, Value>) -> Option<&'r str> {
+    let code = row.get(column.currency.as_ref()?)?.as_str()?;
+    (column.kind == Kind::Money && !code.is_empty()).then_some(code)
+}
+
 /// The exported rows with their columns.
 struct Table<'a> {
     columns: &'a [(&'a Column, Option<Pin>)],
@@ -337,10 +343,12 @@ struct Table<'a> {
 impl Table<'_> {
     /// A number as the grid shows it, with its decimals: money is divided
     /// from the smallest unit into whole units of `APP_CURRENCY`.
-    fn figure(&self, column: &Column, n: f64) -> (f64, Option<u32>) {
+    fn figure(&self, column: &Column, row: &Map<String, Value>, n: f64) -> (f64, Option<u32>) {
         match column.kind {
             Kind::Money => {
-                let decimals = self.request.money_decimals;
+                let decimals = currency_of(column, row).map_or(self.request.money_decimals, |c| {
+                    crate::view_filters::currency_decimals(c)
+                });
                 (
                     n / 10f64.powi(decimals as i32),
                     Some(column.decimals.map_or(decimals, u32::from)),
@@ -367,7 +375,8 @@ impl Table<'_> {
 
     /// A value as text, the way the grid shows it (without number
     /// separators, so spreadsheets read numbers).
-    fn text(&self, column: &Column, value: Option<&Value>) -> String {
+    fn text(&self, column: &Column, row: &Map<String, Value>) -> String {
+        let value = row.get(&column.key);
         let label = |v: &str| {
             column
                 .options
@@ -381,7 +390,7 @@ impl Table<'_> {
             Some(Value::Number(n)) if column.kind == Kind::Bool => {
                 self.yes_no(n.as_i64() != Some(0))
             }
-            Some(Value::Number(n)) => match n.as_f64().map(|f| self.figure(column, f)) {
+            Some(Value::Number(n)) => match n.as_f64().map(|f| self.figure(column, row, f)) {
                 Some((f, Some(d))) => format!("{f:.*}", d as usize),
                 _ => n.to_string(),
             },
@@ -400,7 +409,8 @@ impl Table<'_> {
     }
 
     /// A value for people to read: numbers with the locale's separators.
-    fn display(&self, column: &Column, value: Option<&Value>) -> String {
+    fn display(&self, column: &Column, row: &Map<String, Value>) -> String {
+        let value = row.get(&column.key);
         match (column.kind, value.and_then(Value::as_f64)) {
             (Kind::Number | Kind::Money, Some(n)) if column.kind != Kind::Bool => {
                 let locale = self
@@ -408,10 +418,14 @@ impl Table<'_> {
                     .lang
                     .as_ref()
                     .map_or("en", |l| l.locale.as_str());
-                let (n, decimals) = self.figure(column, n);
-                crate::view_filters::format_number(n, decimals.unwrap_or(0), locale)
+                let (n, decimals) = self.figure(column, row, n);
+                match currency_of(column, row) {
+                    // `$12.50`, `¥1,250`: the symbol of the row's own currency.
+                    Some(code) => crate::view_filters::format_money(n, code, decimals, locale),
+                    None => crate::view_filters::format_number(n, decimals.unwrap_or(0), locale),
+                }
             }
-            _ => self.text(column, value),
+            _ => self.text(column, row),
         }
     }
 
@@ -449,8 +463,12 @@ impl Table<'_> {
                 self.columns
                     .iter()
                     .map(|(c, _)| {
-                        let text = self.text(c, row.get(&c.key));
+                        let mut text = self.text(c, row);
                         let numeric = matches!(c.kind, Kind::Number | Kind::Money);
+                        // The amount keeps its currency: `12.50 USD`.
+                        if let (Some(code), false) = (currency_of(c, row), text.is_empty()) {
+                            text = format!("{text} {code}");
+                        }
                         if !numeric && text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
                             format!("'{text}")
                         } else {
@@ -556,8 +574,24 @@ fn write_sheet(sheet: &mut rust_xlsxwriter::Worksheet, table: &Table<'_>) -> Res
                     let n = n.as_f64().unwrap_or_default();
                     match (column.kind, column.decimals) {
                         (Kind::Money, _) => {
-                            let (n, _) = table.figure(column, n);
-                            sheet.write_number_with_format(r, c, n, &money)
+                            let (n, d) = table.figure(column, row, n);
+                            match currency_of(column, row) {
+                                // A number format per row: `#,##0.00 "USD"`.
+                                Some(code) => sheet.write_number_with_format(
+                                    r,
+                                    c,
+                                    n,
+                                    &Format::new().set_num_format(format!(
+                                        "#,##0{} \"{}\"",
+                                        match d.unwrap_or(0) {
+                                            0 => String::new(),
+                                            d => format!(".{}", "0".repeat(d as usize)),
+                                        },
+                                        code.replace('"', "")
+                                    )),
+                                ),
+                                None => sheet.write_number_with_format(r, c, n, &money),
+                            }
                         }
                         (_, Some(d)) if d > 0 => sheet.write_number_with_format(
                             r,
@@ -589,7 +623,7 @@ fn write_sheet(sheet: &mut rust_xlsxwriter::Worksheet, table: &Table<'_>) -> Res
                 }
                 _ => {
                     sheet
-                        .write_string(r, c, table.text(column, value))
+                        .write_string(r, c, table.text(column, row))
                         .map_err(fail)?;
                 }
             }

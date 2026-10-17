@@ -260,6 +260,14 @@ A few things to know about the table:
   Currencies without decimals (IDR, JPY) show the number as it is. There's no currency symbol,
   and the from–to filter takes whole units too. The `money` template filter takes the same
   smallest unit, so a cell and a page written with `| money` agree.
+- Rows in different currencies: `Column::money("total", "Total").currency_from("total_currency")`
+  reads each row's ISO 4217 code from that model column (the `<field>_currency` column of a
+  `#[model(money)]` field). Each cell then shows its own symbol and decimals (`$12.50`,
+  `¥1,250`, `KWD 12.345`). Summaries show one figure per currency (`$37.50 · ¥1,250`), never a
+  sum across currencies, in the footer and under each group. `cur.total=JPY` filters by currency
+  (the filter menu has a Currency box) and makes `min.`/`max.` read that currency's decimals. CSV
+  exports write the code after the amount (`12.50 USD`), XLSX gives each cell a number format with
+  its currency, and the print page shows the symbol. Without `currency_from` nothing changes.
 
 ### Options every column takes
 
@@ -858,6 +866,7 @@ Every value belongs to one grid. With `.prefix("orders")`, each name starts with
 | `q.number=A%` | a text filter (`%` makes it a pattern) |
 | `m.number=starts` | how `q.` matches: `contains` (default), `starts`, `ends`, `equals` |
 | `min.total=1000`, `max.total=…` | a number or money range (money in whole units: `min.total=40.5` is 4050 cents) |
+| `cur.total=JPY` | a money column with `currency_from`: only rows in that currency |
 | `from.ordered_on=2026-01-01`, `to.ordered_on=…` | a date range (`to` includes its day) |
 | `in.status=paid` (repeated) | select and tags choices; bool uses `in.paid=1` / `in.paid=0` |
 | `group=region` | group by one of `.groups`; empty for no groups |

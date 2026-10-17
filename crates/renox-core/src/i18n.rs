@@ -415,6 +415,7 @@ fn builtin(locale: &str) -> Option<&'static HashMap<&'static str, &'static str>>
                 "ui.grid.pattern_hint",
                 "% matches anything: cof% starts with “cof”.",
             ),
+            ("ui.grid.currency", "Currency"),
             ("ui.grid.min", "From"),
             ("ui.grid.max", "To"),
             ("ui.grid.from", "From"),

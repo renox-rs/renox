@@ -45,6 +45,7 @@ tuple!(A 0, B 1, C 2);
 tuple!(A 0, B 1, C 2, D 3);
 tuple!(A 0, B 1, C 2, D 3, E 4);
 tuple!(A 0, B 1, C 2, D 3, E 4, F 5);
+tuple!(A 0, B 1, C 2, D 3, E 4, F 5, G 6);
 
 impl Row {
     /// Reads a [`Money`] from two columns: the amount in minor units

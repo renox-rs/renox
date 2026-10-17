@@ -159,6 +159,8 @@ pub struct Column {
     link: Option<String>,
     copyable: bool,
     round: bool,
+    /// The model column holding each row's currency code (money columns).
+    currency: Option<String>,
     /// A value from another table: SQL with `{T}` for this model's table.
     expr: Option<String>,
 }
@@ -192,6 +194,7 @@ impl Column {
             link: None,
             copyable: false,
             round: false,
+            currency: None,
             expr: None,
         }
     }
@@ -360,6 +363,29 @@ impl Column {
     /// value (the smallest unit).
     pub fn money(key: &str, label: &str) -> Self {
         Self::new(key, label, Kind::Money)
+    }
+
+    /// Shows each row of a money column in its own currency, read from the
+    /// model column `key` (an ISO 4217 code such as `total_currency`, the
+    /// `<field>_currency` column of a `#[model(money)]` field). The cell
+    /// uses that currency's symbol and decimals (`¥1,250`, `$12.50`);
+    /// summaries are one figure per currency, never summed across them;
+    /// `cur.<column>=USD` in the query string filters by currency, and its
+    /// decimals read the `min.`/`max.` amounts; exports keep the currency
+    /// (a code after the CSV amount, a per-row number format in XLSX, the
+    /// symbol on the print page). Without it the column uses
+    /// `APP_CURRENCY`, as before.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let total = Column::money("total", "Total").currency_from("total_currency");
+    /// # let _ = total;
+    /// ```
+    pub fn currency_from(mut self, key: &str) -> Self {
+        if self.kind == Kind::Money && plain_name(key) {
+            self.currency = Some(key.to_owned());
+        }
+        self
     }
 
     /// A date column.
@@ -768,7 +794,10 @@ impl Grid {
             name,
             "page" | "per_page" | "sort" | "search" | "export" | "group" | "match" | "state"
         ) || name.split_once('.').is_some_and(|(part, _)| {
-            matches!(part, "q" | "m" | "min" | "max" | "from" | "to" | "in" | "r")
+            matches!(
+                part,
+                "q" | "m" | "min" | "max" | "from" | "to" | "in" | "cur" | "r"
+            )
         });
         known.then_some(name)
     }
@@ -984,6 +1013,51 @@ impl Grid {
                 format!("NULL, NULL, NULL, NULL, COUNT({sql})")
             };
             type Figures = (Option<f64>, Option<f64>, Option<f64>, Option<f64>, i64);
+            // A column with a currency of its own: one set of figures per
+            // currency (and per group), never a sum across currencies.
+            if let Some(cur) = column
+                .currency
+                .as_deref()
+                .filter(|c| M::COLUMNS.contains(c))
+            {
+                let cur_expr = format!("\"{cur}\"");
+                let mut grouped = query.clone();
+                if let Some(group) = &group_expr {
+                    grouped = grouped.group_by_raw(group);
+                }
+                let first = group_sql.as_deref().unwrap_or("CAST('' AS TEXT)");
+                let found = grouped
+                    .group_by_raw(&cur_expr)
+                    .select_as::<(
+                        Option<String>,
+                        Option<String>,
+                        Option<f64>,
+                        Option<f64>,
+                        Option<f64>,
+                        Option<f64>,
+                        i64,
+                    ), _>(
+                        db, &format!("{first}, CAST({cur_expr} AS TEXT), {figures}")
+                    )
+                    .await?;
+                let mut by_group: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+                for (value, code, sum, average, min, max, count) in found {
+                    by_group
+                        .entry(value.unwrap_or_default())
+                        .or_default()
+                        .push(json!({
+                            "currency": code, "sum": sum, "average": average,
+                            "min": min, "max": max, "count": count,
+                        }));
+                }
+                for (value, mut currencies) in by_group {
+                    currencies.sort_by_key(|f| f["currency"].as_str().map(str::to_owned));
+                    out.entry(value)
+                        .or_default()
+                        .insert(key.clone(), json!({ "currencies": currencies }));
+                }
+                continue;
+            }
             let rows: Vec<(String, Figures)> = match (&group_sql, &group_expr) {
                 (Some(group_sql), Some(group)) => query
                     .clone()
@@ -1364,6 +1438,8 @@ struct Filter {
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
     any_of: Vec<String>,
+    /// An ISO 4217 code (money columns with `currency_from`).
+    currency: Option<String>,
 }
 
 impl Filter {
@@ -1393,10 +1469,16 @@ impl Filter {
         mut query: Query<M>,
         column: &Column,
         zone: &crate::timezone::Zone,
-        money: f64,
+        mut money: f64,
     ) -> Query<M> {
         let key = column.key.as_str();
         let target = column.target::<M>();
+        if let (Some(code), Some(col)) = (&self.currency, &column.currency) {
+            if M::COLUMNS.contains(&col.as_str()) {
+                query = query.where_eq(col, code.as_str());
+            }
+            money = 10f64.powi(crate::view_filters::currency_decimals(code) as i32);
+        }
         match column.kind {
             Kind::Text | Kind::Color => {
                 if let Some(pattern) = self.pattern() {
@@ -1511,6 +1593,7 @@ impl Filter {
             "from": self.from.map(|d| d.to_string()),
             "to": self.to.map(|d| d.to_string()),
             "any_of": self.any_of,
+            "currency": self.currency,
         })
     }
 }
@@ -1610,6 +1693,11 @@ impl State_ {
                         "max" => filter.max = value.parse().ok().filter(|v: &f64| v.is_finite()),
                         "from" => filter.from = value.parse().ok(),
                         "to" => filter.to = value.parse().ok(),
+                        "cur" if column.currency.is_some() => {
+                            filter.currency = crate::money::Currency::parse(value)
+                                .ok()
+                                .map(|c| c.code().to_owned());
+                        }
                         "in" if filter.any_of.len() < 100 => filter.any_of.push(value.to_owned()),
                         _ => {}
                     }
@@ -1690,6 +1778,9 @@ impl State_ {
             }
             for v in &f.any_of {
                 out.push((format!("in.{key}"), v.clone()));
+            }
+            if let Some(code) = &f.currency {
+                out.push((format!("cur.{key}"), code.clone()));
             }
         }
         if let Some((key, desc)) = self.sort.as_ref().filter(|_| !self.defaulted) {
@@ -2140,6 +2231,9 @@ impl<M: Serialize> GridPage<M> {
                     "link": c.link,
                     "copyable": c.copyable,
                     "round": c.round,
+                    "currency": c.currency,
+                    // `.decimals(n)` only: a row's currency sets the rest.
+                    "fixed_decimals": c.decimals.map(u32::from),
                 })
             })
             .collect();
