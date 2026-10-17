@@ -80,6 +80,9 @@ pub struct BillingPayment {
     pub account: Option<String>,
     /// The payment's id at the gateway; `None` until it made one.
     pub gateway_id: Option<String>,
+    /// The payment's second id at the gateway, once known (Stripe's
+    /// PaymentIntent, which its disputes and dashboard refunds name).
+    pub gateway_intent: Option<String>,
     /// Charge or link.
     pub kind: PaymentKind,
     /// As the gateway last said.
@@ -114,6 +117,7 @@ impl BillingPayment {
             gateway: gateway.into(),
             account: None,
             gateway_id: None,
+            gateway_intent: None,
             kind,
             status: PaymentStatus::Pending,
             refunded_amount: 0,
@@ -124,6 +128,19 @@ impl BillingPayment {
             created_at: None,
             updated_at: None,
         }
+    }
+
+    /// The payment a gateway notice names: by its id, or by its second id
+    /// (`gateway_intent`) when the notice carries only that one.
+    pub async fn find_named(db: &Db, gateway: &str, id: &str) -> Result<Option<Self>> {
+        if let Some(row) = Self::find_at(db, gateway, id).await? {
+            return Ok(Some(row));
+        }
+        Self::where_eq("gateway", gateway)
+            .where_eq("gateway_intent", id)
+            .order_by_desc("id")
+            .first(db)
+            .await
     }
 
     /// The part refunded so far, in the payment's currency.
@@ -735,6 +752,9 @@ pub struct PaymentState {
     pub at: Option<i64>,
     /// The state of its refunds the gateway knows.
     pub refunds: Vec<RefundUpdate>,
+    /// The payment's second id at the gateway, when it says (see
+    /// [`BillingPayment::gateway_intent`]).
+    pub intent: Option<String>,
 }
 
 impl PaymentState {
@@ -744,7 +764,14 @@ impl PaymentState {
             status,
             at: None,
             refunds: Vec::new(),
+            intent: None,
         }
+    }
+
+    /// With the payment's second id at the gateway.
+    pub fn intent(mut self, id: impl Into<String>) -> Self {
+        self.intent = Some(id.into());
+        self
     }
 
     /// The gateway said this at `unix_seconds`.
@@ -770,6 +797,8 @@ pub struct PaymentUpdate {
     pub status: PaymentStatus,
     /// When the gateway said so (unix seconds).
     pub at: Option<i64>,
+    /// The payment's second id at the gateway, when the event names it.
+    pub intent: Option<String>,
 }
 
 impl PaymentUpdate {
@@ -779,12 +808,19 @@ impl PaymentUpdate {
             gateway_id: gateway_id.into(),
             status,
             at: None,
+            intent: None,
         }
     }
 
     /// The gateway said this at `unix_seconds`.
     pub fn at(mut self, unix_seconds: i64) -> Self {
         self.at = Some(unix_seconds);
+        self
+    }
+
+    /// The payment's second id at the gateway.
+    pub fn intent(mut self, id: impl Into<String>) -> Self {
+        self.intent = Some(id.into());
         self
     }
 }

@@ -2041,7 +2041,7 @@ Notes:
   `RefundSucceeded`, `RefundFailed`, `DisputeOpened`/`Won`/`Lost`, `PaymentLinkExpired`
 - [x] Stripe, Xendit and the new N-Genius gateway (`Billing::ngenius()`), fixtures from their docs; the `billing:expire-links` sweep
 - [x] Config docs and new-app stubs; docs/billing.md, CHEATSHEET.md, llms.txt, the crate README
-- [ ] The bikeshop "pay by link" example and its browser test; acceptance checks AC1-AC14 and the Stripe PaymentIntent matching (13/13)
+- [ ] The bikeshop "pay by link" example and its browser test; acceptance checks AC1-AC14 (Stripe PaymentIntent matching is done, 13/14)
 
 ### Custom fields (#41)
 - [x] `renox::custom_fields::{CustomField, FieldKind, LocaleMap, FieldRules, CustomValues}`: definitions in the `custom_fields` table
@@ -2395,7 +2395,7 @@ Notes:
   after a success is ignored, otherwise the newest gateway time decides. Expiry comes from the gateway's webhook or the hourly
   `billing:expire-links` sweep, which asks `payment_status` first. N-Genius is one-off only (no subscriptions, no disputes); saved-card
   tokens were not accepted. Fixtures for all three gateways are written from their public docs, not recorded. Known gap: Stripe
-  disputes and dashboard-made refunds name only the PaymentIntent, which the row does not store yet (fixed in 13/13).
+  disputes and dashboard-made refunds name only the PaymentIntent, which the row now stores as `gateway_intent` (migration `…000920`), so they are matched by it (13/14).
 - **Custom fields** (#41, assumptions A1-A12): definitions live in their own table, not in settings, and a key is stable
   (`[a-z][a-z0-9_]*`) because stored values are keyed by it; only label, rules, meta, position and active change, and deactivating
   keeps the values. Values are one `Json<CustomValues>` column, so no migration per field. Labels are a locale map that falls back

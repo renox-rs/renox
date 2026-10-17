@@ -293,15 +293,21 @@ impl Stripe {
         ))
     }
 
-    /// The PaymentIntent a paid payment was made with.
+    /// The PaymentIntent a paid payment was made with: the one stored on the
+    /// row, else the session's, which is then stored for later notices.
     async fn intent_of(&self, state: &AppState, payment: &BillingPayment) -> Result<String> {
-        self.session_of(state, payment)
+        if let Some(intent) = &payment.gateway_intent {
+            return Ok(intent.clone());
+        }
+        let intent = self
+            .session_of(state, payment)
             .await?
             .and_then(|session| id_of(&session["payment_intent"]))
             .ok_or_else(|| {
                 renox::anyhow::anyhow!("the payment {} has not been paid at Stripe", payment.id)
-                    .into()
-            })
+            })?;
+        crate::sync::remember_intent(state, payment.clone(), Some(&intent)).await?;
+        Ok(intent)
     }
 
     /// Checks the signature with the account's webhook secret (the default
@@ -692,6 +698,7 @@ impl Gateway for Stripe {
             });
             let mut reported = PaymentState::new(status);
             if let Some(intent) = session.as_ref().and_then(|s| id_of(&s["payment_intent"])) {
+                reported = reported.intent(intent.clone());
                 let path = format!("/refunds?payment_intent={intent}");
                 let list = send(self.call_for(state, payment, "GET", &path).await?).await?;
                 for refund in list["data"].as_array().into_iter().flatten() {
@@ -868,6 +875,9 @@ fn session_update(session: &Value, status: PaymentStatus, at: Option<i64>) -> No
     let mut update = PaymentUpdate::new(id, status);
     if let Some(at) = at {
         update = update.at(at);
+    }
+    if let Some(intent) = id_of(&session["payment_intent"]) {
+        update = update.intent(intent);
     }
     Notice::OneOff(update)
 }

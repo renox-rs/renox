@@ -257,8 +257,25 @@ pub(crate) async fn one_off(state: &AppState, gateway: &str, update: PaymentUpda
         );
         return Ok(());
     };
+    let row = remember_intent(state, row, update.intent.as_deref()).await?;
     apply_status(state, row, update.status, update.at).await?;
     Ok(())
+}
+
+/// Stores the payment's second id (Stripe's PaymentIntent) on its row when
+/// the gateway names one, so notices that carry only that id find the row.
+pub(crate) async fn remember_intent(
+    state: &AppState,
+    mut row: BillingPayment,
+    intent: Option<&str>,
+) -> Result<BillingPayment> {
+    if let Some(intent) = intent
+        && row.gateway_intent.as_deref() != Some(intent)
+    {
+        row.gateway_intent = Some(intent.to_owned());
+        row.save(&state.db).await?;
+    }
+    Ok(row)
 }
 
 /// Moves a payment to `status` and announces it, by the late-success rule:
@@ -342,6 +359,7 @@ pub(crate) async fn apply_state(
 ) -> Result {
     let gateway = row.gateway.clone();
     let id = row.gateway_id.clone();
+    let row = remember_intent(state, row, reported.intent.as_deref()).await?;
     apply_status(state, row, reported.status, reported.at).await?;
     for refund in &reported.refunds {
         let mut refund = refund.clone();
@@ -388,7 +406,7 @@ pub(crate) async fn refund_done(
 pub(crate) async fn refund_update(state: &AppState, gateway: &str, update: RefundUpdate) -> Result {
     let db = &state.db;
     let mut payment = match &update.payment_gateway_id {
-        Some(id) => BillingPayment::find_at(db, gateway, id).await?,
+        Some(id) => BillingPayment::find_named(db, gateway, id).await?,
         None => None,
     };
     let existing = BillingRefund::where_eq("gateway_id", update.gateway_id.as_str())
@@ -462,7 +480,7 @@ pub(crate) async fn refund_update(state: &AppState, gateway: &str, update: Refun
 pub(crate) async fn dispute(state: &AppState, gateway: &str, update: DisputeUpdate) -> Result {
     use PaymentStatus::{Disputed, PartiallyRefunded, Refunded, Succeeded};
     let db = &state.db;
-    let Some(mut row) = BillingPayment::find_at(db, gateway, &update.payment_gateway_id).await?
+    let Some(mut row) = BillingPayment::find_named(db, gateway, &update.payment_gateway_id).await?
     else {
         tracing::warn!(
             gateway,

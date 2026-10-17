@@ -3465,6 +3465,132 @@ fn stripe_parses_one_off_webhooks() {
     assert!(parse("charge.dispute.closed", closed).is_empty());
 }
 
+/// Stripe's disputes and dashboard-made refunds name only the PaymentIntent:
+/// the paid webhook stores it on the row, and they reach that row by it.
+#[renox::test]
+async fn stripe_disputes_and_dashboard_refunds_find_the_row_by_its_payment_intent() {
+    use renox_billing::{
+        BillingPayment, DisputeLost, DisputeOpened, DisputeWon, PaymentStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::new("sk_test_fake", "whsec_test")));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    app.fake_http().on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    let reload = || async {
+        BillingPayment::find(&state.db, payment.id)
+            .await
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(reload().await.gateway_intent, None);
+
+    // Before it is paid the intent is unknown, so a dispute finds nothing.
+    let mut dispute = fixture("event_dispute_created");
+    stripe_webhook(
+        &app,
+        "evt_d0",
+        "charge.dispute.created",
+        100,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload().await.status, PaymentStatus::Pending);
+
+    // The paid webhook stores the PaymentIntent.
+    stripe_webhook(
+        &app,
+        "evt_p",
+        "checkout.session.completed",
+        200,
+        fixture("checkout_session_paid"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    let paid = reload().await;
+    assert_eq!(paid.status, PaymentStatus::Succeeded);
+    assert_eq!(paid.gateway_intent.as_deref(), Some("pi_3Abc"));
+
+    // A refund made in Stripe's dashboard is new to the app and names only
+    // the intent.
+    let mut dashboard = fixture("event_refund_updated");
+    dashboard["id"] = json!("re_dashboard");
+    dashboard["status"] = json!("succeeded");
+    dashboard["amount"] = json!(500);
+    stripe_webhook(&app, "evt_r", "charge.refund.updated", 300, dashboard)
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.payment.id == payment.id && e.amount == 500);
+    let refunded = reload().await;
+    assert_eq!(
+        (refunded.refunded_amount, refunded.status),
+        (500, PaymentStatus::PartiallyRefunded)
+    );
+
+    // A dispute opens, is won, opens again and is lost.
+    stripe_webhook(
+        &app,
+        "evt_d1",
+        "charge.dispute.created",
+        400,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeOpened>(|e| {
+        e.payment.id == payment.id
+            && e.evidence_due_by.map(|d| d.timestamp()) == Some(1_893_456_000)
+    });
+    assert_eq!(reload().await.status, PaymentStatus::Disputed);
+    stripe_webhook(
+        &app,
+        "evt_d2",
+        "charge.dispute.closed",
+        500,
+        fixture("event_dispute_won"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeWon>(|e| e.payment.id == payment.id);
+    assert_eq!(reload().await.status, PaymentStatus::PartiallyRefunded);
+    stripe_webhook(
+        &app,
+        "evt_d3",
+        "charge.dispute.created",
+        600,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    dispute["status"] = json!("lost");
+    stripe_webhook(&app, "evt_d4", "charge.dispute.closed", 700, dispute)
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeLost>(|e| e.payment.id == payment.id);
+    let lost = reload().await;
+    assert_eq!(
+        (lost.status, lost.refunded_amount),
+        (PaymentStatus::Refunded, 4_500)
+    );
+}
+
 /// A charge on a named account uses that account's key, and a refund of it
 /// uses the account stored on the payment; the default account's key is not
 /// used for either, and an account without a key is refused.

@@ -646,5 +646,5 @@
   applies the notices (late-success rule) and fires the new events. The webhook event id is `{gateway}[/{account}]:{id}`.
   `billing:expire-links` is an app command and an hourly scheduled task. Config: docs/contributing/config.md and `env.stub`.
   Tests: `crates/renox-billing/tests/billing.rs` with fixtures under `tests/fixtures/{stripe,xendit,ngenius}`, written from the
-  gateways' public docs. Open (13/13): Stripe disputes and dashboard refunds name only the PaymentIntent, which the row does not
-  store; the bikeshop "pay by link" example and its browser test. Guide: docs/billing.md "One-off payments".
+  gateways' public docs. Stripe disputes and dashboard refunds name only the PaymentIntent: the row stores it
+  (`gateway_intent`, migration `…000920`) and `BillingPayment::find_named` matches by id or intent (13/14). Open (14/14): the bikeshop "pay by link" example and its browser test. Guide: docs/billing.md "One-off payments".

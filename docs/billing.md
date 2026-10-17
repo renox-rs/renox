@@ -501,10 +501,12 @@ with `evidence_due_by` stored, and the outcome arrives as `DisputeWon` or `Dispu
 `Gateway::accept_dispute` gives up contesting one where the gateway supports it (Stripe) and
 answers `Unsupported` elsewhere.
 
-> [!NOTE]
-> Stripe's dispute events and refunds made in Stripe's dashboard name only the PaymentIntent,
-> which the payment row does not store yet, so they are not matched to a payment for now.
-> Refunds made with `Billing::refund` are matched and tracked end to end.
+Stripe's dispute events and refunds made in Stripe's dashboard name only the PaymentIntent, so
+the payment row keeps it (`gateway_intent`, filled by the `checkout.session.completed` webhook, a
+status check or the first refund) and those events are matched to the row by it. A dispute that
+arrives before the intent is known is ignored; a Payment Link keeps the intent of its newest paid
+session. Upgrading adds the column through the new `…000920_add_gateway_intent_to_billing_payments`
+migration (run `rnx migrate`).
 
 ### Asking the gateway
 

@@ -102,6 +102,23 @@ const MIGRATIONS: &[Migration] = &[
         include_str!("../migrations/00010101000910_create_billing_payments.postgres.up.sql"),
         None,
     ),
+    Migration::new(
+        "00010101000920_add_gateway_intent_to_billing_payments",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000920_add_gateway_intent_to_billing_payments.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000920_add_gateway_intent_to_billing_payments.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!(
+            "../migrations/00010101000920_add_gateway_intent_to_billing_payments.postgres.up.sql"
+        ),
+        None,
+    ),
 ];
 
 /// The templates, compiled in. An app replaces one with a file of the same
