@@ -1542,14 +1542,23 @@ static REGISTRY: RwLock<BTreeMap<String, MachineInfo>> = RwLock::new(BTreeMap::n
 /// Makes `M`'s machine findable by name with [`machine_info`]. Call it at
 /// startup for each machine; registering again replaces the entry.
 pub fn register<M: StateMachine>() {
+    let info = info_of::<M>();
+    REGISTRY
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(info.model.clone(), info);
+}
+
+/// `M`'s machine as plain data, without registering it.
+pub fn info_of<M: StateMachine>() -> MachineInfo {
     let machine = M::machine();
     let model = std::any::type_name::<M>()
         .rsplit("::")
         .next()
         .unwrap_or_default()
         .to_owned();
-    let info = MachineInfo {
-        model: model.clone(),
+    MachineInfo {
+        model,
         table: M::TABLE.to_owned(),
         states: machine.states().to_vec(),
         initial: machine.initial_states().to_vec(),
@@ -1568,11 +1577,7 @@ pub fn register<M: StateMachine>() {
             })
             .collect(),
         mermaid: machine.mermaid(),
-    };
-    REGISTRY
-        .write()
-        .unwrap_or_else(PoisonError::into_inner)
-        .insert(model, info);
+    }
 }
 
 /// The registered machine whose model is called `name` (`Order`; the table

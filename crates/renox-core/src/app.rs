@@ -72,6 +72,7 @@ Commands:
   schedule:work             Run scheduled tasks (when SCHEDULER=false for serve)
   route:list                List every route with its name, module and guards
   view:check                Compile every template; check route names and typed views
+  state:diagram [Model]    Print a state machine as a Mermaid diagram (no name: list them)
   view:data [--out P]       Write .vscode/renox-components.json for editor autocomplete
   db:shell                  Run SQL against the database (`.tables`, `.quit`)
   down [--secret S] [--retry N]
@@ -417,6 +418,14 @@ impl App {
     /// ```
     pub fn model<M: crate::db::Model>(mut self) -> Self {
         self.registry.model::<M>();
+        self
+    }
+
+    /// Registers `M`'s state machine by name, so `rnx state:diagram Order` and
+    /// the admin panel can find it, and the model for `db:check`.
+    pub fn state_machine<M: crate::state_machine::StateMachine>(mut self) -> Self {
+        self.registry.model::<M>();
+        crate::state_machine::register::<M>();
         self
     }
 
@@ -1303,6 +1312,25 @@ impl App {
                 println!("Checked {checked} templates: {} problems.", problems.len());
                 if !problems.is_empty() {
                     return Err(anyhow!("{} template problem(s)", problems.len()).into());
+                }
+            }
+            "state:diagram" if !kernel.commands.iter().any(|c| c.name == "state:diagram") => {
+                match args.get(1) {
+                    Some(name) => match crate::state_machine::machine_info(name) {
+                        Some(info) => println!("{}", info.mermaid.trim_end()),
+                        None => {
+                            return Err(anyhow!(
+                                "no state machine called `{name}` (register it with App::state_machine); known: {}",
+                                crate::state_machine::machine_names().join(", ")
+                            )
+                            .into());
+                        }
+                    },
+                    None => {
+                        for name in crate::state_machine::machine_names() {
+                            println!("{name}");
+                        }
+                    }
                 }
             }
             "view:data" if !kernel.commands.iter().any(|c| c.name == "view:data") => {

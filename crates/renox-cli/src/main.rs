@@ -266,6 +266,12 @@ enum Command {
     /// Compare the registered models with the tables the migrations build.
     #[command(name = "db:check")]
     DbCheck,
+    /// Print a registered state machine as a Mermaid diagram (no name: list them).
+    #[command(name = "state:diagram")]
+    StateDiagram {
+        /// The model, e.g. Order (or its table).
+        name: Option<String>,
+    },
     /// Run the app's seeders.
     #[command(name = "db:seed")]
     DbSeed,
@@ -438,6 +444,9 @@ fn run(command: Command) -> Result<()> {
         Command::MigrateFresh { args } => app_command("migrate:fresh", &args),
         Command::MigrateStatus => app_command("migrate:status", &[]),
         Command::DbCheck => app_command("db:check", &[]),
+        Command::StateDiagram { name } => {
+            app_command("state:diagram", &name.into_iter().collect::<Vec<_>>())
+        }
         Command::DbSeed => app_command("db:seed", &[]),
         Command::App(args) => match args.split_first() {
             Some((command, rest)) => app_command(command, rest),

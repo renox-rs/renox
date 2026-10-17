@@ -32,6 +32,13 @@ pub(crate) const DEFAULTS: &[(&str, &str)] = &[
     ("delete_for_good", "Delete for good"),
     ("deleted_badge", "Deleted"),
     ("in_trash", "This :label is in the trash."),
+    ("state_machine", "State machine"),
+    ("transition", "Transition"),
+    ("from", "From"),
+    ("to", "To"),
+    ("reason", "Reason"),
+    ("needs_approval", "needs approval"),
+    ("diagram_source", "Diagram (Mermaid)"),
     ("delete_question", "Delete this :label?"),
     ("delete_question_for_good", "Delete this :label for good?"),
     (

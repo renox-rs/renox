@@ -66,6 +66,7 @@ the queue workers and the scheduler.
 | `schedule:list`, `schedule:run <task>`, `schedule:work` | The scheduler (`schedule:work` runs it alone, when `serve` runs with `SCHEDULER=false`). |
 | `db:check` | Compares the models registered with `App::model` with the tables the migrations build, and fails on a mismatch. |
 | `db:diff [name] [--yes]` | Writes a migration for what changed in those models (`rnx make:migration --auto`). Review it before `migrate`. |
+| `state:diagram [Model]` | Prints the Mermaid diagram of a state machine registered with `App::state_machine::<M>()` (the model or table name, ignoring case); without a name it lists the registered machines. |
 | `view:check` | Compiles every template and checks its components and route names. |
 | `route:list` | Every route with its name, module and guards. |
 | `ui:publish [--force]` | Copies the UI kit into the app (`resources/views/components/ui.html`, `public/css/renox-ui.css`), so you can change it there. |

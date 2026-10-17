@@ -710,6 +710,21 @@ fn machines_are_found_by_name() {
     assert!(renox::state_machine::machine_names().contains(&"Order".to_owned()));
 }
 
+#[renox::test]
+async fn state_diagram_prints_a_registered_machine_and_refuses_unknown_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let make = || {
+        let mut config = Config::default();
+        config.database_url = format!("sqlite://{}", dir.path().join("app.db").display());
+        config.storage_path = dir.path().join("storage");
+        App::with_config(config).state_machine::<Order>()
+    };
+    make().run_args(["state:diagram"]).await.unwrap();
+    make().run_args(["state:diagram", "Order"]).await.unwrap();
+    make().run_args(["state:diagram", "orders"]).await.unwrap();
+    assert!(make().run_args(["state:diagram", "Nope"]).await.is_err());
+}
+
 #[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
 enum JobStatus {
     New,

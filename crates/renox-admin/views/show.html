@@ -31,4 +31,32 @@
     {%- endfor %}
   {% endcall %}
 {% endcall %}
+{%- if machine %}
+{% call card() %}
+  <h2 class="text-base font-semibold">{{ admin.text.state_machine }}</h2>
+  {%- if transitions %}
+  <div class="mt-3 flex flex-wrap items-start gap-3">
+    {%- for t in transitions %}
+    <form method="post" action="{{ url }}/actions/{{ t.name }}" class="flex items-center gap-2">
+      {{ csrf_field() }}
+      {%- if t.needs_reason %}<input type="text" name="reason" required placeholder="{{ admin.text.reason }}" class="rounded border px-2 py-1 text-sm">{% endif %}
+      {{ button(t.label, variant=("danger" if t.tone == "danger" else "secondary")) }}
+      {%- if t.requires_approval %}<span class="text-xs">{{ admin.text.needs_approval }}</span>{% endif %}
+    </form>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+  <table class="mt-4 w-full text-sm">
+    <thead><tr><th class="text-left">{{ admin.text.transition }}</th><th class="text-left">{{ admin.text.from }}</th><th class="text-left">{{ admin.text.to }}</th></tr></thead>
+    <tbody>
+    {%- for t in machine.transitions %}
+    {%- if not t.system %}
+    <tr><td>{{ t.label }}</td><td>{{ t.from | join(", ") }}</td><td>{{ t.to }}</td></tr>
+    {%- endif %}
+    {%- endfor %}
+    </tbody>
+  </table>
+  <details class="mt-4"><summary class="text-sm">{{ admin.text.diagram_source }}</summary><pre class="overflow-x-auto text-xs">{{ machine.mermaid }}</pre></details>
+{% endcall %}
+{%- endif %}
 {% endblock %}

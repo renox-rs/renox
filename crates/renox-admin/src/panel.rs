@@ -1364,6 +1364,23 @@ async fn show<R: AdminResource>(
         "force_delete_url".into(),
         Value::String(format!("{base}/{id}/actions/force-delete")),
     );
+    if let Some(machine) = cx.resource.state_machine() {
+        let available = if !deleted && may("update") {
+            cx.resource
+                .available_transitions(&record, &user, &state.db)
+                .await?
+        } else {
+            Vec::new()
+        };
+        // A transition button is a row action: only those the resource offers.
+        let offered = cx.resource.actions();
+        let available: Vec<_> = available
+            .into_iter()
+            .filter(|a| offered.iter().any(|x| x.key() == a.name && x.on_row()))
+            .collect();
+        values.insert("machine".into(), to_json(&machine)?);
+        values.insert("transitions".into(), to_json(&available)?);
+    }
     values.insert("title".into(), Value::String(cx.title_of(&record, &texts)));
     values.insert("label_lower".into(), Value::String(lower(&label)));
     let tabs = cx.relation_tabs(&user, &texts, &id);
