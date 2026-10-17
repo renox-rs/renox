@@ -51,6 +51,7 @@ rnx queue:prune-failed --hours 168   # failed jobs older than that (the default)
 rnx ui:publish                       # the UI kit (components/ui.html + its CSS) into the app; --force replaces
 rnx schedule:work                    # tasks in their own process (SCHEDULER=false for serve)
 rnx webhook:failed                   # webhook:retry <id>
+rnx webhook:endpoints                # webhook:deliveries [--endpoint N] [--failed], webhook:redeliver <id>, webhook:prune-deliveries [--days 30]
 rnx down --secret s3cret --retry 60  # 503 for everyone but visitors of /s3cret; `rnx up` ends it
 rnx build                            # one release binary in dist/; rnx make:deploy
 rnx tailwind --watch                 # resources/css/app.css -> public/css/app.css (serve/build do it)
@@ -2546,6 +2547,32 @@ impl Webhook for Xendit {
 
 // Module::routes:   Routes::new().webhook::<Xendit>("/webhooks/xendit")
 // Module::register: app.webhook::<Xendit>();
+```
+
+Outbound webhooks (your app tells others; Standard Webhooks headers `webhook-id`, `webhook-timestamp`,
+`webhook-signature`; retries 5 s … 10 h, 8 tries; `docs/operations.md` "Outbound webhooks"):
+
+```rust
+use renox::webhook::outbound::{emit_in, Endpoint, EndpointDisabled};
+
+// Module::register: name the event and its payload `data`.
+app.webhook_event::<InvoicePaid>("invoice.paid", |e| serde_json::json!({ "invoice": e.id }));
+
+// Subscribe a URL (https; empty events = all). The `whsec_…` secret is returned once, stored sealed.
+let (endpoint, secret) = Endpoint::create(&state, "https://example.com/hooks", "Billing", &["invoice.paid"]).await?;
+Endpoint::list(&state.db).await?;                 // find, enable, disable(&db, id, reason), set_events, delete
+
+state.emit(InvoicePaid { .. });                   // queues a delivery per subscribed endpoint
+let mut tx = state.db.begin().await?;             // from a database change: sent only if it commits
+emit_in(&state, &mut tx, &InvoicePaid { .. }).await?;
+tx.commit().await?;
+// 410 disables an endpoint at once; WEBHOOK_DISABLE_AFTER (20) failed deliveries in a row disable it
+// and emit EndpointDisabled { endpoint_id }.
+
+// Between your own apps: sender signs, receiver verifies (401 on bad key, signature, age, replay).
+state.http.post(url).json(&body).sign("billing", &secret).send().await?;  // after the body
+// App::signing_key("billing", "whsec_…"); handler: async fn(SignedRequest(ping): SignedRequest<Ping>)
+// WEBHOOK_TOLERANCE_SECS (300) is the timestamp window.
 ```
 
 Subscriptions ready-made (Laravel's Cashier): the `renox-billing` crate,

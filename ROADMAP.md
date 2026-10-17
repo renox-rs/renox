@@ -1943,6 +1943,16 @@ Notes:
 - [ ] Links stored through `Registry::contribute` (after #31); breadcrumbs, menus edited at run
   time and a renox-admin listing are out of scope
 
+### Outbound webhooks (#38)
+- [x] `renox::webhook::outbound`: `Endpoint` (secret shown once, sealed with `APP_KEY`),
+  `App::webhook_event`, `emit_in` (transactional outbox), `DeliverWebhook` (Standard Webhooks
+  schedule, 410 and `WEBHOOK_DISABLE_AFTER` disabling, `EndpointDisabled`), the `webhook_deliveries`
+  log; `webhook:endpoints|deliveries|redeliver|prune-deliveries`
+- [x] `Request::sign`, `App::signing_key`, `SignedRequest<T>` (`WEBHOOK_TOLERANCE_SECS`, replay check)
+- [x] Docs (operations.md "Outbound webhooks" with the spec test vector), CHEATSHEET.md, llms.txt
+- [ ] An admin screen for endpoints, OAuth2 client credentials, per-endpoint payload transforms and
+  private-address blocking are out of scope
+
 ## Decisions
 
 - **`--from` is a new option, not a value for `--starter`** (#35), which stays a boolean; it
@@ -2196,6 +2206,15 @@ Notes:
   uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
   where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
   A PDF receipt (#30) and ESC/POS printing stay out.
+- **Outbound webhooks** (#38, accepted as written 2026-10-16): the Standard Webhooks format
+  (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64>`, secrets `whsec_<base64>`),
+  not the proposal's own headers, so receivers can use existing libraries. No generic after-commit
+  hook: `emit_in` queues the delivery jobs inside the caller's transaction (`Queue::dispatch_in`), and
+  a plain `state.emit` of an event registered with `App::webhook_event` queues them at once. The job
+  payload holds only ids and is encrypted; the body is stored once in `webhook_deliveries`, so a
+  redelivery sends the identical payload with a fresh timestamp. Out of scope and said so in the
+  docs: blocking private addresses (SSRF), an admin UI, OAuth2 client credentials, payload
+  transforms.
 - **Passwordless login** (#42, Renoxium's notes of 2026-10-16): `Auth::new().magic_link()` and
   `.login_codes(LoginCodes::new()..)` are Auth's own login flow (renox-core `auth/passwordless.rs`),
   not a plugin crate: no new dependency, delivery goes through the existing mail and

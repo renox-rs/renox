@@ -199,7 +199,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   ids), error reports (`App::report`), error pages, the debug inspector, deploys without refused
   connections (systemd socket activation), database sessions, timeouts, `TRUSTED_PROXIES`,
   `/health`, what happens when the database or SMTP fails, recovering failed jobs and webhook
-  calls, backups (and what `APP_KEY` protects), migrations at deploy, the scheduler's time zone,
+  calls, outbound webhooks (`Endpoint`, `App::webhook_event`, `emit_in`, Standard Webhooks
+  signing, retries, `webhook:*` commands, `Request::sign` and `SignedRequest`), backups (and what `APP_KEY` protects), migrations at deploy, the scheduler's time zone,
   tables to prune, maintenance mode.
 - [docs/development.md](docs/development.md): faster builds, and `rnx doctor` (profiles, linker, features to drop,
   sccache, the cargo-chef Dockerfile); "Packages": `rnx make:package` writes a reusable module crate

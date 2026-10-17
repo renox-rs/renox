@@ -206,7 +206,9 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/analytics.rs         analytics::event, GaClientId, ServerEvent job (`server-events` feature,
                            sent through `state.http`)
   src/webhook/             mod.rs re-exports the public paths; inbound.rs: Webhook trait, receive route,
-                           webhook_calls store/retry, ProcessWebhook job, HMAC helpers
+                           webhook_calls store/retry, ProcessWebhook job, HMAC helpers; outbound.rs:
+                           Endpoint, EndpointDisabled, emit_in, DeliverWebhook job, Delivery log;
+                           signing.rs: Standard Webhooks sign/verify, whsec_ secrets, SignedRequest
   src/security.rs          security headers + CSP (+ nonce), csrf-exempt and webhook route sets,
                            TRUSTED_HOSTS (400 for other hosts), ETags for Routes::etag (hashed
                            here, after the view layer rendered the page)

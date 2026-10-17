@@ -14,6 +14,7 @@ see the `deploy/README.md` file that `rnx make:deploy` writes for you.
 - [Several servers](#several-servers) and [`/health`](#health)
 - [When a dependency fails](#when-a-dependency-fails): what the app does when something breaks
 - [Failed jobs](#failed-jobs) and [Failed webhook calls](#failed-webhook-calls)
+- [Outbound webhooks](#outbound-webhooks): telling other systems about events
 - [Backups](#backups), [Deploys and migrations](#deploys-and-migrations) and
   [Deploys without refused connections](#deploys-without-refused-connections)
 - [Sessions](#sessions), [Scheduled tasks and housekeeping](#scheduled-tasks-and-housekeeping)
@@ -58,6 +59,7 @@ the queue workers and the scheduler.
 | `queue:work [--queue a,b] [--workers N] [--once]` | Runs workers in a process of their own. |
 | `queue:failed`, `queue:retry <id\|all>`, `queue:forget <id>`, `queue:flush`, `queue:prune-failed [--hours N]`, `queue:prune-batches [--hours N]` | Failed jobs and finished batches (see Failed jobs). |
 | `webhook:failed`, `webhook:retry <id>` | Failed webhook calls (see Failed webhook calls). |
+| `webhook:endpoints`, `webhook:deliveries [--endpoint N] [--failed]`, `webhook:redeliver <id>`, `webhook:prune-deliveries [--days N]` | Outbound webhooks (see Outbound webhooks). |
 | `sequence:list` | Lists the numbering series (`Sequence`, docs/relations.md "Numbering documents") and the last number of each. |
 | `cache:prune`, `session:prune` | Deletes expired cache rows and database sessions. |
 | `import:prune [--days N]` | Deletes the records of imports whose undo window ended more than N days ago (0): `renox::import::prune(&state, age)`. |
@@ -491,6 +493,154 @@ The saved payload is the exact body the provider sent, so its signature can be c
 The `renox-billing` crate's webhooks (Stripe, Xendit) are saved under the provider `billing`,
 with event ids like `stripe:evt_…`. Retrying one is safe: applying an event twice changes
 nothing, and an event older than what a subscription already shows is ignored.
+
+## Outbound webhooks
+
+An outbound webhook is the other direction: your app tells another system that something
+happened, by POSTing a signed JSON message to a URL that system registered. Renox keeps the
+registered URLs (endpoints), signs each message, sends it from the queue, retries what fails
+and switches off an endpoint that keeps failing.
+
+The format is [Standard Webhooks](https://www.standardwebhooks.com), so receivers can verify it
+with any of the existing libraries. Each request is a JSON `POST` with three headers:
+
+| Header | Value |
+|---|---|
+| `webhook-id` | `msg_…`, unique per event and the same on every retry (receivers use it to ignore duplicates). |
+| `webhook-timestamp` | Unix seconds when this attempt was sent. |
+| `webhook-signature` | `v1,<base64>`: HMAC-SHA256 over `{id}.{timestamp}.{body}`. Several signatures may be listed, separated by spaces. |
+
+The body is `{ "id", "type", "created_at", "data" }`. An endpoint's secret is written
+`whsec_<base64>`; the HMAC key is the decoded part. This is the specification's own test vector,
+which Renox's signing reproduces exactly:
+
+```rust
+use std::time::Duration;
+use renox::webhook::signing;
+
+let secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+let id = "msg_p5jXN8AQM9LWM0D4loKWxJek";
+let body = br#"{"test": 2432232314}"#;
+
+let signature = signing::sign(secret, id, 1614265330, body)?;
+assert_eq!(signature, "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE=");
+
+// A timestamp far from now is refused, so a captured request can't be replayed later.
+assert!(!signing::verify(secret, id, "1614265330", &signature, body, Duration::from_secs(300)));
+# Ok::<(), renox::Error>(())
+```
+
+### Endpoints
+
+`Endpoint::create` registers a URL for some event names (none: every event) and returns the
+secret **once**. It is stored sealed with `APP_KEY`; `list` and `find` never show it, so give it
+to the receiver now.
+
+```rust
+# use renox::prelude::*;
+# async fn demo(state: AppState) -> Result {
+use renox::webhook::outbound::Endpoint;
+
+let (endpoint, secret) =
+    Endpoint::create(&state, "https://example.com/hooks", "Billing", &["invoice.paid"]).await?;
+assert!(secret.starts_with("whsec_")); // shown only now
+assert!(endpoint.subscribes_to("invoice.paid"));
+Endpoint::disable(&state.db, endpoint.id, "paused").await?; // `enable` turns it back on
+# Ok(()) }
+```
+
+The URL must be `https`, except when `APP_ENV` is `local` or `test`. Renox sends with a 15 s
+timeout and follows no redirects. It does not block private addresses, so don't let untrusted
+people register endpoint URLs.
+
+### Sending events
+
+Name the events you publish once, in `Module::register` or on the `App`: the event type and a
+function that makes the payload's `data`.
+
+```rust
+# use renox::prelude::*;
+# #[derive(Clone)] struct InvoicePaid { id: i64, cents: i64 }
+# impl Event for InvoicePaid {}
+# let _ =
+App::new().webhook_event::<InvoicePaid>("invoice.paid", |e| {
+    serde_json::json!({ "invoice": e.id, "amount": e.cents })
+})
+# ;
+```
+
+After that a plain `state.emit(InvoicePaid { .. })` queues one delivery per enabled endpoint
+subscribed to `invoice.paid`.
+
+**Use `emit_in` when the event comes from a database change.** `emit_in` queues the deliveries
+inside your transaction, so they are sent only if it commits and never if it rolls back. With
+`state.emit` after the commit, a crash between the two loses the webhook; with `state.emit`
+before it, a rollback sends a webhook for something that never happened.
+
+```rust
+# use renox::prelude::*;
+# #[derive(Clone)] struct InvoicePaid { id: i64, cents: i64 }
+# impl Event for InvoicePaid {}
+# async fn demo(state: AppState) -> Result {
+use renox::webhook::outbound::emit_in;
+
+let mut tx = state.db.begin().await?;
+// … update the invoice with `tx` …
+emit_in(&state, &mut tx, &InvoicePaid { id: 7, cents: 4900 }).await?;
+tx.commit().await?; // the deliveries are sent after this
+# Ok(()) }
+```
+
+### Retries and switching off
+
+Each delivery is a queued job, `DeliverWebhook`, with eight tries: at once, then after 5 s, 5 min,
+30 min, 2 h, 5 h and 10 h (twice). A `5xx`, `429`, timeout or connection error is tried again;
+any other `4xx` fails the delivery without a retry. A `2xx` is a success and resets the
+endpoint's failure count.
+
+- An answer of `410 Gone` disables the endpoint at once.
+- A delivery that fails for good counts once. After `WEBHOOK_DISABLE_AFTER` (20) of them in a row
+  the endpoint is disabled, and the event `EndpointDisabled { endpoint_id }` is emitted: listen to
+  it to tell the owner.
+- Every attempt writes a row in `webhook_deliveries` (status, response code, duration, attempt).
+  The body is stored once there, so a redelivery sends the identical payload.
+
+### Commands
+
+```bash
+my-app webhook:endpoints                       # every endpoint, whether it is enabled, its failures
+my-app webhook:deliveries --failed             # newest first; also --endpoint 3
+my-app webhook:redeliver 12                    # same body and webhook-id, fresh timestamp
+my-app webhook:prune-deliveries --days 30      # delete delivery rows older than 30 days (the default)
+```
+
+`webhook:redeliver` refuses a disabled endpoint: enable it first. Run `webhook:prune-deliveries`
+from a scheduled task, as the table grows with every event.
+
+### Signed requests between your own apps
+
+`Request::sign` signs an outgoing request in the same format, and `SignedRequest<T>` checks it
+on the other side. The receiver registers each sender's key under a key id.
+
+```rust
+# use renox::prelude::*;
+#[derive(serde::Deserialize)]
+struct Ping { note: String }
+
+async fn receive(SignedRequest(ping): SignedRequest<Ping>) -> String {
+    ping.note
+}
+
+# let _ =
+App::new().signing_key("billing", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
+# ;
+// Sender: state.http.post(url).json(&body).sign("billing", &secret).send().await?
+```
+
+The extractor answers `401` with the same generic message for an unknown key id, a wrong
+signature, a timestamp more than `WEBHOOK_TOLERANCE_SECS` (300) away from now, and a `webhook-id`
+it has already seen inside that window. Call `.sign` after the body is set. Registering a key
+again under the same id replaces it, which is how a key is rotated.
 
 ## Backups
 

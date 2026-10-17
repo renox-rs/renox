@@ -531,3 +531,11 @@
   `rx-nav-links`; adopted in the starter layout and bikeshop's staff layout. Guides:
   docs/ui.md "Menus that modules and the app add to", docs/authorization.md "Showing links
   only to who may use them".
+- **#38, outbound webhooks**: `renox-core/src/webhook/` became a folder: `inbound.rs` (the old file, unchanged),
+  `signing.rs` (Standard Webhooks `sign`/`verify`, `whsec_` secrets, the `SignedRequest<T>` extractor) and
+  `outbound.rs` (`Endpoint`, `emit_in`, the `DeliverWebhook` job, `Delivery` log, `EndpointDisabled`).
+  Migrations 000310/000311. A delivery counts as one failure when it ends in permanent failure, not per
+  attempt; 410 disables at once. `emit_in` uses `Queue::dispatch_in` (no after-commit hook exists);
+  `state.emit` of a registered event dispatches directly. The job payload is encrypted and has ids only.
+  `SignedRequest` buffers the body and keeps replay ids in the cache for the tolerance window.
+  Guide: docs/operations.md "Outbound webhooks".
