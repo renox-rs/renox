@@ -117,6 +117,7 @@ pub fn app() -> App {
         .module(app::home::Home)
         .module(app::multistore::Multistore)
         .module(app::plans::Plans)
+        .module(app::purchasing::Purchasing)
         .module(app::rentals::Rentals)
         .module(app::reports::Reports)
         .module(app::sales::Sales)

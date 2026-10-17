@@ -1040,6 +1040,7 @@ const ADMIN_DOCS: &[&str] = &[
 
 const ADMIN_SOURCES: &[&str] = &[
     "examples/bikeshop/src/app/staff/admin.rs",
+    "examples/bikeshop/src/app/purchasing/mod.rs",
     "examples/bikeshop/resources/views/renox-admin/layout.html",
     "examples/bikeshop/resources/views/components/admin_field.html",
     "examples/bikeshop/tests/staff.rs",

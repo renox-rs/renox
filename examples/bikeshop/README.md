@@ -151,7 +151,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | Stores (opening hours in a `repeater`), the team, invitations, roles per store with dates | `/staff/stores`, `/staff/team` | [src/app/staff/stores.rs](src/app/staff/stores.rs), [src/app/staff/team.rs](src/app/staff/team.rs) |
 | The role × permission matrix, edited live | `/staff/roles` | [src/app/staff/roles.rs](src/app/staff/roles.rs) |
 | The audit log (`Audit` module, store and role on each entry) | `/staff/audit` | [src/app/staff/audit.rs](src/app/staff/audit.rs) |
-| The admin panel (renox-admin) for the catalogue, workshop, suppliers and stores, with renox-editors | `/admin` | [src/app/staff/admin.rs](src/app/staff/admin.rs), [src/app/staff/catalog_tools.rs](src/app/staff/catalog_tools.rs) |
+| The admin panel (renox-admin) for the catalogue, workshop, suppliers and stores, with renox-editors | `/admin` | [src/app/staff/admin.rs](src/app/staff/admin.rs), [src/app/staff/catalog_tools.rs](src/app/staff/catalog_tools.rs); the suppliers resource is contributed by its own module, [src/app/purchasing/mod.rs](src/app/purchasing/mod.rs) (`renox_admin::contribute`) |
 | Kiosk tokens for the JSON API | `/staff/api-tokens` | [src/app/api/tokens.rs](src/app/api/tokens.rs) |
 | Every mail, previewed | `/sales/mails`, `/plans/mails` | [src/app/sales/mails.rs](src/app/sales/mails.rs), [src/app/plans/mails.rs](src/app/plans/mails.rs) |
 
