@@ -52,6 +52,15 @@ pub fn app() -> App {
                     .thumbnail("thumb", 320, 320),
             ),
         )
+        // Each store's host wears the store's brand (#36): `<rx-theme/>` in
+        // the head links the stylesheet of the theme chosen here.
+        .theme_for({
+            let themes = app::home::stores::themes();
+            move |req: renox::theme::ThemeRequest| {
+                let theme = app::home::stores::theme_for_host(&themes, &req.host);
+                async move { Ok(theme) }
+            }
+        })
         // The "About this page" panel: `about_page(request.route, request.path)` in the layouts,
         // hidden with BIKESHOP_EXPLAIN=false.
         .templates(explain::register)
