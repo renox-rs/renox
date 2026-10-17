@@ -146,6 +146,19 @@ if grep -n '{%' resources/views/products/*.html resources/views/tags/*.html; the
 "$RNX" make:component legacy_tag --macro
 "$RNX" make:deploy
 
+step "make:pwa (#33): offline page, icons and .pwa(..), refused twice, kept by --force"
+"$RNX" make:pwa
+test -s resources/views/offline.html
+for icon in icon-192.png icon-512.png icon-maskable-512.png; do test -s "public/icons/$icon"; done
+grep -q '\.pwa(' src/lib.rs
+if grep -q '{{title}}' resources/views/offline.html; then echo "FAIL: placeholder left in offline.html"; exit 1; fi
+cp src/lib.rs "$WORK/pwa-lib.rs"
+if "$RNX" make:pwa 2>/dev/null; then echo "FAIL: make:pwa overwrote existing files without --force"; exit 1; fi
+cmp src/lib.rs "$WORK/pwa-lib.rs"
+"$RNX" make:pwa --force
+test "$(grep -c '\.pwa(' src/lib.rs)" = 1 # forced files, but one call
+# The shop's check_app below builds and tests the app with the call in place.
+
 step "make:component --ui forwards to the app's ui:publish"
 "$RNX" make:component --ui
 test -f resources/views/components/ui.html

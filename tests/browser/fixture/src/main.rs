@@ -5,6 +5,7 @@
 
 mod grid;
 mod parties;
+mod pwa;
 mod tickets;
 
 use renox::prelude::*;
@@ -421,6 +422,13 @@ fn main() -> Result {
         .module(grid::Orders)
         .seeder(grid::seed)
         .module(Pages)
+        // Installable pages (pwa.test.mjs).
+        .module(pwa::Installable)
+        .pwa(
+            renox::pwa::Pwa::new("Browser fixture")
+                .icons("pwa-icons")
+                .offline_page("offline.html"),
+        )
         // A ticket with a state machine (transition-actions.test.mjs).
         .module(tickets::Tickets)
         // Parties with custom fields (custom-fields.test.mjs).
