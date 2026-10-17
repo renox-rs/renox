@@ -4,7 +4,7 @@
   <rx-stack data-bs-reveal>
     <rx-page-header title="{{ t('fields.edit_title', name=sample.name) }}" subtitle="{{ t('fields.edit_lead') }}" back="{{ route('about.fields.show', sample.id) }}" back-label="{{ sample.name }}"/>
     <rx-card>
-      <app-about-fields-form :sample="sample" :brands="brands" :price="price" :deposit="deposit" :deposit-currency="deposit_currency" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>
+      <app-about-fields-form :sample="sample" :brands="brands" :price="price" :deposit="deposit" :deposit-currency="deposit_currency" :load="load" :load-unit="load_unit" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>
     </rx-card>
   </rx-stack>
 </rx-page>

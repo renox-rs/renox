@@ -340,6 +340,35 @@ async fn quantity_and_unit_rules() {
     );
 }
 
+#[renox::test]
+async fn quantity_limits_compare_the_number_not_the_text() {
+    let app = TestApp::new(App::new()).await;
+    let errors = errors_of(&app, |v| {
+        v.field("low", &"0.5").quantity(3).quantity_min("1");
+        v.field("edge", &"1.000").quantity(3).quantity_min("1");
+        v.field("neg", &"-0.001").quantity(3).quantity_min("0");
+        v.field("high", &"100.001").quantity(3).quantity_max("100");
+        v.field("top", &"100").quantity(3).quantity_max("100.000");
+        v.field("long", &"9").quantity(3).quantity_min("10");
+        v.field("blank", &"").quantity(3).quantity_min("1");
+        v.field("junk", &"abc").quantity(3).quantity_min("1");
+    })
+    .await;
+    for bad in ["low", "neg", "high", "long"] {
+        assert!(errors.first(bad).is_some(), "{bad}");
+    }
+    for ok in ["edge", "top", "blank"] {
+        assert!(errors.first(ok).is_none(), "{ok}");
+    }
+    assert_eq!(errors.first("low"), Some("The low must be at least 1."));
+    assert_eq!(errors.first("high"), Some("The high must be at most 100."));
+    // Text that is not a decimal is the `quantity` rule's error, not a limit's.
+    assert_eq!(
+        errors.first("junk"),
+        Some("The junk must be a number with at most 3 decimal places.")
+    );
+}
+
 #[derive(Model, serde::Serialize, Debug, Clone, PartialEq)]
 #[model(table = "bins", form)]
 struct Bin {

@@ -101,6 +101,16 @@ pub(crate) fn fits_scale(text: &str, scale: u32) -> bool {
     rest.bytes().all(|b| b == b'0') && format!("{whole}{kept:0<scale$}").parse::<i64>().is_ok()
 }
 
+/// The value of `text` in billionths (nine decimals), for comparing a typed
+/// quantity with a limit; digits past the ninth are cut. `None` when `text`
+/// is not a plain decimal or does not fit.
+pub(crate) fn nano(text: &str) -> Option<i128> {
+    let (negative, whole, fraction) = split_decimal(text)?;
+    let kept = &fraction[..fraction.len().min(9)];
+    let value: i128 = format!("{whole}{kept:0<9}").parse().ok()?;
+    Some(if negative { -value } else { value })
+}
+
 /// A decimal quantity stored as an `i64` count of 10^-`SCALE` units.
 /// `SCALE` is at most 9, checked at compile time. Adding and subtracting
 /// return a `Result`; there are no panicking operators.

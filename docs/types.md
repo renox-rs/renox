@@ -46,6 +46,7 @@ columns are what to write in your migration's `CREATE TABLE`, for SQLite or Post
 | `type=number step=0.01`, single precision | `f32` | `REAL` | `REAL` |
 | money | `i64` in the smallest unit (cents), never `f64` | `INTEGER` | `BIGINT` |
 | money in its own currency (`type=money` plus a currency `<select>`) | `Money` (`renox::money`), with `#[model(money)]`: a string and a code in the form (`#[model(form)]` writes both) | `INTEGER` amount + `TEXT` code | `BIGINT` amount + `TEXT` code |
+| an exact decimal with units (`type=quantity scale=3 unit=kg`, plus a unit `<select>`) | `Quantity<3>` (`renox::quantity`): a string in the form (`#[model(form)]` writes it); the unit is an ordinary `String` field | `INTEGER` (thousandths) | `BIGINT` (thousandths) |
 | `type=checkbox` (one) | `bool`: with `Valid<T>`, `on` (or `1`, `yes`, `checked`) → `true`, unchecked (nothing sent; or `off`, `0`, `no`) → `false` (see [Checkboxes](#checkboxes)) | `INTEGER` 0/1 | `BOOLEAN` |
 | `<select>` | an enum with `#[derive(DbEnum)]` | `TEXT` | `TEXT` |
 | `<select multiple>`, checkboxes sharing a name | `Vec<String>` with `#[serde(default)]`; stored as `Json<Vec<String>>` | `TEXT` | `JSONB` |
@@ -232,6 +233,61 @@ keeps a deposit this way, in USD, JPY or KWD.
 Why not a float (`f64`)? Floats round: `0.1 + 0.2 != 0.3`. And why not a decimal type? sqlx
 (the database library Renox uses) deliberately has no decimal type on SQLite, so a `Decimal`
 would behave differently on the two databases. A fixed currency stays a plain `i64`.
+
+### Quantities and units
+
+Weights, lengths and volumes need decimals but not floats. `Quantity<SCALE>` from
+`renox::quantity` is an exact decimal kept as an `i64` in units of 10^-`SCALE`: `Quantity<3>` counts
+thousandths, so 2.5 kg is `2500` and shows as `2.500`. It is one `BIGINT` column on SQLite and
+PostgreSQL; `Option<Quantity<3>>` makes it nullable. A quantity carries no unit: a record keeps
+its unit in a `String` column of its own (`stock` + `stock_unit`), and a `UnitTable` (`Units`)
+converts between units with exact decimal factors.
+
+```rust
+# use renox::prelude::*;
+use renox::money::Rounding;
+use renox::quantity::{Quantity, QuantityError, Units};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "bins", form)] // BinForm: "12.5" texts checked with quantity(3); fill() builds the Quantity
+struct Bin {
+    id: i64,
+    stock: Quantity<3>,         // BIGINT NOT NULL, thousandths
+    stock_unit: String,         // "kg", "g", "t"
+    spare: Option<Quantity<3>>, // BIGINT, NULL when none
+}
+
+# fn demo() -> Result<(), QuantityError> {
+// Parsing says what happens to extra digits: a rounding, or an error. There is no default.
+let kg = Quantity::<3>::parse_exact("2.5")?;
+assert_eq!(kg.to_string(), "2.500");
+assert_eq!(Quantity::<3>::parse("0.0005", Rounding::HalfUp)?.raw(), 1);
+assert_eq!(Quantity::<3>::parse_exact("0.0005"), Err(QuantityError::Inexact));
+// Arithmetic is checked and exact: 0.1 + 0.2 is 0.3.
+let sum = Quantity::<3>::parse_exact("0.1")?.checked_add(Quantity::parse_exact("0.2")?)?;
+assert_eq!(sum.raw(), 300);
+// Units convert through their base, with the rounding you choose.
+let units = Units::new().base("kg").unit("g", "kg", "0.001").unit("t", "kg", "1000").build()?;
+assert_eq!(units.convert(kg, "kg", "g", Rounding::HalfEven)?.to_string(), "2500.000");
+assert_eq!(units.convert(Quantity::<3>::parse_exact("1500")?, "g", "kg", Rounding::HalfEven)?.to_string(), "1.500");
+# Ok(())
+# }
+```
+
+Typed columns compare the scaled integer, so `Bin::STOCK.lt(Quantity::<3>::parse_exact("5")?)`,
+`order_by` and `sum` are exact on both databases (5.000 is not 4.999; `sum` returns a `Quantity`).
+Show it with `{{ bin.stock | quantity(unit=bin.stock_unit) }}` (all three digits, the locale's
+separators), `Column::quantity("stock", "Stock").unit_from("stock_unit")` in a grid (one summary per
+unit) and `Field::quantity(..).unit_from(..)` in renox-admin. In a form, `<rx-input type="quantity"
+scale="3" unit="kg"/>` steps by the scale and the server refuses a fourth decimal (`2.5004`)
+instead of rounding; `.quantity(3)`, `.quantity_min("0")` and `.unit(&units)` are the rules.
+
+Two pieces of advice. The scale lives in the Rust type, not in the schema: `db:check` and
+`make:migration --auto` see a `BIGINT` either way, so note the scale in a comment on the column
+(`-- thousandths`). And pick the scale by the precision you measure, not by the currency: cents
+(`Money`, `i64`) are the smallest unit of a price, thousandths are a quantity's chosen precision.
+The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs) keeps a load limit
+this way, in kg, g or t.
 
 ### Time zones
 

@@ -1205,6 +1205,39 @@ fn money() -> Result<(), renox::money::MoneyError> {
 `Column::money("total", "Total").currency_from("total_currency")` (grid: per-row currency, one summary
 per currency, `?cur.total=JPY`) and `Field::money("total", "Total").currency_from("total_currency")` (admin).
 
+Exact decimals with units: `Quantity<SCALE>` (`renox::quantity`) is an `i64` of 10^-SCALE units (`Quantity<3>` is thousandths),
+one `BIGINT`; the unit is a `String` column beside it, never part of the type (docs/types.md, docs/validation.md).
+
+```rust
+use renox::money::Rounding;
+use renox::prelude::*;
+use renox::quantity::{Quantity, QuantityError, Units};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "bins", form)] // BinForm: "12.5" texts checked with quantity(3); fill() builds the Quantity
+struct Bin {
+    id: i64,
+    stock: Quantity<3>,         // BIGINT NOT NULL; the scale is the type's, not the schema's
+    stock_unit: String,         // "kg", "g", "t"
+    spare: Option<Quantity<3>>, // NULL when none
+}
+
+fn quantities() -> Result<(), QuantityError> {
+    let kg = Quantity::<3>::parse_exact("2.5")?;                       // Err(Inexact) when digits would be lost
+    let tie = Quantity::<3>::parse("0.0005", Rounding::HalfUp)?;       // always an explicit rounding: 0.001
+    let sum = kg.checked_add(Quantity::parse_exact("0.1")?)?;          // exact, Err(Overflow) at the limits
+    let units = Units::new().base("kg").unit("g", "kg", "0.001").build()?; // exact decimal factors, never f64
+    let grams = units.convert(sum, "kg", "g", Rounding::HalfEven)?;    // "2600.000"
+    let _ = (tie, grams, kg.mul_decimal("1.15", Rounding::HalfUp)?);
+    Ok(())
+}
+```
+
+`Bin::STOCK.lt(..)`, `order_by` and `sum` compare the scaled integer. `{{ bin.stock | quantity(unit=bin.stock_unit) }}` shows
+`2.500 kg`; `<rx-input name="stock" type="quantity" scale="3" unit="kg"/>` steps by the scale; rules `.quantity(3)`,
+`.quantity_min("0")`, `.quantity_max("100")`, `.unit(&units)`; `Column::quantity("stock", "Stock").unit_from("stock_unit")` (grid:
+one summary per unit) and `Field::quantity("stock", "Stock").unit_from("stock_unit")` (admin).
+
 ## Pagination
 
 Show a long list one page at a time. `Page` reads the page number from `?page=` in the URL.

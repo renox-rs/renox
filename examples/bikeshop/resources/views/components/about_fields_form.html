@@ -1,12 +1,12 @@
 {#- The form of /about/fields: one field per kind of input (src/app/about/fields.rs
     REFERENCE). Used by about/fields.html (a new sample) and
     about/fields_edit.html (`sample` set):
-    `<app-about-fields-form :sample="sample" :brands="brands" :price="price" :deposit="deposit" :deposit-currency="deposit_currency" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>`.
+    `<app-about-fields-form :sample="sample" :brands="brands" :price="price" :deposit="deposit" :deposit-currency="deposit_currency" :load="load" :load-unit="load_unit" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>`.
     The kit's fields show the old input
     after a failed save, else the value given here; the value formats are the
     ones the inputs expect: 2026-10-01, 08:00:00, 2026-10-01T10:30:00. A file
     is never refilled: the stored one is shown above its field. -#}
-<rx-props :sample="none" :brands="[]" :price="none" :deposit="none" deposit-currency="USD" money-symbol="" money-step="" :photo-url="none">
+<rx-props :sample="none" :brands="[]" :price="none" :deposit="none" deposit-currency="USD" :load="none" load-unit="kg" money-symbol="" money-step="" :photo-url="none">
 {#- `live`: each field is checked by the server as it is left
     (renox.js sends the form with `X-Renox-Validate`; `Valid<T>` answers with
     the errors only, nothing is saved). -#}
@@ -29,6 +29,10 @@
         and is checked against the currency chosen beside it. -#}
     <rx-input name="deposit" :label="t('fields.form.deposit')" type="money" :currency="deposit_currency" :value="deposit or ''" :hint="t('fields.form.deposit_hint')"/>
     <rx-select name="deposit_currency" :label="t('fields.form.deposit_currency')" :options="[['USD', 'USD'], ['JPY', 'JPY'], ['KWD', 'KWD']]" :selected="deposit_currency" required/>
+    {#- A `Quantity<3>`: steps by the scale (0.001), the unit beside it is its own column,
+        checked against the table of units (kg, g, t). -#}
+    <rx-input name="load" :label="t('fields.form.load')" type="quantity" scale="3" :unit="load_unit" :value="load or ''" :hint="t('fields.form.load_hint')"/>
+    <rx-select name="load_unit" :label="t('fields.form.load_unit')" :options="[['kg', 'kg'], ['g', 'g'], ['t', 't']]" :selected="load_unit" required/>
     <rx-checkbox name="available" :label="t('fields.form.available')" :checked="sample.available if sample else false" switch/>
   </rx-fieldset>
 

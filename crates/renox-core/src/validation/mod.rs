@@ -1212,12 +1212,40 @@ impl Field<'_> {
 
     /// A decimal quantity typed as `12.5`, with at most `scale` decimals
     /// (`Quantity<3>` is `.quantity(3)`), never rounded: `12.500` passes,
-    /// `12.5001` fails. Use [`min`](Self::min) and [`max`](Self::max) for limits.
+    /// `12.5001` fails. For limits use [`quantity_min`](Self::quantity_min) and
+    /// [`quantity_max`](Self::quantity_max): `min` and `max` count characters in text.
     pub fn quantity(mut self, scale: u32) -> Self {
         if let (true, Inspected::Text(text)) = (self.present(), &self.value)
             && !crate::quantity::fits_scale(text, scale)
         {
             self.fail("quantity", &[("decimals", scale.to_string())]);
+        }
+        self
+    }
+
+    /// A quantity of at least `min` (a decimal such as `"0"` or `"0.5"`),
+    /// compared as a number, not as text. Text that is not a decimal passes
+    /// here; [`quantity`](Self::quantity) reports it.
+    pub fn quantity_min(mut self, min: &str) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let (Some(value), Some(limit)) =
+                (crate::quantity::nano(text), crate::quantity::nano(min))
+            && value < limit
+        {
+            self.fail("quantity_min", &[("min", min.trim().to_owned())]);
+        }
+        self
+    }
+
+    /// A quantity of at most `max`, compared as a number; see
+    /// [`quantity_min`](Self::quantity_min).
+    pub fn quantity_max(mut self, max: &str) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let (Some(value), Some(limit)) =
+                (crate::quantity::nano(text), crate::quantity::nano(max))
+            && value > limit
+        {
+            self.fail("quantity_max", &[("max", max.trim().to_owned())]);
         }
         self
     }

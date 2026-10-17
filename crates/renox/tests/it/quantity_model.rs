@@ -139,3 +139,26 @@ async fn the_schema_check_accepts_bigint_and_reports_a_mistyped_column() {
     assert!(text.contains("level"), "{text}");
     assert!(text.contains("reserved"), "{text}");
 }
+
+const MISSING: Migration = Migration::new(
+    "20300101000000_quantity_missing",
+    "CREATE TABLE stocks (id INTEGER PRIMARY KEY AUTOINCREMENT, level BIGINT NOT NULL);",
+    None,
+);
+
+/// AC7: a column the model has and the table lacks is reported by name.
+#[renox::test]
+async fn the_schema_check_reports_a_missing_quantity_column() {
+    let app = TestApp::new(App::new().migrations(&[MISSING]).model::<Stock>()).await;
+    let err = tokio::spawn(async move { app.assert_models_match_schema().await })
+        .await
+        .unwrap_err();
+    let payload = err.into_panic();
+    let text = payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+        .unwrap();
+    assert!(text.contains("reserved"), "{text}");
+    assert!(!text.contains("`level`"), "{text}");
+}

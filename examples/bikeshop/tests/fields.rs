@@ -9,6 +9,7 @@ use bikeshop::app::catalog::model::Brand;
 use renox::chrono::{NaiveDate, NaiveTime};
 use renox::money::Money;
 use renox::prelude::*;
+use renox::quantity::Quantity;
 use renox::testing::{TestApp, TestResponse};
 
 /// A real 800 × 600 PNG: the upload pipeline (`Images`, src/lib.rs) decodes it.
@@ -419,6 +420,87 @@ async fn the_deposit_is_an_amount_in_its_own_currency() {
     .assert_status(303);
     let cleared = FieldSample::find_or_404(app.db(), usd.id).await.unwrap();
     assert_eq!(cleared.deposit, None);
+}
+
+/// #69: the load limit is a `Quantity<3>` (thousandths in one BIGINT) with its
+/// unit beside it; the scale is exact, the unit is one of the table's.
+#[renox::test]
+async fn the_load_is_an_exact_quantity_with_its_own_unit() {
+    let (app, _) = app().await;
+    let with = |amount: &'static str, unit: &'static str| -> Vec<(&'static str, &'static str)> {
+        let mut form: Vec<(&str, &str)> = FULL.to_vec();
+        form.extend([("load", amount), ("load_unit", unit)]);
+        form
+    };
+
+    app.post("/about/fields", &with("2.5", "kg"))
+        .await
+        .assert_status(303);
+    app.post("/about/fields", &with("1500", "g"))
+        .await
+        .assert_status(303);
+    let mut loads: Vec<_> = FieldSample::query()
+        .get(app.db())
+        .await
+        .unwrap()
+        .into_iter()
+        .map(|s| (s.load_unit, s.load))
+        .collect();
+    loads.sort();
+    assert_eq!(
+        loads,
+        [
+            ("g".to_owned(), Some(Quantity::<3>::from_raw(1_500_000))),
+            ("kg".to_owned(), Some(Quantity::<3>::from_raw(2500))),
+        ]
+    );
+
+    // Read back with every digit of the scale and its own unit, on the page and in the form.
+    let kg = FieldSample::query()
+        .where_(FieldSample::LOAD_UNIT.eq("kg"))
+        .first(app.db())
+        .await
+        .unwrap()
+        .unwrap();
+    app.get(&format!("/about/fields/{}", kg.id))
+        .await
+        .assert_see("2.500")
+        .assert_see("kg");
+    app.get(&format!("/about/fields/{}/edit", kg.id))
+        .await
+        .assert_see(r#"name="load" type="number" inputmode="decimal" value="2.500""#)
+        .assert_see(r#"step="0.001""#);
+
+    // More decimals than the scale (not rounded), below the limit, text, or a unit not in the table.
+    for (amount, unit, field) in [
+        ("2.5004", "kg", "load"),
+        ("-1", "kg", "load"),
+        ("abc", "kg", "load"),
+        ("1", "lb", "load_unit"),
+    ] {
+        app.htmx()
+            .post("/about/fields", &with(amount, unit))
+            .await
+            .assert_invalid(field);
+    }
+
+    // Emptying the amount clears it; the unit stays.
+    app.put(
+        &format!("/about/fields/{}", kg.id),
+        &[
+            ("name", "Commuter 3"),
+            ("stock", "0"),
+            ("weight_kg", "0"),
+            ("price", "0"),
+            ("size", "small"),
+            ("load", ""),
+            ("load_unit", "t"),
+        ],
+    )
+    .await
+    .assert_status(303);
+    let cleared = FieldSample::find_or_404(app.db(), kg.id).await.unwrap();
+    assert_eq!((cleared.load, cleared.load_unit.as_str()), (None, "t"));
 }
 
 #[renox::test]

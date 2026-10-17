@@ -594,3 +594,15 @@
   `auto_migrations.rs`, `postgres.rs` (a pair on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), and
   `renox-admin/tests/money.rs`. Bikeshop `/about/fields` has a deposit pair (migration `20261017090000`). Guide:
   docs/types.md "Money".
+
+- **#69, decimal quantities with units**: `renox-core/src/quantity.rs` holds `Quantity<const SCALE>`, `QuantityError`, `Units`
+  (builder) and `UnitTable`; `Rounding` is the one from `money.rs`. `ToDbValue` and the sqlx `Type`/`Decode` impls make it one
+  `BIGINT` (`Option` works through the existing impls); its `ColumnType` is `BIGINT`, so the `Model` derive, `schema_check`,
+  `schema_diff` and `auto_migration` need no attribute, and `Number` makes `sum` return a `Quantity`. `Validator` has
+  `quantity(scale)`, `quantity_min`/`quantity_max` (compared as numbers through `quantity::nano`) and `unit(&table)`;
+  `#[model(form)]` writes a text field for a `Quantity<S>`; `<rx-input type="quantity">` is a variant of the `input` macro
+  (`quantity_input` helper, no new built-in file). The `quantity` filter lives next to `money` in `view_filters.rs`. The grid
+  keeps `Column::unit_from` and groups summaries by unit; the admin `Field`/`Column`/`Entry` carry `scale` and `unit_from`.
+  Tests: `tests/it/quantity.rs`, `quantity_model.rs`, `forms.rs`, `grid.rs`, `auto_migrations.rs`, `postgres.rs` (a round trip
+  on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), `renox-admin/tests/quantity.rs`. Bikeshop
+  `/about/fields` has a load limit (migration `20261017100000`). Guide: docs/types.md "Quantities and units".

@@ -72,6 +72,7 @@ test('every kind of field comes back as it was sent', () =>
     await page.type('#rx-weight_kg', '10.75', { clear: true });
     await page.type('#rx-price', '612.99', { clear: true });
     await page.type('#rx-deposit', '25.50', { clear: true });
+    await page.type('#rx-load', '2.500', { clear: true });
     await page.click('label[for="rx-available"], #rx-available');
     await page.click('label[for="rx-size-3"]');
     await page.click('label[for="rx-colors-2"]');
@@ -110,7 +111,7 @@ test('every kind of field comes back as it was sent', () =>
     await page.goto(`${app.url}${show}/edit`);
     const back = await values('#sample-form');
     const pick = (pairs, name) => pairs.filter(([k]) => k === name).map(([, v]) => v);
-    for (const name of ['name', 'brand', 'description', 'stock', 'price', 'deposit', 'deposit_currency', 'available', 'size', 'colors', 'tags', 'specs[0][key]', 'specs[0][value]', 'settings', 'pickup_at', 'released_on']) {
+    for (const name of ['name', 'brand', 'description', 'stock', 'price', 'deposit', 'deposit_currency', 'load', 'load_unit', 'available', 'size', 'colors', 'tags', 'specs[0][key]', 'specs[0][value]', 'settings', 'pickup_at', 'released_on']) {
       assert.deepEqual(pick(back, name).map((v) => v.replace(/:00$/, '')), pick(sent, name).map((v) => v.replace(/:00$/, '')), name);
     }
     assert.equal(Number(pick(back, 'weight_kg')[0]), 10.75);
@@ -143,6 +144,33 @@ test('a deposit in yen is saved and shown in yen, and a decimal is refused', () 
     await submitAndLoad(page, '#sample-form button[type=submit]');
     assert.match(await page.eval(() => location.pathname), /^\/about\/fields\/[0-9a-f-]{36}$/, 'saved, on its page');
     assert.ok(await page.eval(() => document.body.textContent.includes('¥2,500')), 'shown in yen');
+    page.assertClean({ allow: [/422/] });
+  }));
+
+// #69: the load limit is a Quantity<3> with its unit beside it; a fourth decimal is refused, not rounded.
+test('a load in grams keeps its three decimals and its unit, and a fourth decimal is refused', () =>
+  browser.with(async (page) => {
+    await logIn(page);
+    await page.goto(`${app.url}/about/fields`);
+    await page.type('#rx-name', 'Load limit');
+    await page.type('#rx-stock', '1', { clear: true });
+    await page.type('#rx-weight_kg', '10', { clear: true });
+    await page.type('#rx-price', '100', { clear: true });
+    await page.click('label[for="rx-size-1"]');
+    await page.eval(() => {
+      const select = document.getElementById('rx-load_unit');
+      select.value = 'g';
+      select.dispatchEvent(new Event('input', { bubbles: true }));
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.type('#rx-load', '1.2345', { clear: true });
+    await page.press('Tab');
+    await page.waitFor(() => document.querySelector('[name=load]').getAttribute('aria-invalid') === 'true', { message: 'a fourth decimal is refused' });
+    await page.type('#rx-load', '1.5', { clear: true });
+    await page.waitFor(() => !document.querySelector('[name=load]').hasAttribute('aria-invalid'), { message: 'the error gone' });
+    await submitAndLoad(page, '#sample-form button[type=submit]');
+    assert.match(await page.eval(() => location.pathname), /^\/about\/fields\/[0-9a-f-]{36}$/, 'saved, on its page');
+    assert.ok(await page.eval(() => /1\.500\s*g/.test(document.body.textContent)), 'shown with its three decimals and its unit');
     page.assertClean({ allow: [/422/] });
   }));
 

@@ -2007,7 +2007,22 @@ Notes:
 - [x] Tests per acceptance criterion (core, model, grid, forms, admin; PostgreSQL storage in `postgres.rs`), bikeshop
   `/about/fields` deposit in USD, JPY or KWD (`tests/fields.rs`, `bikeshop-fields.test.mjs`)
 - [x] Docs (types.md "Money", ui.md, validation.md, grid.md, admin.md, postgresql.md), CHEATSHEET.md, llms.txt
-- [ ] Quantities and units went to #69; exchange-rate tables and a `rust_decimal` conversion are not planned
+- [x] Quantities and units went to #69 (below); exchange-rate tables and a `rust_decimal` conversion are not planned
+
+### Decimal quantities with units (#69)
+- [x] `renox::quantity::{Quantity<SCALE>, QuantityError, Units, UnitTable}`: an exact decimal as an `i64` in units of 10^-SCALE
+  (SCALE 0 to 9), `parse` with an explicit `Rounding` / `parse_exact`, `checked_add`/`checked_sub`/`checked_neg`, `mul_ratio`,
+  `mul_decimal`, `rescale`, decimal-string serde; `Units` with exact decimal factors and `convert` with an explicit `Rounding`
+- [x] The `quantity` template filter (decimals, unit, locale separators); `Quantity<S>` as one `BIGINT` column (typed
+  `lt`/`gt`/`between`/`order_by`/`sum`), `make:migration --auto`, `rnx db:check` and `assert_models_match_schema`
+- [x] Validation `.quantity(scale)`, `.quantity_min(..)` / `.quantity_max(..)`, `.unit(&table)`; `Quantity` in `#[model(form)]`;
+  `<rx-input type="quantity" scale unit>`
+- [x] Grid `Column::quantity(..).scale(..).unit_from(..)` (per-row unit, one summary per unit, `unit.<col>` filter, CSV/XLSX/print),
+  renox-admin `Field::quantity(..).scale(..).unit_from(..)`
+- [x] Tests per acceptance criterion (`quantity.rs`, `quantity_model.rs`, `forms.rs`, `grid.rs`, `auto_migrations.rs`,
+  `postgres.rs`, `renox-admin/tests/quantity.rs`), bikeshop `/about/fields` load limit in kg, g or t (`tests/fields.rs`,
+  `bikeshop-fields.test.mjs`)
+- [x] Docs (types.md "Quantities and units", ui.md, validation.md, grid.md, admin.md), CHEATSHEET.md, llms.txt
 
 ## Decisions
 
@@ -2323,6 +2338,14 @@ Notes:
   The currency of a form is an ordinary field beside the amount (bikeshop: a select), so the input's step follows
   the stored currency and changes on the next render, not as the select changes. Bikeshop keeps the deposit as an
   `Option<Money>` added by a new migration, not by editing the released one.
+
+- **Decimal quantities with units** (#69, assumptions A1-A16): `Quantity<const SCALE>` is a `Copy` `i64` of 10^-SCALE units, so the
+  scale is in the type and not in the schema (`db:check` sees a `BIGINT`; the docs advise a comment on the column). Like `Money` there
+  is no default rounding (`parse`, `mul_ratio`, `mul_decimal`, `rescale`, `convert` all take a `Rounding`), no operators and no
+  float or decimal crate in the API; JSON carries a decimal string. A quantity has no unit: the unit is a `String` column of the
+  record, and a `UnitTable` (one level, through the base unit) converts with exact factors. Limits on a typed text use
+  `quantity_min`/`quantity_max`, because `min`/`max` count characters of text. A grid never sums across units: one figure per
+  unit. Bikeshop keeps the load limit as an `Option<Quantity<3>>` plus `load_unit`, added by a new migration.
 
 ## Not planned
 
