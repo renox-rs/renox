@@ -75,3 +75,96 @@ async fn a_missing_icon_is_a_boot_error_naming_the_file() {
         .unwrap_err();
     assert!(format!("{err:#}").contains("icon-192.png"), "{err:#}");
 }
+
+fn branded(dir: &tempfile::TempDir) -> App {
+    let brand_icons = dir.path().join("north-icons");
+    std::fs::create_dir_all(&brand_icons).unwrap();
+    for file in ["icon-192.png", "icon-512.png", "icon-maskable-512.png"] {
+        std::fs::write(brand_icons.join(file), b"\x89PNG\r\n\x1a\nnorth").unwrap();
+    }
+    App::new()
+        .pwa(Pwa::new("Bikeshop").icons(icons(dir.path())))
+        .pwa_for(move |req: renox::pwa::PwaRequest| {
+            let brand_icons = brand_icons.clone();
+            async move {
+                match req.host() {
+                    "north.test" => Ok(Some(
+                        renox::pwa::PwaBrand::new("North Bikes")
+                            .theme_color("#ff0000")
+                            .icons(brand_icons),
+                    )),
+                    "broken.test" => Ok(Some(
+                        renox::pwa::PwaBrand::new("Broken").icons("/nonexistent/icons"),
+                    )),
+                    "error.test" => Err(anyhow::anyhow!("boom").into()),
+                    _ => Ok(None),
+                }
+            }
+        })
+}
+
+#[renox::test]
+async fn pwa_for_serves_a_manifest_icons_and_worker_per_host() {
+    let dir = tempfile::tempdir().unwrap();
+    let public = dir.path().join("public");
+    let app = TestApp::with_config(branded(&dir), |c| c.public_path = public).await;
+    let get = |host: &'static str, uri: &'static str| app.request().header("host", host).get(uri);
+
+    let plain = get("other.test", "/manifest.webmanifest").await;
+    assert_eq!(plain.json::<serde_json::Value>()["name"], "Bikeshop");
+    assert_eq!(plain.header("vary"), Some("Host"));
+    let north = get("north.test", "/manifest.webmanifest").await;
+    assert_eq!(north.header("vary"), Some("Host"));
+    let json: serde_json::Value = north.json();
+    assert_eq!(json["name"], "North Bikes");
+    assert_eq!(json["theme_color"], "#ff0000");
+    let src = json["icons"][0]["src"].as_str().unwrap().to_owned();
+    assert!(
+        src.starts_with("/_renox/pwa/icons/") && src.matches('/').count() == 5,
+        "{src}"
+    );
+    let icon = app.get(&src).await;
+    icon.assert_ok();
+    assert_eq!(icon.header("content-type"), Some("image/png"));
+
+    let version = |text: String| {
+        text.lines()
+            .find(|l| l.contains("const VERSION"))
+            .unwrap()
+            .to_owned()
+    };
+    let a = version(get("other.test", "/sw.js").await.text());
+    let b = version(get("north.test", "/sw.js").await.text());
+    assert_ne!(a, b);
+    assert_eq!(b, version(get("north.test", "/sw.js").await.text()));
+    let worker = get("north.test", "/sw.js").await;
+    assert_eq!(worker.header("vary"), Some("Host"));
+    get("north.test", "/_renox/offline").await.assert_ok();
+}
+
+#[renox::test]
+async fn pwa_for_falls_back_on_errors_and_invalid_icons() {
+    let dir = tempfile::tempdir().unwrap();
+    let public = dir.path().join("public");
+    let app = TestApp::with_config(branded(&dir), |c| c.public_path = public).await;
+    let get = |host: &'static str| {
+        app.request()
+            .header("host", host)
+            .get("/manifest.webmanifest")
+    };
+    let failed = get("error.test").await;
+    assert_eq!(failed.json::<serde_json::Value>()["name"], "Bikeshop");
+    let broken: serde_json::Value = get("broken.test").await.json();
+    assert_eq!(broken["name"], "Broken");
+    assert_eq!(broken["icons"][0]["src"], "/_renox/pwa/icons/icon-192.png");
+}
+
+#[renox::test]
+async fn pwa_for_without_pwa_is_a_boot_error() {
+    let err = App::new()
+        .pwa_for(|_req: renox::pwa::PwaRequest| async move { Ok(None) })
+        .into_router()
+        .await
+        .unwrap_err();
+    assert!(format!("{err:#}").contains("App::pwa"), "{err:#}");
+}

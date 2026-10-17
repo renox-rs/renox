@@ -1107,6 +1107,10 @@ impl Module for Handlers {
 
 #[renox::test]
 async fn data_apis_work_in_routed_handlers() {
+    let icons = tempfile::tempdir().unwrap();
+    for file in ["icon-192.png", "icon-512.png", "icon-maskable-512.png"] {
+        std::fs::write(icons.path().join(file), b"\x89PNG\r\n\x1a\nx").unwrap();
+    }
     let app = TestApp::new(
         App::new()
             .module(Auth::new())
@@ -1129,6 +1133,10 @@ async fn data_apis_work_in_routed_handlers() {
             .theme_for(|req: renox::theme::ThemeRequest| async move {
                 let _ = &req.host;
                 Ok(None)
+            })
+            .pwa(renox::pwa::Pwa::new("Send").icons(icons.path()))
+            .pwa_for(|req: renox::pwa::PwaRequest| async move {
+                Ok((req.host() == "other.test").then(|| renox::pwa::PwaBrand::new("Other")))
             })
             .migrations(&[
                 ARTICLES,
@@ -1156,6 +1164,7 @@ async fn data_apis_work_in_routed_handlers() {
         renox::db::sql(statement).execute(app.db()).await.unwrap();
     }
     app.get("/live").await.assert_ok();
+    app.get("/manifest.webmanifest").await.assert_ok();
     app.get("/relations")
         .await
         .assert_ok()

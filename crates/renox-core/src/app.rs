@@ -129,6 +129,7 @@ pub struct App {
     theme: Option<crate::theme::Theme>,
     theme_chooser: Option<crate::theme::ThemeFn>,
     pwa: Option<crate::pwa::Pwa>,
+    pwa_chooser: Option<crate::pwa::PwaFn>,
 }
 
 /// How `App::mailer` gets a mailer's settings once the configuration is loaded.
@@ -169,6 +170,7 @@ impl App {
             theme: None,
             theme_chooser: None,
             pwa: None,
+            pwa_chooser: None,
         }
     }
 
@@ -757,6 +759,37 @@ impl App {
         self
     }
 
+    /// Brands the installable app per request, e.g. by host: the manifest
+    /// (name, short name, theme colour, icons), the offline page and the
+    /// service worker (whose version includes the brand) follow the
+    /// [`PwaBrand`](crate::pwa::PwaBrand) the closure returns, and the
+    /// responses send `Vary: Host`. Return `Ok(None)` to use the static
+    /// [`Pwa`](crate::pwa::Pwa); an `Err` is logged and falls back the same
+    /// way. Needs [`App::pwa`] (booting fails without it). Brand icons are
+    /// read and checked on first use; invalid ones are logged and the static
+    /// icons stay. The closure runs for every manifest, worker and offline
+    /// request, so keep it cheap.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::pwa::{Pwa, PwaBrand, PwaRequest};
+    /// # let _ =
+    /// App::new()
+    ///     .pwa(Pwa::new("Bikeshop").icons("public/icons"))
+    ///     .pwa_for(|req: PwaRequest| async move {
+    ///         Ok((req.host() == "north.example.com").then(|| PwaBrand::new("North Bikes")))
+    ///     })
+    /// # ;
+    /// ```
+    pub fn pwa_for<F, Fut>(mut self, resolve: F) -> Self
+    where
+        F: Fn(crate::pwa::PwaRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<crate::pwa::PwaBrand>>> + Send + 'static,
+    {
+        self.pwa_chooser = Some(crate::pwa::pwa_fn(resolve));
+        self
+    }
+
     /// Gives every view a value computed per request; see [`Registry::share`].
     pub fn share<F, Fut, T>(mut self, key: &str, compute: F) -> Self
     where
@@ -1008,7 +1041,11 @@ impl App {
                 *domain_router = layer(std::mem::take(domain_router));
             }
         }
-        listing.extend(framework_routes(&config, self.pwa.is_some()));
+        listing.extend(framework_routes(
+            &config,
+            self.pwa.is_some(),
+            self.pwa_chooser.is_some(),
+        ));
         listing.sort_by(|a, b| (&a.path, &a.method).cmp(&(&b.path, &b.method)));
         // The current route's name follows the request's method (#299).
         for info in &listing {
@@ -1214,14 +1251,22 @@ impl App {
         let public = embedded.map(|e| e.public);
         let pwa = match self.pwa.take() {
             Some(pwa) => {
+                let precache = assets::precache_urls();
                 let assets = pwa
                     .assets(
                         |view| state.views.render(view, serde_json::json!({})),
-                        &assets::precache_urls(),
+                        &precache,
                         "",
                     )
                     .map_err(|e| anyhow!("{e:#}"))?;
-                Some((Arc::new(pwa), Arc::new(assets)))
+                let resolver = self
+                    .pwa_chooser
+                    .take()
+                    .map(|choose| Arc::new(crate::pwa::PwaResolver::new(choose, precache)));
+                Some((Arc::new(pwa), Arc::new(assets), resolver))
+            }
+            None if self.pwa_chooser.is_some() => {
+                return Err(anyhow!("App::pwa_for needs App::pwa").into());
             }
             None => None,
         };
@@ -1969,7 +2014,7 @@ impl Kernel {
 }
 
 /// Routes Renox adds itself.
-fn framework_routes(config: &Config, pwa: bool) -> Vec<RouteInfo> {
+fn framework_routes(config: &Config, pwa: bool, pwa_for: bool) -> Vec<RouteInfo> {
     let route = |method: &str, path: &str| RouteInfo {
         method: method.to_owned(),
         path: path.to_owned(),
@@ -1995,6 +2040,9 @@ fn framework_routes(config: &Config, pwa: bool) -> Vec<RouteInfo> {
         routes.push(route("GET", "/sw.js"));
         routes.push(route("GET", crate::pwa::OFFLINE_ROUTE));
         routes.push(route("GET", "/_renox/pwa/icons/{file}"));
+        if pwa_for {
+            routes.push(route("GET", "/_renox/pwa/icons/{hash}/{file}"));
+        }
     }
     if config.debug {
         routes.push(route("GET", "/_renox/mail"));
@@ -2228,7 +2276,7 @@ fn build_router(
     embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
     fallback: Option<axum::routing::MethodRouter<AppState>>,
     static_assets: &[crate::registry::StaticAsset],
-    pwa: Option<&(Arc<crate::pwa::Pwa>, Arc<crate::pwa::PwaAssets>)>,
+    pwa: Option<&crate::pwa::PwaParts>,
 ) -> Router {
     // No route and no public file: the app's fallback (`Routes::fallback`), else a 404.
     let fallback = fallback.map(|handler| handler.with_state(state.clone()));
@@ -2413,11 +2461,19 @@ fn robots(
 fn pwa_routes(
     state: &AppState,
     embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
-    pwa: Option<&(Arc<crate::pwa::Pwa>, Arc<crate::pwa::PwaAssets>)>,
+    pwa: Option<&crate::pwa::PwaParts>,
 ) -> Router<AppState> {
-    let Some((pwa, assets)) = pwa else {
+    let Some((pwa, assets, resolver)) = pwa else {
         return Router::new();
     };
+    if let Some(resolver) = resolver {
+        return resolver.clone().router(
+            pwa.clone(),
+            assets.clone(),
+            !has_public_file(state, embedded_public, "manifest.webmanifest"),
+            !has_public_file(state, embedded_public, "sw.js"),
+        );
+    }
     let mut router = assets
         .clone()
         .router(!has_public_file(state, embedded_public, "sw.js"));

@@ -441,25 +441,39 @@ impl PwaAssets {
                 OFFLINE_ROUTE,
                 get(move || {
                     let body = offline.offline_html.clone();
-                    async move {
-                        (
-                            [
-                                (CONTENT_TYPE, "text/html; charset=utf-8"),
-                                (CACHE_CONTROL, "no-cache"),
-                            ],
-                            body,
-                        )
-                    }
+                    async move { offline_response(body, false) }
                 }),
             )
-            .route(
-                &format!("{ICON_ROUTE}/{{file}}"),
-                get(move |UrlPath(file): UrlPath<String>| {
-                    let icon = icons.icons.get(file.as_str()).cloned();
-                    async move { icon_response(icon) }
-                }),
-            )
+            .merge(icons.icons_router())
     }
+
+    /// Only the icon files, for the resolver routes, which answer the worker
+    /// and the offline page themselves.
+    pub(crate) fn icons_router<S: Clone + Send + Sync + 'static>(self: Arc<Self>) -> Router<S> {
+        Router::new().route(
+            &format!("{ICON_ROUTE}/{{file}}"),
+            get(move |UrlPath(file): UrlPath<String>| {
+                let icon = self.icons.get(file.as_str()).cloned();
+                async move { icon_response(icon) }
+            }),
+        )
+    }
+}
+
+fn offline_response(body: String, vary_host: bool) -> Response {
+    let mut res = (
+        [
+            (CONTENT_TYPE, "text/html; charset=utf-8"),
+            (CACHE_CONTROL, "no-cache"),
+        ],
+        body,
+    )
+        .into_response();
+    if vary_host {
+        res.headers_mut()
+            .insert(VARY, HeaderValue::from_static("Host"));
+    }
+    res
 }
 
 impl Pwa {
@@ -472,23 +486,7 @@ impl Pwa {
             get(move |State(state): State<AppState>, headers: HeaderMap| {
                 let pwa = self.clone();
                 async move {
-                    let locale = crate::i18n::header_locale(&state, &headers);
-                    let host = headers
-                        .get(HOST)
-                        .and_then(|v| v.to_str().ok())
-                        .unwrap_or_default();
-                    let text = |key: &str| {
-                        let text = state.translator.get(&locale, &state.config.locale, key);
-                        (text != key).then_some(text)
-                    };
-                    let mut req =
-                        PwaRequest::new(host, locale.clone()).direction(state.direction(&locale));
-                    if let Some(name) = text("pwa.name") {
-                        req = req.name(name);
-                    }
-                    if let Some(name) = text("pwa.short_name") {
-                        req = req.short_name(name);
-                    }
+                    let req = request_for(&state, &headers);
                     let mut res = (
                         [
                             (CONTENT_TYPE, "application/manifest+json"),
@@ -508,6 +506,28 @@ impl Pwa {
     }
 }
 
+/// The [`PwaRequest`] for a request: host, locale, direction and the
+/// localized names from the lang files.
+fn request_for(state: &AppState, headers: &HeaderMap) -> PwaRequest {
+    let locale = crate::i18n::header_locale(state, headers);
+    let host = headers
+        .get(HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let text = |key: &str| {
+        let text = state.translator.get(&locale, &state.config.locale, key);
+        (text != key).then_some(text)
+    };
+    let mut req = PwaRequest::new(host, locale.clone()).direction(state.direction(&locale));
+    if let Some(name) = text("pwa.name") {
+        req = req.name(name);
+    }
+    if let Some(name) = text("pwa.short_name") {
+        req = req.short_name(name);
+    }
+    req
+}
+
 fn icon_response(icon: Option<Vec<u8>>) -> Response {
     match icon {
         Some(bytes) => (
@@ -520,6 +540,25 @@ fn icon_response(icon: Option<Vec<u8>>) -> Response {
             .into_response(),
         None => StatusCode::NOT_FOUND.into_response(),
     }
+}
+
+/// The worker source and its version for an offline page, the precache list
+/// and a brand hash (empty for the static `Pwa`).
+fn worker_source(
+    offline_html: &str,
+    precache: &[String],
+    brand_hash: &str,
+) -> anyhow::Result<(String, String)> {
+    let mut paths = vec![OFFLINE_ROUTE.to_string()];
+    paths.extend(precache.iter().cloned());
+    let list = serde_json::to_string(&paths)?;
+    let version =
+        sha256_hex(format!("{WORKER}\n{list}\n{offline_html}\n{brand_hash}"))[..16].to_string();
+    let worker = WORKER
+        .replace("__RENOX_SW_VERSION__", &version)
+        .replace("__RENOX_SW_PRECACHE__", &list)
+        .replace("__RENOX_SW_OFFLINE__", OFFLINE_ROUTE);
+    Ok((worker, version))
 }
 
 impl Pwa {
@@ -552,21 +591,286 @@ impl Pwa {
                 .with_context(|| format!("PWA offline view `{view}` failed to render"))?,
             None => DEFAULT_OFFLINE.to_string(),
         };
-        let mut paths = vec![OFFLINE_ROUTE.to_string()];
-        paths.extend(precache.iter().cloned());
-        let list = serde_json::to_string(&paths)?;
-        let version =
-            sha256_hex(format!("{WORKER}\n{list}\n{offline_html}\n{brand_hash}"))[..16].to_string();
-        let worker = WORKER
-            .replace("__RENOX_SW_VERSION__", &version)
-            .replace("__RENOX_SW_PRECACHE__", &list)
-            .replace("__RENOX_SW_OFFLINE__", OFFLINE_ROUTE);
+        let (worker, version) = worker_source(&offline_html, precache, brand_hash)?;
         Ok(PwaAssets {
             icons,
             offline_html,
             worker,
             version,
         })
+    }
+}
+
+/// How a per-request resolver is kept.
+pub(crate) type PwaFn = Arc<
+    dyn Fn(
+            PwaRequest,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = crate::Result<Option<PwaBrand>>> + Send>,
+        > + Send
+        + Sync,
+>;
+
+pub(crate) fn pwa_fn<F, Fut>(resolve: F) -> PwaFn
+where
+    F: Fn(PwaRequest) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = crate::Result<Option<PwaBrand>>> + Send + 'static,
+{
+    Arc::new(move |req| Box::pin(resolve(req)))
+}
+
+/// The static `Pwa`, its boot-time assets and the optional resolver.
+pub(crate) type PwaParts = (Arc<Pwa>, Arc<PwaAssets>, Option<Arc<PwaResolver>>);
+
+/// One brand's assets, built on its first request and kept by brand hash.
+#[derive(Debug)]
+struct BrandAssets {
+    brand: PwaBrand,
+    hash: String,
+    /// `None` when the brand has no icons or they were invalid: the static
+    /// icons are used.
+    icons: Option<BTreeMap<&'static str, Vec<u8>>>,
+    offline_html: String,
+    worker: String,
+}
+
+/// The per-request resolver (`App::pwa_for`) and the brands it produced.
+pub(crate) struct PwaResolver {
+    choose: PwaFn,
+    precache: Vec<String>,
+    brands: std::sync::RwLock<std::collections::HashMap<String, Arc<BrandAssets>>>,
+}
+
+impl std::fmt::Debug for PwaResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PwaResolver").finish_non_exhaustive()
+    }
+}
+
+impl PwaBrand {
+    /// A hash of everything the brand shows, without reading icon files:
+    /// the icon directory's contents are read once per brand, so changing
+    /// them takes a restart or a different directory.
+    fn hash(&self) -> String {
+        let mut text = format!(
+            "{}\0{:?}\0{:?}\0{:?}",
+            self.name, self.short_name, self.theme_color, self.icon_dir
+        );
+        for (file, bytes) in &self.icon_bytes {
+            text.push_str(&format!("\0{file}\0{}", sha256_hex(bytes)));
+        }
+        sha256_hex(text)[..16].to_string()
+    }
+
+    /// Reads and checks the three icon files; `None` when the brand names
+    /// no icon source at all.
+    async fn load_icons(&self) -> anyhow::Result<Option<BTreeMap<&'static str, Vec<u8>>>> {
+        if self.icon_dir.is_none() && self.icon_bytes.is_empty() {
+            return Ok(None);
+        }
+        let mut icons = BTreeMap::new();
+        for (file, _, _) in ICON_FILES {
+            let bytes = match self.icon_bytes.iter().rev().find(|(f, _)| f == file) {
+                Some((_, bytes)) => bytes.clone(),
+                None => match &self.icon_dir {
+                    Some(dir) => {
+                        let path = dir.join(file);
+                        tokio::fs::read(&path).await.with_context(|| {
+                            format!("PWA icon {} is missing or unreadable", path.display())
+                        })?
+                    }
+                    None => bail!("PWA brand `{}` has no icon {file}", self.name),
+                },
+            };
+            if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                bail!("PWA brand `{}`: icon {file} is not a PNG file", self.name);
+            }
+            icons.insert(file, bytes);
+        }
+        Ok(Some(icons))
+    }
+}
+
+impl PwaResolver {
+    pub(crate) fn new(choose: PwaFn, precache: Vec<String>) -> Self {
+        Self {
+            choose,
+            precache,
+            brands: std::sync::RwLock::default(),
+        }
+    }
+
+    /// The brand for a request. A resolver that fails is logged and falls
+    /// back to the static `Pwa`, like one that answers `None`.
+    async fn resolve(
+        &self,
+        state: &AppState,
+        pwa: &Pwa,
+        req: PwaRequest,
+    ) -> Option<Arc<BrandAssets>> {
+        let brand = match (self.choose)(req).await {
+            Ok(Some(brand)) => brand,
+            Ok(None) => return None,
+            Err(err) => {
+                tracing::warn!(error = ?err, "the PWA resolver failed");
+                return None;
+            }
+        };
+        let hash = brand.hash();
+        let known = self
+            .brands
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&hash)
+            .cloned();
+        if known.is_some() {
+            return known;
+        }
+        let icons = brand.load_icons().await.unwrap_or_else(|err| {
+            tracing::error!(error = ?err, "invalid PWA brand icons; using the static icons");
+            None
+        });
+        let offline_html = match pwa.offline_view() {
+            Some(view) => {
+                let context = json!({"pwa": {
+                    "name": brand.name,
+                    "short_name": brand.short_name,
+                    "theme_color": brand.theme_color,
+                }});
+                state.views.render(view, context).unwrap_or_else(|err| {
+                    tracing::error!(error = ?err, view, "the PWA offline view failed for a brand");
+                    DEFAULT_OFFLINE.to_string()
+                })
+            }
+            None => DEFAULT_OFFLINE.to_string(),
+        };
+        let (worker, _) = worker_source(&offline_html, &self.precache, &hash).ok()?;
+        let built = Arc::new(BrandAssets {
+            brand,
+            hash: hash.clone(),
+            icons,
+            offline_html,
+            worker,
+        });
+        Some(
+            self.brands
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .entry(hash)
+                .or_insert(built)
+                .clone(),
+        )
+    }
+
+    /// The routes that depend on the host: the manifest, `/sw.js`, the
+    /// offline page and the brand icons; they send `Vary: Host`. The static
+    /// icons are included.
+    pub(crate) fn router(
+        self: Arc<Self>,
+        pwa: Arc<Pwa>,
+        assets: Arc<PwaAssets>,
+        serve_manifest: bool,
+        serve_worker: bool,
+    ) -> Router<AppState> {
+        let mut router = Router::new().merge(assets.clone().icons_router());
+        if serve_manifest {
+            let (me, pwa) = (self.clone(), pwa.clone());
+            router = router.route(
+                "/manifest.webmanifest",
+                get(move |State(state): State<AppState>, headers: HeaderMap| {
+                    let (me, pwa) = (me.clone(), pwa.clone());
+                    async move {
+                        let req = request_for(&state, &headers);
+                        let brand = me.resolve(&state, &pwa, req.clone()).await;
+                        let mut manifest = pwa.manifest(&req, brand.as_deref().map(|b| &b.brand));
+                        if let Some(brand) = brand.as_deref().filter(|b| b.icons.is_some()) {
+                            rewrite_icons(&mut manifest, &brand.hash);
+                        }
+                        let mut res = (
+                            [
+                                (CONTENT_TYPE, "application/manifest+json"),
+                                (CACHE_CONTROL, "no-cache"),
+                            ],
+                            manifest.to_string(),
+                        )
+                            .into_response();
+                        let vary = if state.detect_locale {
+                            "Host, Accept-Language"
+                        } else {
+                            "Host"
+                        };
+                        res.headers_mut()
+                            .insert(VARY, HeaderValue::from_static(vary));
+                        res
+                    }
+                }),
+            );
+        }
+        if serve_worker {
+            let (me, pwa, assets) = (self.clone(), pwa.clone(), assets.clone());
+            router = router.route(
+                "/sw.js",
+                get(move |State(state): State<AppState>, headers: HeaderMap| {
+                    let (me, pwa, assets) = (me.clone(), pwa.clone(), assets.clone());
+                    async move {
+                        let req = request_for(&state, &headers);
+                        let body = match me.resolve(&state, &pwa, req).await {
+                            Some(brand) => brand.worker.clone(),
+                            None => assets.worker.clone(),
+                        };
+                        (
+                            [
+                                (CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                                (CACHE_CONTROL, "no-cache"),
+                                (HeaderName::from_static("service-worker-allowed"), "/"),
+                                (VARY, "Host"),
+                            ],
+                            body,
+                        )
+                    }
+                }),
+            );
+        }
+        let (me, offline_pwa, offline_assets) = (self.clone(), pwa, assets);
+        router = router.route(
+            OFFLINE_ROUTE,
+            get(move |State(state): State<AppState>, headers: HeaderMap| {
+                let (me, pwa, assets) = (me.clone(), offline_pwa.clone(), offline_assets.clone());
+                async move {
+                    let req = request_for(&state, &headers);
+                    let html = match me.resolve(&state, &pwa, req).await {
+                        Some(brand) => brand.offline_html.clone(),
+                        None => assets.offline_html.clone(),
+                    };
+                    offline_response(html, true)
+                }
+            }),
+        );
+        router.route(
+            &format!("{ICON_ROUTE}/{{hash}}/{{file}}"),
+            get(move |UrlPath((hash, file)): UrlPath<(String, String)>| {
+                let icon = self
+                    .brands
+                    .read()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get(&hash)
+                    .and_then(|b| b.icons.as_ref()?.get(file.as_str()).cloned());
+                async move { icon_response(icon) }
+            }),
+        )
+    }
+}
+
+/// Points the manifest's icons at the brand's own files.
+fn rewrite_icons(manifest: &mut Value, hash: &str) {
+    let Some(icons) = manifest["icons"].as_array_mut() else {
+        return;
+    };
+    for icon in icons {
+        if let Some(src) = icon["src"].as_str() {
+            let file = src.rsplit('/').next().unwrap_or(src);
+            icon["src"] = Value::from(format!("{ICON_ROUTE}/{hash}/{file}"));
+        }
     }
 }
 
