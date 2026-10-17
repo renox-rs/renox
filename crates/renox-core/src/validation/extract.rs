@@ -175,6 +175,7 @@ where
         user: user.as_deref(),
         method: &method,
         path: &path,
+        locale: &locale_name,
     };
     if !data
         .authorize(&form)

@@ -44,6 +44,9 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
     /// `delete()` sets `deleted_at` instead of removing the row, and queries
     /// skip deleted rows unless asked with `with_trashed()` / `only_trashed()`.
     const SOFT_DELETES: bool = false;
+    /// The `Json<CustomValues>` column named by `#[model(custom_fields = "…")]`,
+    /// which holds the values of the run-time custom fields of this model.
+    const CUSTOM_FIELDS: Option<&'static str> = None;
     /// Select every column (`*`) instead of `COLUMNS`, so `from_row` also
     /// sees columns the struct doesn't list, and queries may filter on them.
     /// The built-in `User` does this to keep the app's own columns.

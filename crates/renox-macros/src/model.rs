@@ -45,6 +45,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
     let mut search_normalize: Option<LitStr> = None;
     let mut index_specs: Vec<(bool, Vec<syn::Ident>)> = Vec::new();
     let mut form = false;
+    let mut custom_fields: Option<LitStr> = None;
     let mut state_machine = false;
     for attr in input.attrs.iter().filter(|a| a.path().is_ident("model")) {
         attr.parse_nested_meta(|meta| {
@@ -59,6 +60,9 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else if meta.path.is_ident("form") {
                 form = true;
+                Ok(())
+            } else if meta.path.is_ident("custom_fields") {
+                custom_fields = Some(meta.value()?.parse::<LitStr>()?);
                 Ok(())
             } else if meta.path.is_ident("state_machine") {
                 state_machine = true;
@@ -94,7 +98,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else {
                 Err(meta.error(
-                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `state_machine`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `index(col, …)` or `unique(col, …)`",
+                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `state_machine`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `custom_fields = \"column\"`, `index(col, …)` or `unique(col, …)`",
                 ))
             }
         })?;
@@ -203,6 +207,29 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             "`soft_deletes` needs a `deleted_at: Option<DateTime>` field",
         ));
     }
+
+    let custom_column = match &custom_fields {
+        Some(lit) => {
+            let name = lit.value();
+            let Some(field) = column(&name) else {
+                return Err(Error::new_spanned(
+                    lit,
+                    format!("`custom_fields`: `{name}` isn't a column of this model"),
+                ));
+            };
+            if !is_custom_values(&field.ty) {
+                return Err(Error::new_spanned(
+                    &field.ty,
+                    "`custom_fields` names a `Json<CustomValues>` column",
+                ));
+            }
+            Some(name)
+        }
+        None => None,
+    };
+    let custom_const = custom_column.as_ref().map(|name| {
+        quote! { const CUSTOM_FIELDS: ::core::option::Option<&'static str> = ::core::option::Option::Some(#name); }
+    });
 
     let phys = physical_columns(&fields)?;
     let columns: Vec<&str> = phys.iter().map(|p| p.name.as_str()).collect();
@@ -408,7 +435,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         });
         quote! { impl #ident { #(#consts)* } }
     });
-    let form_struct = form.then(|| form_tokens(&input, &fields));
+    let form_struct = form.then(|| form_tokens(&input, &fields, custom_column.as_deref()));
     Ok(quote! {
         #from_row_impl
         #typed_consts
@@ -418,6 +445,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             const TABLE: &'static str = #table;
             const COLUMNS: &'static [&'static str] = &[#(#columns),*];
             const SOFT_DELETES: bool = #soft_deletes;
+            #custom_const
             #search_const
             #language_const
             #normalize_const
@@ -463,6 +491,25 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             #state_machine_fns
         }
     })
+}
+
+/// `Json<CustomValues>` (by the last path segments).
+fn is_custom_values(ty: &Type) -> bool {
+    let Type::Path(p) = ty else { return false };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    if seg.ident != "Json" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(a) = &seg.arguments else {
+        return false;
+    };
+    matches!(
+        a.args.first(),
+        Some(syn::GenericArgument::Type(Type::Path(inner)))
+            if inner.path.segments.last().is_some_and(|s| s.ident == "CustomValues")
+    )
 }
 
 /// `String` or `Option<String>` (by the last path segment).
@@ -592,7 +639,7 @@ fn is_option(ty: &Type) -> bool {
 }
 
 /// `<Model>Form` and its `fill`, for `#[model(form)]`.
-fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
+fn form_tokens(input: &DeriveInput, fields: &[Field], custom: Option<&str>) -> TokenStream {
     let ident = &input.ident;
     let vis = &input.vis;
     let form_ident = format_ident!("{}Form", ident);
@@ -601,6 +648,7 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
         .filter(|f| {
             !f.skip
                 && !f.form.skip
+                && custom != Some(f.name.as_str())
                 && !matches!(
                     f.name.as_str(),
                     "id" | "created_at" | "updated_at" | "deleted_at"
@@ -680,20 +728,89 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
         }
         quote! { record.#name = self.#name; }
     });
+    // The custom fields column: the submitted `column[key]` values, checked
+    // against the definitions in `after` (they need the database) and kept
+    // cleaned for `fill`.
+    let custom_member = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            #[serde(default)]
+            #vis #column: ::renox::custom_fields::CustomValues,
+            #[serde(skip)]
+            __custom_cleaned: ::std::sync::Mutex<::core::option::Option<::renox::custom_fields::CustomValues>>,
+        }
+    });
+    let custom_fill = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            let cleaned = self.__custom_cleaned.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let ::core::option::Option::Some(cleaned) = cleaned {
+                for key in self.#column.0.keys() {
+                    record.#column.remove(key);
+                }
+                for (key, value) in cleaned.0 {
+                    record.#column.set(key, value);
+                }
+            }
+        }
+    });
+    let custom_hooks_attr = custom.map(|_| quote! { #[validate(hooks)] });
+    let custom_hooks = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            impl ::renox::validation::ValidateHooks for #form_ident {
+                async fn after(
+                    &self,
+                    form: &::renox::validation::FormContext<'_>,
+                    errors: &mut ::renox::Errors,
+                ) -> ::renox::Result {
+                    let input = self.#column.0.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    let outcome = ::renox::custom_fields::CustomValues::validate(
+                        form.state,
+                        <#ident as ::renox::db::Model>::TABLE,
+                        #name,
+                        &input,
+                        &::std::collections::BTreeMap::new(),
+                        form.locale,
+                    )
+                    .await?;
+                    match outcome {
+                        ::core::result::Result::Ok(cleaned) => {
+                            *self.__custom_cleaned.lock().unwrap_or_else(|e| e.into_inner()) =
+                                ::core::option::Option::Some(cleaned);
+                        }
+                        ::core::result::Result::Err(found) => {
+                            for (field, messages) in found.iter() {
+                                for message in messages {
+                                    errors.add(field, message.clone());
+                                }
+                            }
+                        }
+                    }
+                    ::core::result::Result::Ok(())
+                }
+            }
+        }
+    });
     let doc = format!("The form for [`{ident}`], made by `#[model(form)]`.");
     quote! {
         #[doc = #doc]
         #[derive(::renox::serde::Deserialize, ::renox::serde::Serialize, ::renox::Validate)]
         #[serde(crate = "::renox::serde")]
+        #custom_hooks_attr
         #vis struct #form_ident {
             #(#members,)*
             #(#currency_fields,)*
+            #custom_member
         }
+
+        #custom_hooks
 
         impl #form_ident {
             /// Copies the form's values onto `record`.
             pub fn fill(self, record: &mut #ident) {
                 #(#assigns)*
+                #custom_fill
             }
         }
     }

@@ -232,6 +232,8 @@ pub struct FormContext<'a> {
     pub method: &'a axum::http::Method,
     /// The request's path, without the query string.
     pub path: &'a str,
+    /// The request's locale (`APP_LOCALE` when none was negotiated).
+    pub locale: &'a str,
 }
 
 struct Pending {
