@@ -255,6 +255,32 @@ pub const TEXTS: &[(&str, &str)] = &[
         "blocks.geolocate.no_script",
         "Sharing your position needs JavaScript.",
     ),
+    ("blocks.barcode.label", "Code"),
+    ("blocks.barcode.button", "Scan with camera"),
+    ("blocks.barcode.close", "Close camera"),
+    (
+        "blocks.barcode.help",
+        "Type the code, scan it with a barcode reader, or use the camera.",
+    ),
+    ("blocks.barcode.scanning", "Point the camera at the code."),
+    ("blocks.barcode.read", "Code read: :code."),
+    ("blocks.barcode.closed", "Camera closed."),
+    (
+        "blocks.barcode.denied",
+        "Camera access was denied. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.missing",
+        "No camera is available here. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.failed",
+        "The camera could not be started. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.unsupported",
+        "This browser cannot read codes from the camera. Type the code instead.",
+    ),
 ];
 
 /// The English text of `key`, if the blocks have one.

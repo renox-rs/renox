@@ -1685,3 +1685,113 @@ async fn a_position_arrives_through_valid() {
         "{html}"
     );
 }
+
+const SCAN_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import barcode_scan %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/stock">
+{{ csrf_field() }}
+{{ barcode_scan("code", formats="ean_13,code_128", label="Part number", required=true, hint="On the box.", submit=true) }}
+</form></body></html>"##;
+
+const SCAN_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/stock">
+<rx-barcode-scan name="sku" value="4006381333931"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct Stock {
+    code: String,
+}
+
+impl Validate for Stock {
+    fn rules(&self, v: &mut Validator) {
+        v.field("code", &self.code).required();
+    }
+}
+
+struct Stocks;
+
+impl Module for Stocks {
+    fn name(&self) -> &'static str {
+        "stocks"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/stock", || async { view("stock.html", ()) })
+            .get("/stock-tag", || async { view("stock-tag.html", ()) })
+            .post("/stock", |Valid(form): Valid<Stock>| async move {
+                Json(json!({ "code": form.code }))
+            })
+    }
+}
+
+async fn stocks_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Stocks)
+            .templates(|env| {
+                env.add_template("stock.html", SCAN_MACRO).unwrap();
+                renox::view::add_template(env, "stock-tag.html", SCAN_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The barcode_scan block (#54): a plain text field that works alone, the
+/// camera button (hidden until the script shows it), the formats and the
+/// submit flag as data attributes, a polite status and the part's file; the
+/// tag calls the macro.
+#[renox::test]
+async fn the_barcode_block_renders_as_a_macro_and_a_tag() {
+    let app = stocks_app().await;
+    let html = app.get("/stock").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-barcode data-rx-barcode-formats="ean_13,code_128" data-rx-barcode-submit"#);
+    has(r#"<label class="rx-label" for="rx-code-input">Part number</label>"#);
+    has(r#"type="text" id="rx-code-input" name="code" value="""#);
+    has(r#"autocomplete="off""#);
+    has(
+        r#"type="button" hidden aria-controls="rx-code-live" aria-expanded="false" data-rx-barcode-button>Scan with camera</button>"#,
+    );
+    has(
+        r#"id="rx-code-status" role="status" aria-live="polite" data-rx-barcode-status>Type the code"#,
+    );
+    has("On the box.");
+    has("This browser cannot read codes from the camera.");
+    has(r#"data-error-for="code" aria-live="polite"></p>"#);
+    has(r#"data-barcode="/_renox/blocks/barcode-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/stock-tag").await.assert_ok().text();
+    for needle in [
+        r#"data-rx-barcode-formats="ean_13,qr_code" data-rx-blocks-texts"#,
+        r#"name="sku" value="4006381333931""#,
+        r#"<span class="rx-required">(optional)</span>"#,
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+    assert!(!html.contains("data-rx-barcode-submit"), "{html}");
+}
+
+/// The scanned or typed code is a plain string through `Valid`, and an
+/// empty one fails `required`.
+#[renox::test]
+async fn a_scanned_code_arrives_as_a_string() {
+    let app = stocks_app().await;
+    app.get("/stock").await;
+    app.post("/stock", &[("code", "4006381333931")])
+        .await
+        .assert_ok()
+        .assert_json_path("code", "4006381333931");
+    app.request()
+        .json()
+        .post("/stock", &[("code", "")])
+        .await
+        .assert_status(422)
+        .assert_invalid("code");
+}

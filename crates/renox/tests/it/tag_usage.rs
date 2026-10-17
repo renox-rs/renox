@@ -19,6 +19,9 @@ const NOT_SHOWN_YET: &[(&str, &str)] = &[(
 ), (
     "rx-geolocate",
     "added in #54 part 2/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
+), (
+    "rx-barcode-scan",
+    "added in #54 part 3/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
 )];
 
 fn root() -> PathBuf {

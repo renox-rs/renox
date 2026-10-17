@@ -19,7 +19,7 @@ const LOADER: &str = include_str!("../assets/blocks.js");
 
 /// The blocks that have code: `(name, source)`. The loader finds each one's
 /// file in a `data-{name}` attribute of its `<script>` tag.
-const PARTS: [(&str, &str); 13] = [
+const PARTS: [(&str, &str); 14] = [
     ("gallery", include_str!("../assets/parts/gallery.js")),
     ("range", include_str!("../assets/parts/range.js")),
     ("quantity", include_str!("../assets/parts/quantity.js")),
@@ -33,6 +33,7 @@ const PARTS: [(&str, &str); 13] = [
     ("camera", include_str!("../assets/parts/camera.js")),
     ("map", include_str!("../assets/parts/map.js")),
     ("geolocate", include_str!("../assets/parts/geolocate.js")),
+    ("barcode", include_str!("../assets/parts/barcode.js")),
 ];
 
 /// Leaflet, vendored (assets/vendor/leaflet/NOTICE). `map.js` adds these two

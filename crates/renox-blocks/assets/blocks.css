@@ -584,3 +584,15 @@
 /* ---------- geolocate ---------- */
 
 .rx-geolocate { min-width: 0; display: grid; gap: var(--rx-space-2); }
+
+/* ---------- barcode scan ---------- */
+
+.rx-barcode { min-width: 0; display: grid; gap: var(--rx-space-2); }
+.rx-barcode__row { display: flex; flex-wrap: wrap; gap: var(--rx-space-2); align-items: center; }
+.rx-barcode__row .rx-input { flex: 1 1 12rem; min-width: 0; }
+.rx-barcode__row [hidden], .rx-barcode__live[hidden] { display: none; }
+.rx-barcode__live { display: grid; gap: var(--rx-space-2); justify-items: start; }
+.rx-barcode__video {
+  display: block; box-sizing: border-box; width: 25rem; max-width: 100%; aspect-ratio: 4 / 3;
+  object-fit: cover; background: #111; border-radius: var(--rx-radius-m);
+}

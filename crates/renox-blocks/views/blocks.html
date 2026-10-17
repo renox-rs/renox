@@ -5,7 +5,7 @@
 
     Input:          quantity, range_slider, keypad, swatches, datetime_range,
                     signature_pad, camera_capture, map_picker (a point, circle or polygon), rating,
-                    geolocate
+                    geolocate, barcode_scan
     Showing data:   gallery, history, compare_plans, status_stepper, map
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
@@ -1216,5 +1216,58 @@
   {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
   <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
   <noscript><p class="rx-hint">{{ renox_blocks_t('blocks.geolocate.no_script') }}</p></noscript>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    barcode_scan: one text field that a barcode can fill three ways: a
+    scanner that types like a keyboard (a "keyboard wedge"), typing, or the
+    device's camera. The form posts the field as a plain string, so the
+    server never knows which way it was filled.
+
+    {{ barcode_scan("sku", formats="ean_13,qr_code", label="Part number") }}
+
+    Without JavaScript it is the field alone. `formats` is a comma list of
+    `BarcodeDetector` format names. Keys that arrive less than 50 ms apart
+    and end in Enter count as one scan; Enter is then not sent as a submit,
+    so a scan never posts a half-filled form (`submit=true` submits after
+    a scan; typed Enter submits only then too). The camera button is shown
+    where the browser can open a camera; it uses `BarcodeDetector` when the
+    browser has it, and otherwise says so and leaves the field to type in.
+    The page's Permissions-Policy must allow the camera
+    (`.permissions_policy(|p| { p.allow("camera", "self"); })`), which Renox
+    switches off by default.
+    ====================================================================== -#}
+{% macro barcode_scan(name, value=none, label=none, formats="ean_13,qr_code", required=false, hint=none, id=none, bag=none, submit=false) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set current = old(name, value) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.barcode.label') %}
+{%- set texts = {
+  "read": renox_blocks_t('blocks.barcode.read'),
+  "scanning": renox_blocks_t('blocks.barcode.scanning'),
+  "denied": renox_blocks_t('blocks.barcode.denied'),
+  "missing": renox_blocks_t('blocks.barcode.missing'),
+  "failed": renox_blocks_t('blocks.barcode.failed'),
+  "unsupported": renox_blocks_t('blocks.barcode.unsupported'),
+  "closed": renox_blocks_t('blocks.barcode.closed')
+} %}
+<div class="rx-field rx-barcode" id="{{ id }}" data-rx-barcode data-rx-barcode-formats="{{ formats }}"{% if submit %} data-rx-barcode-submit{% endif %} data-rx-blocks-texts='{{ texts | tojson }}'>
+  <label class="rx-label" for="{{ id }}-input">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</label>
+  <div class="rx-barcode__row">
+    <input class="rx-input" type="text" id="{{ id }}-input" name="{{ name }}" value="{{ current if current is not none else '' }}" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+      {%- if required %} required{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %}
+      aria-describedby="{{ id }}-status{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error" data-rx-barcode-input>
+    <button class="rx-button rx-button--secondary" type="button" hidden aria-controls="{{ id }}-live" aria-expanded="false" data-rx-barcode-button>{{ renox_blocks_t('blocks.barcode.button') }}</button>
+  </div>
+  <div class="rx-barcode__live" id="{{ id }}-live" data-rx-barcode-live hidden>
+    <video class="rx-barcode__video" autoplay playsinline muted aria-label="{{ renox_blocks_t('blocks.barcode.scanning') }}" data-rx-barcode-video></video>
+    <button class="rx-button rx-button--secondary rx-button--small" type="button" data-rx-barcode-close>{{ renox_blocks_t('blocks.barcode.close') }}</button>
+  </div>
+  <p class="rx-hint" id="{{ id }}-status" role="status" aria-live="polite" data-rx-barcode-status>{{ renox_blocks_t('blocks.barcode.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
 </div>
 {%- endmacro %}
