@@ -13,7 +13,11 @@ use renox::Config;
 use renox::axum::http::HeaderMap;
 use renox::prelude::*;
 
-use crate::{Owner, Plan, Subscription, SubscriptionStatus};
+use crate::payment::{
+    ChargeRequest, DisputeUpdate, PaymentPage, PaymentState, PaymentUpdate, Refund, RefundResult,
+    RefundUpdate,
+};
+use crate::{BillingPayment, Owner, Plan, Subscription, SubscriptionStatus, Unsupported};
 
 /// A boxed future that is `Send`, what [`Gateway`]'s methods return (so the
 /// trait works behind `dyn`, and handlers stay `Send`).
@@ -220,6 +224,66 @@ pub trait Gateway: Send + Sync + 'static {
     fn parse_webhook_with(&self, _state: &AppState, body: &[u8]) -> Result<Vec<Notice>> {
         self.parse_webhook(body)
     }
+
+    /// Starts a one-off charge: a page at the provider where the customer
+    /// pays `request.amount`. `request.account` names the account to use
+    /// (`None` is the default). The default answers [`Unsupported`].
+    fn charge<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        unsupported(self.name(), "charge")
+    }
+
+    /// Makes a payment link for `request`. The default answers
+    /// [`Unsupported`].
+    fn payment_link<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        unsupported(self.name(), "payment_link")
+    }
+
+    /// Refunds part or all of `payment`, with the keys of the account the
+    /// payment was made through (`payment.account`). Answer a pending
+    /// refund unless the gateway refunded at once. The default answers
+    /// [`Unsupported`].
+    fn refund<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+        _refund: &'a Refund,
+    ) -> BoxFuture<'a, Result<RefundResult>> {
+        unsupported(self.name(), "refund")
+    }
+
+    /// Asks the gateway where `payment` stands now, with the payment's
+    /// account. The default answers [`Unsupported`].
+    fn payment_status<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result<PaymentState>> {
+        unsupported(self.name(), "payment_status")
+    }
+
+    /// Accepts the dispute on `payment` (gives up contesting it). The
+    /// default answers [`Unsupported`].
+    fn accept_dispute<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result> {
+        unsupported(self.name(), "accept_dispute")
+    }
+}
+
+/// A future that answers [`Unsupported`] for `operation` of `gateway`.
+fn unsupported<'a, T: Send + 'a>(gateway: &str, operation: &str) -> BoxFuture<'a, Result<T>> {
+    let refusal = Unsupported::new(gateway, operation);
+    Box::pin(async move { Err(refusal.into()) })
 }
 
 /// What [`Gateway::checkout`] gets: who subscribes, to what, and where the
@@ -436,6 +500,12 @@ pub enum Notice {
     Subscription(Remote),
     /// A payment succeeded or failed.
     Payment(Payment),
+    /// A one-off payment (a charge or a link) changed.
+    OneOff(PaymentUpdate),
+    /// A refund changed.
+    Refund(RefundUpdate),
+    /// A dispute was opened or decided.
+    Dispute(DisputeUpdate),
 }
 
 /// The account name a resolver gets for the gateway's default account.

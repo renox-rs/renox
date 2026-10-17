@@ -53,14 +53,17 @@ pub mod xendit;
 
 pub use customer::{Billable, Customer, Owner};
 pub use events::{
-    PaymentFailed, PaymentSucceeded, SubscriptionCanceled, SubscriptionCreated, SubscriptionPaused,
-    SubscriptionUnpaused, SubscriptionUpdated,
+    DisputeLost, DisputeOpened, DisputeWon, PaymentFailed, PaymentLinkExpired, PaymentRefunded,
+    PaymentSucceeded, RefundFailed, RefundSucceeded, SubscriptionCanceled, SubscriptionCreated,
+    SubscriptionPaused, SubscriptionUnpaused, SubscriptionUpdated,
 };
 pub use gateway::{BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Payment, Remote};
 pub use guard::SubscriptionRoutes;
 pub use model::{BillingCustomer, Subscription, SubscriptionStatus};
 pub use payment::{
-    BillingPayment, BillingRefund, PaymentKind, PaymentStatus, RefundStatus, Unsupported,
+    BillingPayment, BillingRefund, Charge, ChargeRequest, DisputeState, DisputeUpdate, PaymentKind,
+    PaymentLink, PaymentPage, PaymentState, PaymentStatus, PaymentUpdate, Refund, RefundResult,
+    RefundStatus, RefundUpdate, Unsupported,
 };
 pub use plan::{Interval, Plan};
 pub use stripe::Stripe;

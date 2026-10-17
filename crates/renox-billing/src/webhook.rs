@@ -71,6 +71,8 @@ impl Webhook for BillingWebhook {
                     apply(&state, &setup, gateway.name(), remote).await?;
                 }
                 Notice::Payment(paid) => payment(&state, gateway.name(), paid).await?,
+                // One-off payment notices are not applied yet.
+                Notice::OneOff(_) | Notice::Refund(_) | Notice::Dispute(_) => {}
             }
         }
         Ok(())

@@ -221,6 +221,8 @@ pub(crate) async fn payment(state: &AppState, gateway: &str, payment: Payment) -
                 currency: payment.currency,
                 owner,
                 subscription,
+                reference_type: None,
+                reference_id: None,
             })
             .await
     } else {
@@ -232,6 +234,8 @@ pub(crate) async fn payment(state: &AppState, gateway: &str, payment: Payment) -
                 currency: payment.currency,
                 owner,
                 subscription,
+                reference_type: None,
+                reference_id: None,
             })
             .await
     }

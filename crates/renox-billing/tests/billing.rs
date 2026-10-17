@@ -2603,3 +2603,49 @@ async fn webhooks_of_a_named_account_use_that_accounts_secret() {
             .assert_not_found();
     }
 }
+
+#[renox::test]
+async fn operations_a_gateway_does_not_have_answer_unsupported() {
+    use renox::money::{Currency, Money};
+    use renox_billing::payment::{Charge, PaymentLink, Refund, Unsupported};
+    use renox_billing::{BillingPayment, Gateway, PaymentKind, Xendit};
+
+    let app = app().await;
+    let state = app.state();
+    let money = Money::new(1_000, Currency::parse("USD").unwrap());
+    let charge = Charge::new(money).account("acme-llc");
+    let link = PaymentLink::new(money);
+    let payment = BillingPayment::new("xendit", PaymentKind::Charge, money);
+    let refund = Refund::new(money);
+    // A gateway that implements none of the new methods.
+    let gateway = Xendit::new("xnd_development_1", "callback-token");
+
+    let refusals = [
+        (
+            "charge",
+            gateway.charge(state, charge.request()).await.err(),
+        ),
+        (
+            "payment_link",
+            gateway.payment_link(state, link.request()).await.err(),
+        ),
+        (
+            "refund",
+            gateway.refund(state, &payment, &refund).await.err(),
+        ),
+        (
+            "payment_status",
+            gateway.payment_status(state, &payment).await.err(),
+        ),
+        (
+            "accept_dispute",
+            gateway.accept_dispute(state, &payment).await.err(),
+        ),
+    ];
+    for (operation, err) in refusals {
+        let err = err.unwrap_or_else(|| panic!("{operation} should be refused"));
+        let found = Unsupported::of(&err).expect("a typed refusal");
+        assert_eq!(found.gateway, "xendit");
+        assert_eq!(found.operation, operation);
+    }
+}
