@@ -174,7 +174,7 @@ impl Grid {
                     columns => columns.iter().map(|(c, _)| json!({
                         "key": c.key,
                         "label": c.label,
-                        "numeric": matches!(c.kind, Kind::Number | Kind::Money),
+                        "numeric": matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity),
                     })).collect::<Vec<_>>(),
                     rows => rows.iter().map(|row| columns.iter().map(|(c, _)| table.display(c, row)).collect::<Vec<_>>()).collect::<Vec<_>>(),
                     total => rows.len(),
@@ -333,6 +333,12 @@ fn currency_of<'r>(column: &Column, row: &'r Map<String, Value>) -> Option<&'r s
     (column.kind == Kind::Money && !code.is_empty()).then_some(code)
 }
 
+/// The unit code a quantity column with `unit_from` has in `row`.
+fn unit_of<'r>(column: &Column, row: &'r Map<String, Value>) -> Option<&'r str> {
+    let unit = row.get(column.unit.as_ref()?)?.as_str()?;
+    (column.kind == Kind::Quantity && !unit.is_empty()).then_some(unit)
+}
+
 /// The exported rows with their columns.
 struct Table<'a> {
     columns: &'a [(&'a Column, Option<Pin>)],
@@ -354,6 +360,8 @@ impl Table<'_> {
                     Some(column.decimals.map_or(decimals, u32::from)),
                 )
             }
+            // Quantities are stored scaled and shown with all their digits.
+            Kind::Quantity => (n / 10f64.powi(column.scale as i32), Some(column.scale)),
             _ => (n, column.decimals.map(u32::from)),
         }
     }
@@ -411,8 +419,27 @@ impl Table<'_> {
     /// A value for people to read: numbers with the locale's separators.
     fn display(&self, column: &Column, row: &Map<String, Value>) -> String {
         let value = row.get(&column.key);
+        if column.kind == Kind::Quantity {
+            // Exact text (`2.500`) with the row's unit after it.
+            let locale = self
+                .request
+                .lang
+                .as_ref()
+                .map_or("en", |l| l.locale.as_str());
+            let mut text = match value {
+                Some(Value::Number(n)) => {
+                    let (n, d) = self.figure(column, row, n.as_f64().unwrap_or_default());
+                    crate::view_filters::format_number(n, d.unwrap_or(0), locale)
+                }
+                _ => self.text(column, row),
+            };
+            if let (Some(unit), false) = (unit_of(column, row), text.is_empty()) {
+                text = format!("{text} {unit}");
+            }
+            return text;
+        }
         match (column.kind, value.and_then(Value::as_f64)) {
-            (Kind::Number | Kind::Money, Some(n)) if column.kind != Kind::Bool => {
+            (Kind::Number | Kind::Money | Kind::Quantity, Some(n)) if column.kind != Kind::Bool => {
                 let locale = self
                     .request
                     .lang
@@ -464,9 +491,12 @@ impl Table<'_> {
                     .iter()
                     .map(|(c, _)| {
                         let mut text = self.text(c, row);
-                        let numeric = matches!(c.kind, Kind::Number | Kind::Money);
-                        // The amount keeps its currency: `12.50 USD`.
-                        if let (Some(code), false) = (currency_of(c, row), text.is_empty()) {
+                        let numeric = matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity);
+                        // The amount keeps its currency or unit: `12.50 USD`, `2.500 kg`.
+                        if let (Some(code), false) = (
+                            currency_of(c, row).or_else(|| unit_of(c, row)),
+                            text.is_empty(),
+                        ) {
                             text = format!("{text} {code}");
                         }
                         if !numeric && text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
@@ -570,6 +600,41 @@ fn write_sheet(sheet: &mut rust_xlsxwriter::Worksheet, table: &Table<'_>) -> Res
             let value = row.get(&column.key);
             match (column.kind, value) {
                 (_, None | Some(Value::Null)) => {}
+                (Kind::Quantity, Some(Value::Number(_) | Value::String(_))) => {
+                    // The decimal text becomes a number cell; a number format
+                    // per row carries the scale's digits and the unit.
+                    let n = match value {
+                        Some(Value::Number(n)) => {
+                            table.figure(column, row, n.as_f64().unwrap_or_default()).0
+                        }
+                        Some(Value::String(s)) => s.trim().parse().unwrap_or(f64::NAN),
+                        _ => f64::NAN,
+                    };
+                    if n.is_finite() {
+                        let mut format = format!(
+                            "#,##0{}",
+                            match column.scale {
+                                0 => String::new(),
+                                d => format!(".{}", "0".repeat(d as usize)),
+                            }
+                        );
+                        if let Some(unit) = unit_of(column, row) {
+                            format = format!("{format} \"{}\"", unit.replace('"', ""));
+                        }
+                        sheet
+                            .write_number_with_format(
+                                r,
+                                c,
+                                n,
+                                &Format::new().set_num_format(format),
+                            )
+                            .map_err(fail)?;
+                    } else {
+                        sheet
+                            .write_string(r, c, table.text(column, row))
+                            .map_err(fail)?;
+                    }
+                }
                 (Kind::Number | Kind::Money, Some(Value::Number(n))) => {
                     let n = n.as_f64().unwrap_or_default();
                     match (column.kind, column.decimals) {

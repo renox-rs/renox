@@ -84,6 +84,10 @@ pub enum Kind {
     /// An amount in the smallest unit (cents, fils), with thousands
     /// separators; filtered like a number.
     Money,
+    /// An exact quantity (`Quantity<S>`, a scaled integer in the database),
+    /// shown with its scale's digits and a unit per row; filtered like a
+    /// number. See [`Column::quantity`].
+    Quantity,
     /// A date (`NaiveDate`); filtered with a date range.
     Date,
     /// A moment (`DateTime`); filtered with a date range.
@@ -161,6 +165,10 @@ pub struct Column {
     round: bool,
     /// The model column holding each row's currency code (money columns).
     currency: Option<String>,
+    /// The model column holding each row's unit code (quantity columns).
+    unit: Option<String>,
+    /// The decimals of a quantity column: its `Quantity<SCALE>`'s scale.
+    scale: u32,
     /// A value from another table: SQL with `{T}` for this model's table.
     expr: Option<String>,
 }
@@ -195,6 +203,8 @@ impl Column {
             copyable: false,
             round: false,
             currency: None,
+            unit: None,
+            scale: 0,
             expr: None,
         }
     }
@@ -388,6 +398,49 @@ impl Column {
         self
     }
 
+    /// A column of exact quantities (`Quantity<S>`, stored as a scaled
+    /// integer): cells show the scale's digits (`2.500`), set with
+    /// [`scale`](Self::scale), and filters, sorts and summaries act on the
+    /// stored integer, so they are exact. Add
+    /// [`unit_from`](Self::unit_from) to show each row's unit.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let stock = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn quantity(key: &str, label: &str) -> Self {
+        Self::new(key, label, Kind::Quantity)
+    }
+
+    /// The scale of a quantity column, `3` for a `Quantity<3>` field (at
+    /// most 9; the default is 0). Other columns ignore it.
+    pub fn scale(mut self, scale: u32) -> Self {
+        if self.kind == Kind::Quantity {
+            self.scale = scale.min(9);
+        }
+        self
+    }
+
+    /// Shows each row of a quantity column with its own unit, read from the
+    /// model column `key` (`stock_unit`, a `String` such as `kg`). Summaries
+    /// are one figure per unit, never summed across units;
+    /// `unit.<column>=kg` in the query string filters by unit; exports keep
+    /// the unit (after the CSV value, in the XLSX number format, on the
+    /// print page). Without it the column has no unit and a single total.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let stock = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn unit_from(mut self, key: &str) -> Self {
+        if self.kind == Kind::Quantity && plain_name(key) {
+            self.unit = Some(key.to_owned());
+        }
+        self
+    }
+
     /// A date column.
     pub fn date(key: &str, label: &str) -> Self {
         Self::new(key, label, Kind::Date)
@@ -532,7 +585,7 @@ impl Column {
     /// (`.summary(Summary::Sum).summary(Summary::Average)`). Sum, average
     /// and range are for number and money columns; count for any.
     pub fn summary(mut self, summary: Summary) -> Self {
-        let numeric = matches!(self.kind, Kind::Number | Kind::Money);
+        let numeric = matches!(self.kind, Kind::Number | Kind::Money | Kind::Quantity);
         if (numeric || summary == Summary::Count) && !self.summaries.contains(&summary) {
             self.summaries.push(summary);
         }
@@ -553,6 +606,12 @@ impl Column {
     /// ([`currency_from`](Self::currency_from)), if it has one.
     pub fn currency_column(&self) -> Option<&str> {
         self.currency.as_deref()
+    }
+
+    /// The model column a quantity column reads each row's unit from
+    /// ([`unit_from`](Self::unit_from)), if it has one.
+    pub fn unit_column(&self) -> Option<&str> {
+        self.unit.as_deref()
     }
 
     /// The column's heading.
@@ -802,7 +861,7 @@ impl Grid {
         ) || name.split_once('.').is_some_and(|(part, _)| {
             matches!(
                 part,
-                "q" | "m" | "min" | "max" | "from" | "to" | "in" | "cur" | "r"
+                "q" | "m" | "min" | "max" | "from" | "to" | "in" | "cur" | "unit" | "r"
             )
         });
         known.then_some(name)
@@ -1009,7 +1068,7 @@ impl Grid {
                 continue;
             };
             let key = &column.key;
-            let numeric = matches!(column.kind, Kind::Number | Kind::Money);
+            let numeric = matches!(column.kind, Kind::Number | Kind::Money | Kind::Quantity);
             let figures = if numeric {
                 format!(
                     "CAST(SUM({sql}) AS DOUBLE PRECISION), CAST(AVG({sql}) AS DOUBLE PRECISION), \
@@ -1021,10 +1080,13 @@ impl Grid {
             type Figures = (Option<f64>, Option<f64>, Option<f64>, Option<f64>, i64);
             // A column with a currency of its own: one set of figures per
             // currency (and per group), never a sum across currencies.
-            if let Some(cur) = column
+            // A quantity column with `unit_from` does the same per unit.
+            if let Some((cur, per)) = column
                 .currency
                 .as_deref()
-                .filter(|c| M::COLUMNS.contains(c))
+                .map(|c| (c, "currencies"))
+                .or_else(|| column.unit.as_deref().map(|u| (u, "units")))
+                .filter(|(c, _)| M::COLUMNS.contains(c))
             {
                 let cur_expr = format!("\"{cur}\"");
                 let mut grouped = query.clone();
@@ -1052,7 +1114,7 @@ impl Grid {
                         .entry(value.unwrap_or_default())
                         .or_default()
                         .push(json!({
-                            "currency": code, "sum": sum, "average": average,
+                            "currency": code.clone(), "unit": code, "sum": sum, "average": average,
                             "min": min, "max": max, "count": count,
                         }));
                 }
@@ -1060,7 +1122,7 @@ impl Grid {
                     currencies.sort_by_key(|f| f["currency"].as_str().map(str::to_owned));
                     out.entry(value)
                         .or_default()
-                        .insert(key.clone(), json!({ "currencies": currencies }));
+                        .insert(key.clone(), json!({ (per): currencies }));
                 }
                 continue;
             }
@@ -1129,7 +1191,7 @@ impl Grid {
             let Target::Expr(expr) = column.target::<M>() else {
                 continue;
             };
-            let numeric = matches!(column.kind, Kind::Number | Kind::Money);
+            let numeric = matches!(column.kind, Kind::Number | Kind::Money | Kind::Quantity);
             let values: BTreeMap<String, Value> = if numeric {
                 M::unscoped()
                     .where_in("id", keys.clone())
@@ -1206,7 +1268,11 @@ impl Grid {
                     }
                     Target::Column(_) => continue,
                 };
-                if let Some((sql, values)) = rule.sql(&target, column.kind, zone, money) {
+                let scale = match column.kind {
+                    Kind::Quantity => 10f64.powi(column.scale as i32),
+                    _ => money,
+                };
+                if let Some((sql, values)) = rule.sql(&target, column.kind, zone, scale) {
                     parts.push(format!("({sql})"));
                     binds.extend(values);
                 }
@@ -1446,6 +1512,8 @@ struct Filter {
     any_of: Vec<String>,
     /// An ISO 4217 code (money columns with `currency_from`).
     currency: Option<String>,
+    /// A unit code (quantity columns with `unit_from`).
+    unit: Option<String>,
 }
 
 impl Filter {
@@ -1485,17 +1553,30 @@ impl Filter {
             }
             money = 10f64.powi(crate::view_filters::currency_decimals(code) as i32);
         }
+        if let Some((unit, col)) = self
+            .unit
+            .as_ref()
+            .zip(column.unit.as_ref())
+            .filter(|(_, col)| M::COLUMNS.contains(&col.as_str()))
+        {
+            query = query.where_eq(col, unit.as_str());
+        }
+        if column.kind == Kind::Quantity {
+            // Typed in whole units, stored as the scaled integer.
+            money = 10f64.powi(column.scale as i32);
+        }
         match column.kind {
             Kind::Text | Kind::Color => {
                 if let Some(pattern) = self.pattern() {
                     query = target.like(query, pattern);
                 }
             }
-            Kind::Number | Kind::Money => {
+            Kind::Number | Kind::Money | Kind::Quantity => {
                 for (value, op) in [(self.min, ">="), (self.max, "<=")] {
                     let Some(value) = value else { continue };
-                    // Money is typed in whole units and stored in the smallest.
-                    let value = if column.kind == Kind::Money {
+                    // Money is typed in whole units and stored in the smallest,
+                    // a quantity in whole units and stored scaled.
+                    let value = if matches!(column.kind, Kind::Money | Kind::Quantity) {
                         smallest_unit(value, money)
                     } else {
                         value
@@ -1600,6 +1681,7 @@ impl Filter {
             "to": self.to.map(|d| d.to_string()),
             "any_of": self.any_of,
             "currency": self.currency,
+            "unit": self.unit,
         })
     }
 }
@@ -1704,6 +1786,10 @@ impl State_ {
                                 .ok()
                                 .map(|c| c.code().to_owned());
                         }
+                        "unit" if column.unit.is_some() => {
+                            filter.unit = Some(value.trim().chars().take(32).collect::<String>())
+                                .filter(|u| !u.is_empty());
+                        }
                         "in" if filter.any_of.len() < 100 => filter.any_of.push(value.to_owned()),
                         _ => {}
                     }
@@ -1788,6 +1874,9 @@ impl State_ {
             if let Some(code) = &f.currency {
                 out.push((format!("cur.{key}"), code.clone()));
             }
+            if let Some(unit) = &f.unit {
+                out.push((format!("unit.{key}"), unit.clone()));
+            }
         }
         if let Some((key, desc)) = self.sort.as_ref().filter(|_| !self.defaulted) {
             out.push((
@@ -1839,7 +1928,9 @@ fn ops_for(kind: Kind) -> &'static [&'static str] {
             "empty",
             "not_empty",
         ],
-        Kind::Number | Kind::Money => &["eq", "ne", "gt", "gte", "lt", "lte", "empty", "not_empty"],
+        Kind::Number | Kind::Money | Kind::Quantity => {
+            &["eq", "ne", "gt", "gte", "lt", "lte", "empty", "not_empty"]
+        }
         Kind::Date | Kind::DateTime => &["on", "before", "after", "empty", "not_empty"],
         Kind::Bool => &["is_true", "is_false"],
         Kind::Select => &["is", "is_not", "empty", "not_empty"],
@@ -1902,7 +1993,7 @@ impl Rule {
                     .parse()
                     .ok()
                     .filter(|n: &f64| n.is_finite())?;
-                let n = if kind == Kind::Money {
+                let n = if matches!(kind, Kind::Money | Kind::Quantity) {
                     smallest_unit(n, money)
                 } else {
                     n
@@ -2205,16 +2296,18 @@ impl<M: Serialize> GridPage<M> {
                     "sortable": c.sortable,
                     "filterable": c.filterable,
                     "decimals": match c.kind {
+                        Kind::Quantity => Some(c.scale),
                         Kind::Money => Some(c.decimals.map_or(self.money_decimals, u32::from)),
                         _ => c.decimals.map(u32::from),
                     },
                     // Money cells are divided by this: stored in the smallest unit.
                     "scale": match c.kind {
                         Kind::Money => 10u64.pow(self.money_decimals),
+                        Kind::Quantity => 10u64.pow(c.scale),
                         _ => 1,
                     },
                     "width": c.width,
-                    "numeric": matches!(c.kind, Kind::Number | Kind::Money),
+                    "numeric": matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity),
                     "options": c.options.iter().map(|(v, l)| json!({"value": v, "label": l})).collect::<Vec<_>>(),
                     "labels": c.options.iter().map(|(v, l)| (v.clone(), Value::from(l.clone()))).collect::<Map<_, _>>(),
                     "filter": filter.map(Filter::to_value).unwrap_or_else(|| Filter::default().to_value()),
@@ -2238,6 +2331,7 @@ impl<M: Serialize> GridPage<M> {
                     "copyable": c.copyable,
                     "round": c.round,
                     "currency": c.currency,
+                    "unit": c.unit,
                     // `.decimals(n)` only: a row's currency sets the rest.
                     "fixed_decimals": c.decimals.map(u32::from),
                 })

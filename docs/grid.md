@@ -268,6 +268,14 @@ A few things to know about the table:
   (the filter menu has a Currency box) and makes `min.`/`max.` read that currency's decimals. CSV
   exports write the code after the amount (`12.50 USD`), XLSX gives each cell a number format with
   its currency, and the print page shows the symbol. Without `currency_from` nothing changes.
+- Exact quantities: `Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit")` shows a
+  `Quantity<3>` field with its three digits (`2.500 kg`; the scale is the type's, `.scale` must
+  match it). Filters (`min.stock=1.25`), sorts and summaries act on the stored integer, so they are
+  exact. `unit_from` reads each row's unit from that `String` column: summaries show one figure per
+  unit (`3.751 kg · 10.000 m`), never a sum across units, in the footer and under each group;
+  `unit.stock=kg` filters by unit (the filter menu has a Unit box). CSV writes the unit after the
+  value (`2.500 kg`), XLSX gives a number cell with a format that carries the digits and the unit,
+  and the print page shows the formatted text. Without `unit_from` the column has one total.
 
 ### Options every column takes
 
@@ -867,6 +875,7 @@ Every value belongs to one grid. With `.prefix("orders")`, each name starts with
 | `m.number=starts` | how `q.` matches: `contains` (default), `starts`, `ends`, `equals` |
 | `min.total=1000`, `max.total=…` | a number or money range (money in whole units: `min.total=40.5` is 4050 cents) |
 | `cur.total=JPY` | a money column with `currency_from`: only rows in that currency |
+| `unit.stock=kg` | a quantity column with `unit_from`: only rows in that unit |
 | `from.ordered_on=2026-01-01`, `to.ordered_on=…` | a date range (`to` includes its day) |
 | `in.status=paid` (repeated) | select and tags choices; bool uses `in.paid=1` / `in.paid=0` |
 | `group=region` | group by one of `.groups`; empty for no groups |
