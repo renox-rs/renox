@@ -50,6 +50,7 @@ mod model_forms;
 mod model_keys;
 mod models;
 mod money;
+mod money_model;
 mod nav;
 mod notification_bell;
 mod operations;

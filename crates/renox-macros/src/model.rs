@@ -10,6 +10,8 @@ struct Field {
     skip: bool,
     default: Option<LitStr>,
     references: Option<LitStr>,
+    /// `#[model(money)]`: the currency column (`<name>_currency` unless shared).
+    money: Option<String>,
     vis: syn::Visibility,
     form: FormField,
 }
@@ -112,6 +114,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         let mut skip = false;
         let mut default = None;
         let mut references = None;
+        let mut money: Option<Option<String>> = None;
         for attr in field.attrs.iter().filter(|a| a.path().is_ident("model")) {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("skip") {
@@ -123,9 +126,13 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 } else if meta.path.is_ident("references") {
                     references = Some(meta.value()?.parse::<LitStr>()?);
                     Ok(())
+                } else if meta.path.is_ident("money") {
+                    money = Some(crate::from_row::parse_money(&meta)?);
+                    Ok(())
                 } else {
-                    Err(meta
-                        .error("expected `skip`, `default = \"…\"` or `references = \"table\"`"))
+                    Err(meta.error(
+                        "expected `skip`, `default = \"…\"`, `references = \"table\"`, `money` or `money(currency = \"column\")`",
+                    ))
                 }
             })?;
         }
@@ -162,8 +169,11 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             ));
         }
         let field_ident = field.ident.clone().expect("named fields have identifiers");
+        let name = field_ident.to_string().trim_start_matches("r#").to_owned();
+        let money = money.map(|shared| shared.unwrap_or_else(|| format!("{name}_currency")));
         fields.push(Field {
-            name: field_ident.to_string().trim_start_matches("r#").to_owned(),
+            name,
+            money,
             ident: field_ident,
             ty: field.ty.clone(),
             skip,
@@ -190,11 +200,8 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         ));
     }
 
-    let columns: Vec<&str> = fields
-        .iter()
-        .filter(|f| !f.skip)
-        .map(|f| f.name.as_str())
-        .collect();
+    let phys = physical_columns(&fields)?;
+    let columns: Vec<&str> = phys.iter().map(|p| p.name.as_str()).collect();
 
     let mut index_items = Vec::new();
     for (unique, cols) in &index_specs {
@@ -298,18 +305,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         let (ident, name) = (&f.ident, &f.name);
         if f.skip {
             quote! { #ident: ::core::default::Default::default() }
+        } else if let Some(currency) = &f.money {
+            crate::from_row::read_money(ident, name, currency, &f.ty)
         } else {
             quote! { #ident: row.try_get(#name)? }
         }
     });
 
-    let values = fields
-        .iter()
-        .filter(|f| !f.skip && f.name != "id")
-        .map(|f| {
-            let ident = &f.ident;
-            quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident) }
-        });
+    let values = phys.iter().filter(|p| p.name != "id").map(|p| &p.value);
 
     let created = column("created_at").map(|f| {
         let ident = &f.ident;
@@ -328,19 +331,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         }
     });
     // `replicate()`: a copy gets new timestamps when it is saved.
-    let column_infos = fields.iter().filter(|f| !f.skip).map(|f| {
-        let (name, ty) = (&f.name, &f.ty);
-        let rust_type = quote!(#ty).to_string();
-        let nullable = is_option(ty);
-        let default = f.default.as_ref().map(|l| quote! { .default_sql(#l) });
-        let references = f.references.as_ref().map(|l| quote! { .references(#l) });
+    let column_infos = phys.iter().map(|p| {
+        let (name, rust_type, nullable) = (&p.name, &p.rust_type, p.nullable);
+        let kind = &p.kind;
+        let default = p.default.as_ref().map(|l| quote! { .default_sql(#l) });
+        let references = p.references.as_ref().map(|l| quote! { .references(#l) });
         quote! {
-            ::renox::db::ModelColumn::new(
-                #name,
-                #rust_type,
-                (&::renox::db::schema::ColumnProbe::<#ty>::new()).kind(),
-                #nullable,
-            ) #default #references
+            ::renox::db::ModelColumn::new(#name, #rust_type, #kind, #nullable)
+                #default #references
         }
     });
     let forget_timestamps = ["created_at", "updated_at"].map(|name| {
@@ -385,9 +383,9 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
 
     let from_row_impl = crate::from_row::from_row_impl(ident, quote! { #(#from_row),* });
     let typed_consts = typed_columns.then(|| {
-        let consts = fields.iter().filter(|f| !f.skip).map(|f| {
-            let konst = format_ident!("{}", f.name.to_shouty_snake_case());
-            let (ty, name) = (&f.ty, &f.name);
+        let consts = phys.iter().map(|p| {
+            let konst = format_ident!("{}", p.name.to_shouty_snake_case());
+            let (ty, name) = (&p.col_type, &p.name);
             let doc = format!("The `{name}` column.");
             quote! { #[doc = #doc] pub const #konst: ::renox::db::Col<#ident, #ty> = ::renox::db::Col::new(#name); }
         });
@@ -468,6 +466,106 @@ fn is_string_or_option_string(ty: &Type) -> bool {
         ),
         _ => false,
     }
+}
+
+/// One database column of the model. A `#[model(money)]` field makes two:
+/// the amount and, once per name, the currency.
+struct Physical {
+    name: String,
+    /// The type of the typed column constant.
+    col_type: TokenStream,
+    rust_type: String,
+    /// An expression for the `ColumnKind`.
+    kind: TokenStream,
+    nullable: bool,
+    value: TokenStream,
+    default: Option<LitStr>,
+    references: Option<LitStr>,
+}
+
+fn physical_columns(fields: &[Field]) -> Result<Vec<Physical>> {
+    let mut out: Vec<Physical> = Vec::new();
+    for f in fields.iter().filter(|f| !f.skip) {
+        let (ident, ty) = (&f.ident, &f.ty);
+        let Some(currency) = &f.money else {
+            out.push(Physical {
+                name: f.name.clone(),
+                col_type: quote!(#ty),
+                rust_type: quote!(#ty).to_string(),
+                kind: quote! { (&::renox::db::schema::ColumnProbe::<#ty>::new()).kind() },
+                nullable: is_option(ty),
+                value: quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident) },
+                default: f.default.clone(),
+                references: f.references.clone(),
+            });
+            continue;
+        };
+        let optional = is_option(ty);
+        if f.name == "id" {
+            return Err(Error::new_spanned(ty, "the `id` can't be a `Money`"));
+        }
+        let (amount_ty, amount_value) = if optional {
+            (
+                quote!(::core::option::Option<i64>),
+                quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident.as_ref().map(|m| m.minor)) },
+            )
+        } else {
+            (
+                quote!(i64),
+                quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident.minor) },
+            )
+        };
+        out.push(Physical {
+            name: f.name.clone(),
+            rust_type: amount_ty.to_string(),
+            col_type: amount_ty,
+            kind: quote!(::renox::db::ColumnKind::BigInt),
+            nullable: optional,
+            value: amount_value,
+            default: f.default.clone(),
+            references: f.references.clone(),
+        });
+        if out.iter().any(|p| &p.name == currency) {
+            continue;
+        }
+        if fields
+            .iter()
+            .any(|o| !o.skip && o.money.is_none() && &o.name == currency)
+        {
+            return Err(Error::new_spanned(
+                ty,
+                format!("the currency column `{currency}` is also a field of this model"),
+            ));
+        }
+        // Fields sharing the column write it from the first one that is not an
+        // `Option` (or the first); the column is nullable only if all are.
+        let sharing: Vec<&Field> = fields
+            .iter()
+            .filter(|o| !o.skip && o.money.as_ref() == Some(currency))
+            .collect();
+        let writer = sharing
+            .iter()
+            .find(|o| !is_option(&o.ty))
+            .unwrap_or(&sharing[0]);
+        let w = &writer.ident;
+        let value = if is_option(&writer.ty) {
+            quote! { ::renox::db::ToDbValue::to_db_value(&self.#w.as_ref().map(|m| m.currency)) }
+        } else {
+            quote! { ::renox::db::ToDbValue::to_db_value(&self.#w.currency) }
+        };
+        let nullable = sharing.iter().all(|o| is_option(&o.ty));
+        out.push(Physical {
+            name: currency.clone(),
+            col_type: quote!(::std::string::String),
+            rust_type: "Currency".to_owned(),
+            kind: quote!(::renox::db::ColumnKind::Text),
+            nullable,
+            value,
+            default: None,
+            references: None,
+        });
+    }
+    Ok(out)
 }
 
 fn is_option(ty: &Type) -> bool {
