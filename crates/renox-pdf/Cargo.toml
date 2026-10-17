@@ -27,3 +27,7 @@ typst-pdf = "0.15.1"
 # `typst-pdf` takes) is only defined here; already in the tree through `typst`.
 typst-layout = "0.15.1"
 tracing = "0.1.44"
+
+[dev-dependencies]
+# `#[tokio::test]` for the render pool tests (the macro needs the crate by name).
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "time"] }

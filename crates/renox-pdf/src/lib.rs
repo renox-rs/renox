@@ -2,19 +2,19 @@
 //! fonts, for Renox apps. The Typst compiler runs inside the process, so
 //! there is no headless browser and no separate service.
 //!
-//! This is the scaffold of the crate (issue #30): the `typst::World` the
-//! templates compile against exists, the public API follows in the next steps.
+//! Register [`Pdf`] with `App::module`, then make a PDF with [`Document::render`]
+//! (issue #30; templates and the rest of the API follow in later steps).
 
-// The world and its sources are wired to the public `Document` in a later step.
-#[allow(dead_code)]
-mod source;
-#[allow(dead_code)]
-mod world;
-
-#[allow(dead_code)]
 mod document;
 mod error;
-#[allow(dead_code)]
 mod fonts;
+mod module;
+mod pool;
+// Its constructors are used by the template loading (a later step).
+#[allow(dead_code)]
+mod source;
+mod world;
 
+pub use document::Document;
 pub use error::PdfError;
+pub use module::Pdf;

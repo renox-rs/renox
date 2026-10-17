@@ -1,6 +1,7 @@
 //! What can go wrong while making a PDF.
 
 use std::fmt;
+use std::time::Duration;
 
 /// Why a PDF could not be made.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -23,6 +24,14 @@ pub enum PdfError {
     Invalid(String),
     /// Typst could not write the PDF; holds its messages.
     Export(String),
+    /// The render did not finish within `PDF_TIMEOUT`, or waited that long
+    /// for a free slot (`PDF_MAX_CONCURRENT`). Holds the limit.
+    Timeout(Duration),
+    /// The module is not registered, or `PDF_TIMEOUT` / `PDF_MAX_CONCURRENT`
+    /// is not a valid number; holds the reason.
+    Setup(String),
+    /// The render thread panicked or the pool shut down; holds the reason.
+    Failed(String),
 }
 
 impl fmt::Display for PdfError {
@@ -45,6 +54,12 @@ impl fmt::Display for PdfError {
             PdfError::Data(message) => write!(f, "the template data is not valid JSON: {message}"),
             PdfError::Invalid(message) => f.write_str(message),
             PdfError::Export(messages) => write!(f, "the PDF could not be written: {messages}"),
+            PdfError::Timeout(limit) => write!(
+                f,
+                "the PDF was not ready within {} seconds (PDF_TIMEOUT)",
+                limit.as_secs()
+            ),
+            PdfError::Setup(message) | PdfError::Failed(message) => f.write_str(message),
         }
     }
 }

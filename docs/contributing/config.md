@@ -32,6 +32,9 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
   (starttls; tls|starttls|none), `MAIL_USERNAME`, `MAIL_PASSWORD`, `MAIL_FROM_ADDRESS`,
   `MAIL_FROM_NAME`, `MAIL_TIMEOUT` (seconds, 10, the whole send), `MAIL_FAILOVER` (names of
   `App::mailer` mailers tried in order when the default fails; an unknown name fails at boot).
+- **PDF** (`renox-pdf`, read with `config.var`): `PDF_TIMEOUT` (seconds, 30; 0 = none: the longest
+  a render may wait and run), `PDF_MAX_CONCURRENT` (2, at least 1: renders on blocking threads at
+  once; a timed-out render keeps its slot until its thread ends).
 - **Background:** `QUEUE_WORKERS` (2; 0 = none in serve), `SCHEDULER` (true), `CACHE_STORE`
   (memory|database; database also shares throttles and the login lock between servers).
 - **Outbound webhooks:** `WEBHOOK_DISABLE_AFTER` (20, at least 1: consecutive failed deliveries after

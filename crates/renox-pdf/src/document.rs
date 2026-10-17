@@ -8,12 +8,17 @@
 
 use std::collections::HashMap;
 
+use std::future::Future;
+
+use renox::AppState;
 use renox::serde::Serialize;
 use typst::foundations::{Bytes, Dict, IntoValue, Str};
 use typst_layout::PagedDocument;
 
 use crate::error::PdfError;
 use crate::fonts::{Fonts, check_glyphs, default_fonts};
+use crate::module::Setup;
+use crate::pool::Limits;
 use crate::source::Sources;
 use crate::world::{RenoxWorld, check_asset_name};
 
@@ -22,7 +27,7 @@ const DATA_FILE: &str = "renox-data.json";
 
 /// One PDF: where its template comes from and everything it shows.
 #[derive(Clone)]
-pub(crate) struct Document {
+pub struct Document {
     sources: Sources,
     main: String,
     fonts: Fonts,
@@ -38,6 +43,8 @@ pub(crate) struct Document {
 impl Document {
     /// A document whose entry file is `main`, a path below the template root
     /// held by `sources`. It starts with [`default_fonts`] and no data.
+    // The public way to make a document comes with the template loading.
+    #[allow(dead_code)]
     pub(crate) fn new(sources: Sources, main: impl Into<String>) -> Self {
         Document {
             sources,
@@ -56,7 +63,7 @@ impl Document {
     }
 
     /// The value the template reads as `data`.
-    pub(crate) fn data<T: Serialize + ?Sized>(mut self, value: &T) -> Self {
+    pub fn data<T: Serialize + ?Sized>(mut self, value: &T) -> Self {
         match renox::serde_json::to_string(value) {
             Ok(json) => self.data = Some(json),
             Err(e) => self.fail(PdfError::Data(e.to_string())),
@@ -66,7 +73,7 @@ impl Document {
 
     /// Sets the text language (`ar`, `en-US`, `pt_BR`) and, for a right-to-left
     /// language, the text direction, as `renox::i18n::direction` decides.
-    pub(crate) fn locale(mut self, locale: &str) -> Self {
+    pub fn locale(mut self, locale: &str) -> Self {
         match typst_language(locale) {
             Ok(_) => self.locale = Some(locale.to_owned()),
             Err(e) => self.fail(e),
@@ -76,7 +83,7 @@ impl Document {
 
     /// Adds a file the template reads by `name` (`image("logo.png")`). The
     /// name is flat: no `/`, no `..`.
-    pub(crate) fn asset(mut self, name: &str, bytes: impl Into<Vec<u8>>) -> Self {
+    pub fn asset(mut self, name: &str, bytes: impl Into<Vec<u8>>) -> Self {
         match check_asset_name(name) {
             Err(message) => self.fail(PdfError::Invalid(message)),
             Ok(()) if name == DATA_FILE => self.fail(PdfError::Invalid(format!(
@@ -91,13 +98,14 @@ impl Document {
     }
 
     /// Replaces the registered fonts.
+    #[allow(dead_code)]
     pub(crate) fn fonts(mut self, fonts: Fonts) -> Self {
         self.fonts = fonts;
         self
     }
 
     /// Logs missing glyphs instead of failing the render.
-    pub(crate) fn lenient(mut self) -> Self {
+    pub fn lenient(mut self) -> Self {
         self.lenient = true;
         self
     }
@@ -183,8 +191,38 @@ impl Document {
         Ok(document)
     }
 
+    /// Makes the PDF on a blocking thread and returns its bytes.
+    ///
+    /// The fonts and strictness come from the registered [`Pdf`](crate::Pdf)
+    /// module. At most `PDF_MAX_CONCURRENT` renders run at once (the others
+    /// wait), and one that is not done within `PDF_TIMEOUT` seconds fails with
+    /// [`PdfError::Timeout`]. Fails with [`PdfError::Setup`] when the module is
+    /// not registered.
+    ///
+    /// This is a plain `fn` returning `impl Future + Send`, so a handler that
+    /// awaits it stays `Send`.
+    pub fn render(
+        &self,
+        state: &AppState,
+    ) -> impl Future<Output = Result<Vec<u8>, PdfError>> + Send + use<> {
+        let prepared = Setup::of(state).and_then(|setup| {
+            let limits = Limits::from_config(&state.config)?;
+            Ok((setup, limits))
+        });
+        let mut document = self.clone();
+        async move {
+            let (setup, limits) = prepared?;
+            document.fonts = setup.fonts.clone();
+            document.lenient |= setup.lenient;
+            setup
+                .pool
+                .run(limits, move || document.render_blocking())
+                .await
+        }
+    }
+
     /// Compiles the template and writes the PDF.
-    pub(crate) fn render(&self) -> Result<Vec<u8>, PdfError> {
+    pub(crate) fn render_blocking(&self) -> Result<Vec<u8>, PdfError> {
         let document = self.compile()?;
         typst_pdf::pdf(&document, &typst_pdf::PdfOptions::default()).map_err(|errors| {
             PdfError::Export(
@@ -297,14 +335,17 @@ mod tests {
         assert!(x_of('\u{634}') > x_of('\u{644}'), "{runs:?}");
         // English stays in one run, in reading order.
         assert!(runs.iter().any(|r| r.1 == "Thank you for your order."));
-        let pdf = doc.render().unwrap();
+        let pdf = doc.render_blocking().unwrap();
         assert!(pdf.starts_with(b"%PDF-"));
     }
 
     #[test]
     fn rendering_twice_gives_the_same_bytes() {
         let doc = document(ARABIC_TEMPLATE).data(&receipt());
-        assert_eq!(doc.render().unwrap(), doc.render().unwrap());
+        assert_eq!(
+            doc.render_blocking().unwrap(),
+            doc.render_blocking().unwrap()
+        );
     }
 
     #[test]
@@ -352,7 +393,34 @@ mod tests {
             strict.unwrap_err(),
             PdfError::MissingGlyphs(vec!['\u{6f22}'])
         );
-        assert!(document("\u{6f22}").lenient().render().is_ok());
+        assert!(document("\u{6f22}").lenient().render_blocking().is_ok());
+    }
+
+    fn assert_send<T: Send>(_: &T) {}
+
+    #[tokio::test]
+    async fn render_goes_through_the_module() {
+        use renox::prelude::*;
+        use renox::testing::TestApp;
+
+        let app = TestApp::new(App::new().module(crate::Pdf::new())).await;
+        let render = document("Hello").render(app.state());
+        assert_send(&render);
+        let pdf = render.await.unwrap();
+        assert!(pdf.starts_with(b"%PDF-"));
+        // Strict by default; the module's `lenient` applies to every document.
+        let strict = document("\u{6f22}").render(app.state()).await;
+        assert_eq!(strict, Err(PdfError::MissingGlyphs(vec!['\u{6f22}'])));
+        let lenient = TestApp::new(App::new().module(crate::Pdf::new().lenient())).await;
+        assert!(document("\u{6f22}").render(lenient.state()).await.is_ok());
+        // A bad font given to the module fails every render.
+        let bad = TestApp::new(App::new().module(crate::Pdf::new().font(vec![0u8; 8]))).await;
+        let error = document("x").render(bad.state()).await;
+        assert_eq!(error, Err(PdfError::InvalidFont));
+        // Without the module there is a clear error.
+        let none = TestApp::new(App::new()).await;
+        let error = document("x").render(none.state()).await;
+        assert!(matches!(error, Err(PdfError::Setup(m)) if m.contains("Pdf::new()")));
     }
 
     #[test]
