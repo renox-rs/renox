@@ -274,6 +274,94 @@ impl Skew {
     }
 }
 
+/// The header that carries the time the device recorded the request.
+pub const RECORDED_AT_HEADER: &str = "x-recorded-at";
+
+/// The header that carries the id of the device (outbox) that sent it.
+pub const CLIENT_ID_HEADER: &str = "x-client-id";
+
+/// Longest client id kept.
+const CLIENT_ID_LIMIT: usize = 128;
+
+/// What a handler on an `.offline()` route knows about when and where the
+/// request was made: the outbox sends the device time in `X-Recorded-At`
+/// (RFC 3339) and its id in `X-Client-Id`.
+///
+/// Outside the route's [`Skew`] limits the handler still gets the device time
+/// in `recorded_at`, with `skew_exceeded` set; whether to refuse, accept for
+/// review or ask for approval is the app's decision. A missing or garbled
+/// `X-Recorded-At` falls back to the server time with `skew_exceeded` false.
+///
+/// ```
+/// use renox::prelude::*;
+///
+/// async fn complete_stop(offline: Offline) -> Result<String> {
+///     if offline.skew_exceeded {
+///         return Err(Error::BadRequest("The device clock is off.".into()));
+///     }
+///     Ok(format!("done at {}", offline.recorded_at))
+/// }
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Offline {
+    /// When the user acted, by the device's clock (the server time when the
+    /// header is missing or unreadable).
+    pub recorded_at: DateTime,
+    /// The id of the device's outbox, from `X-Client-Id`, when sent.
+    pub client_id: Option<String>,
+    /// When the server received the request.
+    pub received_at: DateTime,
+    /// Whether `recorded_at` is further in the past or future than the
+    /// route's [`Skew`] allows.
+    pub skew_exceeded: bool,
+}
+
+impl Offline {
+    /// Reads the headers against the clock and the skew limits.
+    pub(crate) fn read(headers: &axum::http::HeaderMap, skew: Skew, received_at: DateTime) -> Self {
+        let text = |name: &str| {
+            headers
+                .get(name)
+                .and_then(|v| v.to_str().ok())
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+        };
+        let device = text(RECORDED_AT_HEADER)
+            .and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok())
+            .map(|t| t.with_timezone(&chrono::Utc));
+        let recorded_at = device.unwrap_or(received_at);
+        let skew_exceeded = device.is_some_and(|t| {
+            let age = received_at - t;
+            let past =
+                chrono::TimeDelta::from_std(skew.max_past()).unwrap_or(chrono::TimeDelta::MAX);
+            let future =
+                chrono::TimeDelta::from_std(skew.max_future()).unwrap_or(chrono::TimeDelta::MAX);
+            age > past || -age > future
+        });
+        let client_id = text(CLIENT_ID_HEADER)
+            .filter(|v| v.len() <= CLIENT_ID_LIMIT)
+            .map(str::to_owned);
+        Self {
+            recorded_at,
+            client_id,
+            received_at,
+            skew_exceeded,
+        }
+    }
+}
+
+impl<S: Send + Sync> axum::extract::FromRequestParts<S> for Offline {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut axum::http::request::Parts,
+        _: &S,
+    ) -> std::result::Result<Self, Self::Rejection> {
+        let skew = parts.extensions.get::<Skew>().copied().unwrap_or_default();
+        Ok(Self::read(&parts.headers, skew, now()))
+    }
+}
+
 /// Who a key belongs to: the user, the device, or else the session.
 fn scope_of(req: &Request) -> String {
     let current = req.extensions().get::<crate::auth::CurrentUser>();

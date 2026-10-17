@@ -231,6 +231,15 @@ async fn idempotency_store(State(db): State<Db>) -> Result<String> {
     Ok(format!("{claimed} {replay} {pruned}"))
 }
 
+/// The `Offline` extractor in a routed handler.
+async fn offline_extractor(offline: Offline) -> String {
+    format!(
+        "{} {}",
+        offline.skew_exceeded,
+        offline.client_id.unwrap_or_default()
+    )
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -1093,6 +1102,7 @@ impl Module for Handlers {
             .get("/numbering", numbering)
             .get("/custom-field-defs", custom_field_defs)
             .get("/idempotency-store", idempotency_store)
+            .get("/offline-extractor", offline_extractor)
             .get("/custom-field-values", custom_field_values)
             .get("/more", more)
             .get("/access", access)
@@ -1199,6 +1209,10 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true true 1");
+    app.get("/offline-extractor")
+        .await
+        .assert_ok()
+        .assert_see("false");
     app.get("/custom-field-values")
         .await
         .assert_ok()

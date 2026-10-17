@@ -166,6 +166,7 @@ mod offline {
     static RUNS: AtomicUsize = AtomicUsize::new(0);
     static FLAKY: AtomicUsize = AtomicUsize::new(0);
     static RACE: AtomicUsize = AtomicUsize::new(0);
+    static KEYS: AtomicUsize = AtomicUsize::new(0);
 
     struct Field;
 
@@ -200,8 +201,34 @@ mod offline {
                         (StatusCode::OK, "fine")
                     }
                 })
+                .post("/when", describe)
                 .offline()
                 .post("/plain", || async { "plain" })
+        }
+    }
+
+    /// "<recorded_at> <client> <skew_exceeded> <recorded_at differs from received_at>"
+    async fn describe(offline: Offline) -> String {
+        format!(
+            "{} {} {} {}",
+            offline.recorded_at.to_rfc3339(),
+            offline.client_id.unwrap_or_default(),
+            offline.skew_exceeded,
+            offline.recorded_at != offline.received_at
+        )
+    }
+
+    struct Tight;
+
+    impl Module for Tight {
+        fn name(&self) -> &'static str {
+            "tight"
+        }
+
+        fn routes(&self) -> Routes {
+            Routes::new()
+                .post("/when-tight", describe)
+                .offline_with(renox::idempotency::Skew::new().past(Duration::from_secs(60)))
         }
     }
 
@@ -272,6 +299,70 @@ mod offline {
         assert_eq!(a.text(), "raced");
         assert_eq!(b.text(), "raced");
         assert_eq!(RACE.load(Ordering::SeqCst), 1);
+    }
+
+    async fn seen(app: &TestApp, recorded_at: Option<String>, client: Option<&str>) -> String {
+        let key = format!("seen-{}", KEYS.fetch_add(1, Ordering::SeqCst));
+        let mut request = app.request().header("idempotency-key", &key);
+        if let Some(at) = recorded_at {
+            request = request.header("x-recorded-at", &at);
+        }
+        if let Some(client) = client {
+            request = request.header("x-client-id", client);
+        }
+        let res = request.post("/when", &[("note", "x")]).await;
+        res.assert_ok();
+        res.text().to_owned()
+    }
+
+    fn ago(seconds: i64) -> String {
+        (renox::db::now() - renox::chrono::TimeDelta::seconds(seconds)).to_rfc3339()
+    }
+
+    #[renox::test]
+    async fn offline_reads_the_device_time_and_client_id() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        let at = ago(3600);
+        let out = seen(&app, Some(at.clone()), Some("dev-1")).await;
+        let parsed = renox::chrono::DateTime::parse_from_rfc3339(&at).unwrap();
+        assert_eq!(
+            out,
+            format!("{} dev-1 false true", parsed.to_utc().to_rfc3339())
+        );
+    }
+
+    #[renox::test]
+    async fn offline_flags_times_beyond_the_skew_limits() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        // More than 24 h old, and more than 5 min ahead: still the device time.
+        let old = seen(&app, Some(ago(25 * 3600)), None).await;
+        assert!(old.ends_with(" true true"), "{old}");
+        let ahead = seen(&app, Some(ago(-600)), None).await;
+        assert!(ahead.ends_with(" true true"), "{ahead}");
+        let near = seen(&app, Some(ago(-60)), None).await;
+        assert!(near.ends_with(" false true"), "{near}");
+    }
+
+    #[renox::test]
+    async fn offline_honours_configured_limits() {
+        let app = TestApp::new(App::new().module(Tight)).await;
+        let out = app
+            .request()
+            .header("idempotency-key", "tight-1")
+            .header("x-recorded-at", &ago(120))
+            .post("/when-tight", &[("note", "x")])
+            .await;
+        out.assert_ok();
+        assert!(out.text().ends_with(" true true"), "{}", out.text());
+    }
+
+    #[renox::test]
+    async fn offline_without_a_usable_time_falls_back_to_the_server() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        for header in [None, Some("yesterday-ish".to_owned())] {
+            let out = seen(&app, header, None).await;
+            assert!(out.ends_with(" false false"), "{out}");
+        }
     }
 
     #[renox::test]
