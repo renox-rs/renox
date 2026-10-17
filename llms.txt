@@ -134,7 +134,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [policy.rs](examples/bikeshop/src/app/access/policy.rs),
     [active_store.rs](examples/bikeshop/src/app/access/active_store.rs); rentals:
     [booking.rs](examples/bikeshop/src/app/rentals/booking.rs), status changes through the
-    state machine [machine.rs](examples/bikeshop/src/app/rentals/machine.rs); stock ledger:
+    state machine [machine.rs](examples/bikeshop/src/app/rentals/machine.rs), the receipt as a PDF
+    (download and mail attachment, `renox-pdf`)
+    [receipt_pdf.rs](examples/bikeshop/src/app/rentals/receipt_pdf.rs) with the template
+    [pdf/rental-receipt.typ](examples/bikeshop/resources/views/pdf/rental-receipt.typ); stock ledger:
     [stock/ledger.rs](examples/bikeshop/src/app/stock/ledger.rs); books between stores:
     [multistore/books.rs](examples/bikeshop/src/app/multistore/books.rs); reports:
     [reports/dashboard.rs](examples/bikeshop/src/app/reports/dashboard.rs),

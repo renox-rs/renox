@@ -920,6 +920,10 @@ pub fn not_pages() -> Vec<NotAPage> {
             reason: "JSON options for the walk-in form's customer select (renox::select)",
         },
         NotAPage {
+            route: "rentals.receipt.pdf",
+            reason: "the receipt as a PDF file (renox-pdf), the same bytes as the return mail's attachment",
+        },
+        NotAPage {
             route: "rentals.photo",
             reason: "a redirect to a counter photo's signed temporary URL",
         },

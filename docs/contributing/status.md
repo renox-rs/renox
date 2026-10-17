@@ -655,7 +655,7 @@
   calls `booking::paid`. No migration: the reference lives on the `billing_payments` row. Tests: `examples/bikeshop/tests/workshop.rs`,
   `tests/browser/bikeshop-workshop-paylink.test.mjs`. Guide: docs/billing.md "One-off payments".
 
-- **#30, `renox-pdf`** (parts 1-10): PDFs from Typst templates compiled in the process. `world.rs`/`source.rs` are our `typst::World`
+- **#30, `renox-pdf`** (complete): PDFs from Typst templates compiled in the process. `world.rs`/`source.rs` are our `typst::World`
   (sources from the template root or an embedded map, path confinement, `today()` from `clock`, the only package is the virtual
   kit, per-document in-memory assets); `fonts.rs` bundles Inter and Noto Sans Arabic and collects missing glyphs into
   `PdfError::MissingGlyphs` (`lenient()` logs them); `document.rs` is the `Document` builder (`data` as the `data` dictionary and
@@ -664,4 +664,9 @@
   module (`Setup` is provided to the registry); `templates.rs` reads the disk in debug and `embedded!()` in release; `kit.rs` serves
   `kit/kit.typ`; `testing.rs` reads text from the PDF with a small reader of Typst's output (no new dependency), so Arabic comes
   back as shaped pieces. `rnx make:pdf` and its stub are in renox-cli. Guide: docs/pdf.md (doctested through `Guide` in `lib.rs`,
-  site `PAGES`). Open: release plumbing (11/12) and the bikeshop receipt with its browser test (12/12).
+  site `PAGES`). Release plumbing is in RELEASING.md. The bikeshop shows it (`src/app/rentals/receipt_pdf.rs`,
+  `resources/views/pdf/rental-receipt.typ`): the receipt of a returned rental downloads from `/staff/rentals/{rental}/receipt.pdf`
+  and is attached to the return mail, written in the customer's account language; a receipt that cannot be made is logged and the
+  mail goes without it. Acceptance: `crates/renox-pdf/tests/acceptance.rs` (public API), bikeshop `tests/rentals.rs`, browser test
+  `tests/browser/bikeshop-receipt-pdf.test.mjs`. Timeout and the concurrency cap are proven on the pool (`src/pool.rs`), since a
+  timed-out render keeps its thread; the "visual reference" of AC2 is the text-run reference `tests/assets/arabic.expected.txt`.

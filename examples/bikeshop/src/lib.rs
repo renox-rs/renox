@@ -145,6 +145,9 @@ pub fn app() -> App {
         // the editors its forms use (renox-editors).
         .module(app::staff::admin::panel())
         .module(renox_editors::Editors::new())
+        // PDFs from Typst templates (renox-pdf): the rental receipt, downloaded and
+        // mailed. Templates are read from disk in debug, from the binary in release.
+        .module(renox_pdf::Pdf::new().templates(renox::embedded!()))
         // The blocks the kit doesn't have (renox-blocks, #347): the product
         // gallery and variant chips, the cart's stepper, the counter's keypad,
         // the workshop board, the rental timeline, the plans' table.

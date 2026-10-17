@@ -39,6 +39,9 @@
         <rx-slot name="empty"><p class="rx-subtitle">{{ t('rentals.receipt.no_payments') }}</p></rx-slot>
       </rx-table>
     </rx-card>
-    <p><rx-link-button route="rentals.counter" label="{{ t('rentals.counter.title') }}"/></p>
+    <p>
+      <rx-link-button rx-if="row.status == 'returned'" :href="route('rentals.receipt.pdf', row.id)" label="{{ t('rentals.receipt.download') }}" variant="primary" icon="download"/>
+      <rx-link-button route="rentals.counter" label="{{ t('rentals.counter.title') }}"/>
+    </p>
   </rx-stack>
 </rx-page>

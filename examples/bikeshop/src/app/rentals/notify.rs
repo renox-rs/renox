@@ -65,6 +65,8 @@ pub struct Notice {
     /// A calendar file to attach to the mail (`Mail::attach_ics`), so the
     /// pick-up lands in the customer's calendar.
     pub calendar: Option<Ics>,
+    /// A PDF to attach to the mail (file name, bytes): the rental receipt.
+    pub pdf: Option<(String, Vec<u8>)>,
 }
 
 impl Notice {
@@ -83,7 +85,14 @@ impl Notice {
             view: "mail/rentals/notice",
             topic: None,
             calendar: None,
+            pdf: None,
         }
+    }
+
+    /// Attaches a PDF to the mail.
+    pub fn pdf(mut self, filename: impl Into<String>, bytes: Vec<u8>) -> Self {
+        self.pdf = Some((filename.into(), bytes));
+        self
     }
 
     /// Attaches a calendar file to the mail.
@@ -194,8 +203,12 @@ impl Notification for Notice {
                 action => lang.t(self.action, &[]),
             },
         )?;
-        Ok(match &self.calendar {
+        let mail = match &self.calendar {
             Some(ics) => mail.attach_ics(ics),
+            None => mail,
+        };
+        Ok(match &self.pdf {
+            Some((name, bytes)) => mail.attach(name.clone(), "application/pdf", bytes.clone()),
             None => mail,
         })
     }

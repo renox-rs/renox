@@ -628,30 +628,45 @@ pub async fn take_back(
         .await?;
     // [/explain:rentals.desk.return]
     if let Some(customer) = Customer::find(db, rental.customer_id).await? {
+        // The receipt as a PDF, in the customer's language, attached to the
+        // mail. The bike is back and the money settled: a receipt that
+        // can't be made is logged, and the mail goes without it.
+        let receipt = match super::receipt_pdf::render(state, rental).await {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                tracing::warn!(rental = rental.id, %error, "the receipt PDF could not be made");
+                None
+            }
+        };
+        let notice = Notice::new(
+            "rental-returned",
+            "rentals.mail.returned.title",
+            "rentals.mail.returned.body",
+        );
+        let notice = match receipt {
+            Some(receipt) => notice.pdf(receipt.filename, receipt.bytes),
+            None => notice,
+        };
         notify::customer(
             state,
             &customer,
             Kind::Rental,
-            &Notice::new(
-                "rental-returned",
-                "rentals.mail.returned.title",
-                "rentals.mail.returned.body",
-            )
-            .param("code", &rental.reservation_code)
-            .row("rentals.fields.price", money(state, rental.price))
-            .row("rentals.fields.late_fee", money(state, rental.late_fee))
-            .row("rentals.fields.damage_fee", money(state, rental.damage_fee))
-            .row(
-                "rentals.fields.refund",
-                money(state, rental.deposit_refunded),
-            )
-            .row("rentals.fields.paid_now", money(state, settlement.due))
-            .tone(Tone::Success)
-            .url(super::link(
-                state,
-                "rentals.show",
-                Some(&rental.reservation_code),
-            )?),
+            &notice
+                .param("code", &rental.reservation_code)
+                .row("rentals.fields.price", money(state, rental.price))
+                .row("rentals.fields.late_fee", money(state, rental.late_fee))
+                .row("rentals.fields.damage_fee", money(state, rental.damage_fee))
+                .row(
+                    "rentals.fields.refund",
+                    money(state, rental.deposit_refunded),
+                )
+                .row("rentals.fields.paid_now", money(state, settlement.due))
+                .tone(Tone::Success)
+                .url(super::link(
+                    state,
+                    "rentals.show",
+                    Some(&rental.reservation_code),
+                )?),
         )
         .await?;
     }

@@ -32,6 +32,7 @@ pub mod machine;
 pub mod model;
 pub mod notify;
 pub mod pricing;
+pub mod receipt_pdf;
 pub mod reserve;
 pub mod tasks;
 
@@ -104,6 +105,8 @@ impl Module for Rentals {
             .name("rentals.desk")
             .get("/staff/rentals/{rental}/receipt", counter::receipt)
             .name("rentals.receipt")
+            .get("/staff/rentals/{rental}/receipt.pdf", receipt_pdf::download)
+            .name("rentals.receipt.pdf")
             .get("/staff/rentals/{rental}/photos/{photo}", counter::photo)
             .name("rentals.photo")
             .post("/staff/rentals/{rental}/pickup", counter::pickup)

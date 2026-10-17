@@ -23,6 +23,7 @@ use renox::chrono::Duration as Span;
 use renox::db::{Encrypted, capture_queries};
 use renox::prelude::*;
 use renox::testing::TestApp;
+use renox_pdf::testing::PdfAssertions;
 use std::time::Duration;
 
 const HOUR: Duration = Duration::from_secs(60 * 60);
@@ -986,4 +987,119 @@ async fn a_walk_in_rental_is_booked_at_the_counter() {
     res.assert_redirect(&format!("/staff/rentals/{}", rental.id));
     assert_eq!(rental.operating_store_id, w.north.id);
     assert!(rental.served_by.is_some());
+}
+
+/// Gives `rental` back at the North counter as `w.cashier_north`.
+async fn give_back(w: &World, rental: &Rental) {
+    w.app.acting_as(&w.cashier_north);
+    w.app
+        .post_multipart(
+            &format!("/staff/rentals/{}/return", rental.id),
+            &[("method", "card")],
+            &[],
+        )
+        .await
+        .assert_status(303);
+}
+
+#[renox::test]
+async fn a_returned_rentals_receipt_is_a_pdf_for_staff_of_its_store() {
+    let w = world().await;
+    let (_, c) = customer(&w.app, "rider@example.com", true).await;
+    let rental = rentals()
+        .of_bike(&w.bike)
+        .for_customer(c.id)
+        .active()
+        .create_one(w.app.db())
+        .await
+        .unwrap();
+    let url = format!("/staff/rentals/{}/receipt.pdf", rental.id);
+
+    // Out with the customer: nothing to put on a receipt yet.
+    w.app.acting_as(&w.cashier_north);
+    w.app.get(&url).await.assert_not_found();
+    give_back(&w, &rental).await;
+
+    // Back: a PDF with the code, the amounts and the English labels, saved as a file.
+    let back = Rental::find(w.app.db(), rental.id).await.unwrap().unwrap();
+    let res = w.app.get(&url).await;
+    res.assert_ok().assert_pdf().assert_pdf_pages(1);
+    res.assert_pdf_contains(&back.reservation_code.to_string())
+        .assert_pdf_contains("Rental receipt")
+        .assert_pdf_contains("Thank you for renting from us.")
+        .assert_pdf_contains(&bikeshop::money::format(back.total(), "USD", "en"))
+        .assert_pdf_missing("Recibo del alquiler");
+    let disposition = res.header("content-disposition").unwrap();
+    assert!(
+        disposition.contains(&format!("receipt-{}.pdf", back.reservation_code)),
+        "{disposition}"
+    );
+
+    // The receipt page links to it.
+    w.app
+        .get(&format!("/staff/rentals/{}/receipt", rental.id))
+        .await
+        .assert_ok()
+        .assert_see(&url);
+
+    // The permission and the store scope are the receipt page's: a mechanic of
+    // another store, and a customer, don't get it.
+    let east = fixtures::store(w.app.db(), "East").await.unwrap();
+    let stranger = fixtures::person(w.app.db(), "east@example.com", &[(MECHANIC, Some(east.id))])
+        .await
+        .unwrap();
+    w.app.acting_as(&stranger);
+    w.app.get(&url).await.assert_not_found();
+    let (rider, _) = customer(&w.app, "other@example.com", true).await;
+    w.app.acting_as(&rider);
+    w.app.get(&url).await.assert_forbidden();
+}
+
+#[renox::test]
+async fn the_return_mail_carries_the_receipt_in_the_customers_language() {
+    let w = world().await;
+    let (user, c) = customer(&w.app, "jinete@example.com", true).await;
+    renox::db::sql("UPDATE users SET locale = ? WHERE id = ?")
+        .bind("es")
+        .bind(user.id)
+        .execute(w.app.db())
+        .await
+        .unwrap();
+    let rental = rentals()
+        .of_bike(&w.bike)
+        .for_customer(c.id)
+        .active()
+        .create_one(w.app.db())
+        .await
+        .unwrap();
+    // The cashier works in English; the customer's receipt is Spanish.
+    give_back(&w, &rental).await;
+    let back = Rental::find(w.app.db(), rental.id).await.unwrap().unwrap();
+    let mail = w
+        .app
+        .sent_mail()
+        .into_iter()
+        .find(|m| m.subject.contains(&back.reservation_code.to_string()))
+        .expect("the customer gets a mail when the bike is back");
+    let receipt = mail
+        .attachments
+        .iter()
+        .find(|a| a.content_type == "application/pdf")
+        .expect("the mail attaches the receipt");
+    assert_eq!(
+        receipt.filename,
+        format!("receipt-{}.pdf", back.reservation_code)
+    );
+    assert!(receipt.data.starts_with(b"%PDF-"));
+    // A long title wraps in the header: compare with the line breaks folded.
+    let text = renox_pdf::testing::text_of(&receipt.data);
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(text.contains("Recibo del alquiler"), "{text}");
+    assert!(text.contains("Gracias por montar con nosotros."), "{text}");
+    assert!(text.contains(&back.reservation_code.to_string()), "{text}");
+    assert!(
+        text.contains(&bikeshop::money::format(back.total(), "USD", "es")),
+        "{text}"
+    );
+    assert!(!text.contains("Rental receipt"), "{text}");
 }

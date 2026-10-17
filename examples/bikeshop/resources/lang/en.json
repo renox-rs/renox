@@ -1223,7 +1223,14 @@
       "amount": "Amount",
       "no_payments": "No payment recorded.",
       "send_back": "Send it back to :store",
-      "send_back_text": "This bike was placed at :store: send it back there when you can."
+      "send_back_text": "This bike was placed at :store: send it back there when you can.",
+      "download": "Download PDF",
+      "pdf": {
+        "rental": "Bike rental",
+        "returned": "Returned",
+        "item": "Item",
+        "thanks": "Thank you for renting from us."
+      }
     },
     "walkin": {
       "title": "Walk-in rental",

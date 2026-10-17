@@ -2068,7 +2068,11 @@ Notes:
   `page-header`, `data-table`)
 - [x] `renox_pdf::testing::{text_of, PdfAssertions}`, `rnx make:pdf`
 - [x] Docs (pdf.md, doctested through `Guide`; site page), CHEATSHEET.md, llms.txt, mail.md and routing.md cross-links
-- [ ] Release plumbing for the eleventh crate (11/12) and the bikeshop receipt PDF with its browser test (12/12)
+- [x] Release plumbing for the eleventh crate (RELEASING.md, layout.md, CLAUDE.md, docs.rs list; the `release.yml` comment is the owner's)
+- [x] Bikeshop: a returned rental's receipt as a PDF (`/staff/rentals/{rental}/receipt.pdf`, the receipt page's permission and store
+  scope), attached to the return mail in the customer's language, with tests and `tests/browser/bikeshop-receipt-pdf.test.mjs`
+- [x] Acceptance tests (AC1-AC12 audited; `crates/renox-pdf/tests/acceptance.rs` adds Arabic/RTL, missing glyphs and lenient mode,
+  the limits' configuration and a responsive runtime through the public API); `cargo deny check` and the C-crypto check pass
 - [ ] App-vendored packages (`Pdf::package`), HTML-to-PDF, PAdES, PDF/A and form filling are out of scope
 
 ## Decisions

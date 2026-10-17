@@ -3123,7 +3123,14 @@
       "amount": "Importe",
       "no_payments": "Ningún pago registrado.",
       "send_back": "Devolverla a :store",
-      "send_back_text": "Esta bici estaba en :store: devuélvela allí cuando puedas."
+      "send_back_text": "Esta bici estaba en :store: devuélvela allí cuando puedas.",
+      "download": "Descargar PDF",
+      "pdf": {
+        "rental": "Alquiler de bici",
+        "returned": "Devuelta",
+        "item": "Concepto",
+        "thanks": "Gracias por montar con nosotros."
+      }
     },
     "walkin": {
       "title": "Alquiler sin reserva",
