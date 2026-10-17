@@ -153,6 +153,76 @@ pub struct Admin {
     resources: Vec<Arc<dyn Listed>>,
     settings: Vec<Arc<dyn SettingsPage>>,
     slots: Vec<(Slot, String)>,
+    name: Option<String>,
+    own_only: bool,
+}
+
+/// A resource a module adds to an admin panel from its `register`, see
+/// [`contribute`]. By default it joins the panel without a name; with
+/// [`panel`](Self::panel) it joins the [`Admin::named`] panel of that name.
+///
+/// ```
+/// # use renox::prelude::*;
+/// # use renox_admin::{AdminEntry, AdminResource};
+/// # fn demo<R: AdminResource>(resource: R, app: &mut Registry) {
+/// app.contribute(AdminEntry::new(resource).panel("staff"));
+/// # }
+/// ```
+#[derive(Clone)]
+pub struct AdminEntry {
+    resource: Arc<dyn Listed>,
+    panel: Option<String>,
+}
+
+impl AdminEntry {
+    /// An entry for `resource`, for the panel without a name.
+    ///
+    /// # Panics
+    ///
+    /// If the slug isn't letters, digits, `_` and `-`.
+    pub fn new<R: AdminResource>(resource: R) -> Self {
+        check_slug("AdminEntry::new", resource.slug());
+        Self {
+            resource: Arc::new(Holder(Arc::new(resource))),
+            panel: None,
+        }
+    }
+
+    /// Sends the resource to the panel named `name` ([`Admin::named`])
+    /// instead of the unnamed one. A name no `Admin` has fails at boot.
+    pub fn panel(mut self, name: &str) -> Self {
+        self.panel = Some(name.to_owned());
+        self
+    }
+}
+
+/// Adds `resource` to the app's admin panel from a module's `register`
+/// (shorthand for `app.contribute(AdminEntry::new(resource))`). The panel
+/// shows it after its own resources, with the same gate and navigation.
+///
+/// ```
+/// # use renox::prelude::*;
+/// # use renox_admin::AdminResource;
+/// # fn demo<R: AdminResource>(resource: R, app: &mut Registry) {
+/// renox_admin::contribute(app, resource);
+/// # }
+/// ```
+pub fn contribute<R: AdminResource>(app: &mut Registry, resource: R) {
+    app.contribute(AdminEntry::new(resource));
+}
+
+/// The name of a panel, so entries aimed at an unknown one fail at boot.
+struct PanelName(String);
+
+fn check_slug(what: &str, slug: &str) {
+    assert!(
+        !slug.is_empty()
+            && slug.len() <= 64
+            && slug
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
+        "{what}: the slug `{slug}` may only have letters, digits, `_` and `-`"
+    );
 }
 
 impl Default for Admin {
@@ -185,7 +255,22 @@ impl Admin {
             resources: Vec::new(),
             settings: Vec::new(),
             slots: Vec::new(),
+            name: None,
+            own_only: false,
         }
+    }
+
+    /// Names the panel, so it takes the [`AdminEntry`]s aimed at that name
+    /// (`AdminEntry::panel`) instead of the unnamed ones.
+    pub fn named(mut self, name: &str) -> Self {
+        self.name = Some(name.to_owned());
+        self
+    }
+
+    /// Ignores what modules contribute: only the resources added here.
+    pub fn only_own_resources(mut self) -> Self {
+        self.own_only = true;
+        self
     }
 
     /// Where the panel lives (`/admin` by default). The route names stay
@@ -252,14 +337,7 @@ impl Admin {
     /// has it.
     pub fn resource<R: AdminResource>(mut self, resource: R) -> Self {
         let slug = resource.slug().to_owned();
-        assert!(
-            !slug.is_empty()
-                && slug.len() <= 64
-                && slug
-                    .chars()
-                    .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-'),
-            "Admin::resource: the slug `{slug}` may only have letters, digits, `_` and `-`"
-        );
+        check_slug("Admin::resource", &slug);
         assert!(
             self.resources.iter().all(|r| r.slug() != slug),
             "Admin::resource: two resources have the slug `{slug}`"
@@ -294,22 +372,70 @@ impl Admin {
     }
 }
 
+impl Admin {
+    fn panel_routes(&self, resources: Vec<Arc<dyn Listed>>) -> Routes {
+        panel::routes(Arc::new(Panel {
+            path: self.path.clone(),
+            title: self.title.clone(),
+            access: self.access.clone(),
+            resources,
+            settings: self.settings.clone(),
+        }))
+    }
+}
+
 impl Module for Admin {
     fn name(&self) -> &'static str {
         "admin"
     }
 
     fn routes(&self) -> Routes {
-        panel::routes(Arc::new(Panel {
-            path: self.path.clone(),
-            title: self.title.clone(),
-            access: self.access.clone(),
-            resources: self.resources.clone(),
-            settings: self.settings.clone(),
-        }))
+        self.panel_routes(self.resources.clone())
+    }
+
+    fn routes_with(&self, contributions: &Contributions) -> Routes {
+        let mut resources = self.resources.clone();
+        let mut from: Vec<String> = vec!["the app's Admin".into(); resources.len()];
+        // An entry for a panel no Admin has is a mistake worth failing on.
+        let names: Vec<&str> = contributions
+            .all::<PanelName>()
+            .iter()
+            .map(|n| n.0.as_str())
+            .collect();
+        for (module, entry) in contributions.all_from::<AdminEntry>() {
+            if let Some(panel) = &entry.panel {
+                assert!(
+                    names.contains(&panel.as_str()),
+                    "{module} contributes an admin resource to the panel \"{panel}\", \
+                     but no Admin is named \"{panel}\" (Admin::named)"
+                );
+            }
+        }
+        if !self.own_only {
+            for (module, entry) in contributions.all_from::<AdminEntry>() {
+                if entry.panel != self.name {
+                    continue;
+                }
+                let slug = entry.resource.slug();
+                let who = if module == "app" {
+                    "the app".to_owned()
+                } else {
+                    module.to_owned()
+                };
+                if let Some(at) = resources.iter().position(|r| r.slug() == slug) {
+                    panic!("\"{slug}\" is contributed by {} and by {who}", from[at]);
+                }
+                resources.push(entry.resource.clone());
+                from.push(who);
+            }
+        }
+        self.panel_routes(resources)
     }
 
     fn register(&self, app: &mut Registry) {
+        if let Some(name) = &self.name {
+            app.contribute(PanelName(name.clone()));
+        }
         for page in &self.settings {
             page.declare(app);
         }
