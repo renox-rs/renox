@@ -143,6 +143,15 @@ impl Error {
             Self::Status(status, _) => *status,
             // A duplicate that got past validation (e.g. two requests at once).
             Self::Internal(_) if self.is_unique_violation() => StatusCode::CONFLICT,
+            // A filter or sort on a sealed custom field is the visitor's doing.
+            Self::Internal(err)
+                if err.chain().any(|e| {
+                    e.downcast_ref::<crate::db::DbError>()
+                        .is_some_and(|d| d.sealed_custom_field_key().is_some())
+                }) =>
+            {
+                StatusCode::BAD_REQUEST
+            }
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }

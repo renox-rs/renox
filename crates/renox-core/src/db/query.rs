@@ -454,15 +454,22 @@ impl<M: Model> Query<M> {
     /// Checks the JSON keys of the query's conditions and ordering against the
     /// active custom field definitions of the model (its table name), and
     /// compares numbers and booleans as such on PostgreSQL. A key without a
-    /// definition makes the query return an error. The definitions are cached
+    /// definition makes the query return an error. A key whose definition is
+    /// sensitive (its values are sealed) cannot be filtered or sorted on:
+    /// this returns [`DbError::sealed_custom_field`](super::DbError::sealed_custom_field)
+    /// (400 in a response), whatever the stored rows hold. The definitions are cached
     /// (`CustomField::for_model`), so calling this on every query is cheap.
     pub async fn with_custom_fields(mut self, db: &Db) -> Result<Self> {
         let fields = crate::custom_fields::CustomField::for_model(db, M::TABLE).await?;
         let mut missing = None;
+        let mut sealed: Option<String> = None;
         let mut resolve = |key: &str, cast: &mut Option<&'static str>| match fields
             .iter()
             .find(|f| f.key == key)
         {
+            Some(field) if field.rules.sensitive => {
+                sealed.get_or_insert_with(|| key.to_owned());
+            }
             Some(field) => *cast = json_cast(field.kind),
             None => {
                 missing
@@ -476,6 +483,9 @@ impl<M: Model> Query<M> {
             if let Order::JsonKey { key, cast, .. } = order {
                 resolve(key, cast);
             }
+        }
+        if let Some(key) = sealed {
+            return Err(super::DbError::sealed_custom_field(&key).into());
         }
         if let Some(missing) = missing {
             self.error.get_or_insert(missing);

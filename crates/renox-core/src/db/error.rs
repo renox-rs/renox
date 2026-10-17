@@ -13,9 +13,33 @@ use std::fmt;
 /// }
 /// # Ok(()) }
 /// ```
-pub struct DbError(sqlx::Error);
+pub struct DbError(sqlx::Error, Option<String>);
 
 impl DbError {
+    /// A filter or sort named the sensitive custom field `key`, whose values
+    /// are sealed. Returned by `Query::with_custom_fields` and the grid; it
+    /// answers 400.
+    ///
+    /// ```
+    /// use renox::db::DbError;
+    /// let err = DbError::sealed_custom_field("tax_id");
+    /// assert_eq!(err.sealed_custom_field_key(), Some("tax_id"));
+    /// ```
+    pub fn sealed_custom_field(key: &str) -> Self {
+        Self(
+            sqlx::Error::Protocol(format!(
+                "custom field `{key}` is sensitive: it cannot be filtered, sorted or searched"
+            )),
+            Some(key.to_owned()),
+        )
+    }
+
+    /// The key of the sealed custom field a filter, sort or search named, if
+    /// this error is [`DbError::sealed_custom_field`].
+    pub fn sealed_custom_field_key(&self) -> Option<&str> {
+        self.1.as_deref()
+    }
+
     /// A `UNIQUE` constraint (or primary key) was violated.
     pub fn is_unique_violation(&self) -> bool {
         matches!(&self.0, sqlx::Error::Database(db) if db.is_unique_violation())
@@ -60,7 +84,7 @@ impl DbError {
 
 impl From<sqlx::Error> for DbError {
     fn from(err: sqlx::Error) -> Self {
-        Self(err)
+        Self(err, None)
     }
 }
 

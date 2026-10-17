@@ -2134,6 +2134,7 @@ fn parties_grid() -> Grid {
         .column(Column::custom_field("extra", "segment"))
         .column(Column::custom_field("extra", "age"))
         .column(Column::custom_field("extra", "gone"))
+        .column(Column::custom_field("extra", "tax").searchable())
         .sort_by("name")
         .exports()
 }
@@ -2215,4 +2216,42 @@ async fn custom_field_columns_sort_filter_and_export() {
     if cfg!(feature = "xlsx") {
         app.get("/parties?export=xlsx").await.assert_ok();
     }
+}
+
+#[renox::test]
+async fn a_sensitive_custom_column_cannot_be_sorted_filtered_or_searched() {
+    use renox::custom_fields::CustomField;
+    let (_, views) = app().await; // for its views
+    let app = TestApp::with_config(App::new().migrations(&[GRID_PARTIES]).module(Crm), |c| {
+        c.views_path = views.path().to_path_buf()
+    })
+    .await;
+    let db = app.db();
+    CustomField::text("grid_parties", "tax")
+        .label("Tax")
+        .sensitive()
+        .save(db)
+        .await
+        .unwrap();
+    CustomField::number("grid_parties", "age")
+        .label("Age")
+        .save(db)
+        .await
+        .unwrap();
+    for uri in [
+        "/parties?sort=extra_tax",
+        "/parties?sort=-extra_tax",
+        "/parties?q.extra_tax=x",
+        "/parties?in.extra_tax=x",
+        "/parties?r.0.c=extra_tax&r.0.o=equals&r.0.v=x",
+        "/parties?export=csv&sort=extra_tax",
+    ] {
+        app.get(uri).await.assert_status(400);
+    }
+    // Other columns, searching and the plain page still work.
+    app.get("/parties").await.assert_ok();
+    app.get("/parties?sort=-extra_age").await.assert_ok();
+    app.get("/parties?min.extra_age=1&search=x")
+        .await
+        .assert_ok();
 }

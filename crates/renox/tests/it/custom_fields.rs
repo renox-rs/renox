@@ -325,6 +325,41 @@ mod json_paths {
         }
     }
 
+    #[renox::test]
+    async fn a_sealed_key_is_refused_for_conditions_and_ordering() {
+        let app = parties().await;
+        let db = app.db();
+        CustomField::text("cf_parties", "tax")
+            .sensitive()
+            .save(db)
+            .await
+            .unwrap();
+        let conditions = [
+            CfParty::query().where_(CfParty::EXTRA.json("tax").eq("x")),
+            CfParty::query().where_(CfParty::EXTRA.json("tax").like("x%")),
+            CfParty::query().where_(CfParty::EXTRA.json("tax").is_null()),
+            CfParty::query().where_(CfParty::EXTRA.json("tax").is_in(["x"])),
+            CfParty::query().order_by_json(CfParty::EXTRA.json("tax")),
+            CfParty::query().order_by_json_desc(CfParty::EXTRA.json("tax")),
+        ];
+        for query in conditions {
+            let err = query.with_custom_fields(db).await.err().expect("refused");
+            assert_eq!(err.status(), renox::prelude::StatusCode::BAD_REQUEST);
+            let sealed = renox::db::DbError::sealed_custom_field("tax");
+            assert_eq!(err.to_string(), sealed.to_string());
+            assert!(format!("{err:?}").contains("tax"));
+        }
+        // Other keys are unaffected, also next to a refused one in a new query.
+        assert_eq!(
+            names(
+                CfParty::query().where_(CfParty::EXTRA.json("segment").eq("retail")),
+                db
+            )
+            .await,
+            ["Ana", "Cy"]
+        );
+    }
+
     #[test]
     fn sql_is_written_for_each_dialect_with_bound_values() {
         let query = CfParty::query()

@@ -1056,6 +1056,7 @@ impl Grid {
         let locale = request.lang.as_ref().map_or("en", |l| l.locale.as_str());
         let dialect = request.db.dialect();
         let mut grid = self.clone();
+        let mut sealed: Option<String> = None;
         grid.columns.retain_mut(|c| {
             let Some((column, key)) = c.custom.clone() else {
                 return true;
@@ -1063,6 +1064,15 @@ impl Grid {
             let Some(field) = fields.iter().find(|f| f.key == key) else {
                 return false;
             };
+            if field.rules.sensitive {
+                // Sealed values cannot be compared, ordered or searched.
+                c.sortable = false;
+                c.filterable = false;
+                c.searchable = false;
+                if names_column(&request.params, &c.key) {
+                    sealed.get_or_insert(key.clone());
+                }
+            }
             c.label = field.label_for(locale, DEFAULT_LABEL_LOCALE);
             let text = match dialect {
                 Dialect::Sqlite => format!("json_extract({{T}}.\"{column}\", '$.{key}')"),
@@ -1101,6 +1111,9 @@ impl Grid {
             });
             true
         });
+        if let Some(key) = sealed {
+            return Err(crate::db::DbError::sealed_custom_field(&key).into());
+        }
         Ok(std::borrow::Cow::Owned(grid))
     }
 
@@ -1834,6 +1847,18 @@ struct State_ {
     defaulted: bool,
     page: u32,
     per_page: u32,
+}
+
+/// Whether the request's grid parameters sort or filter on the column `key`
+/// (`sort=key`, `q.key`, `r.0.c=key`, ...).
+fn names_column(params: &[(String, String)], key: &str) -> bool {
+    params.iter().any(|(name, value)| match name.as_str() {
+        "sort" => value.trim().trim_start_matches('-') == key,
+        _ if name.starts_with("r.") && name.ends_with(".c") => value.trim() == key,
+        _ => name
+            .split_once('.')
+            .is_some_and(|(part, k)| k == key && !part.is_empty() && !value.trim().is_empty()),
+    })
 }
 
 impl State_ {
