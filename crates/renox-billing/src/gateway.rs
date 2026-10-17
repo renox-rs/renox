@@ -7,6 +7,7 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use renox::Config;
 use renox::axum::http::HeaderMap;
@@ -401,31 +402,83 @@ pub enum Notice {
     Payment(Payment),
 }
 
-/// A key given in code, or read from the configuration when a call needs
-/// it (`config.var`: `.env` or the environment).
+/// The account name a resolver gets for the gateway's default account.
+pub(crate) const DEFAULT_ACCOUNT: &str = "default";
+
+/// A key looked up by the app on every use: gets the state and the account
+/// name, answers the key (`None` when the installation has none).
+pub(crate) type Resolver =
+    Arc<dyn Fn(&AppState, &str) -> BoxFuture<'static, Result<Option<String>>> + Send + Sync>;
+
+/// A key given in code, read from the configuration when a call needs it
+/// (`config.var`: `.env` or the environment), or looked up by a resolver
+/// on every call (never cached).
 #[derive(Clone)]
 pub(crate) enum Secret {
     Given(String),
     Config(&'static str),
+    Resolved(Resolver),
 }
 
 impl Secret {
+    /// A secret from `resolver`, which ignores the account.
+    pub(crate) fn resolved<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self::Resolved(Arc::new(move |state, _account| Box::pin(resolver(state))))
+    }
+
+    /// A secret from `resolver`, which gets the account's name.
+    pub(crate) fn resolved_accounts<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState, &str) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self::Resolved(Arc::new(move |state, account| {
+            Box::pin(resolver(state, account))
+        }))
+    }
+
+    /// The key a synchronous check can see: a resolved key is not known
+    /// without awaiting it, so this is `None` for one.
     pub(crate) fn resolve(&self, config: &Config) -> Option<String> {
         match self {
             Self::Given(value) => Some(value.clone()).filter(|v| !v.is_empty()),
             Self::Config(name) => config.var(name),
+            Self::Resolved(_) => None,
         }
+    }
+
+    /// Whether the key may be there: a resolved one is asked at use.
+    pub(crate) fn is_set(&self, config: &Config) -> bool {
+        matches!(self, Self::Resolved(_)) || self.resolve(config).is_some()
     }
 
     /// The key, or an error naming where to set it.
     pub(crate) fn require(&self, config: &Config, what: &str) -> Result<String> {
-        self.resolve(config).ok_or_else(|| {
-            let hint = match self {
-                Self::Config(name) => format!("set {name} in .env"),
-                Self::Given(_) => "it was given empty".into(),
-            };
-            renox::anyhow::anyhow!("{what} is missing: {hint}").into()
-        })
+        self.resolve(config).ok_or_else(|| self.missing(what))
+    }
+
+    /// The key, asking the resolver when there is one.
+    pub(crate) async fn require_async(&self, state: &AppState, what: &str) -> Result<String> {
+        match self {
+            Self::Resolved(resolver) => resolver(state, DEFAULT_ACCOUNT)
+                .await?
+                .filter(|key| !key.is_empty())
+                .ok_or_else(|| self.missing(what)),
+            _ => self.require(&state.config, what),
+        }
+    }
+
+    fn missing(&self, what: &str) -> Error {
+        let hint = match self {
+            Self::Config(name) => format!("set {name} in .env"),
+            Self::Given(_) => "it was given empty".into(),
+            Self::Resolved(_) => "the key resolver answered none".into(),
+        };
+        renox::anyhow::anyhow!("{what} is missing: {hint}").into()
     }
 }
 
@@ -433,7 +486,7 @@ impl fmt::Debug for Secret {
     /// Never prints the key.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Given(_) => f.write_str("(hidden)"),
+            Self::Given(_) | Self::Resolved(_) => f.write_str("(hidden)"),
             Self::Config(name) => write!(f, "from {name}"),
         }
     }
@@ -473,6 +526,10 @@ mod tests {
             "sk_1"
         );
         assert_eq!(format!("{:?}", Secret::Given("sk".into())), "(hidden)");
+        let resolved = Secret::resolved(|_| async { Ok(Some("sk_2".to_string())) });
+        assert_eq!(format!("{resolved:?}"), "(hidden)");
+        assert!(resolved.is_set(&Config::default()));
+        assert!(!Secret::Config("X").is_set(&Config::default()));
     }
 
     #[test]

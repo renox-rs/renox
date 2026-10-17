@@ -2,6 +2,7 @@
 //! the customer's card or e-wallet, and the `recurring.plan.*` and
 //! `recurring.cycle.*` webhooks, with the `x-callback-token` header.
 
+use std::future::Future;
 use std::time::Duration;
 
 use renox::Config;
@@ -63,9 +64,59 @@ impl Xendit {
         }
     }
 
+    /// Xendit whose secret key is looked up by `resolver` on every call, so
+    /// a key changed in the app's store is used by the next call without a
+    /// restart (nothing is cached). The closure gets the app state and
+    /// answers `Ok(None)` when the installation has no key yet; the future
+    /// it returns is `Send`. The callback token stays
+    /// `XENDIT_CALLBACK_TOKEN`.
+    ///
+    /// ```
+    /// use renox_billing::Xendit;
+    ///
+    /// # let _ =
+    /// Xendit::resolved(|_state| async move { Ok(Some("xnd_development_…".to_string())) });
+    /// ```
+    pub fn resolved<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self {
+            secret: Secret::resolved(resolver),
+            callback_token: Secret::Config("XENDIT_CALLBACK_TOKEN"),
+        }
+    }
+
+    /// [`Xendit::resolved`] for several accounts: the closure also gets the
+    /// account's name (`"default"` for the gateway's default account).
+    ///
+    /// ```
+    /// use renox_billing::Xendit;
+    ///
+    /// # let _ =
+    /// Xendit::resolved_accounts(|_state, account: &str| {
+    ///     let key = format!("xnd_development_{account}");
+    ///     async move { Ok(Some(key)) }
+    /// });
+    /// ```
+    pub fn resolved_accounts<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState, &str) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self {
+            secret: Secret::resolved_accounts(resolver),
+            callback_token: Secret::Config("XENDIT_CALLBACK_TOKEN"),
+        }
+    }
+
     /// A request to Xendit's API with the secret key (HTTP basic auth).
-    fn call(&self, state: &AppState, method: &str, path: &str) -> Result<Request> {
-        let key = self.secret.require(&state.config, "Xendit's secret key")?;
+    async fn call(&self, state: &AppState, method: &str, path: &str) -> Result<Request> {
+        let key = self
+            .secret
+            .require_async(state, "Xendit's secret key")
+            .await?;
         let url = format!("{API}{path}");
         let request = match method {
             "PATCH" => state.http.patch(url),
@@ -157,7 +208,7 @@ impl Gateway for Xendit {
     }
 
     fn configured(&self, config: &Config) -> bool {
-        self.secret.resolve(config).is_some()
+        self.secret.is_set(config)
     }
 
     fn create_customer<'a>(
@@ -179,7 +230,7 @@ impl Gateway for Xendit {
             if let Some(email) = &owner.email {
                 body["email"] = json!(email);
             }
-            let customer = send(self.call(state, "POST", "/customers")?.json(&body)).await?;
+            let customer = send(self.call(state, "POST", "/customers").await?.json(&body)).await?;
             text(&customer["id"]).ok_or_else(|| {
                 renox::anyhow::anyhow!("Xendit made a customer without an id").into()
             })
@@ -232,7 +283,12 @@ impl Gateway for Xendit {
             }
             body["schedule"] = schedule;
             body["metadata"] = metadata;
-            let created = send(self.call(state, "POST", "/recurring/plans")?.json(&body)).await?;
+            let created = send(
+                self.call(state, "POST", "/recurring/plans")
+                    .await?
+                    .json(&body),
+            )
+            .await?;
             // The page where the customer links a card or an e-wallet.
             let url = created["actions"]
                 .as_array()
@@ -273,7 +329,8 @@ impl Gateway for Xendit {
                 },
             });
             send(
-                self.call(state, "PATCH", &format!("/recurring/plans/{id}"))?
+                self.call(state, "PATCH", &format!("/recurring/plans/{id}"))
+                    .await?
                     .json(&body),
             )
             .await?;
@@ -289,7 +346,11 @@ impl Gateway for Xendit {
     ) -> BoxFuture<'a, Result<Remote>> {
         Box::pin(async move {
             let id = gateway_id(subscription)?;
-            send(self.call(state, "POST", &format!("/recurring/plans/{id}/deactivate"))?).await?;
+            send(
+                self.call(state, "POST", &format!("/recurring/plans/{id}/deactivate"))
+                    .await?,
+            )
+            .await?;
             let now = renox::db::now();
             // Xendit stops charging now; access lasts until what was paid
             // for (or the trial) runs out.

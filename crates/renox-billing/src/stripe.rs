@@ -3,6 +3,7 @@
 //! `customer.subscription.*` and `invoice.payment_*` webhooks, signed in
 //! the `Stripe-Signature` header.
 
+use std::future::Future;
 use std::time::Duration;
 
 use renox::Config;
@@ -67,9 +68,59 @@ impl Stripe {
         }
     }
 
+    /// Stripe whose secret key is looked up by `resolver` on every call, so
+    /// a key changed in the app's store is used by the next call without a
+    /// restart (nothing is cached). The closure gets the app state and
+    /// answers `Ok(None)` when the installation has no key yet; the future
+    /// it returns is `Send`. The webhook signing secret stays
+    /// `STRIPE_WEBHOOK_SECRET`.
+    ///
+    /// ```
+    /// use renox_billing::Stripe;
+    ///
+    /// # let _ =
+    /// Stripe::resolved(|_state| async move { Ok(Some("sk_test_…".to_string())) });
+    /// ```
+    pub fn resolved<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self {
+            secret: Secret::resolved(resolver),
+            webhook_secret: Secret::Config("STRIPE_WEBHOOK_SECRET"),
+        }
+    }
+
+    /// [`Stripe::resolved`] for several accounts: the closure also gets the
+    /// account's name (`"default"` for the gateway's default account).
+    ///
+    /// ```
+    /// use renox_billing::Stripe;
+    ///
+    /// # let _ =
+    /// Stripe::resolved_accounts(|_state, account: &str| {
+    ///     let key = format!("sk_test_{account}");
+    ///     async move { Ok(Some(key)) }
+    /// });
+    /// ```
+    pub fn resolved_accounts<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState, &str) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self {
+            secret: Secret::resolved_accounts(resolver),
+            webhook_secret: Secret::Config("STRIPE_WEBHOOK_SECRET"),
+        }
+    }
+
     /// A request to Stripe's API with the secret key.
-    fn call(&self, state: &AppState, method: &str, path: &str) -> Result<Request> {
-        let key = self.secret.require(&state.config, "Stripe's secret key")?;
+    async fn call(&self, state: &AppState, method: &str, path: &str) -> Result<Request> {
+        let key = self
+            .secret
+            .require_async(state, "Stripe's secret key")
+            .await?;
         let url = format!("{API}{path}");
         let request = match method {
             "GET" => state.http.get(url),
@@ -170,7 +221,7 @@ impl Gateway for Stripe {
     }
 
     fn configured(&self, config: &Config) -> bool {
-        self.secret.resolve(config).is_some()
+        self.secret.is_set(config)
     }
 
     fn prorates(&self) -> bool {
@@ -198,7 +249,7 @@ impl Gateway for Stripe {
             if let Some(name) = &owner.name {
                 form.push(("name", name.clone()));
             }
-            let customer = send(self.call(state, "POST", "/customers")?.form(&form)).await?;
+            let customer = send(self.call(state, "POST", "/customers").await?.form(&form)).await?;
             text(&customer["id"]).ok_or_else(|| {
                 renox::anyhow::anyhow!("Stripe made a customer without an id").into()
             })
@@ -237,7 +288,12 @@ impl Gateway for Stripe {
             {
                 form.push(("subscription_data[trial_end]", trial_end.to_string()));
             }
-            let session = send(self.call(state, "POST", "/checkout/sessions")?.form(&form)).await?;
+            let session = send(
+                self.call(state, "POST", "/checkout/sessions")
+                    .await?
+                    .form(&form),
+            )
+            .await?;
             let url = text(&session["url"]).ok_or_else(|| {
                 renox::anyhow::anyhow!("Stripe made a checkout session without a URL")
             })?;
@@ -257,7 +313,11 @@ impl Gateway for Stripe {
             let price = plan.price_id_for("stripe", &state.config).ok_or_else(|| {
                 renox::anyhow::anyhow!("the plan `{}` has no Stripe price", plan.key)
             })?;
-            let current = send(self.call(state, "GET", &format!("/subscriptions/{id}"))?).await?;
+            let current = send(
+                self.call(state, "GET", &format!("/subscriptions/{id}"))
+                    .await?,
+            )
+            .await?;
             let item = id_of(&current["items"]["data"][0]).ok_or_else(|| {
                 renox::anyhow::anyhow!("the Stripe subscription {id} has no item")
             })?;
@@ -271,7 +331,8 @@ impl Gateway for Stripe {
                 ("metadata[renox_plan]", plan.key.clone()),
             ];
             let updated = send(
-                self.call(state, "POST", &format!("/subscriptions/{id}"))?
+                self.call(state, "POST", &format!("/subscriptions/{id}"))
+                    .await?
                     .form(&form),
             )
             .await?;
@@ -290,9 +351,9 @@ impl Gateway for Stripe {
             let path = format!("/subscriptions/{id}");
             let updated = if at_period_end {
                 let form = [("cancel_at_period_end", "true")];
-                send(self.call(state, "POST", &path)?.form(&form)).await?
+                send(self.call(state, "POST", &path).await?.form(&form)).await?
             } else {
-                send(self.call(state, "DELETE", &path)?).await?
+                send(self.call(state, "DELETE", &path).await?).await?
             };
             Ok(remote(&updated))
         })
@@ -307,7 +368,8 @@ impl Gateway for Stripe {
             let id = gateway_id(subscription)?;
             let form = [("cancel_at_period_end", "false")];
             let updated = send(
-                self.call(state, "POST", &format!("/subscriptions/{id}"))?
+                self.call(state, "POST", &format!("/subscriptions/{id}"))
+                    .await?
                     .form(&form),
             )
             .await?;
@@ -328,7 +390,8 @@ impl Gateway for Stripe {
                 form.push(("pause_collection[resumes_at]", at.timestamp().to_string()));
             }
             let updated = send(
-                self.call(state, "POST", &format!("/subscriptions/{id}"))?
+                self.call(state, "POST", &format!("/subscriptions/{id}"))
+                    .await?
                     .form(&form),
             )
             .await?;
@@ -346,7 +409,8 @@ impl Gateway for Stripe {
             // An empty value clears the field at Stripe.
             let form = [("pause_collection", "")];
             let updated = send(
-                self.call(state, "POST", &format!("/subscriptions/{id}"))?
+                self.call(state, "POST", &format!("/subscriptions/{id}"))
+                    .await?
                     .form(&form),
             )
             .await?;

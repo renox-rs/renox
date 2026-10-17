@@ -330,6 +330,69 @@ async fn checkout_sends_the_user_to_stripe_with_the_plan_and_its_trial() {
 }
 
 #[renox::test]
+async fn a_resolved_key_is_asked_on_every_call_and_never_shown() {
+    let key = std::sync::Arc::new(std::sync::Mutex::new("sk_first".to_string()));
+    let shared = key.clone();
+    let stripe = Stripe::resolved(move |_state| {
+        let key = shared.lock().unwrap().clone();
+        async move { Ok(Some(key)) }
+    });
+    assert_eq!(
+        format!("{stripe:?}").matches("sk_").count(),
+        0,
+        "{stripe:?}"
+    );
+    let billing = Billing::new()
+        .plan(
+            Plan::new("basic", "Basic")
+                .price(900, "USD", Interval::Month)
+                .price_id("stripe", "price_basic"),
+        )
+        .gateway(stripe);
+    let app = app_with(billing).await;
+    user(&app, "Ana").await;
+    let http = stripe_checkout(&app);
+    app.post("/billing/checkout/basic", &[])
+        .await
+        .assert_status(303);
+    // The key is changed in the store: the next call uses it, no restart.
+    *key.lock().unwrap() = "sk_second".to_string();
+    app.post("/billing/checkout/basic", &[])
+        .await
+        .assert_status(303);
+    let auth: Vec<_> = http
+        .sent()
+        .iter()
+        .map(|r| r.header("authorization").map(str::to_owned))
+        .collect();
+    assert_eq!(
+        auth,
+        [
+            Some("Bearer sk_first".to_string()),
+            Some("Bearer sk_first".to_string()),
+            Some("Bearer sk_second".to_string()),
+        ]
+    );
+}
+
+#[renox::test]
+async fn a_resolver_without_a_key_fails_without_showing_anything() {
+    let billing = Billing::new()
+        .plan(
+            Plan::new("basic", "Basic")
+                .price(900, "USD", Interval::Month)
+                .price_id("stripe", "price_basic"),
+        )
+        .gateway(Stripe::resolved(|_state| async { Ok(None) }));
+    let app = app_with(billing).await;
+    user(&app, "Ana").await;
+    let http = stripe_checkout(&app);
+    let response = app.post("/billing/checkout/basic", &[]).await;
+    assert!(http.sent().is_empty(), "no call without a key");
+    assert!(!response.text().contains("sk_"));
+}
+
+#[renox::test]
 async fn webhooks_make_and_update_the_subscription_once_each() {
     let app = app().await;
     app.fake_events();
