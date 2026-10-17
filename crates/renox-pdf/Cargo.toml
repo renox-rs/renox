@@ -27,6 +27,9 @@ typst-pdf = "0.15.1"
 # `typst-pdf` takes) is only defined here; already in the tree through `typst`.
 typst-layout = "0.15.1"
 tracing = "0.1.44"
+# `testing::text_of` inflates the PDF's content streams. Already in the tree
+# (typst-pdf writes them with it), so no new package.
+flate2 = "1.1.10"
 
 [dev-dependencies]
 # `#[tokio::test]` for the render pool tests (the macro needs the crate by name).

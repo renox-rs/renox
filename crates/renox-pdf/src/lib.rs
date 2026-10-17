@@ -13,6 +13,7 @@ mod module;
 mod pool;
 mod source;
 mod templates;
+pub mod testing;
 mod world;
 
 pub use document::Document;

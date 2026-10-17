@@ -3763,6 +3763,7 @@ dependencies = [
 name = "renox-pdf"
 version = "1.1.1"
 dependencies = [
+ "flate2",
  "renox",
  "tokio",
  "tracing",
