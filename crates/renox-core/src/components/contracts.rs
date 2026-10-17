@@ -1090,6 +1090,45 @@ pub(crate) static BUILTIN: &[Contract] = &[
         parent: None,
     },
     Contract {
+        tag: "rx-custom-fields",
+        doc: "The custom fields of a record: inputs in a form, entries on a page.",
+        render: Render::Macro {
+            module: Module::Custom {
+                path: "renox/custom_fields.html",
+                alias: "__rx_custom_fields",
+            },
+            name: "custom_fields",
+        },
+        props: &[
+            data(
+                "fields",
+                true,
+                "The list from `CustomField::views(&db, \"parties\", locale)`.",
+            ),
+            text(
+                "name",
+                false,
+                "The model's `Json<CustomValues>` column (`extra`); inputs are named `extra[key]`.",
+            ),
+            data(
+                "values",
+                false,
+                "The record's custom values (`party.extra`).",
+            ),
+            choice(
+                "mode",
+                &["form", "show"],
+                "`form` (default) draws inputs, `show` draws entries.",
+            ),
+            text("id", false, "The element's id."),
+        ],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
         tag: "rx-transition-actions",
         doc: "A button for each state machine transition the user may run now.",
         render: Render::Macro {

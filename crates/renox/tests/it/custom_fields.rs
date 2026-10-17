@@ -486,3 +486,116 @@ mod values {
         assert!(values.is_empty());
     }
 }
+
+// The kit tag `<rx-custom-fields>`.
+mod tag {
+    use renox::custom_fields::{CustomField, CustomValues, LocaleMap};
+    use renox::prelude::*;
+    use renox::testing::TestApp;
+
+    struct PartyPages;
+
+    impl Module for PartyPages {
+        fn name(&self) -> &'static str {
+            "party-pages"
+        }
+
+        fn routes(&self) -> Routes {
+            Routes::new().get(
+                "/party/{locale}",
+                |State(state): State<AppState>, Path(locale): Path<String>| async move {
+                    let fields = CustomField::views(&state.db, "parties", &locale).await?;
+                    let mut extra = CustomValues::default();
+                    extra.set("passport_no", "X123");
+                    extra.set("segment", "corporate");
+                    extra.set("vip", true);
+                    Ok::<_, renox::Error>(view("party.html", context! { fields, extra }))
+                },
+            )
+        }
+    }
+
+    #[renox::test]
+    async fn the_custom_fields_tag_draws_inputs_and_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("party.html"),
+            r#"<rx-custom-fields :fields="fields" name="extra" :values="extra"/>
+<hr>
+<rx-custom-fields :fields="fields" :values="extra" mode="show"/>"#,
+        )
+        .unwrap();
+        let path = dir.path().to_path_buf();
+        let app =
+            TestApp::with_config(App::new().module(PartyPages), move |c| c.views_path = path).await;
+        let db = app.db();
+        CustomField::text("parties", "passport_no")
+            .label("Passport no.")
+            .label_in("es", "N.º de pasaporte")
+            .required()
+            .max(20)
+            .save(db)
+            .await
+            .unwrap();
+        let mut corporate = LocaleMap::default();
+        corporate.set("en", "Corporate");
+        corporate.set("es", "Empresa");
+        CustomField::choice("parties", "segment")
+            .label("Segment")
+            .option_labeled("retail", LocaleMap::default())
+            .option_labeled("corporate", corporate)
+            .position(1)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::bool("parties", "vip")
+            .label("VIP")
+            .position(2)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::number("parties", "credit")
+            .label("Credit")
+            .min(0)
+            .position(3)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::date("parties", "since")
+            .label("Since")
+            .position(4)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::file("parties", "contract", "local")
+            .label("Contract")
+            .position(5)
+            .save(db)
+            .await
+            .unwrap();
+
+        app.get("/party/en")
+            .await
+            .assert_ok()
+            .assert_see(r#"name="extra[passport_no]""#)
+            .assert_see(r#"value="X123""#)
+            .assert_see(r#"maxlength="20""#)
+            .assert_see("Passport no.")
+            .assert_see(r#"name="extra[segment]""#)
+            .assert_see(r#"name="extra[vip]""#)
+            .assert_see(r#"name="extra[credit]""#)
+            .assert_see(r#"type="date""#)
+            .assert_see(r#"name="extra[contract]""#)
+            .assert_see(r#"type="file""#)
+            .assert_see("Corporate");
+
+        // The request locale picks the labels, with the fallback for the rest.
+        app.get("/party/es")
+            .await
+            .assert_ok()
+            .assert_see("N.º de pasaporte")
+            .assert_see("Empresa")
+            .assert_see("Segment");
+        app.assert_views_compile();
+    }
+}

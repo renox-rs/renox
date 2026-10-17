@@ -246,6 +246,34 @@ pub struct CustomField {
     pub updated_at: DateTime,
 }
 
+/// One custom field as `<rx-custom-fields>` reads it (see
+/// [`CustomField::views`]): the label and choice labels are already in the
+/// request locale.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct FieldView {
+    /// The stable key.
+    pub key: String,
+    /// What the field holds.
+    pub kind: FieldKind,
+    /// The label in the request locale.
+    pub label: String,
+    /// Whether a value is required.
+    pub required: bool,
+    /// The lower bound (number) or shortest length (text), if any.
+    pub min: Option<i64>,
+    /// The upper bound (number) or longest length (text), if any.
+    pub max: Option<i64>,
+    /// Choice options as `(value, label)`, in order.
+    pub options: Vec<(String, String)>,
+    /// Choice labels by value (for showing a stored value).
+    pub labels: BTreeMap<String, String>,
+    /// The reference table or file disk.
+    pub target: Option<String>,
+    /// The definition's free `meta` JSON.
+    pub meta: Value,
+}
+
 /// Whether `key` is a valid custom field key: `[a-z][a-z0-9_]*`, at most 64
 /// characters.
 ///
@@ -397,6 +425,53 @@ impl CustomField {
             .resolve(locale, fallback)
             .unwrap_or(&self.key)
             .to_owned()
+    }
+
+    /// The definition as a template reads it: the label and option labels
+    /// already resolved for `locale` (then `fallback`, then the key).
+    fn view(&self, locale: &str, fallback: &str) -> FieldView {
+        let options: Vec<(String, String)> = self
+            .rules
+            .options
+            .iter()
+            .map(|o| {
+                let label = o.label.resolve(locale, fallback).unwrap_or(&o.value);
+                (o.value.clone(), label.to_owned())
+            })
+            .collect();
+        FieldView {
+            key: self.key.clone(),
+            kind: self.kind,
+            label: self.label_for(locale, fallback),
+            required: self.rules.required,
+            min: self.rules.min,
+            max: self.rules.max,
+            labels: options.iter().cloned().collect(),
+            options,
+            target: self.rules.target.clone(),
+            meta: self.meta.clone(),
+        }
+    }
+
+    /// The active definitions of `model` as the list `<rx-custom-fields
+    /// :fields="…">` takes: labels in `locale` (falling back to
+    /// [`DEFAULT_LABEL_LOCALE`], then the key), choice options as
+    /// `[value, label]` pairs. Put it in the page's context.
+    ///
+    /// ```
+    /// use renox::custom_fields::CustomField;
+    ///
+    /// # async fn demo(db: renox::db::Db) -> renox::Result<()> {
+    /// let fields = CustomField::views(&db, "parties", "es").await?;
+    /// # let _ = fields;
+    /// # Ok(()) }
+    /// ```
+    pub async fn views(db: &Db, model: &str, locale: &str) -> Result<Vec<FieldView>> {
+        let fields = Self::for_model(db, model).await?;
+        Ok(fields
+            .iter()
+            .map(|f| f.view(locale, DEFAULT_LABEL_LOCALE))
+            .collect())
     }
 
     /// Checks the key and the rules fit the kind.

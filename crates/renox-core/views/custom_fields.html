@@ -1,0 +1,27 @@
+{#- The rx-custom-fields component: the custom fields of a record (see
+    `custom_fields`), from the list `CustomField::views` builds.
+    mode="form": one input per field, named `{name}[{key}]` (so the errors
+    and the refill after a failed submit find it); mode="show": one entry
+    per field. `values` is the record's `CustomValues`. A file field needs
+    a form that posts `multipart/form-data`. -#}
+{%- from "renox/ui.html" import input, select, checkbox, file, entry %}
+{% macro custom_fields(fields, name="extra", values=none, mode="form", id=none) -%}
+<div class="rx-custom-fields"{% if id %} id="{{ id }}"{% endif %} data-rx-custom-fields>
+  {%- for f in fields %}
+  {%- set field_name = name ~ "[" ~ f.key ~ "]" %}
+  {%- set value = values[f.key] if values and values[f.key] is defined else none %}
+  {%- if mode == "show" %}
+    {%- if f.kind == "bool" %}{{ entry(f.label, value if value is not none else false, format="bool") }}
+    {%- elif f.kind == "choice" %}{{ entry(f.label, value, labels=f.labels) }}
+    {%- else %}{{ entry(f.label, value) }}{% endif %}
+  {%- elif f.kind == "bool" %}{{ checkbox(field_name, f.label, checked=(value == true), value="true") }}
+  {%- elif f.kind == "choice" %}{{ select(field_name, f.label, f.options, selected=value, required=f.required, placeholder="") }}
+  {%- elif f.kind == "file" %}{{ file(field_name, f.label, required=f.required, current=value) }}
+  {%- elif f.kind == "number" %}{{ input(field_name, f.label, type="number", value=value, required=f.required, min=f.min, max=f.max, step="any") }}
+  {%- elif f.kind == "reference" %}{{ input(field_name, f.label, type="number", value=value, required=f.required, step="1") }}
+  {%- elif f.kind == "date" %}{{ input(field_name, f.label, type="date", value=value, required=f.required) }}
+  {%- else %}{{ input(field_name, f.label, value=value, required=f.required, attrs=({"maxlength": f.max} if f.max else {})) }}
+  {%- endif %}
+  {%- endfor %}
+</div>
+{%- endmacro %}

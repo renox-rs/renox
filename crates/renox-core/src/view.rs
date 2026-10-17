@@ -71,6 +71,10 @@ pub(crate) const BUILTIN: &[(&str, &str)] = &[
     ),
     ("renox/debug.html", include_str!("../views/debug.html")),
     (
+        "renox/custom_fields.html",
+        include_str!("../views/custom_fields.html"),
+    ),
+    (
         "renox/transition_actions.html",
         include_str!("../views/transition_actions.html"),
     ),

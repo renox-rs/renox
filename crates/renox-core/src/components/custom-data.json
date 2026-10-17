@@ -1319,6 +1319,44 @@
     {
       "attributes": [
         {
+          "description": "(required) The list from `CustomField::views(&db, \"parties\", locale)`.",
+          "name": ":fields",
+          "values": []
+        },
+        {
+          "description": "The model's `Json<CustomValues>` column (`extra`); inputs are named `extra[key]`.",
+          "name": "name",
+          "values": []
+        },
+        {
+          "description": "The record's custom values (`party.extra`).",
+          "name": ":values",
+          "values": []
+        },
+        {
+          "description": "`form` (default) draws inputs, `show` draws entries.",
+          "name": "mode",
+          "values": [
+            {
+              "name": "form"
+            },
+            {
+              "name": "show"
+            }
+          ]
+        },
+        {
+          "description": "The element's id.",
+          "name": "id",
+          "values": []
+        }
+      ],
+      "description": "The custom fields of a record: inputs in a form, entries on a page.",
+      "name": "rx-custom-fields"
+    },
+    {
+      "attributes": [
+        {
           "description": "(required) The list from `record.available(&user, &db)`.",
           "name": ":actions",
           "values": []
