@@ -714,7 +714,7 @@ mod tests {
             .icons(&dir)
             .assets(|_| Ok(String::new()), &paths(), "")
             .unwrap();
-        let app: Router = Arc::new(assets).router();
+        let app: Router = Arc::new(assets).router(true);
         let get = |uri: &str| {
             axum::http::Request::get(uri.to_string())
                 .body(axum::body::Body::empty())
