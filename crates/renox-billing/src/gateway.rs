@@ -607,6 +607,30 @@ impl Secret {
         }
     }
 
+    /// The key of `account` (`None`: the default account's, as
+    /// [`Secret::require_async`]). A resolver gets the account's name; a
+    /// configured key is read with the account appended (`STRIPE_SECRET_ACME_LLC`);
+    /// a key given in code belongs to the default account only.
+    pub(crate) async fn require_account(
+        &self,
+        state: &AppState,
+        account: Option<&str>,
+        what: &str,
+    ) -> Result<String> {
+        let Some(name) = account else {
+            return self.require_async(state, what).await;
+        };
+        match self {
+            Self::Resolved(resolver) => resolver(state, name)
+                .await?
+                .filter(|key| !key.is_empty())
+                .ok_or_else(|| self.missing(what)),
+            _ => self
+                .resolve_account(&state.config, account)
+                .ok_or_else(|| self.missing(what)),
+        }
+    }
+
     fn missing(&self, what: &str) -> Error {
         let hint = match self {
             Self::Config(name) => format!("set {name} in .env"),

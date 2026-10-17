@@ -1,0 +1,5 @@
+{
+  "object": "list",
+  "data": [{ "id": "dp_1Abc", "object": "dispute", "status": "needs_response" }],
+  "has_more": false
+}

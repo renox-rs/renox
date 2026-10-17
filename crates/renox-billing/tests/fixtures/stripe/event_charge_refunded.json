@@ -1,0 +1,14 @@
+{
+  "id": "ch_3Abc",
+  "object": "charge",
+  "amount": 4500,
+  "amount_refunded": 1000,
+  "payment_intent": "pi_3Abc",
+  "refunded": false,
+  "refunds": {
+    "object": "list",
+    "data": [
+      { "id": "re_3Abc", "object": "refund", "amount": 1000, "status": "succeeded", "payment_intent": "pi_3Abc" }
+    ]
+  }
+}

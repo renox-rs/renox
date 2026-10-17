@@ -1,0 +1,8 @@
+{
+  "id": "re_3Abc",
+  "object": "refund",
+  "amount": 1000,
+  "status": "failed",
+  "failure_reason": "expired_or_canceled_card",
+  "payment_intent": "pi_3Abc"
+}

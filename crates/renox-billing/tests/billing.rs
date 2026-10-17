@@ -3071,3 +3071,402 @@ async fn payment_webhooks_are_applied_once_with_the_late_success_rule() {
     Billing::payment_status(state, b.id).await.unwrap();
     assert_eq!(reload(b.id).await.status, PaymentStatus::Succeeded);
 }
+
+/// A Stripe fixture (written from Stripe's public API docs).
+fn fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/stripe/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn stripe_charge() -> renox_billing::Charge {
+    renox_billing::Charge::new(renox::money::Money::usd(4_500))
+        .reference("job", 42)
+        .description("Brake service")
+        .success_url("https://shop.test/paid")
+        .cancel_url("https://shop.test/cancelled")
+}
+
+/// A Stripe charge and a Payment Link send the amount, the currency and the
+/// reference, and a paid, refunded and disputed charge is followed through
+/// status checks and webhooks.
+#[renox::test]
+async fn stripe_charges_links_refunds_and_disputes_against_fixtures() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentStatus, Refund, RefundFailed,
+        RefundStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::new("sk_test_fake", "whsec_test")));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/products"),
+        FakeResponse::json(200, fixture("product")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/payment_links"),
+        FakeResponse::json(200, fixture("payment_link")),
+    );
+
+    // A charge: Checkout in payment mode with the amount and the reference.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(payment.gateway_id.as_deref(), Some("cs_test_a1B2c3"));
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://checkout.stripe.com/c/pay/cs_test_a1B2c3")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].header("authorization"), Some("Bearer sk_test_fake"));
+    assert_eq!(sent[0].url, format!("{STRIPE}/checkout/sessions"));
+    let body = form(&sent[0].body);
+    for (name, value) in [
+        ("mode", "payment".to_owned()),
+        ("line_items[0][price_data][currency]", "usd".into()),
+        ("line_items[0][price_data][unit_amount]", "4500".into()),
+        (
+            "line_items[0][price_data][product_data][name]",
+            "Brake service".into(),
+        ),
+        ("client_reference_id", "42".into()),
+        ("metadata[renox_payment]", payment.id.to_string()),
+        ("metadata[renox_reference_type]", "job".into()),
+        ("metadata[renox_reference_id]", "42".into()),
+        (
+            "payment_intent_data[metadata][renox_reference_id]",
+            "42".into(),
+        ),
+        ("customer_email", "ana@example.com".into()),
+        ("success_url", "https://shop.test/paid".into()),
+    ] {
+        assert_eq!(
+            param(&body, name).as_deref(),
+            Some(value.as_str()),
+            "{name}"
+        );
+    }
+
+    // A link: a product, then the link, one payment per link.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::usd(900))
+            .reference("invoice", "7")
+            .description("Invoice 7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some("plink_1Abc"));
+    assert_eq!(
+        link.url.as_deref(),
+        Some("https://buy.stripe.com/test_9AQ1Abc")
+    );
+    let sent = http.sent();
+    assert_eq!(
+        param(&form(&sent[1].body), "name").as_deref(),
+        Some("Invoice 7")
+    );
+    assert_eq!(sent[2].url, format!("{STRIPE}/payment_links"));
+    let body = form(&sent[2].body);
+    for (name, value) in [
+        ("line_items[0][price_data][product]", "prod_Q1"),
+        ("line_items[0][price_data][unit_amount]", "900"),
+        ("line_items[0][price_data][currency]", "usd"),
+        ("restrictions[completed_sessions][limit]", "1"),
+        ("metadata[renox_reference_id]", "7"),
+    ] {
+        assert_eq!(param(&body, name).as_deref(), Some(value), "{name}");
+    }
+
+    // The session is paid (by webhook), then refunded in part.
+    stripe_webhook(
+        &app,
+        "evt_1",
+        "checkout.session.completed",
+        now(&app).await,
+        fixture("checkout_session_paid"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_paid")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/refunds"),
+        FakeResponse::json(200, fixture("refund_pending")),
+    );
+    let refund = Billing::refund(
+        state,
+        payment.id,
+        Refund::new(Money::usd(1_000)).reason("duplicate"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("re_3Abc"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.url, format!("{STRIPE}/refunds"));
+    let body = form(&made.body);
+    assert_eq!(param(&body, "payment_intent").as_deref(), Some("pi_3Abc"));
+    assert_eq!(param(&body, "amount").as_deref(), Some("1000"));
+    assert_eq!(
+        param(&body, "metadata[renox_reason]").as_deref(),
+        Some("duplicate")
+    );
+
+    // The refund fails, then Stripe's `charge.refunded` says it went through.
+    stripe_webhook(
+        &app,
+        "evt_2",
+        "charge.refund.updated",
+        now(&app).await,
+        fixture("event_refund_updated"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("expired_or_canceled_card"));
+    stripe_webhook(
+        &app,
+        "evt_3",
+        "charge.refunded",
+        now(&app).await,
+        fixture("event_charge_refunded"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // A status check on the link reads its newest session; the charge's
+    // refunds are reported; an expired session is reported expired.
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions?payment_link=plink_1Abc&limit=1"),
+        FakeResponse::json(200, fixture("session_list_paid")),
+    );
+    http.on(
+        &format!("GET {STRIPE}/refunds?payment_intent=pi_3Link"),
+        FakeResponse::json(200, json!({ "object": "list", "data": [] })),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Succeeded);
+    http.on(
+        &format!("GET {STRIPE}/refunds?payment_intent=pi_3Abc"),
+        FakeResponse::json(200, fixture("refund_list")),
+    );
+    // (Answers for one URL are given in turn: the paid session of the
+    // refund, then expired.)
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_expired")),
+    );
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    // An expiry after a success changes nothing.
+    assert_eq!(
+        reload(payment.id).await.status,
+        PaymentStatus::PartiallyRefunded
+    );
+
+    // Accepting a dispute on the link's payment closes it at Stripe.
+    http.on(
+        &format!("GET {STRIPE}/disputes?payment_intent=pi_3Link&limit=1"),
+        FakeResponse::json(200, fixture("dispute_list")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/disputes/dp_1Abc/close"),
+        FakeResponse::json(200, fixture("dispute_closed")),
+    );
+    let gateway = Stripe::new("sk_test_fake", "whsec_test");
+    renox_billing::Gateway::accept_dispute(&gateway, state, &reload(link.id).await)
+        .await
+        .unwrap();
+    http.assert_sent(|r| r.method == "POST" && r.url == format!("{STRIPE}/disputes/dp_1Abc/close"));
+}
+
+/// Stripe's one-off webhooks are read into notices; sessions of a Payment
+/// Link, delayed methods and subscriptions are told apart.
+#[test]
+fn stripe_parses_one_off_webhooks() {
+    use renox_billing::payment::{DisputeState, PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let stripe = Stripe::new("sk_test_fake", "whsec_test");
+    let parse = |kind: &str, object: Value| {
+        let body =
+            json!({ "id": "evt", "type": kind, "created": 77, "data": { "object": object } });
+        stripe.parse_webhook(body.to_string().as_bytes()).unwrap()
+    };
+    let one_off = |notices: Vec<Notice>| match notices.as_slice() {
+        [Notice::OneOff(update)] => (update.gateway_id.clone(), update.status, update.at),
+        other => panic!("{other:?}"),
+    };
+    // The session's own id, or the Payment Link's.
+    let paid = parse(
+        "checkout.session.completed",
+        fixture("checkout_session_paid"),
+    );
+    assert_eq!(
+        one_off(paid),
+        ("cs_test_a1B2c3".into(), PaymentStatus::Succeeded, Some(77))
+    );
+    let paid = parse(
+        "checkout.session.completed",
+        fixture("event_link_session_completed"),
+    );
+    assert_eq!(one_off(paid).0, "plink_1Abc");
+    let expired = parse(
+        "checkout.session.expired",
+        fixture("checkout_session_expired"),
+    );
+    assert_eq!(one_off(expired).1, PaymentStatus::Expired);
+    // A link's lapsed session, a delayed method still unpaid and a
+    // subscription's checkout say nothing final about a one-off payment.
+    let mut lapsed = fixture("checkout_session_expired");
+    lapsed["payment_link"] = json!("plink_1Abc");
+    assert!(parse("checkout.session.expired", lapsed).is_empty());
+    let mut delayed = fixture("checkout_session_paid");
+    delayed["payment_status"] = json!("unpaid");
+    assert!(parse("checkout.session.completed", delayed.clone()).is_empty());
+    assert_eq!(
+        one_off(parse(
+            "checkout.session.async_payment_failed",
+            delayed.clone()
+        ))
+        .1,
+        PaymentStatus::Failed
+    );
+    delayed["mode"] = json!("subscription");
+    assert!(parse("checkout.session.completed", delayed).is_empty());
+
+    match parse("charge.refunded", fixture("event_charge_refunded")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "re_3Abc");
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Succeeded, Some(1_000))
+            );
+            assert_eq!(update.payment_gateway_id.as_deref(), Some("pi_3Abc"));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.refund.updated", fixture("event_refund_updated")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.status, RefundStatus::Failed);
+            assert_eq!(update.reason.as_deref(), Some("expired_or_canceled_card"));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.dispute.created", fixture("event_dispute_created")).as_slice() {
+        [Notice::Dispute(update)] => {
+            assert_eq!(update.state, DisputeState::Opened);
+            assert_eq!(update.payment_gateway_id, "pi_3Abc");
+            assert_eq!(
+                update.evidence_due_by.map(|d| d.timestamp()),
+                Some(1_893_456_000)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.dispute.closed", fixture("event_dispute_won")).as_slice() {
+        [Notice::Dispute(update)] => assert_eq!(update.state, DisputeState::Won),
+        other => panic!("{other:?}"),
+    }
+    let mut closed = fixture("event_dispute_won");
+    closed["status"] = json!("warning_closed");
+    assert!(parse("charge.dispute.closed", closed).is_empty());
+}
+
+/// A charge on a named account uses that account's key, and a refund of it
+/// uses the account stored on the payment; the default account's key is not
+/// used for either, and an account without a key is refused.
+#[renox::test]
+async fn stripe_calls_use_the_account_of_the_payment() {
+    use renox::money::Money;
+    use renox_billing::{PaymentStatus, Refund};
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::from_config()));
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("STRIPE_SECRET", "sk_test_fake_default"),
+            ("STRIPE_SECRET_ACME_LLC", "sk_test_fake_acme"),
+            ("STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_paid")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/refunds"),
+        FakeResponse::json(200, fixture("refund_pending")),
+    );
+    let mut payment = Billing::of(state, &ana)
+        .charge(stripe_charge().account("acme-llc"))
+        .await
+        .unwrap();
+    assert_eq!(payment.account.as_deref(), Some("acme-llc"));
+    payment.status = PaymentStatus::Succeeded;
+    payment.save(&state.db).await.unwrap();
+    Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+        .await
+        .unwrap();
+    let sent = http.sent();
+    assert_eq!(sent.len(), 3, "the session, its read, the refund");
+    for request in sent {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Bearer sk_test_fake_acme"),
+            "{}",
+            request.url
+        );
+    }
+    // An account without a key is refused before any request is sent.
+    let err = Billing::of(state, &ana)
+        .charge(stripe_charge().account("nobody"))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("Stripe's secret key"), "{err}");
+    assert_eq!(http.sent().len(), 3);
+}

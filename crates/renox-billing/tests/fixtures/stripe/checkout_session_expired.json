@@ -1,0 +1,9 @@
+{
+  "id": "cs_test_a1B2c3",
+  "object": "checkout.session",
+  "mode": "payment",
+  "status": "expired",
+  "payment_status": "unpaid",
+  "payment_intent": null,
+  "payment_link": null
+}

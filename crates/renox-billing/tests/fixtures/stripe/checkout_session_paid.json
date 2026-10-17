@@ -1,0 +1,11 @@
+{
+  "id": "cs_test_a1B2c3",
+  "object": "checkout.session",
+  "mode": "payment",
+  "status": "complete",
+  "payment_status": "paid",
+  "payment_intent": "pi_3Abc",
+  "payment_link": null,
+  "client_reference_id": "42",
+  "url": null
+}
