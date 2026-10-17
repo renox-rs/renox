@@ -11,6 +11,9 @@
 //! stores the status, headers and body; [`release`] drops the claim again
 //! (for an answer that must be retried, such as a 5xx).
 //!
+//! [`Routes::offline`](crate::Routes::offline) is the middleware on top: it
+//! requires the header, claims, runs the handler once and replays its answer.
+//!
 //! ```
 //! use renox::idempotency::{self, Claim};
 //!
@@ -30,6 +33,14 @@
 //! # Ok(()) }
 //! ```
 
+use std::time::Duration;
+
+use axum::body::{Body, to_bytes};
+use axum::extract::{MatchedPath, Request};
+use axum::http::header::{CONTENT_TYPE, DATE, SET_COOKIE};
+use axum::http::{HeaderName, HeaderValue, Method, StatusCode};
+use axum::middleware::Next;
+use axum::response::{IntoResponse, Response};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
@@ -188,4 +199,292 @@ pub async fn prune(db: &Db, before: DateTime) -> Result<u64> {
         .bind(before)
         .execute(db)
         .await?)
+}
+
+/// The header that carries the key of a request to an `.offline()` route.
+pub const KEY_HEADER: &str = "idempotency-key";
+
+/// Set to `true` on a response replayed from the store.
+pub const REPLAY_HEADER: &str = "idempotent-replayed";
+
+/// Longest key accepted.
+const KEY_LIMIT: usize = 255;
+
+/// Largest response kept for replay.
+const RESPONSE_LIMIT: usize = 16 * 1024 * 1024;
+
+/// How long a request waits for the first one with its key to answer.
+const WAIT: Duration = Duration::from_secs(5);
+
+/// How far a device's clock may differ from the server's before a request to
+/// an `.offline()` route counts as `skew_exceeded`: by default 24 hours in
+/// the past and 5 minutes in the future.
+///
+/// ```
+/// use std::time::Duration;
+/// use renox::idempotency::Skew;
+///
+/// let skew = Skew::new().past(Duration::from_secs(72 * 3600)).future(Duration::from_secs(60));
+/// assert_eq!(skew.max_past(), Duration::from_secs(72 * 3600));
+/// assert_eq!(Skew::default().max_future(), Duration::from_secs(300));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Skew {
+    past: Duration,
+    future: Duration,
+}
+
+impl Default for Skew {
+    fn default() -> Self {
+        Self {
+            past: Duration::from_secs(24 * 60 * 60),
+            future: Duration::from_secs(5 * 60),
+        }
+    }
+}
+
+impl Skew {
+    /// The default limits: 24 hours in the past, 5 minutes in the future.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// How old a device time may be.
+    #[must_use]
+    pub fn past(mut self, limit: Duration) -> Self {
+        self.past = limit;
+        self
+    }
+
+    /// How far ahead of the server a device time may be.
+    #[must_use]
+    pub fn future(mut self, limit: Duration) -> Self {
+        self.future = limit;
+        self
+    }
+
+    /// How old a device time may be.
+    pub fn max_past(&self) -> Duration {
+        self.past
+    }
+
+    /// How far ahead of the server a device time may be.
+    pub fn max_future(&self) -> Duration {
+        self.future
+    }
+}
+
+/// Who a key belongs to: the user, the device, or else the session.
+fn scope_of(req: &Request) -> String {
+    let current = req.extensions().get::<crate::auth::CurrentUser>();
+    if let Some(user) = current.and_then(|c| c.user.as_ref()) {
+        return format!("user:{}", user.id);
+    }
+    if let Some(device) = current.and_then(|c| c.device.as_ref()) {
+        return format!("device:{}", device.key());
+    }
+    req.extensions()
+        .get::<crate::session::Session>()
+        .map_or_else(String::new, |s| format!("session:{}", s.token()))
+}
+
+/// The bytes a body is compared by: a replay carries a fresh CSRF token (and,
+/// for a multipart form, a new boundary), which must not make it "another
+/// body".
+fn comparable(headers: &axum::http::HeaderMap, body: &[u8]) -> Vec<u8> {
+    let content_type = headers
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    if content_type.starts_with("application/x-www-form-urlencoded") {
+        let mut out = form_urlencoded::Serializer::new(String::new());
+        for (name, value) in
+            form_urlencoded::parse(body).filter(|(name, _)| name != crate::csrf::CSRF_FIELD)
+        {
+            out.append_pair(&name, &value);
+        }
+        return out.finish().into_bytes();
+    }
+    let boundary = content_type
+        .split(';')
+        .filter_map(|part| part.trim().strip_prefix("boundary="))
+        .next()
+        .map(|b| b.trim_matches('"'))
+        .filter(|b| !b.is_empty());
+    match (content_type.starts_with("multipart/form-data"), boundary) {
+        (true, Some(boundary)) => String::from_utf8_lossy(body)
+            .replace(boundary, "-")
+            .into_bytes(),
+        _ => body.to_vec(),
+    }
+}
+
+fn replay_of(stored: Stored) -> Response {
+    let mut res = Response::new(Body::from(stored.body));
+    *res.status_mut() = StatusCode::from_u16(stored.status).unwrap_or(StatusCode::OK);
+    for (name, value) in stored.headers {
+        if let (Ok(name), Ok(value)) = (
+            HeaderName::from_bytes(name.as_bytes()),
+            HeaderValue::from_str(&value),
+        ) {
+            res.headers_mut().append(name, value);
+        }
+    }
+    res.headers_mut().insert(
+        HeaderName::from_static(REPLAY_HEADER),
+        HeaderValue::from_static("true"),
+    );
+    res
+}
+
+/// Frees a claim again when the handler's future is dropped before it
+/// answered (the client went away), or when its answer is not kept.
+struct Guard {
+    db: Db,
+    scope: String,
+    route: String,
+    key: String,
+    armed: bool,
+}
+
+impl Drop for Guard {
+    fn drop(&mut self) {
+        if !self.armed {
+            return;
+        }
+        let (db, scope, route, key) = (
+            self.db.clone(),
+            std::mem::take(&mut self.scope),
+            std::mem::take(&mut self.route),
+            std::mem::take(&mut self.key),
+        );
+        if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            runtime.spawn(async move {
+                let _ = release(&db, &scope, &route, &key).await;
+            });
+        }
+    }
+}
+
+/// The `.offline()` middleware (`Routes::offline_with`).
+pub(crate) async fn middleware(skew: Skew, mut req: Request, next: Next) -> Response {
+    if matches!(
+        *req.method(),
+        Method::GET | Method::HEAD | Method::OPTIONS | Method::TRACE
+    ) {
+        return next.run(req).await;
+    }
+    let Some(key) = req
+        .headers()
+        .get(KEY_HEADER)
+        .and_then(|v| v.to_str().ok())
+        .map(|v| v.trim().to_owned())
+        .filter(|v| !v.is_empty() && v.len() <= KEY_LIMIT)
+    else {
+        return Error::BadRequest(
+            "This request needs an Idempotency-Key header (at most 255 characters).".into(),
+        )
+        .into_response();
+    };
+    let Some(state) = req.extensions().get::<crate::AppState>().cloned() else {
+        return Error::from(anyhow::anyhow!(
+            "`.offline()` needs the app state; it runs inside an App"
+        ))
+        .into_response();
+    };
+    let db = state.db.clone();
+    let scope = scope_of(&req);
+    let route = format!(
+        "{} {}",
+        req.method(),
+        req.extensions()
+            .get::<MatchedPath>()
+            .map_or_else(|| req.uri().path(), MatchedPath::as_str)
+    );
+
+    let limit = state.config.upload_max_size.max(crate::csrf::FORM_LIMIT);
+    let target = req
+        .uri()
+        .path_and_query()
+        .map_or_else(String::new, ToString::to_string);
+    let (parts, body) = req.into_parts();
+    let Ok(bytes) = to_bytes(body, limit).await else {
+        return StatusCode::PAYLOAD_TOO_LARGE.into_response();
+    };
+    // The URL is part of the request: one key must not stand for two targets.
+    let mut compared = target.into_bytes();
+    compared.push(b'\n');
+    compared.extend(comparable(&parts.headers, &bytes));
+    let hash = body_hash(&compared);
+    req = Request::from_parts(parts, Body::from(bytes));
+
+    let waited = std::time::Instant::now();
+    loop {
+        match claim(&db, &scope, &route, &key, &hash).await {
+            Err(err) => return err.into_response(),
+            Ok(Claim::Replay(stored)) => return replay_of(stored),
+            Ok(Claim::Mismatch) => {
+                return Error::Status(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "This Idempotency-Key was already used for a different request.".into(),
+                )
+                .into_response();
+            }
+            Ok(Claim::InProgress) => {
+                if waited.elapsed() >= WAIT {
+                    let mut res = Error::Status(
+                        StatusCode::CONFLICT,
+                        "The first request with this Idempotency-Key is still running.".into(),
+                    )
+                    .into_response();
+                    res.headers_mut()
+                        .insert("retry-after", HeaderValue::from_static("1"));
+                    return res;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            Ok(Claim::Claimed) => break,
+        }
+    }
+
+    let mut guard = Guard {
+        db: db.clone(),
+        scope: scope.clone(),
+        route: route.clone(),
+        key: key.clone(),
+        armed: true,
+    };
+    req.extensions_mut().insert(skew);
+    let res = next.run(req).await;
+    if res.status().is_server_error() {
+        // Not kept: the guard frees the key so the client can send it again.
+        return res;
+    }
+    let (parts, body) = res.into_parts();
+    let Ok(bytes) = to_bytes(body, RESPONSE_LIMIT).await else {
+        return Error::from(anyhow::anyhow!("the response is too large to keep")).into_response();
+    };
+    let headers: Vec<(String, String)> = parts
+        .headers
+        .iter()
+        .filter(|(name, _)| **name != SET_COOKIE && **name != DATE)
+        .filter_map(|(name, value)| {
+            Some((name.as_str().to_owned(), value.to_str().ok()?.to_owned()))
+        })
+        .collect();
+    match complete(
+        &db,
+        &scope,
+        &route,
+        &key,
+        parts.status.as_u16(),
+        &headers,
+        &bytes,
+    )
+    .await
+    {
+        Ok(()) => guard.armed = false,
+        Err(err) => tracing::warn!(error = ?err, "could not store an idempotent response"),
+    }
+    Response::from_parts(parts, Body::from(bytes))
 }

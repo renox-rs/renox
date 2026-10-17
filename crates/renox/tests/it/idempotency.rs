@@ -152,3 +152,148 @@ async fn prune_removes_only_older_keys() {
         Claim::Claimed
     );
 }
+
+// The `.offline()` middleware.
+
+mod offline {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::time::Duration;
+
+    use renox::auth::User;
+    use renox::prelude::*;
+    use renox::testing::{TestApp, TestResponse};
+
+    static RUNS: AtomicUsize = AtomicUsize::new(0);
+    static FLAKY: AtomicUsize = AtomicUsize::new(0);
+    static RACE: AtomicUsize = AtomicUsize::new(0);
+
+    struct Field;
+
+    impl Module for Field {
+        fn name(&self) -> &'static str {
+            "field"
+        }
+
+        fn routes(&self) -> Routes {
+            Routes::new()
+                .post(
+                    "/visits",
+                    |Form(form): Form<serde_json::Value>| async move {
+                        let n = RUNS.fetch_add(1, Ordering::SeqCst) + 1;
+                        tokio::time::sleep(Duration::from_millis(150)).await;
+                        (
+                            StatusCode::CREATED,
+                            [("x-visit", n.to_string())],
+                            format!("visit {n} {}", form["note"].as_str().unwrap_or_default()),
+                        )
+                    },
+                )
+                .post("/race", || async {
+                    RACE.fetch_add(1, Ordering::SeqCst);
+                    tokio::time::sleep(Duration::from_millis(300)).await;
+                    "raced"
+                })
+                .post("/flaky", || async {
+                    if FLAKY.fetch_add(1, Ordering::SeqCst) == 0 {
+                        (StatusCode::INTERNAL_SERVER_ERROR, "boom")
+                    } else {
+                        (StatusCode::OK, "fine")
+                    }
+                })
+                .offline()
+                .post("/plain", || async { "plain" })
+        }
+    }
+
+    async fn post(app: &TestApp, uri: &str, key: Option<&str>, note: &str) -> TestResponse {
+        let mut request = app.request();
+        if let Some(key) = key {
+            request = request.header("idempotency-key", key);
+        }
+        request.post(uri, &[("note", note)]).await
+    }
+
+    #[renox::test]
+    async fn a_key_is_required_and_the_handler_runs_once_per_key() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        post(&app, "/visits", None, "a").await.assert_status(400);
+        let first = post(&app, "/visits", Some("k-1"), "a").await;
+        first.assert_status(201);
+        let first_visit = first.header("x-visit").unwrap().to_owned();
+        assert_eq!(first.header("idempotent-replayed"), None);
+
+        let again = post(&app, "/visits", Some("k-1"), "a").await;
+        again.assert_status(201);
+        assert_eq!(again.text(), first.text());
+        assert_eq!(again.header("x-visit"), Some(first_visit.as_str()));
+        assert_eq!(again.header("idempotent-replayed"), Some("true"));
+
+        // Another key is another request.
+        let other = post(&app, "/visits", Some("k-2"), "a").await;
+        assert_ne!(other.header("x-visit"), Some(first_visit.as_str()));
+    }
+
+    #[renox::test]
+    async fn the_same_key_with_another_body_is_422() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        post(&app, "/visits", Some("m-1"), "one")
+            .await
+            .assert_status(201);
+        let other = post(&app, "/visits", Some("m-1"), "two").await;
+        other.assert_status(422);
+        other.assert_see("different request");
+    }
+
+    #[renox::test]
+    async fn a_server_error_is_not_stored() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        post(&app, "/flaky", Some("f-1"), "x")
+            .await
+            .assert_status(500);
+        let retry = post(&app, "/flaky", Some("f-1"), "x").await;
+        retry.assert_status(200);
+        assert_eq!(retry.text(), "fine");
+        assert_eq!(retry.header("idempotent-replayed"), None);
+        // Now the 200 is what replays.
+        let replay = post(&app, "/flaky", Some("f-1"), "x").await;
+        assert_eq!(replay.text(), "fine");
+        assert_eq!(replay.header("idempotent-replayed"), Some("true"));
+    }
+
+    #[renox::test]
+    async fn concurrent_requests_with_one_key_run_the_handler_once() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        let (a, b) = tokio::join!(
+            post(&app, "/race", Some("c-1"), "x"),
+            post(&app, "/race", Some("c-1"), "x"),
+        );
+        a.assert_ok();
+        b.assert_ok();
+        assert_eq!(a.text(), "raced");
+        assert_eq!(b.text(), "raced");
+        assert_eq!(RACE.load(Ordering::SeqCst), 1);
+    }
+
+    #[renox::test]
+    async fn routes_without_offline_ignore_the_header() {
+        let app = TestApp::new(App::new().module(Field)).await;
+        post(&app, "/plain", None, "x").await.assert_ok();
+    }
+
+    #[renox::test]
+    async fn one_users_key_is_not_anothers() {
+        let app = TestApp::new(App::new().module(renox::auth::Auth::new()).module(Field)).await;
+        let ana = User::register(app.db(), "Ana", "ana@example.com", "password123")
+            .await
+            .unwrap();
+        let bo = User::register(app.db(), "Bo", "bo@example.com", "password123")
+            .await
+            .unwrap();
+        app.acting_as(&ana);
+        let one = post(&app, "/visits", Some("shared"), "x").await;
+        app.acting_as(&bo);
+        let two = post(&app, "/visits", Some("shared"), "x").await;
+        assert_ne!(one.text(), two.text());
+        assert_eq!(two.header("idempotent-replayed"), None);
+    }
+}
