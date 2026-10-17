@@ -403,6 +403,27 @@ async fn models(State(state): State<AppState>) -> Result<String> {
     ))
 }
 
+/// Outbound webhook endpoints, routed (not called: a compile-time `Send` check).
+async fn endpoints(State(state): State<AppState>) -> Result<String> {
+    use renox::webhook::outbound::Endpoint;
+    let (endpoint, secret) =
+        Endpoint::create(&state, "https://example.com/h", "d", &["a.b"]).await?;
+    let listed = Endpoint::list(&state.db).await?;
+    let subscribed = Endpoint::subscribed_to(&state.db, "a.b").await?;
+    Endpoint::set_events(&state.db, endpoint.id, &[]).await?;
+    Endpoint::disable(&state.db, endpoint.id, "x").await?;
+    Endpoint::enable(&state.db, endpoint.id).await?;
+    let found = Endpoint::find(&state.db, endpoint.id).await?;
+    Endpoint::delete(&state.db, endpoint.id).await?;
+    Ok(format!(
+        "{} {} {} {}",
+        secret.len() + endpoint.secret(&state)?.len(),
+        listed.len(),
+        subscribed.len(),
+        found.is_some()
+    ))
+}
+
 /// M20a's cache APIs, routed and called.
 async fn cache(State(state): State<AppState>) -> Result<String> {
     let cache = &state.cache;
@@ -942,6 +963,7 @@ impl Module for Handlers {
             .get("/builder", builder)
             .get("/models", models)
             .get("/cache", cache)
+            .get("/endpoints", endpoints)
             .get("/settings", settings)
             .get("/background", background)
             .get("/polish", polish)

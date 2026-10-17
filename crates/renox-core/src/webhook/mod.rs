@@ -45,6 +45,7 @@
 //! maintenance mode (calls are stored and processed as usual).
 
 mod inbound;
+pub mod outbound;
 pub mod signing;
 
 pub use inbound::*;

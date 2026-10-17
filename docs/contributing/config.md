@@ -34,6 +34,8 @@ Parsed in `crates/renox-core/src/config.rs`; defaults in parentheses.
   `App::mailer` mailers tried in order when the default fails; an unknown name fails at boot).
 - **Background:** `QUEUE_WORKERS` (2; 0 = none in serve), `SCHEDULER` (true), `CACHE_STORE`
   (memory|database; database also shares throttles and the login lock between servers).
+- **Outbound webhooks:** `WEBHOOK_DISABLE_AFTER` (20, at least 1: consecutive failed deliveries after
+  which an endpoint is disabled).
 - **Storage:** `STORAGE_DISK` (local|s3), `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`,
   `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `STORAGE_URL`.
 - **SEO/analytics** (used in production only): `GOOGLE_SITE_VERIFICATION`, `GA4_MEASUREMENT_ID`,
