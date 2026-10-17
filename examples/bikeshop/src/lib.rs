@@ -55,6 +55,12 @@ pub fn app() -> App {
                     .thumbnail("thumb", 320, 320),
             ),
         )
+        // The browser may ask for the camera (the photo and barcode blocks)
+        // and the position (`geolocate`) on the shop's own pages only; every
+        // other feature stays off (the Permissions-Policy header).
+        .permissions_policy(|p| {
+            p.allow("geolocation", "self").allow("camera", "self");
+        })
         // Each store's host wears the store's brand (#36): `<rx-theme/>` in
         // the head links the stylesheet of the theme chosen here.
         .theme_for({

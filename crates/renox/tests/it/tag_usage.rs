@@ -13,16 +13,7 @@ use std::path::{Path, PathBuf};
 
 /// The tags no example, fixture or built-in template uses yet, each with the reason. Remove a line when
 /// the tag is used somewhere real.
-const NOT_SHOWN_YET: &[(&str, &str)] = &[(
-    "rx-rating",
-    "added in #54 part 1/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
-), (
-    "rx-geolocate",
-    "added in #54 part 2/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
-), (
-    "rx-barcode-scan",
-    "added in #54 part 3/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
-)];
+const NOT_SHOWN_YET: &[(&str, &str)] = &[];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

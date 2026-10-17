@@ -292,6 +292,9 @@ with `disabled_dates` and `closed_weekdays`. Form blocks send plain fields, so `
 | `receipt(lines, totals, width, title, header, number, date, footer, …)` | An 80 mm or 58 mm till receipt that prints alone, with a code slot (#48) | a counter sale's receipt |
 | `signature_pad(name, label, name_label, required, width, height, …)` | A drawn signature sent as `signature.png`, or a typed name (`signature_name`), the last way used winning (#53) | a work order's sign-off, `/about/blocks` |
 | `camera_capture(name, label, facing, max, max_width, quality, …)` | Photos from the camera, downsized to JPEG files; a visible file input when the camera is denied or missing (#53) | a work order's sign-off, `/about/blocks` |
+| `rating(name, max, value, label, required, readonly, …)` | Stars as a radio group that works without JavaScript; posts the chosen number (#54) | `/about/blocks` |
+| `geolocate(name, accuracy, label, button_label, required, …)` | A button that asks for the device position and posts `name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`; the app allows it with `.permissions_policy(…)` (#54) | `/about/blocks` |
+| `barcode_scan(name, value, label, formats, required, submit, …)` | A text field filled by typing, a scanner or the camera (`BarcodeDetector`, or a bundled decoder where it is missing); posts the code as text (#54) | `/about/blocks` |
 | `map_picker(name, mode, value, label, height, hint, id, bag)` + `map(markers, shapes, label, height, id)` | Pick a point, circle or polygon (typed coordinates as the keyboard way) and show markers and areas, on tiles from `BLOCKS_MAP_TILES`; without it each block says what is missing (#47) | the blocks page only |
 
 ## The JSON API (#241)

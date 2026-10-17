@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['maps', 'map_picker · map'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['maps', 'map_picker · map'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans'], ['field', 'rating · geolocate · barcode_scan']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -137,6 +137,37 @@ kanban_card(card)</app-about-signature>
         <app-about-signature>camera_capture(name, label=none, facing="environment", max=1, max_width=2048,
                quality=0.85, accept="image/*", required=false, hint=none, id=none, bag=none)
   posts: name (one JPEG per photo, up to max)</app-about-signature>
+      </div>
+      <div><rx-button :label="t('blocks.page.send')"/></div>
+    </form>
+  </rx-card>
+  </div>
+
+  <div id="field">
+  <rx-card :title="t('blocks.page.field_title')" :subtitle="t('blocks.page.field_lead')">
+    <form class="rx-stack" method="post" action="{{ route('about.blocks.field') }}" id="field-form" novalidate>
+      {{ csrf_field() }}
+      <rx-form-errors/>
+      <div class="bs-showcase__demo">
+        <rx-rating name="score" :label="t('blocks.page.rating_label')"/>
+        <p class="rx-hint">{{ t('blocks.page.rating') }}</p>
+        <app-about-signature>rating(name, max=5, value=none, label=none, required=false, readonly=false,
+       hint=none, id=none, bag=none)
+  posts: name (the chosen number, nothing when unset)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-geolocate name="location" :accuracy="50" :label="t('blocks.page.location_label')"/>
+        <p class="rx-hint">{{ t('blocks.page.location') }}</p>
+        <app-about-signature>geolocate(name, accuracy=none, label=none, button_label=none, required=false,
+          hint=none, id=none, bag=none)
+  posts: name[lat], name[lng], name[accuracy] (metres), name[at] (RFC 3339)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-barcode-scan name="code" :label="t('blocks.page.code_label')" formats="ean_13,qr_code"/>
+        <p class="rx-hint">{{ t('blocks.page.code') }}</p>
+        <app-about-signature>barcode_scan(name, value=none, label=none, formats="ean_13,qr_code", required=false,
+             hint=none, id=none, bag=none, submit=false)
+  posts: name (the code, as text)</app-about-signature>
       </div>
       <div><rx-button :label="t('blocks.page.send')"/></div>
     </form>

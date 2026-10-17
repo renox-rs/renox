@@ -23,6 +23,10 @@
 //! - `POST /about/blocks/sign`: the signature pad and the camera capture,
 //!   multipart (`Upload`s read with `Valid<T>`; nothing is stored, the
 //!   answer is a toast saying what arrived).
+//! - `POST /about/blocks/field`: the rating, the barcode field and the device
+//!   position (`location[lat]`, `location[lng]`, `location[accuracy]`,
+//!   `location[at]`), read with `Valid<T>`; nothing is stored, the answer is
+//!   a toast saying what arrived.
 
 use crate::explain::NotAPage;
 use renox::chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
@@ -45,6 +49,8 @@ pub fn routes() -> Routes {
         .name("about.blocks.week")
         .post("/about/blocks/sign", sign)
         .name("about.blocks.sign")
+        .post("/about/blocks/field", field)
+        .name("about.blocks.field")
 }
 
 /// The GET routes here that aren't pages.
@@ -690,4 +696,77 @@ async fn sign(lang: Lang, Valid(form): Valid<SignForm>) -> Result<(Toast, Redire
         ],
     );
     Ok((Toast::success(message), Redirect::to("/about/blocks#sign")))
+}
+
+/// The position `geolocate` posts: `at` (RFC 3339, UTC) is the time of the
+/// fix, `accuracy` is in metres.
+#[derive(Debug, Deserialize)]
+pub struct Position {
+    /// Degrees north.
+    pub lat: f64,
+    /// Degrees east.
+    pub lng: f64,
+    /// How far off the fix may be, in metres.
+    pub accuracy: f64,
+    /// When the device took the fix.
+    pub at: Option<String>,
+}
+
+/// The rating, the barcode field and the position, as `Valid<T>` reads them.
+/// All three are optional here: the demo says what arrived.
+#[derive(Debug, Deserialize)]
+pub struct FieldForm {
+    /// Stars, 1 to 5 (`rating`).
+    pub score: Option<u8>,
+    /// The scanned or typed code (`barcode_scan`), plain text.
+    pub code: Option<String>,
+    /// The device position (`geolocate`); absent until a fix exists.
+    pub location: Option<Position>,
+}
+
+impl Validate for FieldForm {
+    fn rules(&self, v: &mut Validator) {
+        v.field("score", &self.score).between(1, 5);
+        v.field("code", &self.code).max(64);
+        v.field("location", &self.location.as_ref().map(|l| l.lat))
+            .between(-90, 90);
+        v.field("location", &self.location.as_ref().map(|l| l.lng))
+            .between(-180, 180);
+        v.field("location", &self.location.as_ref().map(|l| l.accuracy))
+            .min(0);
+    }
+}
+
+/// The three field blocks: a rating, a code and a position. Nothing is
+/// stored (a real shop would keep the position with the visit); the toast
+/// says what arrived.
+async fn field(lang: Lang, Valid(form): Valid<FieldForm>) -> Result<(Toast, Redirect)> {
+    let mut parts = Vec::new();
+    if let Some(score) = form.score {
+        parts.push(lang.t("blocks.page.field_score", &[("score", &score.to_string())]));
+    }
+    if let Some(code) = form
+        .code
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        parts.push(lang.t("blocks.page.field_code", &[("code", &code)]));
+    }
+    if let Some(at) = &form.location {
+        parts.push(lang.t(
+            "blocks.page.field_location",
+            &[
+                ("lat", &format!("{:.4}", at.lat)),
+                ("lng", &format!("{:.4}", at.lng)),
+                ("accuracy", &format!("{:.0}", at.accuracy)),
+            ],
+        ));
+    }
+    let message = if parts.is_empty() {
+        lang.t("blocks.page.field_none", &[])
+    } else {
+        lang.t("blocks.page.field_got", &[("fields", &parts.join(", "))])
+    };
+    Ok((Toast::success(message), Redirect::to("/about/blocks#field")))
 }

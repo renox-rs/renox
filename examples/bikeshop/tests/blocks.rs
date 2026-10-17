@@ -359,6 +359,65 @@ async fn the_signature_and_photos_arrive_as_uploads_the_server_checks() {
 }
 
 #[renox::test]
+async fn the_rating_position_and_code_arrive_as_plain_values() {
+    let app = TestApp::new(bikeshop::app()).await;
+    // The three blocks are on the page, with their signatures.
+    app.get("/about/blocks")
+        .await
+        .assert_see(r#"id="field-form""#)
+        .assert_see(r#"type="radio" id="rx-score-5" name="score" value="5""#)
+        .assert_see(r#"name="location[lat]""#)
+        .assert_see(r#"name="location[at]""#)
+        .assert_see(r#"name="code""#)
+        .assert_see("rating(name, max=5")
+        .assert_see("geolocate(name, accuracy=none")
+        .assert_see("barcode_scan(name, value=none");
+    // Everything filled in passes; so does an empty form (nothing is stored).
+    app.post(
+        "/about/blocks/field",
+        &[
+            ("score", "4"),
+            ("code", "4006381333931"),
+            ("location[lat]", "40.4168"),
+            ("location[lng]", "-3.7038"),
+            ("location[accuracy]", "25"),
+            ("location[at]", "2026-10-18T09:30:00Z"),
+        ],
+    )
+    .await
+    .assert_status(303);
+    app.post("/about/blocks/field", &[])
+        .await
+        .assert_status(303);
+    // The server checks what the blocks only discourage.
+    app.htmx()
+        .post("/about/blocks/field", &[("score", "9")])
+        .await
+        .assert_invalid("score");
+    app.htmx()
+        .post(
+            "/about/blocks/field",
+            &[
+                ("location[lat]", "123"),
+                ("location[lng]", "0"),
+                ("location[accuracy]", "10"),
+            ],
+        )
+        .await
+        .assert_invalid("location");
+}
+
+#[renox::test]
+async fn the_shop_allows_the_camera_and_the_position_for_itself() {
+    let app = TestApp::new(bikeshop::app()).await;
+    let page = app.get("/about/blocks").await;
+    let policy = page.header("permissions-policy").unwrap_or_default();
+    assert!(policy.contains("geolocation=(self)"), "{policy}");
+    assert!(policy.contains("camera=(self)"), "{policy}");
+    assert!(policy.contains("microphone=()"), "{policy}");
+}
+
+#[renox::test]
 async fn the_page_speaks_spanish() {
     let app = TestApp::new(bikeshop::app()).await;
     app.request()
@@ -371,6 +430,7 @@ async fn the_page_speaks_spanish() {
         .assert_see("Reservar Trail 5 a las 09:00")
         .assert_see("Reservar Bay 1, ")
         .assert_see("paso actual")
+        .assert_see("Valoración, posición y código de barras")
         // The map blocks, with no tiles configured: the note, in Spanish.
         .assert_see("Punto de recogida")
         .assert_see("El mapa no se muestra: no hay teselas configuradas. Define BLOCKS_MAP_TILES");
