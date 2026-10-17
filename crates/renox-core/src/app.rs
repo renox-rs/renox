@@ -128,6 +128,7 @@ pub struct App {
     settings_seed: Option<std::path::PathBuf>,
     theme: Option<crate::theme::Theme>,
     theme_chooser: Option<crate::theme::ThemeFn>,
+    pwa: Option<crate::pwa::Pwa>,
 }
 
 /// How `App::mailer` gets a mailer's settings once the configuration is loaded.
@@ -167,6 +168,7 @@ impl App {
             settings_seed: None,
             theme: None,
             theme_chooser: None,
+            pwa: None,
         }
     }
 
@@ -710,6 +712,25 @@ impl App {
         self
     }
 
+    /// Makes the app installable on phones: serves `/manifest.webmanifest`,
+    /// the service worker `/sw.js`, the offline page `/_renox/offline` and
+    /// the icons, all outside sessions (no cookie is set). A
+    /// `public/manifest.webmanifest` or `public/sw.js` replaces the
+    /// generated one. Booting fails when an icon file is missing or the
+    /// offline view doesn't render.
+    ///
+    /// ```
+    /// use renox::prelude::*;
+    /// use renox::pwa::Pwa;
+    /// # let _ =
+    /// App::new().pwa(Pwa::new("Bikeshop").icons("public/icons"))
+    /// # ;
+    /// ```
+    pub fn pwa(mut self, pwa: crate::pwa::Pwa) -> Self {
+        self.pwa = Some(pwa);
+        self
+    }
+
     /// Picks the brand per request, e.g. by host. Return `Ok(None)` to use
     /// the app's [`theme`](App::theme) (or the kit's look when there is none);
     /// an `Err` is logged and falls back the same way. It runs for every
@@ -987,7 +1008,7 @@ impl App {
                 *domain_router = layer(std::mem::take(domain_router));
             }
         }
-        listing.extend(framework_routes(&config));
+        listing.extend(framework_routes(&config, self.pwa.is_some()));
         listing.sort_by(|a, b| (&a.path, &a.method).cmp(&(&b.path, &b.method)));
         // The current route's name follows the request's method (#299).
         for info in &listing {
@@ -1191,7 +1212,21 @@ impl App {
         }
 
         let public = embedded.map(|e| e.public);
-        let default = build_router(router, state.clone(), public, fallback, &static_assets);
+        let pwa = match self.pwa.take() {
+            Some(pwa) => {
+                let assets = pwa
+                    .assets(
+                        |view| state.views.render(view, serde_json::json!({})),
+                        &assets::precache_urls(),
+                        "",
+                    )
+                    .map_err(|e| anyhow!("{e:#}"))?;
+                Some((Arc::new(pwa), Arc::new(assets)))
+            }
+            None => None,
+        };
+        let pwa = pwa.as_ref();
+        let default = build_router(router, state.clone(), public, fallback, &static_assets, pwa);
         let router = if domains.is_empty() {
             default
         } else {
@@ -1200,7 +1235,7 @@ impl App {
                 .map(|(pattern, router, fallback)| {
                     (
                         pattern,
-                        build_router(router, state.clone(), public, fallback, &static_assets),
+                        build_router(router, state.clone(), public, fallback, &static_assets, pwa),
                     )
                 })
                 .collect();
@@ -1934,7 +1969,7 @@ impl Kernel {
 }
 
 /// Routes Renox adds itself.
-fn framework_routes(config: &Config) -> Vec<RouteInfo> {
+fn framework_routes(config: &Config, pwa: bool) -> Vec<RouteInfo> {
     let route = |method: &str, path: &str| RouteInfo {
         method: method.to_owned(),
         path: path.to_owned(),
@@ -1955,6 +1990,12 @@ fn framework_routes(config: &Config) -> Vec<RouteInfo> {
         route("POST", "/_renox/live/{component}/{action}"),
         route("GET", "/storage/{*path}"),
     ];
+    if pwa {
+        routes.push(route("GET", "/manifest.webmanifest"));
+        routes.push(route("GET", "/sw.js"));
+        routes.push(route("GET", crate::pwa::OFFLINE_ROUTE));
+        routes.push(route("GET", "/_renox/pwa/icons/{file}"));
+    }
     if config.debug {
         routes.push(route("GET", "/_renox/mail"));
         routes.push(route("GET", "/_renox/mail/{id}"));
@@ -2187,6 +2228,7 @@ fn build_router(
     embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
     fallback: Option<axum::routing::MethodRouter<AppState>>,
     static_assets: &[crate::registry::StaticAsset],
+    pwa: Option<&(Arc<crate::pwa::Pwa>, Arc<crate::pwa::PwaAssets>)>,
 ) -> Router {
     // No route and no public file: the app's fallback (`Routes::fallback`), else a 404.
     let fallback = fallback.map(|handler| handler.with_state(state.clone()));
@@ -2302,6 +2344,7 @@ fn build_router(
         .merge(assets::module_router(static_assets))
         .merge(crate::health::router())
         .merge(robots(&state, embedded_public))
+        .merge(pwa_routes(&state, embedded_public, pwa))
         .merge(favicon(&state, embedded_public))
         .merge(crate::live::router())
         .merge(public_files(&state))
@@ -2363,6 +2406,25 @@ fn robots(
     } else {
         crate::seo::robots_router(state)
     }
+}
+
+/// The PWA routes, outside sessions. An app's own `public/manifest.webmanifest`
+/// or `public/sw.js` replaces the generated one.
+fn pwa_routes(
+    state: &AppState,
+    embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
+    pwa: Option<&(Arc<crate::pwa::Pwa>, Arc<crate::pwa::PwaAssets>)>,
+) -> Router<AppState> {
+    let Some((pwa, assets)) = pwa else {
+        return Router::new();
+    };
+    let mut router = assets
+        .clone()
+        .router(!has_public_file(state, embedded_public, "sw.js"));
+    if !has_public_file(state, embedded_public, "manifest.webmanifest") {
+        router = router.merge(pwa.clone().manifest_router());
+    }
+    router
 }
 
 /// `/favicon.ico` answers 204 (no icon, cached for a day) unless the app

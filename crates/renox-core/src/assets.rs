@@ -328,7 +328,6 @@ static URLS: LazyLock<[String; 4]> = LazyLock::new(|| {
 
 /// The hashed URLs the PWA worker precaches: the scripts, the kit's styles
 /// and its text font, in a fixed order.
-#[allow(dead_code, reason = "wired up by App::pwa")]
 pub(crate) fn precache_urls() -> Vec<String> {
     let [htmx, alpine, renox, alpine_csp] = &*URLS;
     let [ui_css, ui_js] = &*UI_URLS;

@@ -62,6 +62,7 @@ mod passwordless;
 mod polish;
 #[cfg(feature = "postgres")]
 mod postgres;
+mod pwa;
 mod quantity;
 mod quantity_model;
 mod query_builder;

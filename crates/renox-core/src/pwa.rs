@@ -16,9 +16,10 @@ use std::sync::Arc;
 
 use anyhow::{Context, bail};
 use axum::Router;
-use axum::extract::Path as UrlPath;
+use axum::extract::{Path as UrlPath, State};
 use axum::http::StatusCode;
-use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderName};
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HOST, HeaderName, VARY};
+use axum::http::{HeaderMap, HeaderValue};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde_json::{Value, json};
@@ -26,6 +27,7 @@ use serde_json::{Value, json};
 use crate::webhook::sha256_hex;
 
 use crate::i18n::{Direction, direction};
+use crate::state::AppState;
 
 /// The kit's light accent colour, the default `theme_color`.
 pub const DEFAULT_THEME_COLOR: &str = "#0b6e66";
@@ -47,11 +49,9 @@ const ICON_FILES: [(&str, &str, &str); 3] = [
 pub const OFFLINE_ROUTE: &str = "/_renox/offline";
 
 /// The service worker source; the placeholders are filled in per app.
-#[allow(dead_code, reason = "wired up by App::pwa")]
 const WORKER: &str = include_str!("../assets/renox-sw.js");
 
 /// Shown when the app names no offline view.
-#[allow(dead_code, reason = "wired up by App::pwa")]
 const DEFAULT_OFFLINE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Offline</title></head><body><h1>You are offline</h1><p>Check your connection and try again.</p></body></html>\n";
 
 /// How an installed app is displayed (the manifest `display` member).
@@ -382,15 +382,15 @@ impl Pwa {
 /// What the worker routes serve: the icons, the offline page and the
 /// versioned worker source, all built once at boot.
 #[derive(Debug, Clone)]
-#[allow(dead_code, reason = "wired up by App::pwa")]
 pub(crate) struct PwaAssets {
     icons: BTreeMap<&'static str, Vec<u8>>,
     offline_html: String,
     worker: String,
+    #[cfg_attr(not(test), allow(dead_code, reason = "read by the tests"))]
     version: String,
 }
 
-#[allow(dead_code, reason = "wired up by App::pwa")]
+#[cfg(test)]
 impl PwaAssets {
     /// The worker version: a prefix of the hash of the worker source, the
     /// asset paths, the offline page and the brand hash.
@@ -407,13 +407,19 @@ impl PwaAssets {
     pub(crate) fn offline_html(&self) -> &str {
         &self.offline_html
     }
+}
 
+impl PwaAssets {
     /// Routes `/sw.js`, `/_renox/offline` and the icon files. They need no
     /// state, so they merge into any router.
-    pub(crate) fn router<S: Clone + Send + Sync + 'static>(self: Arc<Self>) -> Router<S> {
+    pub(crate) fn router<S: Clone + Send + Sync + 'static>(
+        self: Arc<Self>,
+        serve_worker: bool,
+    ) -> Router<S> {
         let (worker, offline, icons) = (self.clone(), self.clone(), self);
-        Router::new()
-            .route(
+        let mut router = Router::new();
+        if serve_worker {
+            router = router.route(
                 "/sw.js",
                 get(move || {
                     let body = worker.worker.clone();
@@ -428,7 +434,9 @@ impl PwaAssets {
                         )
                     }
                 }),
-            )
+            );
+        }
+        router
             .route(
                 OFFLINE_ROUTE,
                 get(move || {
@@ -454,7 +462,52 @@ impl PwaAssets {
     }
 }
 
-#[allow(dead_code, reason = "wired up by App::pwa")]
+impl Pwa {
+    /// `GET /manifest.webmanifest`, outside sessions: the locale is the
+    /// `Accept-Language` pick (when the app detects it) or `APP_LOCALE`, and
+    /// the names come from the lang keys `pwa.name` and `pwa.short_name`.
+    pub(crate) fn manifest_router(self: Arc<Self>) -> Router<AppState> {
+        Router::new().route(
+            "/manifest.webmanifest",
+            get(move |State(state): State<AppState>, headers: HeaderMap| {
+                let pwa = self.clone();
+                async move {
+                    let locale = crate::i18n::header_locale(&state, &headers);
+                    let host = headers
+                        .get(HOST)
+                        .and_then(|v| v.to_str().ok())
+                        .unwrap_or_default();
+                    let text = |key: &str| {
+                        let text = state.translator.get(&locale, &state.config.locale, key);
+                        (text != key).then_some(text)
+                    };
+                    let mut req =
+                        PwaRequest::new(host, locale.clone()).direction(state.direction(&locale));
+                    if let Some(name) = text("pwa.name") {
+                        req = req.name(name);
+                    }
+                    if let Some(name) = text("pwa.short_name") {
+                        req = req.short_name(name);
+                    }
+                    let mut res = (
+                        [
+                            (CONTENT_TYPE, "application/manifest+json"),
+                            (CACHE_CONTROL, "no-cache"),
+                        ],
+                        pwa.manifest(&req, None).to_string(),
+                    )
+                        .into_response();
+                    if state.detect_locale {
+                        res.headers_mut()
+                            .insert(VARY, HeaderValue::from_static("Accept-Language"));
+                    }
+                    res
+                }
+            }),
+        )
+    }
+}
+
 fn icon_response(icon: Option<Vec<u8>>) -> Response {
     match icon {
         Some(bytes) => (
@@ -469,7 +522,6 @@ fn icon_response(icon: Option<Vec<u8>>) -> Response {
     }
 }
 
-#[allow(dead_code, reason = "wired up by App::pwa")]
 impl Pwa {
     /// Loads the icons, renders the offline page with `render` (view name to
     /// HTML, no request) and builds the worker. A missing icon or a failed

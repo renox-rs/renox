@@ -746,6 +746,23 @@ pub(crate) async fn middleware(
     res
 }
 
+/// The locale for a request that runs before sessions: the best
+/// `Accept-Language` match when the app detects it, else `APP_LOCALE`.
+pub(crate) fn header_locale(state: &AppState, headers: &axum::http::HeaderMap) -> String {
+    let available =
+        |locale: &str| locale == "en" || state.translator.locales().iter().any(|l| l == locale);
+    state
+        .detect_locale
+        .then(|| {
+            headers
+                .get(axum::http::header::ACCEPT_LANGUAGE)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|header| from_accept_language(header, available))
+        })
+        .flatten()
+        .unwrap_or_else(|| state.config.locale.clone())
+}
+
 /// The first language of an `Accept-Language` header (`es-MX,es;q=0.9,
 /// en;q=0.8`) that `available` accepts, by quality: the whole tag
 /// (`pt-br`), then its language (`pt`).
