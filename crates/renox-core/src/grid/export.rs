@@ -65,23 +65,25 @@ impl Grid {
         let Some(format) = request.param(&self.name("export")) else {
             return Ok(None);
         };
+        let grid = self.resolved::<M>(request).await?;
+        let this = grid.as_ref();
         let Some(format) = ExportFormat::parse(format) else {
             return Err(Error::BadRequest(format!(
                 "`{format}` isn't an export (csv, xlsx, print)"
             )));
         };
-        let prefs = load_prefs(request, &self.id).await;
+        let prefs = load_prefs(request, &this.id).await;
         let wide = prefs
             .wide
             .clone()
-            .unwrap_or_else(|| self.default_visible(false));
-        let columns: Vec<(&Column, Option<Pin>)> = self
+            .unwrap_or_else(|| this.default_visible(false));
+        let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&prefs)
             .into_iter()
             .filter(|(c, _)| c.kind != Kind::Custom && wide.contains(&c.key))
             .collect();
-        let query = self.filter(query, request);
-        self.file(&columns, query, format, request).await.map(Some)
+        let query = this.filter(query, request);
+        this.file(&columns, query, format, request).await.map(Some)
     }
 
     /// Every row `query` matches as a file, outside the grid's page: an
@@ -111,13 +113,15 @@ impl Grid {
         format: ExportFormat,
         request: &GridRequest,
     ) -> Result<Response> {
-        let shown = self.default_visible(false);
-        let columns: Vec<(&Column, Option<Pin>)> = self
+        let grid = self.resolved::<M>(request).await?;
+        let this = grid.as_ref();
+        let shown = this.default_visible(false);
+        let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&GridPrefs::default())
             .into_iter()
             .filter(|(c, _)| c.kind != Kind::Custom && shown.contains(&c.key))
             .collect();
-        self.file(&columns, query, format, request).await
+        this.file(&columns, query, format, request).await
     }
 
     /// Every row of `query` (up to [`MAX_EXPORT_ROWS`]) with the related

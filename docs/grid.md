@@ -276,6 +276,13 @@ A few things to know about the table:
   `unit.stock=kg` filters by unit (the filter menu has a Unit box). CSV writes the unit after the
   value (`2.500 kg`), XLSX gives a number cell with a format that carries the digits and the unit,
   and the print page shows the formatted text. Without `unit_from` the column has one total.
+- Custom fields: `Column::custom_field("extra", "segment")` shows the key `segment` of a model's
+  `Json<CustomValues>` column (`custom_fields = "extra"`). `page` and the exports resolve it against
+  the model's active definitions: label in the request's locale, kind (text, number, date; choice
+  and bool fields become pick-lists) and options. It sorts, filters, searches and exports on the JSON
+  value (values bound, never put in the SQL); CSV and XLSX write the choice label. The grid key is
+  `extra_segment`. A key without an active definition leaves the column out. Call
+  `grid.with_custom_fields::<Party>(&request).await?` before the sync `filter` / `selected`.
 
 ### Options every column takes
 

@@ -61,7 +61,7 @@ mod export;
 pub use export::{ExportFormat, MAX_EXPORT_ROWS, Workbook};
 
 use crate::auth::AuthUser;
-use crate::db::{Db, DbValue, Model, Paginated, Query, ToDbValue};
+use crate::db::{Db, DbValue, Dialect, Model, Paginated, Query, ToDbValue};
 use crate::{AppState, Error, Result, Session};
 
 /// The framework migration creating `grid_preferences` (every app gets it).
@@ -169,6 +169,10 @@ pub struct Column {
     unit: Option<String>,
     /// The decimals of a quantity column: its `Quantity<SCALE>`'s scale.
     scale: u32,
+    /// A custom field: the model's JSON column and the field's key
+    /// ([`Column::custom_field`]), resolved against the definitions when the
+    /// grid runs.
+    custom: Option<(String, String)>,
     /// A value from another table: SQL with `{T}` for this model's table.
     expr: Option<String>,
 }
@@ -205,8 +209,35 @@ impl Column {
             currency: None,
             unit: None,
             scale: 0,
+            custom: None,
             expr: None,
         }
+    }
+
+    /// A custom field stored in the JSON column `column` (a
+    /// `Json<CustomValues>`, see `custom_fields = "extra"` on the model) under
+    /// `key`: `Column::custom_field("extra", "segment")`. The grid's key for it
+    /// is `extra_segment`. When the grid runs ([`Grid::page`],
+    /// [`Grid::export`], [`Grid::with_custom_fields`]) the column takes the
+    /// definition's label (in the request's locale), kind (text, number, date,
+    /// a pick-list for choice and bool fields) and options, and is sorted,
+    /// filtered, searched and exported on the JSON value, bound by `?`. A key
+    /// with no active definition leaves the column out.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let segment = Column::custom_field("extra", "segment");
+    /// # let _ = segment;
+    /// ```
+    pub fn custom_field(column: &str, key: &str) -> Self {
+        let mut c = Self::new(&format!("{column}_{key}"), key, Kind::Text);
+        if plain_name(column) && crate::custom_fields::is_valid_key(key) {
+            c.custom = Some((column.to_owned(), key.to_owned()));
+        } else {
+            c.sortable = false;
+            c.filterable = false;
+        }
+        c
     }
 
     /// A value of the row this one belongs to: `table`'s `column` where its
@@ -981,6 +1012,99 @@ impl Grid {
     /// One page of `query` with the request's filters, sort and page
     /// applied, ready for the `grid` macro.
     pub async fn page<M: Model + Serialize>(
+        &self,
+        query: Query<M>,
+        request: &GridRequest,
+    ) -> Result<GridPage<M>> {
+        self.resolved::<M>(request)
+            .await?
+            .page_resolved(query, request)
+            .await
+    }
+
+    /// The grid with its [`Column::custom_field`] columns resolved against
+    /// the model's active definitions (label in the request's locale, kind,
+    /// options, SQL), as [`page`](Self::page) and the exports do. Call it
+    /// before [`filter`](Self::filter) or [`selected`](Self::selected), which
+    /// are not async, so those act on the custom columns too. A grid without
+    /// custom columns is returned as it is.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::grid::{Column, Grid, GridRequest};
+    /// # #[derive(Model, serde::Serialize, Default)] struct Party { id: i64, extra: renox::db::Json<renox::custom_fields::CustomValues> }
+    /// # async fn demo(request: GridRequest) -> Result<()> {
+    /// let grid = Grid::new("parties").column(Column::custom_field("extra", "segment"));
+    /// let grid = grid.with_custom_fields::<Party>(&request).await?;
+    /// let query = grid.filter(Party::query(), &request);
+    /// # let _ = query;
+    /// # Ok(()) }
+    /// ```
+    pub async fn with_custom_fields<M: Model>(&self, request: &GridRequest) -> Result<Grid> {
+        Ok(self.resolved::<M>(request).await?.into_owned())
+    }
+
+    async fn resolved<M: Model>(
+        &self,
+        request: &GridRequest,
+    ) -> Result<std::borrow::Cow<'_, Grid>> {
+        use crate::custom_fields::{CustomField, DEFAULT_LABEL_LOCALE, FieldKind};
+        if self.columns.iter().all(|c| c.custom.is_none()) {
+            return Ok(std::borrow::Cow::Borrowed(self));
+        }
+        let fields = CustomField::for_model(&request.db, M::TABLE).await?;
+        let locale = request.lang.as_ref().map_or("en", |l| l.locale.as_str());
+        let dialect = request.db.dialect();
+        let mut grid = self.clone();
+        grid.columns.retain_mut(|c| {
+            let Some((column, key)) = c.custom.clone() else {
+                return true;
+            };
+            let Some(field) = fields.iter().find(|f| f.key == key) else {
+                return false;
+            };
+            c.label = field.label_for(locale, DEFAULT_LABEL_LOCALE);
+            let text = match dialect {
+                Dialect::Sqlite => format!("json_extract({{T}}.\"{column}\", '$.{key}')"),
+                Dialect::Postgres => format!("({{T}}.\"{column}\"::jsonb ->> '{key}')"),
+            };
+            c.kind = match field.kind {
+                FieldKind::Number => Kind::Number,
+                FieldKind::Date => Kind::Date,
+                FieldKind::Bool => Kind::Select,
+                FieldKind::Choice => Kind::Select,
+                _ => Kind::Text,
+            };
+            c.options = match field.kind {
+                FieldKind::Bool => {
+                    vec![("true".into(), "Yes".into()), ("false".into(), "No".into())]
+                }
+                FieldKind::Choice => field
+                    .rules
+                    .options
+                    .iter()
+                    .map(|o| {
+                        let label = o.label.resolve(locale, DEFAULT_LABEL_LOCALE);
+                        (o.value.clone(), label.unwrap_or(&o.value).to_owned())
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            c.expr = Some(match (field.kind, dialect) {
+                // Booleans are compared and shown as `true` / `false`.
+                (FieldKind::Bool, Dialect::Sqlite) => {
+                    format!("CASE {text} WHEN 1 THEN 'true' WHEN 0 THEN 'false' END")
+                }
+                (FieldKind::Number, Dialect::Postgres) => format!("CAST({text} AS NUMERIC)"),
+                (FieldKind::Date, Dialect::Postgres) => format!("CAST({text} AS DATE)"),
+                _ => text,
+            });
+            true
+        });
+        Ok(std::borrow::Cow::Owned(grid))
+    }
+
+    async fn page_resolved<M: Model + Serialize>(
         &self,
         query: Query<M>,
         request: &GridRequest,
