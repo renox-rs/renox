@@ -227,6 +227,15 @@ async fn more(State(state): State<AppState>, user: Option<AuthUser>) -> Result<S
     let pairs: Vec<(i64, String)> = renox::db::sql("SELECT id, body FROM notes")
         .fetch_as(db)
         .await?;
+    // #69: a `Quantity` bound and read back through the same APIs.
+    let stock: Vec<(
+        renox::quantity::Quantity<3>,
+        Option<renox::quantity::Quantity<3>>,
+    )> = renox::db::sql("SELECT id, NULL FROM notes WHERE id > ?")
+        .bind(renox::quantity::Quantity::<3>::from_raw(0))
+        .fetch_as(db)
+        .await?;
+    let _ = stock;
     if let Some(user) = user {
         user.notifications(db, 5).await?;
         user.notifications_before(db, 10, 5).await?;

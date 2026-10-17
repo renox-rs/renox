@@ -259,3 +259,47 @@ async fn money_pairs_round_trip_on_postgres() {
     }
     tx.rollback().await.unwrap();
 }
+
+/// #69: a `Quantity` is one `BIGINT` column on PostgreSQL, exact at the
+/// `i64` limits, and a NULL reads back as `None`.
+#[tokio::test]
+async fn quantities_round_trip_on_postgres() {
+    use renox::quantity::Quantity;
+    let Some(db) = db().await else {
+        eprintln!("skipped: TEST_DATABASE_URL is not set");
+        return;
+    };
+    let mut tx = db.begin().await.unwrap();
+    sql("CREATE TEMPORARY TABLE quantities (id BIGINT PRIMARY KEY, amount BIGINT NOT NULL, spare BIGINT)")
+        .execute(&mut tx)
+        .await
+        .unwrap();
+    let cases = [
+        (
+            1_i64,
+            Quantity::<3>::from_raw(i64::MAX),
+            Some(Quantity::<3>::from_raw(i64::MIN)),
+        ),
+        (2, Quantity::<3>::parse_exact("2.500").unwrap(), None),
+        (3, Quantity::<3>::from_raw(-1), Some(Quantity::<3>::ZERO)),
+    ];
+    for (id, amount, spare) in cases {
+        sql("INSERT INTO quantities (id, amount, spare) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(amount)
+            .bind(spare)
+            .execute(&mut tx)
+            .await
+            .unwrap();
+    }
+    for (id, amount, spare) in cases {
+        let row = sql("SELECT amount, spare FROM quantities WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut tx)
+            .await
+            .unwrap();
+        assert_eq!(row.try_get::<Quantity<3>>("amount").unwrap(), amount);
+        assert_eq!(row.try_get::<Option<Quantity<3>>>("spare").unwrap(), spare);
+    }
+    tx.rollback().await.unwrap();
+}

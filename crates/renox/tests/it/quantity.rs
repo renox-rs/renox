@@ -334,3 +334,51 @@ async fn the_quantity_filter_rejects_text_that_is_not_a_decimal() {
     .await;
     app.get("/q").await.assert_status(500);
 }
+
+#[test]
+fn quantity_binds_as_its_scaled_integer() {
+    use renox::db::{DbValue, ToDbValue};
+    assert_eq!(Q3::from_raw(-2500).to_db_value(), DbValue::Integer(-2500));
+    assert_eq!(Some(Q3::from_raw(7)).to_db_value(), DbValue::Integer(7));
+    assert_eq!(None::<Q3>.to_db_value(), DbValue::Null);
+}
+
+#[renox::test]
+async fn quantities_round_trip_through_columns() {
+    use renox::prelude::*;
+    let app = renox::testing::TestApp::new(App::new()).await;
+    let db = app.db();
+    renox::db::sql("CREATE TABLE stock (id BIGINT PRIMARY KEY, amount BIGINT, spare BIGINT)")
+        .execute(db)
+        .await
+        .unwrap();
+    let cases = [
+        (1_i64, Q3::from_raw(i64::MAX), Some(Q3::from_raw(i64::MIN))),
+        (2, Q3::parse_exact("2.500").unwrap(), None),
+        (3, Q3::from_raw(-1), Some(Q3::ZERO)),
+    ];
+    for (id, amount, spare) in cases {
+        renox::db::sql("INSERT INTO stock (id, amount, spare) VALUES (?, ?, ?)")
+            .bind(id)
+            .bind(amount)
+            .bind(spare)
+            .execute(db)
+            .await
+            .unwrap();
+    }
+    for (id, amount, spare) in cases {
+        let row = renox::db::sql("SELECT amount, spare FROM stock WHERE id = ?")
+            .bind(id)
+            .fetch_one(db)
+            .await
+            .unwrap();
+        assert_eq!(row.try_get::<Q3>("amount").unwrap(), amount);
+        assert_eq!(row.try_get::<Option<Q3>>("spare").unwrap(), spare);
+    }
+    let sums: Vec<(Q3,)> =
+        renox::db::sql("SELECT CAST(SUM(amount) AS BIGINT) FROM stock WHERE id > 1")
+            .fetch_as(db)
+            .await
+            .unwrap();
+    assert_eq!(sums[0].0.to_string(), "2.499");
+}
