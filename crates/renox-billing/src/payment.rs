@@ -370,6 +370,53 @@ impl Billing {
         Ok(row)
     }
 
+    /// Marks the payment links that ran out unpaid as expired and announces
+    /// `PaymentLinkExpired` for each; returns how many it expired. This is
+    /// what the scheduled `billing:expire-links` task runs, for gateways that
+    /// send no expiry webhook.
+    ///
+    /// A pending link is expired only when its `expires_at` has passed, and
+    /// the gateway is asked first (`payment_status`): a link it reports paid
+    /// is marked succeeded instead, never expired. A gateway that cannot
+    /// answer ([`Unsupported`]) leaves the link to expire by its date; one
+    /// that fails, or is no longer set up, leaves it pending for the next
+    /// sweep.
+    pub async fn expire_links(state: &AppState) -> Result<usize> {
+        let due = BillingPayment::where_eq("kind", PaymentKind::Link)
+            .where_eq("status", PaymentStatus::Pending)
+            .where_op("expires_at", "<=", renox::db::now())
+            .order_by("id")
+            .get(&state.db)
+            .await?;
+        let setup = crate::setup(state)?;
+        let mut expired = 0;
+        for link in due {
+            let id = link.id;
+            if link.gateway_id.is_some() {
+                let asked = match setup.payment_gateway(state, Some(&link.gateway)) {
+                    Ok(gateway) => gateway.payment_status(state, &link).await,
+                    Err(err) => Err(err),
+                };
+                match asked {
+                    Ok(reported) => crate::sync::apply_state(state, link, &reported).await?,
+                    Err(err) if Unsupported::of(&err).is_some() => {}
+                    Err(err) => {
+                        tracing::warn!(error = ?err, payment = id, "billing: couldn't check a payment link before expiring it");
+                        continue;
+                    }
+                }
+            }
+            let Some(link) = BillingPayment::find(&state.db, id).await? else {
+                continue;
+            };
+            if link.status == PaymentStatus::Pending {
+                crate::sync::apply_status(state, link, PaymentStatus::Expired, None).await?;
+                expired += 1;
+            }
+        }
+        Ok(expired)
+    }
+
     /// Asks the gateway where the payment `payment_id` stands now (with the
     /// account it was made through), applies the answer to the row and its
     /// refunds the way a webhook would (a success always wins over failed

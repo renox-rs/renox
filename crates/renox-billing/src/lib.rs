@@ -336,6 +336,19 @@ impl Module for Billing {
                 }
             }
         });
+        app.command(
+            "billing:expire-links",
+            "Expire payment links that ran out unpaid",
+            |_args, state| async move {
+                let expired = Billing::expire_links(&state).await?;
+                println!("Expired {expired} payment links.");
+                Ok(())
+            },
+        );
+        app.schedule()
+            .hourly("billing:expire-links", |state| async move {
+                Billing::expire_links(&state).await.map(|_| ())
+            });
         app.account_section("billing/section.html", 30, |user, state| async move {
             let setup = setup(&state)?;
             let billing = Billing::of(&state, &user);

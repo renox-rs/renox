@@ -2856,7 +2856,8 @@ impl renox_billing::Gateway for PayHub {
         _state: &'a AppState,
         payment: &'a renox_billing::BillingPayment,
     ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentState>> {
-        let paid = payment.gateway_id.is_some();
+        let paid =
+            payment.gateway_id.is_some() && payment.reference_type.as_deref() != Some("unpaid");
         Box::pin(async move {
             Ok(renox_billing::PaymentState::new(if paid {
                 renox_billing::PaymentStatus::Succeeded
@@ -3742,6 +3743,60 @@ async fn xendit_charges_links_refunds_and_reads_callbacks_against_fixtures() {
     assert_eq!(reported.status, PaymentStatus::Expired);
     assert_eq!(reload(link.id).await.status, PaymentStatus::Expired);
     app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == link.id);
+}
+
+/// The scheduled sweep expires pending links that are past due and unpaid,
+/// asks the gateway first (a paid link becomes succeeded, never expired),
+/// leaves links that are not due, and announces `PaymentLinkExpired` once.
+#[renox::test]
+async fn expire_links_sweep_expires_only_unpaid_past_due_links() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, PaymentLink, PaymentLinkExpired, PaymentStatus};
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let state = app.state();
+    let hour = renox::db::now() + renox::chrono::Duration::hours(1);
+    let week = renox::db::now() + renox::chrono::Duration::days(7);
+    let link = |reference: &'static str, at| {
+        Billing::payment_link(
+            state,
+            PaymentLink::new(Money::usd(900))
+                .reference(reference, 1)
+                .expires_at(at),
+        )
+    };
+    let unpaid = link("unpaid", hour).await.unwrap();
+    let paid = link("invoice", hour).await.unwrap();
+    let later = link("unpaid", week).await.unwrap();
+    let status = |id| async move {
+        BillingPayment::find(&state.db, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    };
+
+    // Nothing is due yet.
+    app.run_scheduled("billing:expire-links").await.unwrap();
+    assert_eq!(status(unpaid.id).await, PaymentStatus::Pending);
+
+    app.travel(Duration::from_secs(2 * 3600));
+    app.run_scheduled("billing:expire-links").await.unwrap();
+    assert_eq!(status(unpaid.id).await, PaymentStatus::Expired);
+    assert_eq!(status(paid.id).await, PaymentStatus::Succeeded);
+    assert_eq!(status(later.id).await, PaymentStatus::Pending);
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 1);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == unpaid.id);
+
+    // A second sweep changes nothing and announces nothing.
+    assert_eq!(
+        app.at_travelled_time(Billing::expire_links(state))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 1);
 }
 
 /// Xendit has no disputes API here: accepting one is the typed refusal.
