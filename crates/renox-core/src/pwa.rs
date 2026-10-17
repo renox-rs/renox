@@ -10,9 +10,20 @@
 //! assert_eq!(manifest["dir"], "rtl");
 //! ```
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
+use anyhow::{Context, bail};
+use axum::Router;
+use axum::extract::Path as UrlPath;
+use axum::http::StatusCode;
+use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE, HeaderName};
+use axum::response::{IntoResponse, Response};
+use axum::routing::get;
 use serde_json::{Value, json};
+
+use crate::webhook::sha256_hex;
 
 use crate::i18n::{Direction, direction};
 
@@ -31,6 +42,17 @@ const ICON_FILES: [(&str, &str, &str); 3] = [
     ("icon-512.png", "512x512", "any"),
     ("icon-maskable-512.png", "512x512", "maskable"),
 ];
+
+/// Where the offline page is served.
+pub const OFFLINE_ROUTE: &str = "/_renox/offline";
+
+/// The service worker source; the placeholders are filled in per app.
+#[allow(dead_code, reason = "wired up by App::pwa")]
+const WORKER: &str = include_str!("../assets/renox-sw.js");
+
+/// Shown when the app names no offline view.
+#[allow(dead_code, reason = "wired up by App::pwa")]
+const DEFAULT_OFFLINE: &str = "<!doctype html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Offline</title></head><body><h1>You are offline</h1><p>Check your connection and try again.</p></body></html>\n";
 
 /// How an installed app is displayed (the manifest `display` member).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
@@ -357,6 +379,145 @@ impl Pwa {
     }
 }
 
+/// What the worker routes serve: the icons, the offline page and the
+/// versioned worker source, all built once at boot.
+#[derive(Debug, Clone)]
+#[allow(dead_code, reason = "wired up by App::pwa")]
+pub(crate) struct PwaAssets {
+    icons: BTreeMap<&'static str, Vec<u8>>,
+    offline_html: String,
+    worker: String,
+    version: String,
+}
+
+#[allow(dead_code, reason = "wired up by App::pwa")]
+impl PwaAssets {
+    /// The worker version: a prefix of the hash of the worker source, the
+    /// asset paths, the offline page and the brand hash.
+    pub(crate) fn version(&self) -> &str {
+        &self.version
+    }
+
+    /// The worker source with version and precache list filled in.
+    pub(crate) fn worker(&self) -> &str {
+        &self.worker
+    }
+
+    /// The rendered offline page.
+    pub(crate) fn offline_html(&self) -> &str {
+        &self.offline_html
+    }
+
+    /// Routes `/sw.js`, `/_renox/offline` and the icon files. They need no
+    /// state, so they merge into any router.
+    pub(crate) fn router<S: Clone + Send + Sync + 'static>(self: Arc<Self>) -> Router<S> {
+        let (worker, offline, icons) = (self.clone(), self.clone(), self);
+        Router::new()
+            .route(
+                "/sw.js",
+                get(move || {
+                    let body = worker.worker.clone();
+                    async move {
+                        (
+                            [
+                                (CONTENT_TYPE, "text/javascript; charset=utf-8"),
+                                (CACHE_CONTROL, "no-cache"),
+                                (HeaderName::from_static("service-worker-allowed"), "/"),
+                            ],
+                            body,
+                        )
+                    }
+                }),
+            )
+            .route(
+                OFFLINE_ROUTE,
+                get(move || {
+                    let body = offline.offline_html.clone();
+                    async move {
+                        (
+                            [
+                                (CONTENT_TYPE, "text/html; charset=utf-8"),
+                                (CACHE_CONTROL, "no-cache"),
+                            ],
+                            body,
+                        )
+                    }
+                }),
+            )
+            .route(
+                &format!("{ICON_ROUTE}/{{file}}"),
+                get(move |UrlPath(file): UrlPath<String>| {
+                    let icon = icons.icons.get(file.as_str()).cloned();
+                    async move { icon_response(icon) }
+                }),
+            )
+    }
+}
+
+#[allow(dead_code, reason = "wired up by App::pwa")]
+fn icon_response(icon: Option<Vec<u8>>) -> Response {
+    match icon {
+        Some(bytes) => (
+            [
+                (CONTENT_TYPE, "image/png"),
+                (CACHE_CONTROL, "public, max-age=86400"),
+            ],
+            bytes,
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
+#[allow(dead_code, reason = "wired up by App::pwa")]
+impl Pwa {
+    /// Loads the icons, renders the offline page with `render` (view name to
+    /// HTML, no request) and builds the worker. A missing icon or a failed
+    /// render is an error naming the file or view, for the boot to report.
+    /// `precache` lists the hashed asset paths; `brand_hash` is mixed into
+    /// the version (empty without a resolver).
+    pub(crate) fn assets(
+        &self,
+        render: impl Fn(&str) -> anyhow::Result<String>,
+        precache: &[String],
+        brand_hash: &str,
+    ) -> anyhow::Result<PwaAssets> {
+        let dir = self.icons.as_deref().context(
+            "PWA icons are not set: call Pwa::icons(dir) with icon-192.png, icon-512.png and icon-maskable-512.png",
+        )?;
+        let mut icons = BTreeMap::new();
+        for (file, _, _) in ICON_FILES {
+            let path = dir.join(file);
+            let bytes = std::fs::read(&path)
+                .with_context(|| format!("PWA icon {} is missing or unreadable", path.display()))?;
+            if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+                bail!("PWA icon {} is not a PNG file", path.display());
+            }
+            icons.insert(file, bytes);
+        }
+        let offline_html = match self.offline_view() {
+            Some(view) => render(view)
+                .with_context(|| format!("PWA offline view `{view}` failed to render"))?,
+            None => DEFAULT_OFFLINE.to_string(),
+        };
+        let mut paths = vec![OFFLINE_ROUTE.to_string()];
+        paths.extend(precache.iter().cloned());
+        let list = serde_json::to_string(&paths)?;
+        let version =
+            sha256_hex(format!("{WORKER}\n{list}\n{offline_html}\n{brand_hash}"))[..16].to_string();
+        let worker = WORKER
+            .replace("__RENOX_SW_VERSION__", &version)
+            .replace("__RENOX_SW_PRECACHE__", &list)
+            .replace("__RENOX_SW_OFFLINE__", OFFLINE_ROUTE);
+        Ok(PwaAssets {
+            icons,
+            offline_html,
+            worker,
+            version,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -426,6 +587,104 @@ mod tests {
         assert_eq!(m["name"], "Acme");
         assert_eq!(m["short_name"], "AC");
         assert_eq!(m["theme_color"], "#0b6e66");
+    }
+
+    fn icon_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("renox-pwa-{tag}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        for (file, _, _) in ICON_FILES {
+            std::fs::write(dir.join(file), b"\x89PNG\r\n\x1a\nx").unwrap();
+        }
+        dir
+    }
+
+    fn paths() -> Vec<String> {
+        vec!["/_renox/a-1.js".to_string()]
+    }
+
+    #[test]
+    fn worker_version_tracks_inputs() {
+        let dir = icon_dir("version");
+        let pwa = Pwa::new("Shop").icons(&dir).offline_page("offline.html");
+        let build = |html: &'static str, p: &[String], brand: &str| {
+            pwa.assets(|_| Ok(html.to_string()), p, brand).unwrap()
+        };
+        let base = build("<p>off</p>", &paths(), "");
+        assert_eq!(base.version(), build("<p>off</p>", &paths(), "").version());
+        assert_ne!(
+            base.version(),
+            build("<p>other</p>", &paths(), "").version()
+        );
+        assert_ne!(base.version(), build("<p>off</p>", &[], "").version());
+        assert_ne!(base.version(), build("<p>off</p>", &paths(), "b").version());
+        assert!(base.worker().contains(base.version()));
+        assert!(base.worker().contains("/_renox/a-1.js"));
+        assert!(base.worker().contains(OFFLINE_ROUTE));
+        assert!(!base.worker().contains("__RENOX_SW_"));
+        assert_eq!(base.offline_html(), "<p>off</p>");
+    }
+
+    #[test]
+    fn missing_icon_names_the_file() {
+        let dir = icon_dir("missing");
+        std::fs::remove_file(dir.join("icon-512.png")).unwrap();
+        let err = Pwa::new("Shop")
+            .icons(&dir)
+            .assets(|_| Ok(String::new()), &[], "")
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("icon-512.png"), "{err:#}");
+        let err = Pwa::new("Shop")
+            .assets(|_| Ok(String::new()), &[], "")
+            .unwrap_err();
+        assert!(format!("{err:#}").contains("Pwa::icons"));
+    }
+
+    #[test]
+    fn failed_offline_render_names_the_view() {
+        let dir = icon_dir("render");
+        let err = Pwa::new("Shop")
+            .icons(&dir)
+            .offline_page("offline.html")
+            .assets(|_| anyhow::bail!("boom"), &[], "")
+            .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text.contains("offline.html") && text.contains("boom"),
+            "{text}"
+        );
+    }
+
+    #[tokio::test]
+    async fn routes_serve_worker_offline_and_icons() {
+        use tower::ServiceExt;
+        let dir = icon_dir("routes");
+        let assets = Pwa::new("Shop")
+            .icons(&dir)
+            .assets(|_| Ok(String::new()), &paths(), "")
+            .unwrap();
+        let app: Router = Arc::new(assets).router();
+        let get = |uri: &str| {
+            axum::http::Request::get(uri.to_string())
+                .body(axum::body::Body::empty())
+                .unwrap()
+        };
+        let res = app.clone().oneshot(get("/sw.js")).await.unwrap();
+        assert_eq!(res.headers()["service-worker-allowed"], "/");
+        assert_eq!(res.headers()["cache-control"], "no-cache");
+        assert!(res.headers().get("set-cookie").is_none());
+        let res = app.clone().oneshot(get(OFFLINE_ROUTE)).await.unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let icon = app
+            .clone()
+            .oneshot(get("/_renox/pwa/icons/icon-192.png"))
+            .await
+            .unwrap();
+        assert_eq!(icon.headers()["content-type"], "image/png");
+        let res = app
+            .oneshot(get("/_renox/pwa/icons/nope.png"))
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::NOT_FOUND);
     }
 
     #[test]
