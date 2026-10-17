@@ -170,6 +170,16 @@ async fn the_binarys_commands_run_through_run_args() {
     run(&["queue:prune-failed"]).await.unwrap();
     run(&["queue:prune-batches"]).await.unwrap();
     run(&["webhook:failed"]).await.unwrap();
+    run(&["webhook:endpoints"]).await.unwrap();
+    run(&["webhook:deliveries", "--failed"]).await.unwrap();
+    run(&["webhook:deliveries", "--endpoint", "1"])
+        .await
+        .unwrap();
+    assert!(run(&["webhook:redeliver"]).await.is_err(), "needs an id");
+    assert!(run(&["webhook:redeliver", "987654"]).await.is_err());
+    run(&["webhook:prune-deliveries", "--days", "7"])
+        .await
+        .unwrap();
     run(&["sequence:list"]).await.unwrap();
     run(&["cache:prune"]).await.unwrap();
     run(&["session:prune"]).await.unwrap();

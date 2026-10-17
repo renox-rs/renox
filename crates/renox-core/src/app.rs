@@ -56,6 +56,12 @@ Commands:
                             Delete batches finished more than N hours ago (default 24)
   webhook:failed            List webhook calls whose processing failed
   webhook:retry <id>        Process a stored webhook call again
+  webhook:endpoints         List the outbound webhook endpoints
+  webhook:deliveries [--endpoint N] [--failed]
+                            List outbound webhook deliveries, newest first
+  webhook:redeliver <id>    Send a stored outbound delivery again
+  webhook:prune-deliveries [--days N]
+                            Delete deliveries older than N days (default 30)
   ui:publish [--force]      Copy the UI kit (renox/ui.html and its CSS) into the app to change it
   sequence:list             List the numbering series (`Sequence`) and their last numbers
   cache:prune               Delete expired rows of the database cache store
@@ -1369,6 +1375,72 @@ impl App {
                     return Err(anyhow!("there is no webhook call #{id}").into());
                 }
             }
+            "webhook:endpoints" => {
+                let endpoints = crate::webhook::outbound::Endpoint::list(&kernel.state.db).await?;
+                if endpoints.is_empty() {
+                    println!("No webhook endpoints.");
+                }
+                for e in endpoints {
+                    let state = if e.enabled {
+                        "enabled".to_owned()
+                    } else {
+                        format!("disabled: {}", e.disabled_reason.unwrap_or_default())
+                    };
+                    let events = if e.events.is_empty() {
+                        "all events".to_owned()
+                    } else {
+                        e.events.join(",")
+                    };
+                    println!(
+                        "  #{} {} ({state}) {events} failures={}",
+                        e.id, e.url, e.consecutive_failures
+                    );
+                }
+            }
+            "webhook:deliveries" => {
+                let endpoint = flag_value(args, "--endpoint")?.map(i64::from);
+                let failed = args.iter().any(|a| a == "--failed");
+                let deliveries = crate::webhook::outbound::Delivery::list(
+                    &kernel.state.db,
+                    endpoint,
+                    failed,
+                    100,
+                )
+                .await?;
+                if deliveries.is_empty() {
+                    println!("No webhook deliveries.");
+                }
+                for d in deliveries {
+                    let code = d
+                        .response_status
+                        .map(|c| format!(" {c}"))
+                        .unwrap_or_default();
+                    let error = d.error.map(|e| format!(": {e}")).unwrap_or_default();
+                    println!(
+                        "  #{} endpoint #{} {} {} attempt {}{code}{error}",
+                        d.id, d.endpoint_id, d.event_type, d.status, d.attempt
+                    );
+                }
+            }
+            "webhook:redeliver" => {
+                let id: i64 = args
+                    .get(1)
+                    .and_then(|id| id.parse().ok())
+                    .ok_or_else(|| anyhow!("usage: webhook:redeliver <id>"))?;
+                if crate::webhook::outbound::Delivery::redeliver(&kernel.state, id).await? {
+                    println!("Webhook delivery #{id} queued again.");
+                } else {
+                    return Err(anyhow!("there is no webhook delivery #{id}").into());
+                }
+            }
+            "webhook:prune-deliveries" => {
+                let days = flag_value(args, "--days")?.unwrap_or(30);
+                let age = Duration::from_secs(u64::from(days) * 86_400);
+                println!(
+                    "Deleted {} webhook delivery record(s) older than {days} day(s).",
+                    crate::webhook::outbound::Delivery::prune(&kernel.state.db, age).await?
+                );
+            }
             "queue:failed" => {
                 let failed = kernel.state.queue.failed().await?;
                 if failed.is_empty() {
@@ -1568,6 +1640,10 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "queue:prune-batches",
     "webhook:failed",
     "webhook:retry",
+    "webhook:endpoints",
+    "webhook:deliveries",
+    "webhook:redeliver",
+    "webhook:prune-deliveries",
     "sequence:list",
     "cache:prune",
     "session:prune",

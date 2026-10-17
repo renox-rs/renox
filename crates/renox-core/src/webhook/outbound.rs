@@ -605,6 +605,120 @@ async fn fail(state: &AppState, endpoint: &Endpoint, reason: &str) -> Result {
     Ok(())
 }
 
+/// One stored delivery of an event to an endpoint: the log behind
+/// `webhook:deliveries`. The body is kept so [`Delivery::redeliver`] can send
+/// it again.
+#[derive(Debug, Clone)]
+pub struct Delivery {
+    /// The delivery id.
+    pub id: i64,
+    /// The endpoint it goes to.
+    pub endpoint_id: i64,
+    /// The `webhook-id` header, the same for every attempt and redelivery.
+    pub message_id: String,
+    /// The event name, such as `invoice.paid`.
+    pub event_type: String,
+    /// `pending`, `retrying`, `succeeded` or `failed`.
+    pub status: String,
+    /// The number of the last attempt (0 before the first).
+    pub attempt: i64,
+    /// The HTTP status the endpoint answered on the last attempt.
+    pub response_status: Option<i64>,
+    /// Why the last attempt failed.
+    pub error: Option<String>,
+    /// How long the last attempt took, in milliseconds.
+    pub duration_ms: Option<i64>,
+    /// When the delivery was created.
+    pub created_at: DateTime<Utc>,
+}
+
+impl Delivery {
+    /// The newest deliveries first, at most `limit`; only those of
+    /// `endpoint_id` and/or only the ones that `failed` when asked.
+    pub async fn list(
+        db: &Db,
+        endpoint_id: Option<i64>,
+        failed_only: bool,
+        limit: u32,
+    ) -> Result<Vec<Self>> {
+        let rows = crate::db::sql(
+            "SELECT id, endpoint_id, message_id, event_type, status, attempt, response_status, \
+             error, duration_ms, created_at FROM webhook_deliveries \
+             WHERE (? IS NULL OR endpoint_id = ?) AND (? = 0 OR status = 'failed') \
+             ORDER BY id DESC LIMIT ?",
+        )
+        .bind(endpoint_id)
+        .bind(endpoint_id)
+        .bind(i64::from(failed_only))
+        .bind(i64::from(limit))
+        .fetch_all(db)
+        .await?;
+        rows.iter()
+            .map(|row| -> std::result::Result<Self, DbError> {
+                Ok(Self {
+                    id: row.try_get("id")?,
+                    endpoint_id: row.try_get("endpoint_id")?,
+                    message_id: row.try_get("message_id")?,
+                    event_type: row.try_get("event_type")?,
+                    status: row.try_get("status")?,
+                    attempt: row.try_get("attempt")?,
+                    response_status: row.try_get("response_status")?,
+                    error: row.try_get("error")?,
+                    duration_ms: row.try_get("duration_ms")?,
+                    created_at: crate::db::from_unix(row.try_get("created_at")?),
+                })
+            })
+            .collect::<std::result::Result<_, _>>()
+            .map_err(Into::into)
+    }
+
+    /// Sends the stored body of delivery `id` again, with a fresh timestamp
+    /// and the same `webhook-id`. `false` when there is no such delivery.
+    /// Fails when its endpoint is disabled: enable it first.
+    pub async fn redeliver(state: &AppState, id: i64) -> Result<bool> {
+        let row = crate::db::sql("SELECT endpoint_id FROM webhook_deliveries WHERE id = ?")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
+        let Some(row) = row else { return Ok(false) };
+        let endpoint_id: i64 = row.try_get("endpoint_id")?;
+        match Endpoint::find(&state.db, endpoint_id).await? {
+            Some(endpoint) if endpoint.enabled => {}
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "the endpoint #{endpoint_id} of delivery #{id} is disabled or gone"
+                )
+                .into());
+            }
+        }
+        crate::db::sql(
+            "UPDATE webhook_deliveries SET status = 'pending', error = NULL, \
+             next_attempt_at = NULL WHERE id = ?",
+        )
+        .bind(id)
+        .execute(&state.db)
+        .await?;
+        state
+            .queue
+            .dispatch(DeliverWebhook {
+                endpoint_id,
+                delivery_id: id,
+            })
+            .await?;
+        Ok(true)
+    }
+
+    /// Deletes the deliveries created more than `age` ago; returns how many.
+    pub async fn prune(db: &Db, age: Duration) -> Result<u64> {
+        Ok(
+            crate::db::sql("DELETE FROM webhook_deliveries WHERE created_at < ?")
+                .bind(unix_now() - age.as_secs() as i64)
+                .execute(db)
+                .await?,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,7 +5,7 @@ use renox::testing::TestApp;
 use std::time::Duration;
 
 use renox::http::FakeResponse;
-use renox::webhook::outbound::{Endpoint, EndpointDisabled, emit_in};
+use renox::webhook::outbound::{Delivery, Endpoint, EndpointDisabled, emit_in};
 use renox::webhook::signing;
 
 #[renox::test]
@@ -265,4 +265,60 @@ async fn consecutive_failed_deliveries_disable_the_endpoint() {
     assert!(!found.enabled);
     assert_eq!(found.consecutive_failures, 2);
     app.assert_emitted(|e: &EndpointDisabled| e.endpoint_id == endpoint.id);
+}
+
+#[renox::test]
+async fn deliveries_list_redeliver_and_prune() {
+    let app = TestApp::new(app()).await;
+    let http = app.fake_http();
+    http.on("POST https://a.test/*", FakeResponse::status(400));
+    http.on("POST https://a.test/*", FakeResponse::status(200));
+    let (endpoint, _) = create(&app, "https://a.test/h", &[]).await;
+    let (other, _) = create(&app, "https://b.test/h", &["nothing"]).await;
+    app.state().emit(InvoiceIssued { id: 1 }).await.unwrap();
+    app.run_jobs().await;
+    assert_eq!(statuses(&app).await, ["failed"]);
+
+    let db = app.db();
+    assert_eq!(Delivery::list(db, None, true, 10).await.unwrap().len(), 1);
+    let of_endpoint = Delivery::list(db, Some(endpoint.id), false, 10)
+        .await
+        .unwrap();
+    assert_eq!(of_endpoint.len(), 1);
+    assert_eq!(of_endpoint[0].response_status, Some(400));
+    assert!(
+        Delivery::list(db, Some(other.id), false, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+
+    let first = http.sent().remove(0);
+    let id = of_endpoint[0].id;
+    assert!(Delivery::redeliver(app.state(), id).await.unwrap());
+    app.run_jobs().await;
+    assert_eq!(statuses(&app).await, ["succeeded"]);
+    let again = http.sent().remove(1);
+    assert_eq!(again.body, first.body);
+    assert_eq!(again.header("webhook-id"), first.header("webhook-id"));
+    assert!(!Delivery::redeliver(app.state(), 999).await.unwrap());
+
+    assert_eq!(
+        Delivery::prune(db, Duration::from_secs(86_400))
+            .await
+            .unwrap(),
+        0
+    );
+    app.travel(Duration::from_secs(2 * 86_400));
+    let pruned = app
+        .at_travelled_time(Delivery::prune(db, Duration::from_secs(86_400)))
+        .await
+        .unwrap();
+    assert_eq!(pruned, 1);
+    assert!(
+        Delivery::list(db, None, false, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
 }
