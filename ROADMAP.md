@@ -2024,6 +2024,19 @@ Notes:
   `bikeshop-fields.test.mjs`)
 - [x] Docs (types.md "Quantities and units", ui.md, validation.md, grid.md, admin.md), CHEATSHEET.md, llms.txt
 
+### Custom fields (#41)
+- [x] `renox::custom_fields::{CustomField, FieldKind, LocaleMap, FieldRules, CustomValues}`: definitions in the `custom_fields` table
+  (migration 430, SQLite and PostgreSQL), kinds text/number/date/bool/choice/reference/file, labels and choice labels per locale with
+  fallback, free `meta` JSON, stable keys, per-model cache with invalidation
+- [x] `CustomValues::validate` (required, max, number, date, choice, reference exists, file) with `extra[key]` errors;
+  `#[model(custom_fields = "extra")]` merged into `#[model(form)]` and `Valid<T>`
+- [x] Typed JSON paths `Col<M, Json<T>>::json(key)`, `order_by_json[_desc]`, `Query::with_custom_fields`, `db::json_index`
+- [x] `<rx-custom-fields>` kit tag (form and show modes), `CustomField::views`; grid `Column::custom_field` (sort, filter, search,
+  CSV/xlsx/print)
+- [x] renox-admin: custom fields in forms, entries, columns and filters, and a "Custom fields" definitions resource
+- [x] Docs (types.md "Custom fields"), CHEATSHEET.md, llms.txt, `send_handlers.rs`
+- [ ] Acceptance tests and a browser test (part 10/10); the sensitive flag that seals values with `APP_KEY` is deferred to a follow-up
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2346,6 +2359,14 @@ Notes:
   record, and a `UnitTable` (one level, through the base unit) converts with exact factors. Limits on a typed text use
   `quantity_min`/`quantity_max`, because `min`/`max` count characters of text. A grid never sums across units: one figure per
   unit. Bikeshop keeps the load limit as an `Option<Quantity<3>>` plus `load_unit`, added by a new migration.
+
+- **Custom fields** (#41, assumptions A1-A12): definitions live in their own table, not in settings, and a key is stable
+  (`[a-z][a-z0-9_]*`) because stored values are keyed by it; only label, rules, meta, position and active change, and deactivating
+  keeps the values. Values are one `Json<CustomValues>` column, so no migration per field. Labels are a locale map that falls back
+  to the `en` entry, then the key. A JSON key is shape-checked and never interpolated; the check against the definitions is the
+  explicit `Query::with_custom_fields(&db)` (and `Grid::with_custom_fields`) because `where_` is sync, and it also picks the cast on
+  PostgreSQL. `Column::custom_field` is the grid constructor because `Column::custom` already draws a template. Indexes are a
+  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag was accepted but deferred.
 
 ## Not planned
 

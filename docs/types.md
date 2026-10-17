@@ -9,7 +9,7 @@ value arrives safely at every one.
 - one big table: for each kind of form field, the Rust type and the database column to use;
 - enums (a fixed list of choices, like a status);
 - what browsers really send from forms, and how Renox reads it;
-- advice for the tricky cases: money, time zones, keys, deleted rows and PostgreSQL.
+- advice for the tricky cases: money, quantities, custom fields, time zones, keys, deleted rows and PostgreSQL.
 
 ### Words you'll meet
 
@@ -288,6 +288,86 @@ Two pieces of advice. The scale lives in the Rust type, not in the schema: `db:c
 (`Money`, `i64`) are the smallest unit of a price, thousandths are a quantity's chosen precision.
 The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs) keeps a load limit
 this way, in kg, g or t.
+
+### Custom fields: columns an administrator adds
+
+Sometimes the person who runs the app needs a field you did not plan: a passport number on a
+party, a segment on a customer. A migration is not the answer when they add it themselves.
+Custom fields (`renox::custom_fields`) keep the *definitions* in a `custom_fields` table
+(migration `00010101000430`, created with the framework's tables) and the *values* in one JSON
+column of the model. A definition has a model (the table name), a stable `key`
+(`[a-z][a-z0-9_]*`), a kind (text, number, date, bool, choice, reference to a record of another
+model, or a file stored on a disk), rules (required, min, max, options), a label per locale, a
+free `meta` JSON that the framework never interprets, a position and an active flag.
+
+```rust
+# use renox::prelude::*;
+use renox::custom_fields::{CustomField, CustomValues};
+use renox::db::Json;
+
+#[derive(Model, serde::Serialize, Default, Debug)]
+#[model(table = "parties", form, custom_fields = "extra")] // must name a Json<CustomValues> column
+struct Party {
+    id: i64,
+    #[form(validate(required))]
+    name: String,
+    extra: Json<CustomValues>, // TEXT on SQLite, JSONB on PostgreSQL
+}
+
+# async fn demo(db: &Db) -> Result {
+CustomField::text("parties", "passport_no")
+    .label("Passport no.")              // the fallback locale ("en")
+    .label_in("es", "N.º de pasaporte") // the request's locale wins; then the fallback; then the key
+    .required()
+    .max(20)
+    .save(db)
+    .await?;
+CustomField::choice("parties", "segment").options(&["retail", "corporate"]).save(db).await?;
+
+// Filter and sort on a key; `with_custom_fields` checks the keys against the definitions.
+let retail = Party::query()
+    .where_(Party::EXTRA.json("segment").eq("retail"))
+    .order_by_json_desc(Party::EXTRA.json("segment"))
+    .with_custom_fields(db)
+    .await?
+    .get(db)
+    .await?;
+# let _ = retail;
+# Ok(())
+# }
+```
+
+A key never changes, because the stored values are keyed by it: saving a definition again
+updates its label, rules, `meta`, position and active flag, so renaming a field is changing its
+label, and deactivating one hides it but keeps what was stored. `CustomField::for_model` is
+cached per model and dropped on every write (other servers pick a change up after a restart, or
+`CustomField::forget`).
+
+With `custom_fields = "extra"` the generated form takes the values as `extra[passport_no]`.
+`Valid<Party>` checks them against the active definitions after the struct's own rules (required,
+length, number range, date, choice membership, that a reference exists, a file upload), reports
+errors under the same names (`extra[passport_no]`) and drops keys that have no definition;
+`fill` stores the cleaned values. In a template, `CustomField::views(&db, "parties", locale)`
+gives the fields with their labels already in the request's locale, and one tag draws them:
+
+```html
+<rx-custom-fields :fields="fields" name="extra" :values="party.extra"/>          {# inputs #}
+<rx-custom-fields :fields="fields" :values="party.extra" mode="show"/>           {# entries #}
+```
+
+A grid column is `Column::custom_field("extra", "segment")`; it takes its label, kind and choices
+from the definition and sorts, filters, searches and exports (CSV, xlsx, print) on the JSON
+value (`Grid::page` and `export` resolve it; call `grid.with_custom_fields::<Party>(&request)`
+before the sync `filter`). renox-admin does all of this by itself for a resource whose model
+declares `custom_fields`: inputs on the forms, entries on the view page, a column and a filter
+per definition, and a "Custom fields" resource to manage the definitions.
+
+Two things to know about the queries. A key is never put into SQL unless it matches the key
+shape, and values are always bound, so `Party::EXTRA.json("x'; --")` is an error, not an
+injection. And `.json(key)` is not indexed: for a key you filter on often, run
+`db::json_index(dialect, "parties", "extra", "segment")` from a migration and it gives you the
+`CREATE INDEX` statement for SQLite or PostgreSQL. A sensitive flag that seals a value with
+`APP_KEY` is not built yet.
 
 ### Time zones
 

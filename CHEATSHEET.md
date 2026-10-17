@@ -1238,6 +1238,43 @@ fn quantities() -> Result<(), QuantityError> {
 `.quantity_min("0")`, `.quantity_max("100")`, `.unit(&units)`; `Column::quantity("stock", "Stock").unit_from("stock_unit")` (grid:
 one summary per unit) and `Field::quantity("stock", "Stock").unit_from("stock_unit")` (admin).
 
+Custom fields an administrator adds without a migration: definitions in the `custom_fields` table, values in one
+`Json<CustomValues>` column named by `custom_fields = "extra"` (docs/types.md).
+
+```rust
+use renox::custom_fields::{CustomField, CustomValues};
+use renox::prelude::*;
+
+#[derive(Model, serde::Serialize, Default)]
+#[model(table = "parties", form, custom_fields = "extra")] // the form takes extra[key]; Valid<T> checks them
+struct Party {
+    id: i64,
+    name: String,
+    extra: renox::db::Json<CustomValues>,
+}
+
+async fn custom_fields(db: &Db) -> Result {
+    CustomField::text("parties", "passport_no").label("Passport no.").label_in("es", "N.º de pasaporte").required().max(20).save(db).await?;
+    CustomField::choice("parties", "segment").options(&["retail", "corporate"]).save(db).await?; // keys are [a-z][a-z0-9_]* and never change
+    // number, date, bool, reference(model, key, "customers"), file(model, key, "local"); .meta(json), .position(n), .inactive()
+    let fields = CustomField::for_model(db, "parties").await?; // active, ordered, cached per model
+    let _ = fields;
+    let retail = Party::query()
+        .where_(Party::EXTRA.json("segment").eq("retail")) // json_extract / ->>, value bound
+        .order_by_json_desc(Party::EXTRA.json("segment"))
+        .with_custom_fields(db).await? // unknown key = error; typed casts on PostgreSQL
+        .get(db).await?;
+    let _ = retail;
+    Ok(())
+}
+```
+
+`CustomField::views(&db, "parties", locale)` feeds `<rx-custom-fields :fields="fields" name="extra" :values="party.extra"/>`
+(inputs; `mode="show"` for entries); `Column::custom_field("extra", "segment")` is a grid column (sort, filter, export;
+`grid.with_custom_fields::<Party>(&request)` before the sync `filter`); renox-admin adds all of it, and a "Custom fields"
+resource, for a model that declares `custom_fields`; `db::json_index(dialect, "parties", "extra", "segment")` gives the
+`CREATE INDEX` for a hot key.
+
 ## Pagination
 
 Show a long list one page at a time. `Page` reads the page number from `?page=` in the URL.

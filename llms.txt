@@ -227,6 +227,14 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `{{ stock | quantity(unit="kg") }}`, `Column::quantity(..).unit_from(..)` (grid), `Field::quantity(..).unit_from(..)` (admin); the scale
   is not in the schema. docs/types.md#quantities-and-units; shown in `examples/bikeshop`'s `/about/fields`
   (`src/app/about/fields.rs`, `tests/fields.rs`).
+- Custom fields (`renox::custom_fields`: `CustomField`, `FieldKind`, `LocaleMap`, `CustomValues`): definitions an administrator
+  adds at run time (text, number, date, bool, choice, reference, file; label and choice labels per locale with fallback; free
+  `meta` JSON) in the `custom_fields` table (migration 430), values in one `Json<CustomValues>` column named by
+  `#[model(custom_fields = "extra")]`; `#[model(form)]` takes `extra[key]` and `Valid<T>` validates it against the definitions;
+  typed JSON paths `Party::EXTRA.json("segment").eq(..)`, `order_by_json[_desc]`, `Query::with_custom_fields(&db)` (unknown key =
+  error), `db::json_index(..)`; `<rx-custom-fields :fields name values mode/>` (fed by `CustomField::views`),
+  `Column::custom_field("extra", "segment")` (grid), renox-admin picks it all up plus a "Custom fields" resource. The sealed
+  (sensitive) flag is not built. docs/types.md#custom-fields-columns-an-administrator-adds.
 - Check models against the schema (`App::model`, `rnx db:check`, `assert_models_match_schema`):
   [docs/types.md](docs/types.md#checking-models-against-the-tables); shown in
   `examples/bikeshop`'s catalog (`src/app/catalog/mod.rs`, `tests/catalog.rs`).

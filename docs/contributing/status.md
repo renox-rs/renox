@@ -606,3 +606,16 @@
   Tests: `tests/it/quantity.rs`, `quantity_model.rs`, `forms.rs`, `grid.rs`, `auto_migrations.rs`, `postgres.rs` (a round trip
   on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), `renox-admin/tests/quantity.rs`. Bikeshop
   `/about/fields` has a load limit (migration `20261017100000`). Guide: docs/types.md "Quantities and units".
+
+- **#41, custom fields** (parts 1-9; acceptance tests in part 10): `renox-core/src/custom_fields.rs` holds `CustomField` (builder,
+  `save`, `find`, `for_model` cached per `Db`, `all_for_model`, `activate`/`deactivate`/`delete`, `forget`, `views`), `FieldKind`,
+  `LocaleMap`, `FieldRules` and `is_valid_key`; `custom_fields/values.rs` holds `CustomValues` and `validate` (kinds, `extra[key]`
+  errors, files stored last). Migration `00010101000430_create_custom_fields_table` (SQLite, PostgreSQL, down; the count in
+  conventions §4.5 is twenty-four). `db/json.rs` has `Col<M, Json<T>>::json` -> `JsonPath` and `json_index`; `Query` carries
+  `Filter` JSON conditions and `Order::JsonKey`, `with_custom_fields` resolves them. `renox-macros/src/model.rs` reads
+  `custom_fields = "column"` (checked to be `Json<CustomValues>`, `Model::CUSTOM_FIELDS`) and merges it into the form and
+  `Valid<T>`; `FormContext::locale` was added. The kit tag `rx-custom-fields` is a `Render::Macro` contract over the built-in
+  `renox/custom_fields.html`. Grid `Column::custom_field` is resolved in `Grid::page`/`export` (`Grid::with_custom_fields` for the
+  sync `filter`). renox-admin: `field.rs`/`entry.rs`/`resource.rs` add inputs, entries, columns and filters, and `custom_fields.rs`
+  is the "Custom fields" resource the panel adds by itself. Tests: `tests/it/custom_fields.rs`, `model_forms.rs`, `grid.rs`,
+  `send_handlers.rs`, `renox-admin/tests`. The sealed flag is a follow-up. Guide: docs/types.md "Custom fields".
