@@ -69,7 +69,9 @@
 //! # Ok(()) }
 //! ```
 
+use std::collections::BTreeMap;
 use std::fmt;
+use std::future::Future;
 use std::marker::PhantomData;
 use std::sync::{Arc, PoisonError, RwLock};
 
@@ -260,6 +262,23 @@ pub trait StateMachine: Model {
     /// The states and transitions. Built on each call; cheap, so call it
     /// where you need it or keep the result.
     fn machine() -> Machine<Self>;
+
+    /// The transitions `user` may run on this record now, for buttons and
+    /// menus: the user's permission (in the record's scope for
+    /// `permission_in`), the record's state and the guards all hold. System
+    /// transitions are left out. Nothing is written: the guards run (so they
+    /// must be side-effect free) and the interceptor is only asked to
+    /// [`preview`], which sets `requires_approval`.
+    fn available<'a>(
+        &'a self,
+        user: &'a AuthUser,
+        db: &'a Db,
+    ) -> impl Future<Output = Result<Vec<Available>>> + Send + 'a
+    where
+        Self: Sized,
+    {
+        available_for(self, user, db)
+    }
 
     /// Starts running the transition called `name` on this record; chain
     /// `by` (or `by_system`), optionally `reason`, `input` and `meta`, and end
@@ -1313,4 +1332,185 @@ pub async fn preview(request: &TransitionRequest, db: &Db) -> Result<Preview> {
         Some(interceptor) => interceptor.preview(request, db).await,
         None => Ok(Preview::Proceed),
     }
+}
+
+/// A transition the user may run now (see [`StateMachine::available`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct Available {
+    /// The transition's name, as `transition(name)` takes it.
+    pub name: String,
+    /// The text for its button.
+    pub label: String,
+    /// A tone for the button (`danger`, ...), if set.
+    pub tone: Option<String>,
+    /// The run must come with a reason; ask for one first.
+    pub needs_reason: bool,
+    /// The interceptor would defer it for approval (or a deferred run is
+    /// already waiting).
+    pub requires_approval: bool,
+}
+
+async fn available_for<M: StateMachine>(
+    record: &M,
+    user: &AuthUser,
+    db: &Db,
+) -> Result<Vec<Available>> {
+    let machine = M::machine();
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    let ctx = TransitionCtx::new(Some(user.clone()));
+    let mut out = Vec::new();
+    for transition in machine.from_state(&current) {
+        if transition.is_system()
+            || transition.check_access(record, Some(user)).is_err()
+            || transition.check_guards(record, &ctx).await.is_err()
+        {
+            continue;
+        }
+        let to = transition.to_state().unwrap_or_default().to_owned();
+        let mut request = TransitionRequest::new(
+            M::TABLE,
+            record.id(),
+            transition.name(),
+            current.as_str(),
+            to,
+        );
+        request.actor = Some(user.clone());
+        let requires_approval = preview(&request, db).await? != Preview::Proceed;
+        out.push(Available {
+            name: transition.name().to_owned(),
+            label: transition.label_text(),
+            tone: transition.tone_name().map(str::to_owned),
+            needs_reason: transition.needs_reason(),
+            requires_approval,
+        });
+    }
+    Ok(out)
+}
+
+impl TransitionError {
+    /// The [`crate::Error`] it answers as: 401 for `Unauthenticated`, 403
+    /// for `Forbidden`, 404 for `Unknown`, 422 (with the message) for
+    /// `NotFrom`, `Guard`, `Conflict` and `ReasonRequired`; a `Failed` error
+    /// is passed through. (No `From`, which the blanket `From<E: Into<anyhow::Error>>`
+    /// impl of `Error` rules out.)
+    pub fn into_error(self) -> crate::Error {
+        match self {
+            TransitionError::Unauthenticated => crate::Error::Unauthorized,
+            TransitionError::Forbidden => crate::Error::Forbidden,
+            TransitionError::Unknown(_) => crate::Error::NotFound,
+            TransitionError::Failed(error) => error,
+            other => crate::Error::Status(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                other.to_string(),
+            ),
+        }
+    }
+}
+
+impl axum::response::IntoResponse for TransitionError {
+    /// Answers as [`TransitionError::into_error`], so a handler can return
+    /// `Result<_, TransitionError>`.
+    fn into_response(self) -> axum::response::Response {
+        axum::response::IntoResponse::into_response(self.into_error())
+    }
+}
+
+/// One transition of a registered machine, as plain data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct TransitionInfo {
+    /// The transition's name.
+    pub name: String,
+    /// The text for its button.
+    pub label: String,
+    /// Its tone, if set.
+    pub tone: Option<String>,
+    /// The states it leaves.
+    pub from: Vec<String>,
+    /// The state it leads to.
+    pub to: String,
+    /// It needs a reason.
+    pub needs_reason: bool,
+    /// Only the system may run it.
+    pub system: bool,
+    /// The names of its guards, in order.
+    pub guards: Vec<String>,
+}
+
+/// A registered machine without its model type, for tools that look it up by
+/// name (`rnx state:diagram`, the admin).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct MachineInfo {
+    /// The model's type name, e.g. `Order`.
+    pub model: String,
+    /// The model's table.
+    pub table: String,
+    /// The states.
+    pub states: Vec<StateDef>,
+    /// The states a new record may start in (empty when unrestricted).
+    pub initial: Vec<String>,
+    /// The transitions.
+    pub transitions: Vec<TransitionInfo>,
+    /// The Mermaid diagram ([`Machine::mermaid`]).
+    pub mermaid: String,
+}
+
+static REGISTRY: RwLock<BTreeMap<String, MachineInfo>> = RwLock::new(BTreeMap::new());
+
+/// Makes `M`'s machine findable by name with [`machine_info`]. Call it at
+/// startup for each machine; registering again replaces the entry.
+pub fn register<M: StateMachine>() {
+    let machine = M::machine();
+    let model = std::any::type_name::<M>()
+        .rsplit("::")
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    let info = MachineInfo {
+        model: model.clone(),
+        table: M::TABLE.to_owned(),
+        states: machine.states().to_vec(),
+        initial: machine.initial_states().to_vec(),
+        transitions: machine
+            .transitions()
+            .iter()
+            .map(|t| TransitionInfo {
+                name: t.name().to_owned(),
+                label: t.label_text(),
+                tone: t.tone_name().map(str::to_owned),
+                from: t.from_states().to_vec(),
+                to: t.to_state().unwrap_or_default().to_owned(),
+                needs_reason: t.needs_reason(),
+                system: t.is_system(),
+                guards: t.guard_names().into_iter().map(str::to_owned).collect(),
+            })
+            .collect(),
+        mermaid: machine.mermaid(),
+    };
+    REGISTRY
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(model, info);
+}
+
+/// The registered machine whose model is called `name` (`Order`; the table
+/// name `orders` works too, ignoring case), if any.
+pub fn machine_info(name: &str) -> Option<MachineInfo> {
+    let registry = REGISTRY.read().unwrap_or_else(PoisonError::into_inner);
+    registry
+        .values()
+        .find(|m| m.model.eq_ignore_ascii_case(name) || m.table.eq_ignore_ascii_case(name))
+        .cloned()
+}
+
+/// The model names of all registered machines, sorted.
+pub fn machine_names() -> Vec<String> {
+    REGISTRY
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .keys()
+        .cloned()
+        .collect()
 }

@@ -579,3 +579,133 @@ async fn an_interceptor_defers_or_lets_a_run_proceed() {
     assert_eq!(app.emitted::<Transitioned<Doc>>().len(), 1);
     clear_interceptor();
 }
+
+struct OrderRoutes;
+
+impl Module for OrderRoutes {
+    fn name(&self) -> &'static str {
+        "order-routes"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get(
+                "/available/{status}/{lines}",
+                |State(state): State<AppState>,
+                 user: AuthUser,
+                 Path((status, lines)): Path<(String, i64)>| async move {
+                    let order = Order {
+                        id: 1,
+                        status,
+                        lines,
+                    };
+                    let list = order.available(&user, &state.db).await?;
+                    Ok::<_, renox::Error>(Json(list))
+                },
+            )
+            .get("/refuse/{kind}", |Path(kind): Path<String>| async move {
+                Err::<(), _>(match kind.as_str() {
+                    "login" => TransitionError::Unauthenticated,
+                    "forbidden" => TransitionError::Forbidden,
+                    "guard" => TransitionError::Guard("The order has no lines.".into()),
+                    "from" => TransitionError::NotFrom("paid".into()),
+                    "conflict" => TransitionError::Conflict,
+                    "reason" => TransitionError::ReasonRequired,
+                    _ => TransitionError::Unknown("nope".into()),
+                })
+            })
+            .require_auth()
+    }
+}
+
+#[tokio::test]
+async fn available_lists_what_the_user_may_run_now() {
+    let app = TestApp::new(
+        App::new()
+            .module(Auth::new())
+            .module(renox::auth::Permissions)
+            .module(OrderRoutes),
+    )
+    .await;
+    let db = app.db();
+    let ana = User::register(db, "Ana", "ana@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&ana);
+
+    // No permission yet: nothing, and the system transition never shows.
+    app.get("/available/draft/1")
+        .await
+        .assert_ok()
+        .assert_json(serde_json::json!([]));
+
+    renox::auth::permissions::define_role(db, "clerk", &["orders.place"])
+        .await
+        .unwrap();
+    ana.assign_role(db, "clerk").await.unwrap();
+    app.get("/available/draft/1")
+        .await
+        .assert_ok()
+        .assert_json(serde_json::json!([
+            {"name": "place", "label": "Place", "tone": null, "needs_reason": false, "requires_approval": false}
+        ]));
+    // The guard hides it when it fails.
+    app.get("/available/draft/0")
+        .await
+        .assert_ok()
+        .assert_json(serde_json::json!([]));
+
+    // `pay` needs `orders.pay` in the order's scope.
+    app.get("/available/placed/1")
+        .await
+        .assert_ok()
+        .assert_json(serde_json::json!([]));
+    renox::auth::permissions::define_role(db, "cashier", &["orders.pay"])
+        .await
+        .unwrap();
+    ana.assign_role_in(db, "cashier", &Scope::new("stores", 1))
+        .await
+        .unwrap();
+    app.get("/available/placed/1")
+        .await
+        .assert_ok()
+        .assert_json(serde_json::json!([
+            {"name": "pay", "label": "Pay", "tone": null, "needs_reason": false, "requires_approval": false}
+        ]));
+}
+
+#[tokio::test]
+async fn transition_errors_answer_403_and_422() {
+    let app = TestApp::new(App::new().module(Auth::new()).module(OrderRoutes)).await;
+    let ana = User::register(app.db(), "Ana", "ana@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&ana);
+    app.get("/refuse/forbidden").await.assert_status(403);
+    app.get("/refuse/login").await.assert_status(401);
+    for kind in ["guard", "from", "conflict", "reason"] {
+        app.get(&format!("/refuse/{kind}")).await.assert_status(422);
+    }
+    app.get("/refuse/guard")
+        .await
+        .assert_see("The order has no lines.");
+    app.get("/refuse/unknown").await.assert_status(404);
+}
+
+#[test]
+fn machines_are_found_by_name() {
+    renox::state_machine::register::<Order>();
+    let info = renox::state_machine::machine_info("Order").unwrap();
+    assert_eq!(info.table, "orders");
+    assert_eq!(info.mermaid, Order::machine().mermaid());
+    let place = info.transitions.iter().find(|t| t.name == "place").unwrap();
+    assert_eq!(place.guards, ["has_lines", "input_ok"]);
+    assert!(
+        info.transitions
+            .iter()
+            .any(|t| t.name == "auto_cancel" && t.system)
+    );
+    assert_eq!(renox::state_machine::machine_info("ORDERS"), Some(info));
+    assert!(renox::state_machine::machine_info("Nope").is_none());
+    assert!(renox::state_machine::machine_names().contains(&"Order".to_owned()));
+}

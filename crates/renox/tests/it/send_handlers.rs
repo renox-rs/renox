@@ -945,7 +945,13 @@ async fn transitions(State(state): State<AppState>, user: AuthUser) -> Result<St
     let mut tx = state.db.begin().await?;
     let moved = job.transition("finish").by_system().run_in(&mut tx).await;
     tx.commit().await?;
-    Ok(format!("{} {}", done.is_ok(), moved.is_ok()))
+    let available = job.available(&user, &state.db).await?;
+    Ok(format!(
+        "{} {} {}",
+        done.is_ok(),
+        moved.is_ok(),
+        available.len()
+    ))
 }
 
 impl Module for Handlers {
