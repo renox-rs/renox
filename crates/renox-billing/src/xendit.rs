@@ -1,6 +1,10 @@
 //! Xendit: Recurring Plans (`/recurring/plans`), whose hosted page links
 //! the customer's card or e-wallet, and the `recurring.plan.*` and
-//! `recurring.cycle.*` webhooks, with the `x-callback-token` header.
+//! `recurring.cycle.*` webhooks, with the `x-callback-token` header. One-off
+//! payments are invoices (`/v2/invoices`, a charge and a link alike) and
+//! refunds (`/refunds`); their invoice and `refund.*` callbacks are applied
+//! like any one-off notice. Xendit has no disputes API here, so
+//! `accept_dispute` stays [`Unsupported`](crate::Unsupported).
 
 use std::future::Future;
 use std::time::Duration;
@@ -12,6 +16,10 @@ use renox::prelude::*;
 use renox::serde_json::{Value, json};
 
 use crate::gateway::{Secret, from_unix};
+use crate::payment::{
+    BillingPayment, ChargeRequest, PaymentKind, PaymentPage, PaymentState, PaymentStatus,
+    PaymentUpdate, Refund, RefundResult, RefundStatus, RefundUpdate,
+};
 use crate::stripe::gateway_id;
 use crate::{
     BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Owner, Payment, Plan, Remote,
@@ -113,16 +121,131 @@ impl Xendit {
 
     /// A request to Xendit's API with the secret key (HTTP basic auth).
     async fn call(&self, state: &AppState, method: &str, path: &str) -> Result<Request> {
+        self.call_as(state, None, method, path).await
+    }
+
+    /// [`Xendit::call`] with the keys of a named account (`None`: default).
+    async fn call_as(
+        &self,
+        state: &AppState,
+        account: Option<&str>,
+        method: &str,
+        path: &str,
+    ) -> Result<Request> {
         let key = self
             .secret
-            .require_async(state, "Xendit's secret key")
+            .require_account(state, account, "Xendit's secret key")
             .await?;
         let url = format!("{API}{path}");
         let request = match method {
+            "GET" => state.http.get(url),
             "PATCH" => state.http.patch(url),
             _ => state.http.post(url),
         };
         Ok(request.basic_auth(&key, "").timeout(TIMEOUT))
+    }
+
+    /// Makes an invoice (Xendit's hosted payment page) for `request`: both
+    /// a charge and a payment link are one.
+    async fn invoice(&self, state: &AppState, request: &ChargeRequest) -> Result<PaymentPage> {
+        let reference = match (&request.reference_type, &request.reference_id) {
+            (Some(kind), Some(id)) => format!("{kind}-{id}-{}", request.payment_id),
+            (None, Some(id)) => format!("{id}-{}", request.payment_id),
+            _ => format!("renox-payment-{}", request.payment_id),
+        };
+        let mut body = json!({
+            "external_id": reference,
+            "amount": major(&request.amount),
+            "currency": request.amount.currency.code(),
+            "description": request.description.as_deref().unwrap_or("Payment"),
+        });
+        let mut metadata = json!({});
+        for (key, value) in request.metadata() {
+            metadata[key] = json!(value);
+        }
+        body["metadata"] = metadata;
+        if let Some(url) = &request.success_url {
+            body["success_redirect_url"] = json!(url);
+        }
+        if let Some(url) = &request.cancel_url {
+            body["failure_redirect_url"] = json!(url);
+        }
+        if request.kind == PaymentKind::Charge
+            && let Some(email) = request.owner.as_ref().and_then(|o| o.email.clone())
+        {
+            body["payer_email"] = json!(email);
+        }
+        // How long the page stays open, in seconds.
+        if let Some(at) = request.expires_at {
+            body["invoice_duration"] = json!((at - renox::db::now()).num_seconds().max(1));
+        }
+        let account = request.account.as_deref();
+        let created = send(
+            self.call_as(state, account, "POST", "/v2/invoices")
+                .await?
+                .json(&body),
+        )
+        .await?;
+        let id = text(&created["id"])
+            .ok_or_else(|| renox::anyhow::anyhow!("Xendit made an invoice without an id"))?;
+        let url = text(&created["invoice_url"])
+            .ok_or_else(|| renox::anyhow::anyhow!("Xendit made an invoice without a URL"))?;
+        let mut page = PaymentPage::new(id, url);
+        if let Some(at) = time(&created["expiry_date"]) {
+            page = page.expires_at(at);
+        }
+        Ok(page)
+    }
+}
+
+/// An amount in whole currency units, as Xendit takes it (`45` for 4500
+/// cents of USD, `99000` for rupiah, which have no minor unit).
+fn major(money: &renox::money::Money) -> Value {
+    let scale = 10_i64.pow(money.currency.decimals());
+    if money.minor % scale == 0 {
+        json!(money.minor / scale)
+    } else {
+        json!(money.minor as f64 / scale as f64)
+    }
+}
+
+/// An amount Xendit reports in whole units, in minor units.
+fn minor(amount: &Value, currency: &Value) -> Option<i64> {
+    let decimals = currency
+        .as_str()
+        .and_then(|code| renox::money::Currency::parse(code).ok())
+        .map_or(0, |currency| currency.decimals());
+    let scale = 10_f64.powi(decimals as i32);
+    amount.as_f64().map(|value| (value * scale).round() as i64)
+}
+
+/// A Refund object as an update; `None` for one without an id.
+fn refund_update(refund: &Value) -> Option<RefundUpdate> {
+    let status = match refund["status"].as_str() {
+        Some("SUCCEEDED") => RefundStatus::Succeeded,
+        Some("FAILED" | "CANCELLED") => RefundStatus::Failed,
+        _ => RefundStatus::Pending,
+    };
+    let mut update = RefundUpdate::new(text(&refund["id"])?, status);
+    if let Some(amount) = minor(&refund["amount"], &refund["currency"]) {
+        update = update.amount(amount);
+    }
+    if let Some(reason) = text(&refund["failure_code"]) {
+        update = update.reason(reason);
+    }
+    if let Some(invoice) = text(&refund["invoice_id"]) {
+        update = update.payment(invoice);
+    }
+    Some(update)
+}
+
+/// Xendit's refund reasons: its own list, else `OTHERS`.
+fn refund_reason(reason: &str) -> &'static str {
+    match reason.trim().to_ascii_uppercase().as_str() {
+        "FRAUDULENT" => "FRAUDULENT",
+        "DUPLICATE" => "DUPLICATE",
+        "REQUESTED_BY_CUSTOMER" => "REQUESTED_BY_CUSTOMER",
+        _ => "OTHERS",
     }
 }
 
@@ -400,6 +523,105 @@ impl Gateway for Xendit {
         })
     }
 
+    fn charge<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        Box::pin(self.invoice(state, request))
+    }
+
+    fn payment_link<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        Box::pin(self.invoice(state, request))
+    }
+
+    fn refund<'a>(
+        &'a self,
+        state: &'a AppState,
+        payment: &'a BillingPayment,
+        refund: &'a Refund,
+    ) -> BoxFuture<'a, Result<RefundResult>> {
+        Box::pin(async move {
+            let invoice = invoice_of(payment)?;
+            let mut body = json!({
+                "invoice_id": invoice,
+                "reference_id": format!(
+                    "renox-refund-{}-{}",
+                    payment.id,
+                    renox::random_token().chars().take(10).collect::<String>()
+                ),
+                "amount": major(&refund.amount),
+                "currency": refund.amount.currency.code(),
+                "reason": refund_reason(refund.reason.as_deref().unwrap_or_default()),
+                "metadata": { "renox_payment": payment.id.to_string() },
+            });
+            if let Some(reason) = &refund.reason {
+                body["metadata"]["renox_reason"] = json!(reason);
+            }
+            let made = send(
+                self.call_as(state, payment.account.as_deref(), "POST", "/refunds")
+                    .await?
+                    .json(&body),
+            )
+            .await?;
+            let id = text(&made["id"])
+                .ok_or_else(|| renox::anyhow::anyhow!("Xendit made a refund without an id"))?;
+            match made["status"].as_str() {
+                Some("FAILED" | "CANCELLED") => Err(renox::anyhow::anyhow!(
+                    "Xendit could not refund: {}",
+                    made["failure_code"].as_str().unwrap_or("no reason")
+                )
+                .into()),
+                Some("SUCCEEDED") => Ok(RefundResult::succeeded(id)),
+                _ => Ok(RefundResult::pending(id)),
+            }
+        })
+    }
+
+    fn payment_status<'a>(
+        &'a self,
+        state: &'a AppState,
+        payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result<PaymentState>> {
+        Box::pin(async move {
+            let invoice = invoice_of(payment)?;
+            let account = payment.account.as_deref();
+            let found = send(
+                self.call_as(state, account, "GET", &format!("/v2/invoices/{invoice}"))
+                    .await?,
+            )
+            .await?;
+            let status = match found["status"].as_str() {
+                Some("PAID" | "SETTLED") => PaymentStatus::Succeeded,
+                Some("EXPIRED") => PaymentStatus::Expired,
+                _ => PaymentStatus::Pending,
+            };
+            let mut reported = PaymentState::new(status);
+            let list = send(
+                self.call_as(
+                    state,
+                    account,
+                    "GET",
+                    &format!("/refunds?invoice_id={invoice}"),
+                )
+                .await?,
+            )
+            .await?;
+            // Either `{ "data": [...] }` or a bare array.
+            let refunds = list["data"].as_array().or_else(|| list.as_array());
+            for refund in refunds.into_iter().flatten() {
+                if let Some(update) = refund_update(refund) {
+                    reported = reported.refund(update);
+                }
+            }
+            Ok(reported)
+        })
+    }
+
     fn verify_webhook(&self, config: &Config, headers: &HeaderMap, body: &[u8]) -> Result {
         self.verify_account(config, None, headers, body)
     }
@@ -430,10 +652,15 @@ impl Gateway for Xendit {
         }
         let event: Value = renox::serde_json::from_slice(body)
             .map_err(|err| Error::BadRequest(format!("the webhook isn't JSON: {err}")))?;
-        let data = &event["data"];
+        // An invoice callback is the invoice itself, without an envelope.
+        let data = if event["event"].is_null() {
+            &event
+        } else {
+            &event["data"]
+        };
         Ok(format!(
             "{}:{}:{}:{}",
-            event["event"].as_str().unwrap_or_default(),
+            event["event"].as_str().unwrap_or("invoice"),
             data["id"].as_str().unwrap_or_default(),
             data["status"].as_str().unwrap_or_default(),
             data["updated"]
@@ -445,6 +672,24 @@ impl Gateway for Xendit {
 
     fn parse_webhook(&self, body: &[u8]) -> Result<Vec<Notice>> {
         let event: Value = renox::serde_json::from_slice(body)?;
+        // An invoice callback has no `event`: it is the invoice, paid or
+        // expired. The invoice's id is the payment's gateway id.
+        if event["event"].is_null() && event["external_id"].is_string() {
+            let status = match event["status"].as_str() {
+                Some("PAID" | "SETTLED") => PaymentStatus::Succeeded,
+                Some("EXPIRED") => PaymentStatus::Expired,
+                _ => return Ok(Vec::new()),
+            };
+            let mut update = PaymentUpdate::new(text(&event["id"]).unwrap_or_default(), status);
+            let at = match status {
+                PaymentStatus::Succeeded => time(&event["paid_at"]),
+                _ => None,
+            };
+            if let Some(at) = at.or_else(|| time(&event["updated"])) {
+                update = update.at(at.timestamp());
+            }
+            return Ok(vec![Notice::OneOff(update)]);
+        }
         let kind = event["event"].as_str().unwrap_or_default();
         let data = &event["data"];
         let at = time(&event["created"]).map(|t| t.timestamp());
@@ -488,9 +733,23 @@ impl Gateway for Xendit {
                 )),
                 payment(false),
             ],
+            "refund.succeeded" | "refund.failed" | "refund.pending" => refund_update(data)
+                .map_or_else(Vec::new, |mut update| {
+                    if let Some(at) = at {
+                        update = update.at(at);
+                    }
+                    vec![Notice::Refund(update)]
+                }),
             _ => Vec::new(),
         })
     }
+}
+
+/// The invoice a payment was made through.
+fn invoice_of(payment: &BillingPayment) -> Result<&str> {
+    payment.gateway_id.as_deref().ok_or_else(|| {
+        renox::anyhow::anyhow!("the payment {} has no Xendit invoice", payment.id).into()
+    })
 }
 
 #[cfg(test)]

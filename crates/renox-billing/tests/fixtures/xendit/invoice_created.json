@@ -1,0 +1,13 @@
+{
+  "id": "579c8d61f23fa4ca35e52da4",
+  "external_id": "job-42-1",
+  "user_id": "5781d19de6d49b7a2ea9c7ac",
+  "status": "PENDING",
+  "merchant_name": "Bike Shop",
+  "amount": 45,
+  "payer_email": "ana@example.com",
+  "description": "Brake service",
+  "expiry_date": "2026-10-18T10:00:00.000Z",
+  "invoice_url": "https://checkout.xendit.co/web/579c8d61f23fa4ca35e52da4",
+  "currency": "USD"
+}

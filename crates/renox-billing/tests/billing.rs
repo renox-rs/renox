@@ -2604,21 +2604,78 @@ async fn webhooks_of_a_named_account_use_that_accounts_secret() {
     }
 }
 
+/// A gateway that implements none of the one-off payment methods.
+struct Bare;
+
+impl renox_billing::Gateway for Bare {
+    fn name(&self) -> &str {
+        "bare"
+    }
+    fn label(&self) -> &str {
+        "Bare"
+    }
+    fn configured(&self, _config: &Config) -> bool {
+        true
+    }
+    fn create_customer<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _owner: &'a renox_billing::Owner,
+    ) -> renox_billing::BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok("bare-1".into()) })
+    }
+    fn checkout<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a renox_billing::CheckoutRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Checkout>> {
+        Box::pin(async { Ok(renox_billing::Checkout::redirect("/bare")) })
+    }
+    fn swap<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _plan: &'a Plan,
+        _prorate: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn cancel<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _at_period_end: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn verify_webhook(
+        &self,
+        _config: &Config,
+        _headers: &renox::axum::http::HeaderMap,
+        _body: &[u8],
+    ) -> Result {
+        Ok(())
+    }
+    fn parse_webhook(&self, _body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
+        Ok(Vec::new())
+    }
+}
+
 #[renox::test]
 async fn operations_a_gateway_does_not_have_answer_unsupported() {
     use renox::money::{Currency, Money};
     use renox_billing::payment::{Charge, PaymentLink, Refund, Unsupported};
-    use renox_billing::{BillingPayment, Gateway, PaymentKind, Xendit};
+    use renox_billing::{BillingPayment, Gateway, PaymentKind};
 
     let app = app().await;
     let state = app.state();
     let money = Money::new(1_000, Currency::parse("USD").unwrap());
     let charge = Charge::new(money).account("acme-llc");
     let link = PaymentLink::new(money);
-    let payment = BillingPayment::new("xendit", PaymentKind::Charge, money);
+    let payment = BillingPayment::new("bare", PaymentKind::Charge, money);
     let refund = Refund::new(money);
     // A gateway that implements none of the new methods.
-    let gateway = Xendit::new("xnd_development_1", "callback-token");
+    let gateway = Bare;
 
     let refusals = [
         (
@@ -2645,7 +2702,7 @@ async fn operations_a_gateway_does_not_have_answer_unsupported() {
     for (operation, err) in refusals {
         let err = err.unwrap_or_else(|| panic!("{operation} should be refused"));
         let found = Unsupported::of(&err).expect("a typed refusal");
-        assert_eq!(found.gateway, "xendit");
+        assert_eq!(found.gateway, "bare");
         assert_eq!(found.operation, operation);
     }
 }
@@ -3469,4 +3526,328 @@ async fn stripe_calls_use_the_account_of_the_payment() {
         .unwrap_err();
     assert!(err.to_string().contains("Stripe's secret key"), "{err}");
     assert_eq!(http.sent().len(), 3);
+}
+
+/// A Xendit fixture (written from Xendit's public API docs).
+fn xendit_fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/xendit/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// An invoice callback: the invoice itself, with the callback token.
+async fn xendit_invoice_callback(app: &TestApp, invoice: Value) -> TestResponse {
+    app.request()
+        .header("x-callback-token", "callback-token")
+        .post_body(
+            "/billing/webhooks/xendit",
+            "application/json",
+            invoice.to_string(),
+        )
+        .await
+}
+
+/// A Xendit refund event from a fixture.
+async fn xendit_refund_event(app: &TestApp, fixture: &str) -> TestResponse {
+    let event = xendit_fixture(fixture);
+    xendit_webhook(
+        app,
+        event["event"].as_str().unwrap(),
+        event["created"].as_str().unwrap(),
+        event["data"].clone(),
+    )
+    .await
+}
+
+/// A Xendit charge and link are invoices that send the amount in whole
+/// units, the currency and the reference; a paid, refunded and expired
+/// payment is followed through status checks and callbacks.
+#[renox::test]
+async fn xendit_charges_links_refunds_and_reads_callbacks_against_fixtures() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentLinkExpired, PaymentStatus, Refund,
+        RefundFailed, RefundStatus, RefundSucceeded,
+    };
+    const BASIC: &str = "Basic eG5kX2RldmVsb3BtZW50X2Zha2U6";
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(renox_billing::Xendit::new(
+            "xnd_development_fake",
+            "callback-token",
+        )));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_created")),
+    );
+    // (Answers for one URL are given in turn: the charge's, then the link's.)
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_link_created")),
+    );
+
+    // A charge: an invoice of 45 dollars (4500 cents) with the reference.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(
+        payment.gateway_id.as_deref(),
+        Some("579c8d61f23fa4ca35e52da4")
+    );
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://checkout.xendit.co/web/579c8d61f23fa4ca35e52da4")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].url, format!("{XENDIT}/v2/invoices"));
+    assert_eq!(sent[0].header("authorization"), Some(BASIC));
+    let body = sent[0].json();
+    assert_eq!(body["external_id"], format!("job-42-{}", payment.id));
+    assert_eq!(body["amount"], 45);
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["description"], "Brake service");
+    assert_eq!(body["payer_email"], "ana@example.com");
+    assert_eq!(body["success_redirect_url"], "https://shop.test/paid");
+    assert_eq!(body["failure_redirect_url"], "https://shop.test/cancelled");
+    assert_eq!(body["metadata"]["renox_payment"], payment.id.to_string());
+    assert_eq!(body["metadata"]["renox_reference_id"], "42");
+
+    // A link in rupiah (no minor unit): the amount is sent as it is.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::new(99_000, renox::money::Currency::IDR))
+            .reference("invoice", "7")
+            .description("Invoice 7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some("579c8d61f23fa4ca35e52db5"));
+    let body = http.sent()[1].json();
+    assert_eq!(body["external_id"], format!("invoice-7-{}", link.id));
+    assert_eq!(body["amount"], 99_000);
+    assert_eq!(body["currency"], "IDR");
+    assert!(body.get("payer_email").is_none());
+
+    // The invoice is paid (callback), then refunded in part.
+    xendit_invoice_callback(&app, xendit_fixture("invoice_paid"))
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.gateway == "xendit" && e.reference_id.as_deref() == Some("42")
+    });
+    // A repeated delivery changes nothing.
+    xendit_invoice_callback(&app, xendit_fixture("invoice_paid"))
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+
+    http.on(
+        &format!("POST {XENDIT}/refunds"),
+        FakeResponse::json(200, xendit_fixture("refund_pending")),
+    );
+    let refund = Billing::refund(
+        state,
+        payment.id,
+        Refund::new(Money::usd(1_000)).reason("duplicate"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("rfd_8d3f1a"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.url, format!("{XENDIT}/refunds"));
+    assert_eq!(made.header("authorization"), Some(BASIC));
+    let body = made.json();
+    assert_eq!(body["invoice_id"], "579c8d61f23fa4ca35e52da4");
+    assert_eq!(body["amount"], 10);
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["reason"], "DUPLICATE");
+    assert_eq!(body["metadata"]["renox_payment"], payment.id.to_string());
+
+    // The refund fails, then Xendit says it went through.
+    xendit_refund_event(&app, "event_refund_failed")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("INSUFFICIENT_BALANCE"));
+    xendit_refund_event(&app, "event_refund_succeeded")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // A wrong callback token is refused.
+    app.request()
+        .header("x-callback-token", "wrong")
+        .post_body(
+            "/billing/webhooks/xendit",
+            "application/json",
+            xendit_fixture("invoice_paid").to_string(),
+        )
+        .await
+        .assert_status(401);
+
+    // Status: the invoice and its refunds are read; an expired invoice is
+    // reported expired.
+    http.on(
+        &format!("GET {XENDIT}/v2/invoices/579c8d61f23fa4ca35e52da4"),
+        FakeResponse::json(200, xendit_fixture("invoice_paid")),
+    );
+    http.on(
+        &format!("GET {XENDIT}/refunds?invoice_id=579c8d61f23fa4ca35e52da4"),
+        FakeResponse::json(200, xendit_fixture("refund_list")),
+    );
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    assert_eq!(reported.refunds[0].amount, Some(1_000));
+    let sent = http.sent();
+    let status = sent
+        .iter()
+        .find(|r| r.method == "GET" && r.url.contains("/v2/invoices/"))
+        .unwrap();
+    assert_eq!(status.header("authorization"), Some(BASIC));
+
+    http.on(
+        &format!("GET {XENDIT}/v2/invoices/579c8d61f23fa4ca35e52db5"),
+        FakeResponse::json(200, xendit_fixture("invoice_expired")),
+    );
+    http.on(
+        &format!("GET {XENDIT}/refunds?invoice_id=579c8d61f23fa4ca35e52db5"),
+        FakeResponse::json(200, json!({ "data": [] })),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Expired);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == link.id);
+}
+
+/// Xendit has no disputes API here: accepting one is the typed refusal.
+#[renox::test]
+async fn xendit_answers_unsupported_for_disputes() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, Gateway, PaymentKind, Unsupported};
+    let app = app().await;
+    let gateway = renox_billing::Xendit::new("xnd_development_fake", "callback-token");
+    let payment = BillingPayment::new("xendit", PaymentKind::Charge, Money::usd(100));
+    let err = gateway
+        .accept_dispute(app.state(), &payment)
+        .await
+        .unwrap_err();
+    let found = Unsupported::of(&err).expect("a typed refusal");
+    assert_eq!(
+        (found.gateway.as_str(), found.operation.as_str()),
+        ("xendit", "accept_dispute")
+    );
+}
+
+/// Xendit's callbacks are read into notices: an invoice callback is the
+/// invoice (paid or expired), refund events carry whole-unit amounts.
+#[test]
+fn xendit_parses_one_off_callbacks() {
+    use renox_billing::payment::{PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let xendit = renox_billing::Xendit::new("xnd_development_fake", "callback-token");
+    let parse = |body: Value| xendit.parse_webhook(body.to_string().as_bytes()).unwrap();
+    match parse(xendit_fixture("invoice_paid")).as_slice() {
+        [Notice::OneOff(update)] => {
+            assert_eq!(update.gateway_id, "579c8d61f23fa4ca35e52da4");
+            assert_eq!(update.status, PaymentStatus::Succeeded);
+            assert_eq!(update.at, Some(1_792_236_600));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse(xendit_fixture("invoice_expired")).as_slice() {
+        [Notice::OneOff(update)] => assert_eq!(update.status, PaymentStatus::Expired),
+        other => panic!("{other:?}"),
+    }
+    // A pending invoice says nothing new.
+    assert!(parse(xendit_fixture("invoice_created")).is_empty());
+    match parse(xendit_fixture("event_refund_failed")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "rfd_8d3f1a");
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Failed, Some(1_000))
+            );
+            assert_eq!(
+                update.payment_gateway_id.as_deref(),
+                Some("579c8d61f23fa4ca35e52da4")
+            );
+            assert_eq!(update.reason.as_deref(), Some("INSUFFICIENT_BALANCE"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A charge on a named account uses that account's key, and a refund of it
+/// uses the account stored on the payment.
+#[renox::test]
+async fn xendit_calls_use_the_account_of_the_payment() {
+    use renox::money::Money;
+    use renox_billing::{PaymentStatus, Refund};
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(
+            Billing::new().gateway(renox_billing::Xendit::resolved_accounts(
+                |_state, account: &str| {
+                    let key = format!("xnd_development_{account}");
+                    async move { Ok(Some(key)) }
+                },
+            )),
+        );
+    let app = TestApp::with_config(app, |_| {}).await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_created")),
+    );
+    http.on(
+        &format!("POST {XENDIT}/refunds"),
+        FakeResponse::json(200, xendit_fixture("refund_pending")),
+    );
+    let mut payment = Billing::of(state, &ana)
+        .charge(stripe_charge().account("acme"))
+        .await
+        .unwrap();
+    assert_eq!(payment.account.as_deref(), Some("acme"));
+    payment.status = PaymentStatus::Succeeded;
+    payment.save(&state.db).await.unwrap();
+    Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+        .await
+        .unwrap();
+    let sent = http.sent();
+    assert_eq!(sent.len(), 2, "the invoice, the refund");
+    for request in sent {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Basic eG5kX2RldmVsb3BtZW50X2FjbWU6"),
+            "{}",
+            request.url
+        );
+    }
 }
