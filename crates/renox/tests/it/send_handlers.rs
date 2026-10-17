@@ -878,6 +878,23 @@ async fn one_time(State(state): State<AppState>) -> Result<String> {
     ))
 }
 
+/// #36: brand themes: the theme and the themed mail inside a handler, and the
+/// per-request chooser registered on the app (its future has to be `Send`).
+async fn branded(State(state): State<AppState>) -> Result<String> {
+    use renox::theme::{Brand, Theme};
+    let theme = Theme::from_brand(&Brand::new("#1E3A5F").second("#9A3412"))
+        .map_err(|e| renox::Error::BadRequest(e.to_string()))?;
+    let mail = renox::mail::Mail::new("a@b.test", "Hi", "Hi")
+        .html("<a style=\"background:#1c1917;color:#ffffff;\">Go</a>")
+        .theme(&theme);
+    state.queue_mail(mail).await?;
+    Ok(format!(
+        "{} {}",
+        theme.tokens().len(),
+        theme.dark_tokens().len()
+    ))
+}
+
 struct Handlers;
 
 /// M27a: a data grid's page and its filtered query.
@@ -1021,6 +1038,7 @@ impl Module for Handlers {
             .get("/live", live)
             .get("/uploaded", uploaded)
             .get("/one-time", one_time)
+            .get("/branded", branded)
     }
 }
 
@@ -1045,6 +1063,10 @@ async fn data_apis_work_in_routed_handlers() {
             )
             .module(renox::settings::Settings)
             .settings::<Prefs>()
+            .theme_for(|req: renox::theme::ThemeRequest| async move {
+                let _ = &req.host;
+                Ok(None)
+            })
             .migrations(&[
                 ARTICLES,
                 renox::db::search::migration::<Article>("20300101000001_search_articles"),
@@ -1124,4 +1146,5 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true true 8 0 true");
+    app.get("/branded").await.assert_ok();
 }
