@@ -320,6 +320,16 @@ crates/renox-billing/      the subscriptions plugin (#155, Laravel's Cashier): B
                            as `{gateway}:{id}`), handlers.rs (billing.* pages), guard.rs
                            (SubscriptionRoutes); its own tests/ on FakeHttp + signed
                            webhooks; guide docs/billing.md (doctested from lib.rs `Guide`)
+crates/renox-pdf/          the PDF plugin (#30), Typst compiled in the process: Pdf module (module.rs;
+                           `Pdf::document(&state, "invoice")`, `Pdf::templates(embedded!())`),
+                           document.rs (Document: data, locale, assets, fonts, lenient; render),
+                           world.rs + source.rs (the `typst::World`: confined template root or
+                           embedded map, in-memory assets, packages refused, `today()` through
+                           the clock), fonts.rs (font book, missing-glyph check), pool.rs
+                           (blocking threads, `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), kit.rs +
+                           kit/kit.typ (`@renox/kit:0.1.0`), testing.rs (`text_of`,
+                           `PdfAssertions`), fonts/ (Inter, Noto Sans Arabic, OFL texts); its own
+                           tests/; guide docs/pdf.md (doctested from lib.rs `Guide`)
 crates/renox-cli/          `rnx`: main.rs (key:generate, forwarding), new.rs, template.rs (`new --from`:
                            renox-template.toml, the `Source` enum (path / git+url#ref), the copy
                            walker, `--set` answers), serve.rs, make.rs +
@@ -474,6 +484,7 @@ docs/oauth.md              social login with renox-oauth (doctest: renox-oauth's
 docs/blocks.md             blocks beyond the kit with renox-blocks (doctest: its `Guide`)
 docs/admin.md              the admin panel with renox-admin (doctest: renox-admin's `Guide`)
 docs/billing.md            subscriptions with renox-billing (doctest: renox-billing's `Guide`)
+docs/pdf.md                PDF documents with renox-pdf (doctest: its `Guide`)
 docs/settings.md           typed settings in the database (doctest: renox-admin's `SettingsGuide`,
                            since it shows the admin page)
 docs/queue.md              jobs, retries, priority, unique, middleware, chains, batches (doctest
