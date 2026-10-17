@@ -578,3 +578,35 @@ async fn routes_with_defaults_to_routes() {
     let app = TestApp::new(App::new().module(Plain)).await;
     app.get("/plain").await.assert_ok().assert_see("plain");
 }
+
+/// Contributes one value of its own to the shared list.
+struct Adds(&'static str, u32);
+
+impl Module for Adds {
+    fn name(&self) -> &'static str {
+        self.0
+    }
+
+    fn register(&self, app: &mut Registry) {
+        app.contribute(self.1);
+        app.contribute(self.0);
+    }
+}
+
+#[renox::test]
+async fn contributions_keep_module_order_and_say_who_added_them() {
+    let app = TestApp::new(
+        App::new()
+            .module(Adds("hr", 1))
+            .module(Adds("billing", 2))
+            .module(Adds("shop", 3)),
+    )
+    .await;
+    let state = app.state();
+    assert_eq!(state.contributions::<u32>(), &[1, 2, 3]);
+    assert_eq!(
+        state.contributions::<&'static str>(),
+        &["hr", "billing", "shop"]
+    );
+    assert!(state.contributions::<String>().is_empty());
+}

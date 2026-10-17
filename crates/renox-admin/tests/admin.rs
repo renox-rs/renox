@@ -2252,6 +2252,162 @@ async fn a_named_panel_takes_only_its_entries() {
     app.get("/admin/categories").await.assert_ok();
 }
 
+/// The categories again under another slug, in a navigation group.
+struct People;
+
+impl AdminResource for People {
+    type Model = Category;
+    type Form = CategoryForm;
+
+    fn label(&self) -> &str {
+        "Person"
+    }
+
+    fn plural_label(&self) -> &str {
+        "People"
+    }
+
+    fn slug(&self) -> &str {
+        "people"
+    }
+
+    fn navigation_group(&self) -> Option<&str> {
+        Some("Humans")
+    }
+
+    fn columns(&self) -> Vec<Column> {
+        vec![Column::text("name", "Name")]
+    }
+
+    fn fields(&self) -> Vec<Field> {
+        vec![Field::text("name", "Name").required()]
+    }
+
+    fn fill(&self, category: &mut Category, form: CategoryForm) {
+        category.name = form.name;
+    }
+
+    /// Nobody may delete a person called "Keep", whatever the policy says.
+    fn allows(&self, user: &AuthUser, ability: &str, record: Option<&Category>) -> bool {
+        if ability == "delete" && record.is_some_and(|c| c.name == "Keep") {
+            return false;
+        }
+        user.email == "owner@example.com"
+    }
+}
+
+struct Crew;
+
+impl Module for Crew {
+    fn name(&self) -> &'static str {
+        "crew"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        renox_admin::contribute(app, People);
+    }
+}
+
+#[renox::test]
+async fn a_contributed_resource_has_every_page_its_group_and_its_allows() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).resource(Products))
+            .module(Crew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.post("/admin/people", &[("name", "Ana")])
+        .await
+        .assert_redirect("/admin/people");
+    app.post("/admin/people", &[("name", "Keep")])
+        .await
+        .assert_redirect("/admin/people");
+    app.assert_database_count("categories", 2).await;
+    let rows = Category::all(app.db()).await.unwrap();
+    let ana = rows.iter().find(|c| c.name == "Ana").unwrap();
+    let keep = rows.iter().find(|c| c.name == "Keep").unwrap();
+    app.get("/admin/people")
+        .await
+        .assert_ok()
+        .assert_see(&format!("/admin/people/{}/edit", ana.id));
+    app.get("/admin/people/create").await.assert_ok();
+    app.get(&format!("/admin/people/{}/edit", ana.id))
+        .await
+        .assert_ok();
+    app.put(&format!("/admin/people/{}", ana.id), &[("name", "Anna")])
+        .await
+        .assert_redirect("/admin/people");
+    app.get("/admin/people").await.assert_see("Anna");
+    // The group heading comes with the link.
+    let html = app.get("/admin").await.text();
+    let group = html.find(">Humans<").expect("the group's heading");
+    assert!(html[group..].contains("/admin/people"), "{html}");
+    // The resource's own `allows` is asked.
+    app.delete(&format!("/admin/people/{}", keep.id))
+        .await
+        .assert_forbidden();
+    app.assert_database_count("categories", 2).await;
+    app.delete(&format!("/admin/people/{}", ana.id))
+        .await
+        .assert_redirect("/admin/people");
+    app.assert_database_count("categories", 1).await;
+}
+
+#[renox::test]
+async fn a_named_panel_does_not_take_the_unnamed_entries() {
+    // Two `Admin`s can't share one app (their route names `admin.*` clash at
+    // boot), so the split is checked on one named panel.
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(
+                Admin::new()
+                    .authorize(|_| true)
+                    .named("staff")
+                    .resource(Products),
+            )
+            .module(Billing(Some("staff")))
+            .module(Crew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.get("/admin/categories").await.assert_ok();
+    app.get("/admin/people").await.assert_not_found();
+}
+
+#[renox::test]
+async fn contributed_routes_show_in_the_route_list() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).resource(Products))
+            .module(Hr),
+    )
+    .await;
+    let routes = app.kernel().routes();
+    for (method, path, name) in [
+        ("GET", "/admin/categories", "admin.categories.index"),
+        ("GET", "/admin/categories/create", "admin.categories.create"),
+        ("POST", "/admin/categories", "admin.categories.store"),
+        (
+            "GET",
+            "/admin/categories/{id}/edit",
+            "admin.categories.edit",
+        ),
+    ] {
+        let route = routes
+            .iter()
+            .find(|r| r.method == method && r.path == path)
+            .unwrap_or_else(|| panic!("{method} {path} is not listed"));
+        assert_eq!(route.name.as_deref(), Some(name), "{path}");
+        assert_eq!(route.module, "admin", "{path}");
+    }
+}
+
 /// The message of the panic a boot raises.
 fn boot_panic(app: App) -> String {
     let result = std::thread::spawn(move || {
