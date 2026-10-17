@@ -242,6 +242,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   [supplier pages](examples/bikeshop/resources/views/stock/suppliers/),
   [reports/dashboard.html](examples/bikeshop/resources/views/reports/dashboard.html) and
   [about/fields.html](examples/bikeshop/resources/views/about/fields.html).
+- Right-to-left (#28): `app.dir` (`rtl`/`ltr`) in views and mails, `renox::i18n::{direction, Direction}`, `App::rtl_locales(&[..])`, `AppState::direction`; every layout writes `dir="{{ app.dir }}"`, the kit's CSS is logical (a lint test guards it), chevrons/arrows mirror (`rx-icon--directional`), Noto Sans Arabic loads only for Arabic text; write your own CSS with logical properties: [docs/ui.md](docs/ui.md#right-to-left). Browser checks: tests/browser/rtl.test.mjs.
 - [docs/ui.md](docs/ui.md): components that see the request, components as tags (`<rx-card>`,
   `<app-price-tag>`, `rx-if`/`rx-for`, `rx-page`, `rx-table`, form tags such as `rx-repeater` and `rx-wizard`; navigation, menu, tab and sheet tags (`rx-navbar`, `rx-sidebar`, `rx-shell`, `rx-menu`, `rx-tabs`, `rx-sheet`); dashboard tags (`rx-stats`, `rx-chart`), `rx-grid`, mail tags (`rx-mail`, `rx-mail-button`, `rx-mail-panel`, `rx-mail-table`, `rx-mail-divider`), `rx-icon`, `rx-action-group`, `rx-wizard-action`, `rx-import-action`, and plugin tags (`Registry::component`, `view::add_template`); compiled in
   `crates/renox-core/src/components/`; bikeshop's supplier pages show them), the UI kit (`renox/ui.html`: fields,

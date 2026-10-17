@@ -1961,7 +1961,21 @@ Notes:
 - [ ] Loading the display font, a theme editor in renox-admin and non-accent tokens (status colours,
   radii) are out of scope
 
+### Right-to-left (#28)
+- [x] `renox::i18n::{direction, Direction}`, `App::rtl_locales`, `AppState::direction`; the `app.dir` global in
+  views and mails (the mail's own locale); `dir` on every built-in, stub and example layout
+- [x] Noto Sans Arabic (`unicode-range`, fetched only for Arabic text); `rx-icon--directional` chevrons and arrows;
+  logical CSS in the kit, grid, blocks and editors, with a lint test (`css_logical.rs`); JS parts read the
+  direction when used (tabs, calendar, week, gallery, kanban, grid)
+- [x] Tests: layout grep (`layout_dir.rs`), `tests/browser/rtl.test.mjs` (kit, grid, blocks, admin, font network check)
+- [x] Docs (ui.md "Right-to-left"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
+- [ ] Arabic translations of the kit's texts, Arabic-Indic digits and the Hijri calendar are out of scope
+
 ## Decisions
+
+- **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
+  (a queued mail from its own locale), the CSS is logical rather than a second stylesheet, and the font is a
+  separate face with a `unicode-range` so Latin pages never pay for it. The error and debug pages stay `dir="ltr"`.
 
 - **Brand themes are hashed stylesheets only** (#36): no inline `<style>` and no `Vary: Host`, so a theme works
   under `CSP=strict` without a nonce and caches for a year. Every theme the app serves is kept in memory by hash.

@@ -34,6 +34,7 @@ full reload.
   - form fields;
   - the page's frame (navigation bar, sidebar, page headers);
   - themes and type, and [brand themes](#brand-themes) (one colour in, readable accent tokens out);
+  - [right-to-left](#right-to-left) pages: `app.dir`, logical CSS, the Arabic font;
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
 - [Menus that modules add to](#menus-that-modules-and-the-app-add-to): `App::nav`, `NavLink`,
@@ -1165,9 +1166,70 @@ The fonts are Latin subsets under the SIL Open Font License 1.1, about 72 KB in 
 serves them from `/_renox/fonts/…`, and browsers keep them in their cache for good.
 `renox_ui()` asks the browser to load the text font early (it "preloads" it).
 
+Arabic script has a font of its own, Noto Sans Arabic (about 70 KB, also OFL-1.1), which
+comes after the Latin ones in `--rx-font` and `--rx-font-display`. Its `@font-face` has a
+`unicode-range` for the Arabic blocks, so a page without Arabic text never downloads it.
 Other writing systems fall back to the system font. An app that wants other fonts sets
 `--rx-font` and `--rx-font-display` on `:root`, and also the `--rx-type-*` tokens, since they
 name the font family.
+
+### Right-to-left
+
+Arabic, Hebrew, Persian, Urdu and a few other languages are written from right to left.
+A Renox page switches by itself: `app.dir` is `"rtl"` or `"ltr"` for the visitor's locale,
+and every layout Renox ships (and every one `rnx new` writes) puts it on the root element.
+
+```html
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
+```
+
+Nothing else changes in your templates. The kit's stylesheets use logical properties
+(`margin-inline-start`, `inset-inline-end`, `text-align: start`), so the sidebar moves to
+the right, a slide-over sheet comes from the left, tables and forms mirror, and chevrons
+and arrows (icons named `chevron-*` and `arrow-*`, class `rx-icon--directional`) turn
+around. The keyboard follows what is drawn: in a right-to-left page the arrow keys of tabs,
+the calendar, the week grid, the gallery and the kanban go the way the page reads, and the
+grid freezes its first column on the right. Charts, code, phone numbers, quantities and
+the keypad stay left to right on purpose.
+
+The locale decides, the same way as for `app.locale`. A mail is judged by its own locale
+(`Mail::locale`, a recipient's), so an Arabic mail queued from an English request is
+`dir="rtl"` when the worker renders it. The error and debug pages are English and stay
+`dir="ltr"`.
+
+The default list is `ar`, `he`, `fa`, `ur`, `ps`, `yi`, `dv` and `ckb`, matched by language
+(`ar-AE` and `ar_AE` are Arabic too). `App::rtl_locales` replaces it, and
+`state.direction(locale)` asks with that list; the free function `i18n::direction` always
+uses the default one.
+
+```rust
+# use renox::prelude::*;
+use renox::i18n::{direction, Direction};
+
+assert_eq!(direction("ar-AE"), Direction::Rtl);
+assert_eq!(direction("en").as_str(), "ltr");
+
+// An app that serves a language the default list does not know:
+# let _ =
+App::new().rtl_locales(&["ar", "he", "sd"])
+# ;
+```
+
+In your own CSS, write what you mean in the reading direction and the page mirrors without
+a second stylesheet: `margin-inline-start` instead of `margin-left`, `padding-inline` instead
+of `padding-left` and `-right`, `inset-inline-end` instead of `right`, `text-align: start`
+instead of `left`, `border-start-start-radius` instead of `border-top-left-radius`. Wrap
+something that must keep its direction (a chart, a code sample, a number you format
+yourself) in `dir="ltr"`, or give it `unicode-bidi: isolate`. A part of your own that
+reads the direction in JavaScript asks when it is used, not once at load:
+`getComputedStyle(el).direction === "rtl"`.
+
+Renox ships English texts only, so Arabic translations of the kit's texts are yours to add
+(see [The kit's texts](#the-kits-texts)). Arabic-Indic digits and the Hijri calendar are not
+part of the kit. The kit's own stylesheets are checked by a lint test
+(`crates/renox/tests/it/css_logical.rs`) that fails on a physical `left` or `margin-right`
+unless the entry has a reason, and `tests/browser/rtl.test.mjs` checks the pages in a
+browser.
 
 ### Infolists: read-only details
 

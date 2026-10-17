@@ -549,3 +549,14 @@
   `renox_theme()` / `<rx-theme/>` link it after `<rx-ui/>`. `Mail::theme` rewrites the button and panel colours
   into the HTML, so queued mail keeps them. bikeshop: a const `Brand` table per store in `stores.rs`.
   Guide: docs/ui.md "Brand themes".
+- **#28, right-to-left**: `i18n::direction` / `Direction` (base subtag against `RTL_LOCALES`) and `App::rtl_locales`
+  (stored in state; `AppState::direction` honours it). `app.dir` is built next to `app.locale` in `view.rs` (both
+  places) and in `mail_view`/`mail_view_in`, so a queued mail gets its own locale's direction. Every `<html` file
+  writes `dir="{{ app.dir }}"` (`error.html`/`debug.html` are `dir="ltr"`); `layout_dir.rs` greps for it across
+  crates, examples and the browser fixture. Noto Sans Arabic is a `FONTS` entry with `unicode-range` in
+  renox-ui.css. `icons.rs` marks `chevron-*`/`arrow-*` with `rx-icon--directional`, flipped by `:dir(rtl)` with a
+  `[dir="rtl"]` fallback. The kit, grid, blocks and editors CSS are logical; `css_logical.rs` is the lint with a
+  reason per allowlisted entry (charts and the like stay physical in an LTR isolate). JS parts read
+  `getComputedStyle(el).direction` when used. `tests/browser/rtl.test.mjs` runs the fixture with `APP_LOCALE=ar`
+  (its pages, `/rtl` and `/arabic` for the font network check) and flips the Spanish bike shop at run time for
+  the blocks and admin. Guide: docs/ui.md "Right-to-left".

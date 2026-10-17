@@ -330,6 +330,10 @@ impl Module for Pages {
             })
             .get("/nav", || async { view("nav.html", context! {}) })
             .get("/shell", || async { view("shell.html", context! {}) })
+            // Right-to-left (#28): a Latin page with a chevron, and one with
+            // Arabic text, for the font network check.
+            .get("/rtl", || async { view("rtl.html", context! {}) })
+            .get("/arabic", || async { view("arabic.html", context! {}) })
             // The dashboard standard, `<rx-shell fill>` (#24).
             .get("/shell-fill", || async {
                 view("shell_fill.html", context! { tall => false })

@@ -230,7 +230,7 @@ and so is `{{ flash.anything }}`.
 
 Every view also gets: `request.path`, `request.query`, `request.route` (the route's name),
 `request.htmx`, `request.boosted` (`hx-boost`), `app.name`, `app.env`,
-`app.debug`, `app.url`, `app.locale`, `app.currency` (`APP_CURRENCY`), `auth.check`, `auth.user`, `auth.roles`, `flash`, `errors`,
+`app.debug`, `app.url`, `app.locale`, `app.dir` (`ltr` or `rtl`), `app.currency` (`APP_CURRENCY`), `auth.check`, `auth.user`, `auth.roles`, `flash`, `errors`,
 `csrf_token` (the CSRF token as text, for a header or your own hidden field),
 and the functions `old()`, `has_old()`, `error(field)` (also `error(field, bag='login')`),
 `errors_in('login')` (every error of a named bag), `csrf_field()`,
@@ -2428,6 +2428,24 @@ and Laravel's ranges pick by count (`{n}` exactly, `[a,b]`, `*` for open):
 
 ```html
 <p>{{ t('cart.count', count=cart_count) }} · {{ t('cart.hello', name=auth.user.name) }}</p>
+```
+
+Right-to-left (details in docs/ui.md "Right-to-left"): `app.dir` is `rtl` for `ar`, `he`, `fa`, `ur`, `ps`, `yi`,
+`dv` and `ckb` (by base language: `ar-AE` too), `ltr` otherwise, also in mails (the mail's own locale). Every
+layout writes it; the kit mirrors by itself and loads Noto Sans Arabic only for Arabic text. Write your own CSS
+with logical properties (`margin-inline-start`, `inset-inline-end`, `text-align: start`), never `left`/`right`.
+
+```rust
+# use renox::prelude::*;
+use renox::i18n::{direction, Direction};
+assert_eq!(direction("ar-AE"), Direction::Rtl); // .as_str() is "rtl"; AppState::direction(locale) honours the override
+# let _ =
+App::new().rtl_locales(&["ar", "he", "sd"]) // replaces the default list
+# ;
+```
+
+```html
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
 ```
 
 ## Signed URLs and private files
