@@ -36,6 +36,8 @@ full reload.
   - themes and type;
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
+- [Menus that modules add to](#menus-that-modules-and-the-app-add-to): `App::nav`, `NavLink`,
+  `<rx-sidebar menu="…">`.
 - [Toasts](#toasts): short pop-up messages.
 - [Fragments and out-of-band swaps](#fragments-and-out-of-band-swaps): sending only part of a
   page.
@@ -627,6 +629,81 @@ A navigation bar on top looks like this:
 The bar shows the app's name (a link home), two links (Products, and Cart with a count), and
 on the right a menu with the user's name. `active=route_is('products.*')` highlights
 "Products" on every products page.
+
+### Menus that modules and the app add to
+
+A module's links should not have to be copied into the layout. Instead, each module (and the
+app) adds its links to a **named menu** at boot, and the layout draws the menu:
+
+```rust
+use renox::prelude::*;
+use renox::nav::NavLink;
+
+struct Billing;
+
+impl Module for Billing {
+    fn name(&self) -> &'static str { "billing" }
+
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "staff",
+            NavLink::route("invoices.index", "Invoices")
+                .icon("receipt")
+                .group("Billing")
+                .order(10)
+                .permission("invoices.view")
+                // Runs only when a page draws the menu, and only for a link this user sees.
+                .badge(|_state: AppState, _user: AuthUser| async move {
+                    Ok(Some("3".to_owned()))
+                }),
+        );
+    }
+}
+
+# fn app() -> App {
+App::new()
+    .module(Billing)
+    // The app adds links too, and can hide a module's link by its key.
+    .nav("staff", NavLink::url("/help", "Help").key("help").order(90))
+    .nav_hide("staff", "invoices.index")
+# }
+```
+
+Menu names are free strings. Then the layout draws one:
+
+```html
+<rx-sidebar brand="{{ app.name }}" menu="staff"/>
+<rx-nav-links menu="portal"/>
+```
+
+- `NavLink::route(name, label)` points at a named route; `NavLink::url(url, label)` at a
+  path or address. The key defaults to the route name; `.key("…")` sets another one (a URL
+  link needs it). Two links with the same key in one menu stop the app at boot.
+  `nav_hide(menu, key)` removes a link whichever module added it.
+- `<rx-sidebar menu>` draws the links under `<rx-sidebar-section>` headings (the `.group`),
+  with their icons and badges; links without a group come first. Groups are ordered by their
+  lowest `.order`, links by `.order`, then by the order they were added. Hand-written
+  `<rx-sidebar-link>` children are drawn after the menu, so both can be mixed.
+- `<rx-nav-links menu>` draws plain `<rx-nav-link>` items: groups and icons are ignored.
+- Group and link labels go through `t()`; a label with no translation shows as written.
+- The active link follows the route: a route link is active on its own route and on the
+  routes under its prefix (`invoices.show` marks `invoices.index`), and `aria-current="page"`
+  is set. `.active("invoices.*")` sets another pattern; a URL link is active only on its exact
+  path.
+- A link can be restricted (see [visibility](authorization.md#showing-links-only-to-who-may-use-them)):
+  `.permission`, `.gate` and `.when`. Without a restriction, everyone sees it; an anonymous
+  visitor sees only those.
+- `.badge` returns `Result<Option<String>>`. It is called only for visible links and only on a
+  page that draws the menu. An `Err` is logged and the link is drawn without a badge; the page
+  still answers 200.
+- In your own markup, `nav("staff")` gives the groups
+  (`{% for group in nav('staff') %}` with `group.label`, which is empty for ungrouped links, and
+  `group.items`; each item has `key`, 
+  `label`, `url`, `icon`, `badge` and `active`). An unknown or empty menu draws nothing.
+  `view:check` knows the `menu` prop and `nav()`.
+
+Links that depend on the page (a link with an id in it, a count you already have in the
+context) stay hand-written next to the menu.
 
 #### Tabs at the bottom on phones
 

@@ -521,3 +521,13 @@
   written; a failure afterwards removes the folder. Git goes through `tools::git_clone` (shallow, no
   submodules, no `ext::`); nothing from the template is executed. There is no built-in `Source`:
   the stubs stay on the old path. Guide: docs/development.md "Start from your own template".
+- **#37, navigation menus**: `renox-core/src/nav.rs` (`NavLink`, the menu builder), stored in a
+  dedicated `Registry` field like `account_sections` (swap for `Registry::contribute` when #31
+  lands; the public API stays). Keys default to the route name; a duplicate key in one menu is a
+  boot error. Visibility order: `nav_hide`, `.permission` (`AuthUser::has_permission_anywhere`,
+  global or any scope; without the Permissions module it falls back to the gate), `.gate`,
+  `.when`. Menus and badges are built before render, only for the menus a page's templates name
+  (`nav("x")`, `menu="x"`); a failing badge is logged and left out. `menu=` on `rx-sidebar` and
+  `rx-nav-links`; adopted in the starter layout and bikeshop's staff layout. Guides:
+  docs/ui.md "Menus that modules and the app add to", docs/authorization.md "Showing links
+  only to who may use them".

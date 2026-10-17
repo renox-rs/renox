@@ -336,6 +336,7 @@ and `rnx view:check` names a wrong one with its file and line.
 {# Icons (Lucide, docs/ui.md#icons): <rx-icon name="bike"/> <rx-icon name="truck" size="16"/>;
    hidden from screen readers unless <rx-icon name="lock" label="Private"/>; the same names in icon="…" on buttons and menus #}
 {# A dashboard app (the standard: docs/ui.md#the-dashboard-standard-rx-shell-fill): <body class="rx-page"><rx-shell fill>,
+   (modules' links: <rx-sidebar brand="{{ app.name }}" menu="staff"/>, <rx-nav-links menu="portal"/>; `nav('staff')` in custom markup),
    then <rx-sidebar brand="{{ app.name }}"><rx-sidebar-section title="Sales"/><rx-sidebar-link route="…" label="…"/></rx-sidebar>
    and <div class="rx-shell__main"><rx-navbar width="full" :skip="false"/><main class="rx-shell__content" id="main">…</main></div></rx-shell>.
    On a desktop the window never scrolls, each panel does, and the page's work fills the screen: <rx-grid> straight in the
@@ -1505,6 +1506,11 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // `app.second_factor("otp.challenge", |user, _state| async move { Ok(needs_code(&user)) });`
 // its challenge handler calls `renox::auth::pending_login(&session)`, checks the code,
 // then `renox::auth::complete_login(&state, &session, &pending, ip)` (docs/authorization.md).
+// A menu link from a module or the app: `app.nav("staff", NavLink::route("invoices.index", "Invoices").icon("receipt")
+// .group("Billing").order(10).permission("invoices.view").badge(|state: AppState, user: AuthUser| async move { Ok(Some("3".into())) }))`
+// (`use renox::nav::NavLink`; also `NavLink::url(url, label).key(k)`, `.gate(g)`, `.when(|user| …)`, `.active("invoices.*")`),
+// `app.nav_hide("staff", "invoices.index")`. `.permission` = held globally or in any scope: `user.has_permission_anywhere(p)`.
+// Drawn by `<rx-sidebar menu="staff"/>` / `<rx-nav-links menu="portal"/>` or `nav('staff')` (docs/ui.md, docs/authorization.md).
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`

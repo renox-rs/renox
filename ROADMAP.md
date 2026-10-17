@@ -1936,6 +1936,13 @@ Notes:
 - [x] Docs (development.md "Start from your own template"), CHEATSHEET.md, llms.txt
 - [ ] Updating an app from a newer template version, templates from crates.io (out of scope)
 
+### Navigation menus (#37)
+- [x] `NavLink`, `App::nav`/`Registry::nav`/`App::nav_hide`; `AuthUser::has_permission_anywhere`;
+  `nav("menu")` and the `menu` prop on `rx-sidebar` and `rx-nav-links`; starter and bikeshop use it
+- [x] Docs (ui.md, authorization.md), CHEATSHEET.md, llms.txt
+- [ ] Links stored through `Registry::contribute` (after #31); breadcrumbs, menus edited at run
+  time and a renox-admin listing are out of scope
+
 ## Decisions
 
 - **`--from` is a new option, not a value for `--starter`** (#35), which stays a boolean; it
