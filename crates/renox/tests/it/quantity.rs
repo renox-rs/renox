@@ -2,7 +2,7 @@
 //! rescaling, display and serde.
 
 use renox::money::Rounding::{self, Down, HalfEven, HalfUp, Up};
-use renox::quantity::{Quantity, QuantityError};
+use renox::quantity::{Quantity, QuantityError, UnitTable, Units};
 
 type Q3 = Quantity<3>;
 
@@ -148,4 +148,126 @@ fn serde_uses_decimal_strings() {
     assert!(serde_json::from_str::<Q3>("\"0.0005\"").is_err());
     assert!(serde_json::from_str::<Q3>("\"abc\"").is_err());
     assert!(serde_json::from_str::<Q3>("null").is_err());
+}
+
+fn table() -> UnitTable {
+    Units::new()
+        .base("kg")
+        .unit("g", "kg", "0.001")
+        .unit("t", "kg", "1000")
+        .base("m")
+        .build()
+        .unwrap()
+}
+
+#[test]
+fn units_convert_exactly() {
+    let t = table();
+    let kg = Q3::parse_exact("2.5").unwrap();
+    assert_eq!(
+        t.convert(kg, "kg", "g", HalfUp).unwrap().to_string(),
+        "2500.000"
+    );
+    let g = Q3::parse_exact("1500").unwrap();
+    assert_eq!(
+        t.convert(g, "g", "kg", HalfUp).unwrap().to_string(),
+        "1.500"
+    );
+    assert_eq!(t.convert(g, "g", "g", Down).unwrap(), g);
+    assert_eq!(t.convert(kg, "t", "t", Down).unwrap(), kg);
+    assert_eq!(
+        t.convert(Q3::from_raw(1), "t", "g", Down).unwrap().raw(),
+        1_000_000
+    );
+}
+
+#[test]
+fn units_round_as_asked_when_digits_are_lost() {
+    let t = table();
+    // Whole grams to whole kilograms: raw 500 g is 0.5 kg.
+    for (raw, r, want) in [
+        (1, Down, 0),
+        (1, Up, 1),
+        (1, HalfUp, 0),
+        (-1, Up, -1),
+        (-1, Down, 0),
+        (500, HalfUp, 1),
+        (500, HalfEven, 0),
+        (1500, HalfEven, 2),
+        (-500, HalfUp, -1),
+        (-500, HalfEven, 0),
+    ] {
+        let got = t.convert(Quantity::<0>::from_raw(raw), "g", "kg", r);
+        assert_eq!(got.unwrap().raw(), want, "{raw} {r:?}");
+    }
+}
+
+#[test]
+fn units_reject_bad_conversions() {
+    let t = table();
+    let q = Q3::from_raw(1000);
+    assert_eq!(
+        t.convert(q, "kg", "lb", Down).unwrap_err(),
+        QuantityError::UnknownUnit("lb".into())
+    );
+    assert_eq!(
+        t.convert(q, "lb", "kg", Down).unwrap_err(),
+        QuantityError::UnknownUnit("lb".into())
+    );
+    assert!(matches!(
+        t.convert(q, "kg", "m", Down),
+        Err(QuantityError::IncompatibleUnits { .. })
+    ));
+    assert_eq!(
+        t.convert(Q3::from_raw(i64::MAX), "t", "g", Down)
+            .unwrap_err(),
+        QuantityError::Overflow
+    );
+}
+
+#[test]
+fn units_table_is_validated_when_built() {
+    let bad = |u: Units| matches!(u.build(), Err(QuantityError::InvalidUnits(_)));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "0")));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "0.000")));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "-1")));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "1e3")));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "1,5")));
+    assert!(bad(Units::new().base("kg").unit("g", "kg", "")));
+    assert!(bad(Units::new().base("kg").unit(
+        "g",
+        "kg",
+        "0.1234567890123456789"
+    )));
+    assert!(bad(Units::new().unit("g", "kg", "0.001")));
+    assert!(bad(Units::new()
+        .base("kg")
+        .unit("g", "kg", "0.001")
+        .unit("mg", "g", "0.001")));
+    assert!(bad(Units::new().base("kg").base("kg")));
+    assert!(bad(Units::new().base("")));
+    assert!(
+        Units::new()
+            .unit("g", "kg", "0.001")
+            .base("kg")
+            .build()
+            .is_ok()
+    );
+    assert!(table().contains("t"));
+    assert!(!table().contains("lb"));
+}
+
+#[test]
+fn units_handle_non_decimal_ratios_exactly() {
+    // 1 box = 12 pieces, so pieces to boxes divides by 12.
+    let t = Units::new()
+        .base("pc")
+        .unit("box", "pc", "12")
+        .build()
+        .unwrap();
+    let pcs = Quantity::<0>::from_raw(30);
+    assert_eq!(t.convert(pcs, "pc", "box", Down).unwrap().raw(), 2);
+    assert_eq!(t.convert(pcs, "pc", "box", Up).unwrap().raw(), 3);
+    assert_eq!(t.convert(pcs, "pc", "box", HalfEven).unwrap().raw(), 2);
+    assert_eq!(t.convert(pcs, "pc", "box", HalfUp).unwrap().raw(), 3);
 }

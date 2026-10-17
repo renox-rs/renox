@@ -18,6 +18,7 @@
 //! assert!(Quantity::<3>::parse_exact("0.0005").is_err());
 //! ```
 
+use std::collections::BTreeMap;
 use std::fmt;
 
 use crate::money::{Rounding, div_round};
@@ -43,6 +44,15 @@ pub enum QuantityError {
     UnknownUnit(String),
     /// A denominator of zero.
     DivisionByZero,
+    /// A unit table that cannot be built (the reason is in the text).
+    InvalidUnits(String),
+    /// A conversion between units of different bases (kg to m).
+    IncompatibleUnits {
+        /// The unit converted from.
+        from: String,
+        /// The unit converted to.
+        to: String,
+    },
 }
 
 impl fmt::Display for QuantityError {
@@ -53,6 +63,10 @@ impl fmt::Display for QuantityError {
             QuantityError::Inexact => f.write_str("the quantity has more decimals than allowed"),
             QuantityError::UnknownUnit(u) => write!(f, "`{u}` is not a known unit"),
             QuantityError::DivisionByZero => f.write_str("the denominator is zero"),
+            QuantityError::InvalidUnits(why) => write!(f, "invalid unit table: {why}"),
+            QuantityError::IncompatibleUnits { from, to } => {
+                write!(f, "`{from}` cannot be converted to `{to}`: different bases")
+            }
         }
     }
 }
@@ -391,5 +405,214 @@ impl<'de, const SCALE: u32> serde::Deserialize<'de> for Quantity<SCALE> {
             }
         }
         deserializer.deserialize_any(V::<SCALE>)
+    }
+}
+
+/// How one unit relates to its base: 1 unit = `num / den` of the base.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct UnitDef {
+    base: String,
+    num: i128,
+    den: i128,
+}
+
+fn gcd(a: i128, b: i128) -> i128 {
+    if b == 0 { a } else { gcd(b, a % b) }
+}
+
+/// Parses a positive exact decimal factor into a reduced fraction.
+fn parse_factor(text: &str) -> Result<(i128, i128), QuantityError> {
+    let bad = || QuantityError::InvalidUnits(format!("`{text}` is not a positive decimal factor"));
+    let (negative, whole, fraction) = split_decimal(text).ok_or_else(bad)?;
+    if negative || fraction.len() > 18 {
+        return Err(bad());
+    }
+    let num: i128 = format!("{whole}{fraction}").parse().map_err(|_| bad())?;
+    if num == 0 {
+        return Err(bad());
+    }
+    let den = 10i128.pow(fraction.len() as u32);
+    let g = gcd(num, den);
+    Ok((num / g, den / g))
+}
+
+/// Builder for a unit conversion table, from strings with exact decimal
+/// factors (never floats). Every unit points at a base unit:
+/// `.unit("g", "kg", "0.001")` says 1 g is 0.001 kg. Units chain only
+/// through the base (one level). [`Units::build`] checks the table and
+/// returns a [`UnitTable`]; conversion takes an explicit [`Rounding`].
+///
+/// ```
+/// use renox::money::Rounding;
+/// use renox::quantity::{Quantity, Units};
+///
+/// let units = Units::new()
+///     .base("kg")
+///     .unit("g", "kg", "0.001")
+///     .unit("t", "kg", "1000")
+///     .build()
+///     .unwrap();
+/// let kg = Quantity::<3>::parse_exact("2.5").unwrap();
+/// let g = units.convert(kg, "kg", "g", Rounding::HalfUp).unwrap();
+/// assert_eq!(g.to_string(), "2500.000");
+/// let grams = Quantity::<3>::parse_exact("1500").unwrap();
+/// let back = units.convert(grams, "g", "kg", Rounding::HalfUp).unwrap();
+/// assert_eq!(back.to_string(), "1.500");
+/// ```
+#[derive(Debug, Clone, Default)]
+pub struct Units {
+    /// Declarations in order: (code, base code or `None` for a base, factor text).
+    declared: Vec<(String, Option<String>, String)>,
+}
+
+/// A checked unit table, ready to convert. Built with [`Units::build`];
+/// plain data, `Clone` and `Debug`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnitTable {
+    defs: BTreeMap<String, UnitDef>,
+}
+
+impl Units {
+    /// An empty table.
+    pub fn new() -> Self {
+        Units::default()
+    }
+
+    /// Declares a base unit (`"kg"`), the unit others are expressed in.
+    pub fn base(mut self, code: &str) -> Self {
+        self.declared.push((code.to_string(), None, String::new()));
+        self
+    }
+
+    /// Declares `code` as `factor` units of the base `base`: 1 `code` =
+    /// `factor` `base`. The factor is an exact positive decimal.
+    pub fn unit(mut self, code: &str, base: &str, factor: &str) -> Self {
+        self.declared
+            .push((code.to_string(), Some(base.to_string()), factor.to_string()));
+        self
+    }
+
+    /// Checks the table and returns it ready to convert. It fails with
+    /// `InvalidUnits` on an empty or duplicate code, a factor that is
+    /// zero, negative or malformed, and a unit whose base is missing or
+    /// is not itself a base. Declaration order does not matter.
+    ///
+    /// ```
+    /// use renox::quantity::Units;
+    ///
+    /// assert!(Units::new().base("kg").unit("g", "kg", "0.001").build().is_ok());
+    /// assert!(Units::new().base("kg").unit("g", "kg", "0").build().is_err());
+    /// let chained = Units::new().base("kg").unit("g", "kg", "0.001").unit("mg", "g", "0.001");
+    /// assert!(chained.build().is_err());
+    /// ```
+    pub fn build(self) -> Result<UnitTable, QuantityError> {
+        let fail = |why: String| Err(QuantityError::InvalidUnits(why));
+        let mut defs: BTreeMap<String, UnitDef> = BTreeMap::new();
+        for (code, base, factor) in &self.declared {
+            if code.trim().is_empty() {
+                return fail("a unit code is empty".into());
+            }
+            if defs.contains_key(code) {
+                return fail(format!("`{code}` is declared twice"));
+            }
+            let def = match base {
+                None => UnitDef {
+                    base: code.clone(),
+                    num: 1,
+                    den: 1,
+                },
+                Some(base) => {
+                    let (num, den) = parse_factor(factor)?;
+                    UnitDef {
+                        base: base.clone(),
+                        num,
+                        den,
+                    }
+                }
+            };
+            defs.insert(code.clone(), def);
+        }
+        for (code, def) in &defs {
+            match defs.get(&def.base) {
+                None => return fail(format!("`{code}` points at unknown base `{}`", def.base)),
+                Some(target) if target.base != def.base => {
+                    return fail(format!(
+                        "`{code}` points at `{}`, which is not a base",
+                        def.base
+                    ));
+                }
+                Some(_) => {}
+            }
+        }
+        Ok(UnitTable { defs })
+    }
+}
+
+impl UnitTable {
+    /// Whether `code` is a unit of this table.
+    ///
+    /// ```
+    /// use renox::quantity::Units;
+    ///
+    /// let t = Units::new().base("kg").unit("g", "kg", "0.001").build().unwrap();
+    /// assert!(t.contains("g"));
+    /// assert!(!t.contains("lb"));
+    /// ```
+    pub fn contains(&self, code: &str) -> bool {
+        self.defs.contains_key(code)
+    }
+
+    /// Converts `q` from unit `from` to unit `to` at the same scale,
+    /// rounding with `rounding` when digits are lost. An unknown unit is
+    /// `UnknownUnit`, units of different bases are `IncompatibleUnits`,
+    /// a result that does not fit is `Overflow`.
+    ///
+    /// ```
+    /// use renox::money::Rounding;
+    /// use renox::quantity::{Quantity, QuantityError, Units};
+    ///
+    /// let t = Units::new()
+    ///     .base("kg")
+    ///     .unit("g", "kg", "0.001")
+    ///     .base("m")
+    ///     .build()
+    ///     .unwrap();
+    /// let q = Quantity::<3>::from_raw(1);
+    /// assert_eq!(t.convert(q, "g", "kg", Rounding::Down).unwrap().raw(), 0);
+    /// assert_eq!(t.convert(q, "g", "kg", Rounding::Up).unwrap().raw(), 1);
+    /// assert!(matches!(
+    ///     t.convert(q, "kg", "m", Rounding::Up),
+    ///     Err(QuantityError::IncompatibleUnits { .. })
+    /// ));
+    /// assert!(matches!(
+    ///     t.convert(q, "kg", "lb", Rounding::Up),
+    ///     Err(QuantityError::UnknownUnit(_))
+    /// ));
+    /// ```
+    pub fn convert<const SCALE: u32>(
+        &self,
+        q: Quantity<SCALE>,
+        from: &str,
+        to: &str,
+        rounding: Rounding,
+    ) -> Result<Quantity<SCALE>, QuantityError> {
+        let unknown = |c: &str| QuantityError::UnknownUnit(c.to_string());
+        let f = self.defs.get(from).ok_or_else(|| unknown(from))?;
+        let t = self.defs.get(to).ok_or_else(|| unknown(to))?;
+        if f.base != t.base {
+            return Err(QuantityError::IncompatibleUnits {
+                from: from.to_string(),
+                to: to.to_string(),
+            });
+        }
+        // value * (f.num / f.den) / (t.num / t.den)
+        let num = (q.raw() as i128)
+            .checked_mul(f.num)
+            .and_then(|n| n.checked_mul(t.den))
+            .ok_or(QuantityError::Overflow)?;
+        let den = f.den.checked_mul(t.num).ok_or(QuantityError::Overflow)?;
+        i64::try_from(div_round(num, den, rounding))
+            .map(Quantity::from_raw)
+            .map_err(|_| QuantityError::Overflow)
     }
 }
