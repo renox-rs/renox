@@ -1965,7 +1965,8 @@ Notes:
 - [x] `renox::pwa`: `Pwa`, `PwaBrand`, `PwaRequest`; `App::pwa`, `App::pwa_for`; `/manifest.webmanifest`, versioned
   `/sw.js`, `/_renox/offline`, icons; `<rx-pwa/>` / `renox_pwa()`; `rnx make:pwa`
 - [x] Docs (ui.md "Install on phones"), CHEATSHEET.md, llms.txt, AGENTS.md.stub
-- [ ] Browser test and acceptance tests (#33 parts 8 and 9)
+- [x] Browser test (`tests/browser/pwa.test.mjs`), `tests/cli/run.sh` make:pwa step, acceptance tests
+  (`crates/renox/tests/it/pwa.rs`: manifest members and locale, worker version, boot errors, `pwa_for`, `<rx-pwa/>`, `route:list`)
 - [ ] Offline forms (#52), push notifications and several manifests per app are out of scope here
 
 ### Brand themes (#36)

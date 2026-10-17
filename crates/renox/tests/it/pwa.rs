@@ -238,3 +238,164 @@ async fn rx_pwa_renders_nothing_without_a_pwa() {
     let html = page(None, true).await;
     assert_eq!(html, "<head></head>|", "{html}");
 }
+
+fn version_of(worker: &str) -> String {
+    worker
+        .lines()
+        .find(|l| l.contains("const VERSION"))
+        .expect("the worker declares its version")
+        .to_owned()
+}
+
+/// A booted app whose offline view is `offline.html` with `html` as content.
+async fn app_offline(html: &str) -> TestApp {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("views")).unwrap();
+    std::fs::write(dir.path().join("views/offline.html"), html).unwrap();
+    let (views, public) = (dir.path().join("views"), dir.path().join("public"));
+    let pwa = Pwa::new("Bikeshop")
+        .icons(icons(dir.path()))
+        .offline_page("offline.html");
+    TestApp::with_config(App::new().pwa(pwa), move |c| {
+        c.views_path = views;
+        c.public_path = public;
+    })
+    .await
+}
+
+#[renox::test]
+async fn the_manifest_is_valid_json_with_every_member_and_the_three_icons() {
+    let dir = tempfile::tempdir().unwrap();
+    let app = app(&dir).await;
+    let res = app.get("/manifest.webmanifest").await;
+    assert_eq!(
+        res.header("content-type"),
+        Some("application/manifest+json")
+    );
+    let json: serde_json::Value = serde_json::from_str(&res.text()).expect("valid JSON");
+    for key in [
+        "name",
+        "short_name",
+        "start_url",
+        "display",
+        "theme_color",
+        "background_color",
+        "lang",
+        "dir",
+    ] {
+        assert!(
+            json[key].as_str().is_some_and(|v| !v.is_empty()),
+            "{key}: {json}"
+        );
+    }
+    assert_eq!(json["display"], "standalone");
+    let icons = json["icons"].as_array().unwrap();
+    let find = |sizes: &str, purpose: &str| {
+        icons
+            .iter()
+            .any(|i| i["sizes"] == sizes && i["purpose"] == purpose)
+    };
+    assert!(find("192x192", "any"), "{json}");
+    assert!(find("512x512", "any"), "{json}");
+    assert!(find("512x512", "maskable"), "{json}");
+    for icon in icons {
+        app.get(icon["src"].as_str().unwrap()).await.assert_ok();
+    }
+}
+
+#[renox::test]
+async fn the_manifest_name_follows_the_request_locale_when_lang_files_define_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let lang = dir.path().join("lang");
+    std::fs::create_dir_all(&lang).unwrap();
+    std::fs::write(
+        lang.join("es.json"),
+        r#"{"pwa": {"name": "Tienda de bicis", "short_name": "Bicis"}}"#,
+    )
+    .unwrap();
+    std::fs::write(lang.join("ar.json"), r#"{"pwa": {"name": "Bicis arabes"}}"#).unwrap();
+    let public = dir.path().join("public");
+    let pwa = Pwa::new("Bikeshop").icons(icons(dir.path()));
+    let app = TestApp::with_config(App::new().detect_locale().pwa(pwa), |c| {
+        c.lang_path = lang;
+        c.public_path = public;
+    })
+    .await;
+    let get = |language: &'static str| {
+        app.request()
+            .header("accept-language", language)
+            .get("/manifest.webmanifest")
+    };
+    let es: serde_json::Value = get("es").await.json();
+    assert_eq!(es["name"], "Tienda de bicis");
+    assert_eq!(es["short_name"], "Bicis");
+    assert_eq!(es["lang"], "es");
+    assert_eq!(es["dir"], "ltr");
+    let ar: serde_json::Value = get("ar").await.json();
+    assert_eq!(ar["name"], "Bicis arabes");
+    assert_eq!(ar["dir"], "rtl");
+    let en: serde_json::Value = get("en").await.json();
+    assert_eq!(en["name"], "Bikeshop");
+    assert_eq!(en["lang"], "en");
+}
+
+#[renox::test]
+async fn the_worker_version_is_stable_and_follows_the_offline_page() {
+    let first = app_offline("<p>Offline one</p>").await;
+    let again = app_offline("<p>Offline one</p>").await;
+    let changed = app_offline("<p>Offline two</p>").await;
+    let a = version_of(&first.get("/sw.js").await.text());
+    let b = version_of(&again.get("/sw.js").await.text());
+    let c = version_of(&changed.get("/sw.js").await.text());
+    assert_eq!(a, b, "the same inputs give the same version");
+    assert_ne!(a, c, "another offline page gives another version");
+    first
+        .get("/_renox/offline")
+        .await
+        .assert_ok()
+        .assert_see("Offline one");
+}
+
+#[renox::test]
+async fn an_offline_view_that_fails_to_render_is_a_boot_error_naming_the_view() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("views")).unwrap();
+    std::fs::write(dir.path().join("views/broken.html"), "{{ nope(").unwrap();
+    let mut config = renox::Config::default();
+    config.views_path = dir.path().join("views");
+    config.public_path = dir.path().join("public");
+    for view in ["broken.html", "absent.html"] {
+        let pwa = Pwa::new("Bikeshop")
+            .icons(icons(dir.path()))
+            .offline_page(view);
+        let err = App::with_config(config.clone())
+            .pwa(pwa)
+            .into_router()
+            .await
+            .unwrap_err();
+        assert!(format!("{err:#}").contains(view), "{view}: {err:#}");
+    }
+}
+
+#[renox::test]
+async fn pwa_for_gives_each_host_its_own_manifest_colour_and_icons() {
+    let dir = tempfile::tempdir().unwrap();
+    let public = dir.path().join("public");
+    let app = TestApp::with_config(branded(&dir), |c| c.public_path = public).await;
+    let manifest = |host: &'static str| {
+        let req = app.request().header("host", host);
+        async move {
+            let res = req.get("/manifest.webmanifest").await;
+            assert_eq!(res.header("vary"), Some("Host"));
+            res.json::<serde_json::Value>()
+        }
+    };
+    let (plain, north) = (manifest("other.test").await, manifest("north.test").await);
+    assert_ne!(plain["name"], north["name"]);
+    assert_ne!(plain["theme_color"], north["theme_color"]);
+    assert_ne!(plain["icons"][0]["src"], north["icons"][0]["src"]);
+    let icon_of = |m: &serde_json::Value| m["icons"][0]["src"].as_str().unwrap().to_owned();
+    let plain_icon = app.get(&icon_of(&plain)).await.body;
+    let north_icon = app.get(&icon_of(&north)).await.body;
+    assert_ne!(plain_icon, north_icon);
+}
