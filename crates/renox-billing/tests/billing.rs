@@ -2412,3 +2412,61 @@ async fn a_custom_gateway_verifies_webhooks_with_the_app_state() {
             .is_ok()
     );
 }
+
+#[renox::test]
+async fn payments_and_refunds_are_stored_with_money_and_the_reference() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, BillingRefund, PaymentKind, PaymentStatus, RefundStatus};
+
+    let app = app().await;
+    let mut new = BillingPayment::new("stripe", PaymentKind::Link, Money::usd(4_500));
+    new.reference_type = Some("job".into());
+    new.reference_id = Some("17".into());
+    new.gateway_id = Some("cs_1".into());
+    let payment = BillingPayment::create(app.db(), new).await.unwrap();
+    assert_eq!(payment.amount, Money::usd(4_500));
+    assert_eq!(payment.status, PaymentStatus::Pending);
+    assert!(payment.owner().is_none());
+    assert_eq!(payment.refundable(), Money::usd(0));
+
+    let found = BillingPayment::find_at(app.db(), "stripe", "cs_1")
+        .await
+        .unwrap()
+        .expect("found by gateway id");
+    assert_eq!(found.id, payment.id);
+    let by_reference = BillingPayment::for_reference(app.db(), "job", "17")
+        .await
+        .unwrap();
+    assert_eq!(by_reference.len(), 1);
+
+    let mut paid = found;
+    paid.status = PaymentStatus::PartiallyRefunded;
+    paid.refunded_amount = 1_000;
+    paid.save(app.db()).await.unwrap();
+    assert_eq!(paid.refunded(), Money::usd(1_000));
+    assert_eq!(paid.refundable(), Money::usd(3_500));
+
+    BillingRefund::create(
+        app.db(),
+        BillingRefund {
+            payment_id: paid.id,
+            amount: 1_000,
+            status: RefundStatus::Succeeded,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(paid.refunds(app.db()).await.unwrap().len(), 1);
+}
+
+#[test]
+fn unsupported_names_the_gateway_and_the_operation() {
+    use renox_billing::Unsupported;
+
+    let err: Error = Unsupported::new("xendit", "accept_dispute").into();
+    let found = Unsupported::of(&err).expect("downcast");
+    assert_eq!(found.gateway, "xendit");
+    assert_eq!(found.operation, "accept_dispute");
+    assert!(Unsupported::of(&Error::NotFound).is_none());
+}

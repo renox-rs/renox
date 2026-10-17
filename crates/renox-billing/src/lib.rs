@@ -44,6 +44,7 @@ pub mod gateway;
 mod guard;
 mod handlers;
 mod model;
+pub mod payment;
 mod plan;
 pub mod stripe;
 mod sync;
@@ -58,25 +59,45 @@ pub use events::{
 pub use gateway::{BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Payment, Remote};
 pub use guard::SubscriptionRoutes;
 pub use model::{BillingCustomer, Subscription, SubscriptionStatus};
+pub use payment::{
+    BillingPayment, BillingRefund, PaymentKind, PaymentStatus, RefundStatus, Unsupported,
+};
 pub use plan::{Interval, Plan};
 pub use stripe::Stripe;
 pub use xendit::Xendit;
 
-const MIGRATIONS: &[Migration] = &[Migration::new(
-    "00010101000900_create_billing_tables",
-    "",
-    Some(include_str!(
-        "../migrations/00010101000900_create_billing_tables.down.sql"
-    )),
-)
-.sqlite(
-    include_str!("../migrations/00010101000900_create_billing_tables.up.sql"),
-    None,
-)
-.postgres(
-    include_str!("../migrations/00010101000900_create_billing_tables.postgres.up.sql"),
-    None,
-)];
+const MIGRATIONS: &[Migration] = &[
+    Migration::new(
+        "00010101000900_create_billing_tables",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000900_create_billing_tables.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000900_create_billing_tables.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!("../migrations/00010101000900_create_billing_tables.postgres.up.sql"),
+        None,
+    ),
+    Migration::new(
+        "00010101000910_create_billing_payments",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000910_create_billing_payments.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000910_create_billing_payments.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!("../migrations/00010101000910_create_billing_payments.postgres.up.sql"),
+        None,
+    ),
+];
 
 /// The templates, compiled in. An app replaces one with a file of the same
 /// name under its views directory (`resources/views/billing/plans.html`).
