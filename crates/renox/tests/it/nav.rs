@@ -563,3 +563,33 @@ async fn nav_in_custom_markup_and_view_check_knows_menu_and_nav() {
     // `nav` is a request global, `menu` a known prop: nothing is reported.
     app.assert_views_compile();
 }
+
+struct Own;
+
+impl Module for Own {
+    fn name(&self) -> &'static str {
+        "own-nav"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/own", || async {
+            view("own.html", context! { nav => vec!["one", "two"] })
+        })
+    }
+}
+
+#[renox::test]
+async fn a_page_that_passes_its_own_nav_value_keeps_it() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("own.html"),
+        "{% for item in nav %}<{{ item }}>{% endfor %}",
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(App::new().module(Auth::new()).module(Own), move |c| {
+        c.views_path = path
+    })
+    .await;
+    app.get("/own").await.assert_ok().assert_see("<one><two>");
+}

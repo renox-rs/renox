@@ -911,7 +911,16 @@ impl Views {
                 "the view gets a value named like a macro the template imports; the macro hides it (rename one)"
             );
         }
-        let ctx = merge_maps([shared, view.ctx.clone(), globals]);
+        // `nav('menu')` is a request global, but a page that already passes its
+        // own `nav` value keeps it (the global would otherwise hide it).
+        let own_nav = [&view.ctx, &shared]
+            .iter()
+            .find_map(|layer| layer.get_attr("nav").ok().filter(|n| !n.is_undefined()))
+            .map_or_else(
+                || Value::from_serialize(serde_json::Map::new()),
+                |nav| context! { nav },
+            );
+        let ctx = merge_maps([shared, view.ctx.clone(), globals, own_nav]);
         let stacks = crate::view_stack::Scope::begin();
         let rendered = match &view.fragment {
             Some(block) if htmx.wants_fragment() => (|| {
