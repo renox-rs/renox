@@ -1058,3 +1058,154 @@ async fn a_drawn_or_typed_signature_arrives_through_valid() {
         .assert_status(422)
         .assert_invalid("signature_name");
 }
+
+const JPEG: &[u8] = b"\xff\xd8\xff\xe0\0\x10JFIF\0small-but-valid-enough-for-sniffing";
+
+const CAMERA_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import camera_capture %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/photos" enctype="multipart/form-data">
+{{ csrf_field() }}
+{{ camera_capture("photo", facing="environment", max=3, max_width=1024, required=true, hint="Show the repair.") }}
+</form></body></html>"##;
+
+const CAMERA_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/photos" enctype="multipart/form-data">
+<rx-camera-capture name="pic" label="Bike" facing="user" :max="1"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct Photos {
+    #[serde(default)]
+    photo: Vec<Upload>,
+}
+
+impl Validate for Photos {
+    fn rules(&self, v: &mut Validator) {
+        v.field("photo", &self.photo).required().max(3);
+        v.each("photo", &self.photo, |photo| {
+            photo.image().mimes(&["jpg", "jpeg"]).max(100)
+        });
+    }
+}
+
+struct Photographing;
+
+impl Module for Photographing {
+    fn name(&self) -> &'static str {
+        "photographing"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/photos", || async { view("photos.html", ()) })
+            .get("/photos-tag", || async { view("photos-tag.html", ()) })
+            .post("/photos", |Valid(form): Valid<Photos>| async move {
+                Json(json!({
+                    "files": form.photo.iter().map(|f| f.file_name().to_owned()).collect::<Vec<_>>(),
+                }))
+            })
+    }
+}
+
+async fn camera_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Photographing)
+            .templates(|env| {
+                env.add_template("photos.html", CAMERA_MACRO).unwrap();
+                renox::view::add_template(env, "photos-tag.html", CAMERA_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The camera capture (#53): the macro and the tag print a live area (hidden
+/// until the camera starts), the list of photos, a file input that is the
+/// fallback (visible without the script, `capture` set), and the part's file,
+/// only on that page.
+#[renox::test]
+async fn the_camera_capture_renders_as_a_macro_and_a_tag() {
+    let app = camera_app().await;
+    let html = app.get("/photos").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"data-rx-camera data-rx-camera-max="3" data-rx-camera-width="1024" data-rx-camera-quality="0.85" data-rx-camera-facing="environment""#,
+    );
+    has(r#"<div class="rx-camera__live" data-rx-camera-live hidden>"#);
+    has("data-rx-camera-shutter>Take photo</button>");
+    has(
+        r#"name="photo" accept="image/*" capture="environment" multiple required data-rx-camera-required"#,
+    );
+    has(r#"id="rx-photo-help" role="status" data-rx-camera-status>Take a photo with the camera"#);
+    has("Show the repair.");
+    has("Camera access was denied.");
+    has(r#"data-camera="/_renox/blocks/camera-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/photos-tag").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"name="pic" accept="image/*" capture="user""#);
+    has("Bike");
+    has(r#"<span class="rx-required">(optional)</span>"#);
+    assert!(
+        !html.contains(" multiple") && !html.contains("data-rx-camera-required"),
+        "{html}"
+    );
+}
+
+/// One to three JPEGs arrive as `Vec<Upload>` and pass `image()` and
+/// `mimes`; more than the limit, a non-image or none at all fail.
+#[renox::test]
+async fn camera_photos_arrive_through_valid() {
+    let app = camera_app().await;
+    app.get("/photos").await;
+
+    app.post_multipart("/photos", &[], &[("photo", "photo-1.jpg", JPEG)])
+        .await
+        .assert_ok()
+        .assert_json_path("files.0", "photo-1.jpg");
+
+    let three = [
+        ("photo", "photo-1.jpg", JPEG),
+        ("photo", "photo-2.jpg", JPEG),
+        ("photo", "photo-3.jpg", JPEG),
+    ];
+    app.post_multipart("/photos", &[], &three)
+        .await
+        .assert_ok()
+        .assert_json_path("files.2", "photo-3.jpg");
+
+    let four = [
+        ("photo", "photo-1.jpg", JPEG),
+        ("photo", "photo-2.jpg", JPEG),
+        ("photo", "photo-3.jpg", JPEG),
+        ("photo", "photo-4.jpg", JPEG),
+    ];
+    app.request()
+        .json()
+        .post_multipart("/photos", &[], &four)
+        .await
+        .assert_status(422)
+        .assert_invalid("photo");
+
+    app.request()
+        .json()
+        .post_multipart(
+            "/photos",
+            &[],
+            &[("photo", "photo-1.jpg", b"MZ not an image")],
+        )
+        .await
+        .assert_status(422)
+        .assert_invalid("photo.0");
+    app.request()
+        .json()
+        .post_multipart("/photos", &[], &[])
+        .await
+        .assert_status(422)
+        .assert_invalid("photo");
+}

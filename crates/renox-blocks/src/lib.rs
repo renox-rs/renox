@@ -29,7 +29,8 @@
 //! - Input: `quantity` (a stepper), `range_slider` (two handles),
 //!   `keypad` (a point-of-sale number pad), `swatches` (variant chips),
 //!   `datetime_range` (a start and an end, each a day and a time),
-//!   `signature_pad` (a drawn or typed signature, sent as a PNG file or a name).
+//!   `signature_pad` (a drawn or typed signature, sent as a PNG file or a name),
+//!   `camera_capture` (photos from the camera, sent as JPEG files).
 //! - Showing data: `gallery` (a carousel), `history` (a timeline),
 //!   `compare_plans` (a pricing table), `status_stepper` (a record's
 //!   progress through its statuses).
@@ -102,7 +103,7 @@ impl Module for Blocks {
 /// The blocks as tags: `<rx-quantity>`, `<rx-range-slider>`, `<rx-keypad>`,
 /// `<rx-swatches>`, `<rx-datetime-range>`, `<rx-gallery>`, `<rx-history>`,
 /// `<rx-compare-plans>`, `<rx-status-stepper>`, `<rx-month-calendar>`,
-/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
+/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-camera-capture>`, `<rx-kanban>` and `<rx-receipt>`. Each is the macro of
 /// the same name, with its parameters as
 /// attributes (`value-start`, `hide-label`…).
 fn components(app: &mut Registry) {
@@ -204,6 +205,24 @@ fn components(app: &mut Registry) {
         .prop(Prop::bool("required"))
         .prop(Prop::number("width"))
         .prop(Prop::number("height"))
+        .prop(Prop::text("hint"))
+        .prop(Prop::text("id"))
+        .prop(Prop::text("bag")),
+    );
+    app.component(
+        block(
+            "rx-camera-capture",
+            "camera_capture",
+            "Photos taken with the camera, sent as files; a file input when there is no camera.",
+        )
+        .prop(Prop::text("name").required())
+        .prop(Prop::text("label"))
+        .prop(Prop::text("facing"))
+        .prop(Prop::number("max"))
+        .prop(Prop::number("max-width"))
+        .prop(Prop::number("quality"))
+        .prop(Prop::text("accept"))
+        .prop(Prop::bool("required"))
         .prop(Prop::text("hint"))
         .prop(Prop::text("id"))
         .prop(Prop::text("bag")),

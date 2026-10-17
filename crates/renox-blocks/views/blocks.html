@@ -4,7 +4,7 @@
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
     Input:          quantity, range_slider, keypad, swatches, datetime_range,
-                    signature_pad
+                    signature_pad, camera_capture
     Showing data:   gallery, history, compare_plans, status_stepper
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
@@ -939,6 +939,57 @@
     {%- if message %} aria-invalid="true"{% endif %} data-rx-signature-name>
   <input type="file" hidden name="{{ name }}" accept="image/png" data-rx-signature-file>
   <p class="rx-visually-hidden" role="status" data-rx-signature-status></p>
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    camera_capture: photos taken with the device's camera, sent as real
+    files. The shutter downsizes each frame to `max_width` pixels and puts
+    it, as `photo-N.jpg`, on a file input named `name` (with `multiple`
+    when `max` is above 1), so the handler gets `Option<Upload>` (or
+    `Vec<Upload>`) and the usual rules (`image()`, `mimes(&["jpg"])`,
+    `max(..)`) apply. Count the photos with `v.field(name, &photos).max(n)`.
+
+    <form method="post" enctype="multipart/form-data">
+      {{ camera_capture("photos", max=3, facing="environment") }}
+
+    Without JavaScript, when the camera is denied, missing or fails, the same
+    file input stays visible (`capture` opens the camera app on a phone) and
+    a message says why; what it picks is downsized the same way. `facing` is
+    `user` or `environment`; `quality` is the JPEG quality from 0.1 to 1.
+    ====================================================================== -#}
+{% macro camera_capture(name, label=none, facing="environment", max=1, max_width=2048, quality=0.85, accept="image/*", required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.camera.label') %}
+{%- set texts = {
+  "denied": renox_blocks_t('blocks.camera.denied'),
+  "missing": renox_blocks_t('blocks.camera.missing'),
+  "failed": renox_blocks_t('blocks.camera.failed'),
+  "taken": renox_blocks_t('blocks.camera.taken'),
+  "removed": renox_blocks_t('blocks.camera.removed'),
+  "full": renox_blocks_t('blocks.camera.full'),
+  "photo": renox_blocks_t('blocks.camera.photo'),
+  "remove": renox_blocks_t('blocks.camera.remove')
+} %}
+<div class="rx-field rx-camera" id="{{ id }}" data-rx-camera data-rx-camera-max="{{ max }}" data-rx-camera-width="{{ max_width }}" data-rx-camera-quality="{{ quality }}" data-rx-camera-facing="{{ facing }}" data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div class="rx-camera__live" data-rx-camera-live hidden>
+    <video class="rx-camera__video" autoplay playsinline muted data-rx-camera-video></video>
+    <button class="rx-button rx-button--small" type="button" disabled data-rx-camera-shutter>{{ renox_blocks_t('blocks.camera.shutter') }}</button>
+  </div>
+  <ul class="rx-camera__shots" data-rx-camera-shots></ul>
+  <div class="rx-camera__fallback" data-rx-camera-fallback>
+    <input class="rx-input" type="file" id="{{ id }}-input" name="{{ name }}" accept="{{ accept }}" capture="{{ facing }}"
+      {%- if max > 1 %} multiple{% endif %}
+      {%- if required %} required data-rx-camera-required{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %} aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help" data-rx-camera-file>
+  </div>
+  <p class="rx-hint" id="{{ id }}-help" role="status" data-rx-camera-status>{{ renox_blocks_t('blocks.camera.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
   <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
 </div>
 {%- endmacro %}
