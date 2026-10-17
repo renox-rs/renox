@@ -44,6 +44,7 @@ pub mod gateway;
 mod guard;
 mod handlers;
 mod model;
+pub mod ngenius;
 pub mod payment;
 mod plan;
 pub mod stripe;
@@ -60,6 +61,7 @@ pub use events::{
 pub use gateway::{BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Payment, Remote};
 pub use guard::SubscriptionRoutes;
 pub use model::{BillingCustomer, Subscription, SubscriptionStatus};
+pub use ngenius::Ngenius;
 pub use payment::{
     BillingPayment, BillingRefund, Charge, ChargeRequest, DisputeState, DisputeUpdate, PaymentKind,
     PaymentLink, PaymentPage, PaymentState, PaymentStatus, PaymentUpdate, Refund, RefundResult,
@@ -166,6 +168,13 @@ impl Billing {
     /// from the configuration (off while the key is missing).
     pub fn xendit(self) -> Self {
         self.gateway(Xendit::from_config())
+    }
+
+    /// Adds N-Genius (one-off payments only), with `NGENIUS_API_KEY`,
+    /// `NGENIUS_OUTLET_REF` and `NGENIUS_WEBHOOK_SECRET` from the
+    /// configuration (off while the API key is missing).
+    pub fn ngenius(self) -> Self {
+        self.gateway(Ngenius::from_config())
     }
 
     /// Adds a gateway: [`Stripe::new`] with keys given in code, or one of

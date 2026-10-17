@@ -1,0 +1,17 @@
+{
+  "_id": "urn:order:0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+  "type": "SINGLE",
+  "action": "SALE",
+  "amount": { "currencyCode": "AED", "value": 12000 },
+  "merchantOrderReference": "invoice-7-2",
+  "reference": "0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+  "outletId": "outlet-ref-fake",
+  "_links": {
+    "self": {
+      "href": "https://api-gateway.ngenius-payments.com/transactions/outlets/outlet-ref-fake/orders/0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01"
+    },
+    "payment": {
+      "href": "https://paypage.ngenius-payments.com/?code=fake-link-code"
+    }
+  }
+}

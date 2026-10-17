@@ -281,7 +281,10 @@ pub trait Gateway: Send + Sync + 'static {
 }
 
 /// A future that answers [`Unsupported`] for `operation` of `gateway`.
-fn unsupported<'a, T: Send + 'a>(gateway: &str, operation: &str) -> BoxFuture<'a, Result<T>> {
+pub(crate) fn unsupported<'a, T: Send + 'a>(
+    gateway: &str,
+    operation: &str,
+) -> BoxFuture<'a, Result<T>> {
     let refusal = Unsupported::new(gateway, operation);
     Box::pin(async move { Err(refusal.into()) })
 }

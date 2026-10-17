@@ -1,0 +1,11 @@
+{
+  "_id": "urn:order:0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+  "action": "SALE",
+  "amount": { "currencyCode": "AED", "value": 12000 },
+  "reference": "0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+  "_embedded": {
+    "payment": [
+      { "_id": "urn:payment:fake-payment-2", "state": "AWAITING_3DS" }
+    ]
+  }
+}

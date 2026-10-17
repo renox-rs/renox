@@ -3851,3 +3851,429 @@ async fn xendit_calls_use_the_account_of_the_payment() {
         );
     }
 }
+
+const NGENIUS: &str = "https://api-gateway.ngenius-payments.com";
+const NGENIUS_ORDER: &str = "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c";
+const NGENIUS_LINK_ORDER: &str = "0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01";
+
+/// An N-Genius fixture (written from Network International's public API
+/// docs).
+fn ngenius_fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/ngenius/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// An N-Genius webhook event from a fixture, with the shared secret.
+async fn ngenius_event(app: &TestApp, fixture: &str, secret: &str) -> TestResponse {
+    app.request()
+        .header("x-webhook-secret", secret)
+        .post_body(
+            "/billing/webhooks/ngenius",
+            "application/json",
+            ngenius_fixture(fixture).to_string(),
+        )
+        .await
+}
+
+/// A charge and a link are orders that send the amount in minor units, the
+/// currency, the reference and the outlet with a bearer token traded for
+/// the API key; a paid, refunded and declined payment is followed through
+/// status checks and webhooks.
+#[renox::test]
+async fn ngenius_charges_links_refunds_and_reads_webhooks_against_fixtures() {
+    use renox::money::{Currency, Money};
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentStatus, Refund, RefundFailed,
+        RefundStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(renox_billing::Ngenius::new(
+            "ngenius-api-key-fake",
+            "outlet-ref-fake",
+            "hook-secret",
+        )));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    let orders = format!("{NGENIUS}/transactions/outlets/outlet-ref-fake/orders");
+    http.on(
+        &format!("POST {NGENIUS}/identity/auth/access-token"),
+        FakeResponse::json(200, ngenius_fixture("access_token")),
+    );
+    http.on(
+        &format!("POST {orders}"),
+        FakeResponse::json(200, ngenius_fixture("order_created")),
+    );
+    http.on(
+        &format!("POST {orders}"),
+        FakeResponse::json(200, ngenius_fixture("order_link_created")),
+    );
+
+    // A charge: the token first, then an order of 4500 cents of USD.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(payment.gateway_id.as_deref(), Some(NGENIUS_ORDER));
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://paypage.ngenius-payments.com/?code=fake-code")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].url, format!("{NGENIUS}/identity/auth/access-token"));
+    assert_eq!(
+        sent[0].header("authorization"),
+        Some("Basic ngenius-api-key-fake")
+    );
+    assert_eq!(sent[1].url, orders);
+    assert_eq!(
+        sent[1].header("authorization"),
+        Some("Bearer fake-access-token-1")
+    );
+    let body = sent[1].json();
+    assert_eq!(body["action"], "SALE");
+    assert_eq!(body["amount"]["value"], 4_500);
+    assert_eq!(body["amount"]["currencyCode"], "USD");
+    assert_eq!(
+        body["merchantOrderReference"],
+        format!("job-42-{}", payment.id)
+    );
+    assert_eq!(body["emailAddress"], "ana@example.com");
+    assert_eq!(
+        body["merchantAttributes"]["redirectUrl"],
+        "https://shop.test/paid"
+    );
+    assert_eq!(
+        body["merchantAttributes"]["cancelUrl"],
+        "https://shop.test/cancelled"
+    );
+
+    // A link in dirhams reuses the kept token.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::new(12_000, Currency::parse("AED").unwrap()))
+            .reference("invoice", "7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some(NGENIUS_LINK_ORDER));
+    let sent = http.sent();
+    assert_eq!(sent.len(), 3, "no second token request");
+    let body = sent[2].json();
+    assert_eq!(
+        body["merchantOrderReference"],
+        format!("invoice-7-{}", link.id)
+    );
+    assert_eq!(body["amount"]["value"], 12_000);
+    assert_eq!(body["amount"]["currencyCode"], "AED");
+    assert!(body.get("emailAddress").is_none());
+
+    // The order is purchased (webhook); a repeat and a wrong secret change
+    // nothing.
+    ngenius_event(&app, "event_purchased", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.gateway == "ngenius" && e.reference_id.as_deref() == Some("42")
+    });
+    ngenius_event(&app, "event_purchased", "hook-secret")
+        .await
+        .assert_ok();
+    ngenius_event(&app, "event_declined", "wrong")
+        .await
+        .assert_status(401);
+    app.run_jobs().await;
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Pending);
+
+    // A refund goes to the refund link of the order's capture.
+    let order_url = format!("{orders}/{NGENIUS_ORDER}");
+    let refund_url = format!("{order_url}/payments/fake-payment-1/captures/fake-capture-1/refund");
+    http.on(
+        &format!("GET {order_url}"),
+        FakeResponse::json(200, ngenius_fixture("order_purchased")),
+    );
+    // (Answers are given in turn: the refund reads the first, the status
+    // check below the second.)
+    http.on(
+        &format!("GET {order_url}"),
+        FakeResponse::json(200, ngenius_fixture("order_refunded")),
+    );
+    http.on(
+        &format!("POST {refund_url}"),
+        FakeResponse::json(201, ngenius_fixture("refund_pending")),
+    );
+    let refund = Billing::refund(state, payment.id, Refund::new(Money::usd(1_000)))
+        .await
+        .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("fake-refund-1"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.method, "POST");
+    assert_eq!(made.url, refund_url);
+    assert_eq!(
+        made.header("authorization"),
+        Some("Bearer fake-access-token-1")
+    );
+    let body = made.json();
+    assert_eq!(body["amount"]["value"], 1_000);
+    assert_eq!(body["amount"]["currencyCode"], "USD");
+
+    // The refund fails, then N-Genius says it went through.
+    ngenius_event(&app, "event_refund_failed", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.amount == 1_000);
+    ngenius_event(&app, "event_refunded", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // Status: the order and its refunds are read.
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    assert_eq!(reported.refunds[0].amount, Some(1_000));
+    http.on(
+        &format!("GET {orders}/{NGENIUS_LINK_ORDER}"),
+        FakeResponse::json(200, ngenius_fixture("order_pending")),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Pending);
+
+    // A declined payment fails the link.
+    ngenius_event(&app, "event_declined", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.gateway == "ngenius");
+}
+
+/// The access token is kept per account until it expires, a changed key
+/// gets a new one, accounts use their own key, outlet and webhook secret,
+/// and a missing key is refused before any request.
+#[renox::test]
+async fn ngenius_tokens_are_kept_per_account_and_follow_the_key() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let version = Arc::new(AtomicU32::new(1));
+    let seen = version.clone();
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(
+            Billing::new().gateway(renox_billing::Ngenius::resolved_accounts(
+                move |_state, account: &str| {
+                    let key = (account != "nobody")
+                        .then(|| format!("key-{account}-{}", seen.load(Ordering::SeqCst)));
+                    async move { Ok(key) }
+                },
+            )),
+        );
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("NGENIUS_OUTLET_REF", "o-default"),
+            ("NGENIUS_OUTLET_REF_ACME", "o-acme"),
+            ("NGENIUS_WEBHOOK_SECRET", "default-secret"),
+            ("NGENIUS_WEBHOOK_SECRET_ACME", "acme-secret"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {NGENIUS}/identity/auth/access-token"),
+        FakeResponse::json(200, ngenius_fixture("access_token")),
+    );
+    // Every order has its own reference (answers are given in turn).
+    for (outlet, count) in [("o-default", 4), ("o-acme", 1)] {
+        for n in 0..count {
+            let mut order = ngenius_fixture("order_created");
+            order["reference"] = json!(format!("{outlet}-{n}"));
+            http.on(
+                &format!("POST {NGENIUS}/transactions/outlets/{outlet}/orders"),
+                FakeResponse::json(200, order),
+            );
+        }
+    }
+    let tokens = || {
+        http.sent()
+            .into_iter()
+            .filter(|r| r.url.ends_with("/identity/auth/access-token"))
+            .map(|r| r.header("authorization").unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let ana = &ana;
+    let charge = |account: Option<&'static str>| async move {
+        let charge = match account {
+            Some(name) => stripe_charge().account(name),
+            None => stripe_charge(),
+        };
+        Billing::of(state, ana).charge(charge).await
+    };
+
+    charge(None).await.unwrap();
+    charge(None).await.unwrap();
+    assert_eq!(tokens(), ["Basic key-default-1"], "kept for the next call");
+    let acme = charge(Some("acme")).await.unwrap();
+    assert_eq!(acme.account.as_deref(), Some("acme"));
+    assert_eq!(tokens(), ["Basic key-default-1", "Basic key-acme-1"]);
+    assert!(
+        http.sent()
+            .last()
+            .unwrap()
+            .url
+            .contains("/outlets/o-acme/orders")
+    );
+
+    // The stored key changed: the next call trades the new one.
+    version.store(2, Ordering::SeqCst);
+    charge(None).await.unwrap();
+    assert_eq!(tokens().last().unwrap(), "Basic key-default-2");
+
+    // The token ends: the next call asks for a new one.
+    let before = tokens().len();
+    app.travel(Duration::from_secs(400));
+    app.at_travelled_time(charge(None)).await.unwrap();
+    assert_eq!(tokens().len(), before + 1);
+
+    // No key: refused before any request, without printing a key.
+    let sent = http.sent().len();
+    let err = charge(Some("nobody")).await.unwrap_err();
+    assert!(err.to_string().contains("N-Genius's API key"), "{err}");
+    assert!(!format!("{err:?}").contains("key-"), "{err:?}");
+    assert_eq!(http.sent().len(), sent);
+
+    // Each account has its own webhook secret.
+    let post = |path: &'static str, secret: &'static str| {
+        app.request()
+            .header("x-webhook-secret", secret)
+            .post_body(path, "application/json", "{}")
+    };
+    post("/billing/webhooks/ngenius/acme", "default-secret")
+        .await
+        .assert_status(401);
+    post("/billing/webhooks/ngenius/acme", "acme-secret")
+        .await
+        .assert_ok();
+    post("/billing/webhooks/ngenius", "acme-secret")
+        .await
+        .assert_status(401);
+    post("/billing/webhooks/ngenius/nobody", "acme-secret")
+        .await
+        .assert_not_found();
+}
+
+/// N-Genius has no subscriptions and no disputes API: those answer the
+/// typed refusal.
+#[renox::test]
+async fn ngenius_answers_unsupported_for_subscriptions_and_disputes() {
+    use renox_billing::{BillingPayment, Gateway, Owner, PaymentKind, Unsupported};
+    let app = app().await;
+    let state = app.state();
+    let gateway = renox_billing::Ngenius::new("ngenius-api-key-fake", "outlet", "hook-secret");
+    assert_eq!(gateway.name(), "ngenius");
+    let payment = BillingPayment::new(
+        "ngenius",
+        PaymentKind::Charge,
+        renox::money::Money::usd(100),
+    );
+    let refusals = [
+        (
+            "create_customer",
+            gateway
+                .create_customer(state, &Owner::new("user", 1))
+                .await
+                .err(),
+        ),
+        (
+            "accept_dispute",
+            gateway.accept_dispute(state, &payment).await.err(),
+        ),
+    ];
+    for (operation, err) in refusals {
+        let err = err.unwrap_or_else(|| panic!("{operation} should be refused"));
+        let found = Unsupported::of(&err).expect("a typed refusal");
+        assert_eq!(
+            (found.gateway.as_str(), found.operation.as_str()),
+            ("ngenius", operation)
+        );
+    }
+    app.fake_http().assert_sent_count(0);
+}
+
+/// N-Genius' webhook events are read into notices.
+#[test]
+fn ngenius_parses_webhook_events() {
+    use renox_billing::payment::{PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let gateway = renox_billing::Ngenius::new("ngenius-api-key-fake", "outlet", "hook-secret");
+    let parse = |name: &str| {
+        gateway
+            .parse_webhook(ngenius_fixture(name).to_string().as_bytes())
+            .unwrap()
+    };
+    match parse("event_purchased").as_slice() {
+        [Notice::OneOff(update)] => {
+            assert_eq!(update.gateway_id, NGENIUS_ORDER);
+            assert_eq!(update.status, PaymentStatus::Succeeded);
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("event_declined").as_slice() {
+        [Notice::OneOff(update)] => assert_eq!(update.status, PaymentStatus::Failed),
+        other => panic!("{other:?}"),
+    }
+    match parse("event_refunded").as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "fake-refund-1");
+            assert_eq!(update.payment_gateway_id.as_deref(), Some(NGENIUS_ORDER));
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Succeeded, Some(1_000))
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("event_refund_failed").as_slice() {
+        [Notice::Refund(update)] => assert_eq!(update.status, RefundStatus::Failed),
+        other => panic!("{other:?}"),
+    }
+    // An event that says nothing new is ignored; the id is the event's.
+    assert!(
+        gateway
+            .parse_webhook(br#"{"eventName":"AUTHORISED","order":{"reference":"o"}}"#)
+            .unwrap()
+            .is_empty()
+    );
+    let id = gateway
+        .webhook_event_id(
+            &renox::axum::http::HeaderMap::new(),
+            ngenius_fixture("event_purchased").to_string().as_bytes(),
+        )
+        .unwrap();
+    assert_eq!(id, "evt-0001");
+}

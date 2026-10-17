@@ -1,0 +1,6 @@
+{
+  "_id": "urn:payment:fake-payment-1:refund:fake-refund-1",
+  "state": "REQUESTED",
+  "amount": { "currencyCode": "USD", "value": 1000 },
+  "createDateTime": "2026-10-17T12:00:00.000Z"
+}

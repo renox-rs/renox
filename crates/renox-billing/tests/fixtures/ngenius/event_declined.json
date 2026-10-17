@@ -1,0 +1,15 @@
+{
+  "eventId": "evt-0002",
+  "eventName": "DECLINED",
+  "order": {
+    "_id": "urn:order:0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+    "reference": "0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01",
+    "merchantOrderReference": "invoice-7-2",
+    "amount": { "currencyCode": "AED", "value": 12000 },
+    "_embedded": {
+      "payment": [
+        { "_id": "urn:payment:fake-payment-2", "state": "FAILED" }
+      ]
+    }
+  }
+}
