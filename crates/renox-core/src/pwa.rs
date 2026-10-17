@@ -477,6 +477,29 @@ fn offline_response(body: String, vary_host: bool) -> Response {
 }
 
 impl Pwa {
+    /// The head tags `<rx-pwa/>` emits: the manifest link, `theme-color`, the
+    /// apple-touch-icon and the worker registration script. The inline script
+    /// carries the request's CSP `nonce`, so it runs under `CSP=strict`.
+    ///
+    /// ```
+    /// use renox::pwa::Pwa;
+    /// let html = Pwa::new("Bikeshop").theme_color("#123456").head_tags("abc");
+    /// assert!(html.contains(r#"<link rel="manifest" href="/manifest.webmanifest">"#));
+    /// assert!(html.contains(r##"<meta name="theme-color" content="#123456">"##));
+    /// assert!(html.contains(r#"<script nonce="abc">"#));
+    /// ```
+    pub fn head_tags(&self, nonce: &str) -> String {
+        format!(
+            "<link rel=\"manifest\" href=\"/manifest.webmanifest\">\n\
+             <meta name=\"theme-color\" content=\"{color}\">\n\
+             <link rel=\"apple-touch-icon\" href=\"{ICON_ROUTE}/icon-192.png\">\n\
+             <script nonce=\"{nonce}\">if('serviceWorker' in navigator){{addEventListener('load',function(){{\
+             navigator.serviceWorker.register('/sw.js',{{scope:'/'}}).catch(function(){{}})}})}}</script>",
+            color = crate::seo::escape(&self.theme_color),
+            nonce = crate::seo::escape(nonce),
+        )
+    }
+
     /// `GET /manifest.webmanifest`, outside sessions: the locale is the
     /// `Accept-Language` pick (when the app detects it) or `APP_LOCALE`, and
     /// the names come from the lang keys `pwa.name` and `pwa.short_name`.

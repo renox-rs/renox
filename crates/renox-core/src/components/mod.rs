@@ -761,6 +761,7 @@ mod tests {
         assert_eq!(c("<rx-head/>"), "{{ renox_head() }}");
         assert_eq!(c("<rx-ui/>"), "{{ renox_ui() }}");
         assert_eq!(c("<rx-theme/>"), "{{ renox_theme() }}");
+        assert_eq!(c("<rx-pwa/>"), "{{ renox_pwa() }}");
         assert_eq!(
             c("<rx-ui :styles=\"false\"/>"),
             "{{ renox_ui(styles=(false)) }}"

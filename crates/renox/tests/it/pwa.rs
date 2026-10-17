@@ -168,3 +168,73 @@ async fn pwa_for_without_pwa_is_a_boot_error() {
         .unwrap_err();
     assert!(format!("{err:#}").contains("App::pwa"), "{err:#}");
 }
+
+struct Pages;
+
+impl Module for Pages {
+    fn name(&self) -> &'static str {
+        "pages"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/", || async { view("page.html", context! {}) })
+    }
+}
+
+async fn page(pwa: Option<Pwa>, strict: bool) -> String {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("page.html"),
+        "<head><rx-pwa/></head>|{{ renox_pwa() }}",
+    )
+    .unwrap();
+    let (views, public) = (dir.path().to_path_buf(), dir.path().join("public"));
+    let app = match pwa {
+        Some(pwa) => App::new().module(Pages).pwa(pwa),
+        None => App::new().module(Pages),
+    };
+    let app = TestApp::with_config(app, move |c| {
+        c.views_path = views;
+        c.public_path = public;
+        if strict {
+            c.csp = renox::CspMode::Strict;
+        }
+    })
+    .await;
+    let res = app.get("/").await;
+    res.assert_ok();
+    res.text()
+}
+
+#[renox::test]
+async fn rx_pwa_renders_the_head_tags_and_a_script_that_carries_the_nonce() {
+    let dir = tempfile::tempdir().unwrap();
+    let pwa = Pwa::new("Bikeshop")
+        .theme_color("#123456")
+        .icons(icons(dir.path()));
+    let html = page(Some(pwa), true).await;
+    assert_eq!(html.matches("rel=\"manifest\"").count(), 2, "{html}");
+    assert_eq!(
+        html.matches("name=\"theme-color\" content=\"#123456\"")
+            .count(),
+        2
+    );
+    assert_eq!(html.matches("rel=\"apple-touch-icon\"").count(), 2);
+    let nonce = html
+        .split("<script nonce=\"")
+        .nth(1)
+        .and_then(|rest| rest.split('"').next())
+        .unwrap_or_default();
+    assert!(!nonce.is_empty(), "the script carries the nonce: {html}");
+    assert_eq!(
+        html.matches(&format!("<script nonce=\"{nonce}\">")).count(),
+        2
+    );
+    assert!(html.contains("serviceWorker.register('/sw.js'"), "{html}");
+}
+
+#[renox::test]
+async fn rx_pwa_renders_nothing_without_a_pwa() {
+    let html = page(None, true).await;
+    assert_eq!(html, "<head></head>|", "{html}");
+}

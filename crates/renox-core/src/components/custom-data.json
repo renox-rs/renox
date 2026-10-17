@@ -282,6 +282,11 @@
     },
     {
       "attributes": [],
+      "description": "The installable-app head tags: manifest link, theme colour, touch icon and the service worker registration (`renox_pwa()`); nothing without `App::pwa`.",
+      "name": "rx-pwa"
+    },
+    {
+      "attributes": [],
       "description": "The toast region (`toasts()`).",
       "name": "rx-toasts"
     },

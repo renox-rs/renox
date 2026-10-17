@@ -578,6 +578,17 @@ pub(crate) static BUILTIN: &[Contract] = &[
         parent: None,
     },
     Contract {
+        tag: "rx-pwa",
+        doc: "The installable-app head tags: manifest link, theme colour, touch icon and the service worker registration (`renox_pwa()`); nothing without `App::pwa`.",
+        render: Render::Function("renox_pwa"),
+        props: &[],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
         tag: "rx-toasts",
         doc: "The toast region (`toasts()`).",
         render: Render::Function("toasts"),

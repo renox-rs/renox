@@ -1175,6 +1175,7 @@ impl App {
                 self.theme.as_ref(),
                 self.theme_chooser.clone(),
             ),
+            pwa: self.pwa.clone().map(Arc::new),
             channel_limits: Arc::new(channel_limits),
             mailer_limits: Arc::new(self.mailer_limits),
             queue: Queue::new(db.clone(), key.clone()),

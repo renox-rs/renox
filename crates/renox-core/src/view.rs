@@ -1033,6 +1033,7 @@ pub(crate) const REQUEST_GLOBALS: &[&str] = &[
     "old",
     "has_old",
     "renox_head",
+    "renox_pwa",
     "seo",
     "csp_nonce",
     "toasts",
@@ -1882,6 +1883,15 @@ fn globals(
         )
     };
     let nonce = requested.nonce.to_owned();
+    // `<rx-pwa/>`: the manifest link, colours, icon and registration script
+    // (with the CSP nonce); nothing without `App::pwa`.
+    let pwa = Value::from_safe_string(
+        state
+            .pwa
+            .as_ref()
+            .map(|pwa| pwa.head_tags(requested.nonce))
+            .unwrap_or_default(),
+    );
     let field = Value::from_safe_string(format!(
         "<input type=\"hidden\" name=\"{}\" value=\"{token}\">",
         crate::csrf::CSRF_FIELD
@@ -2017,6 +2027,7 @@ fn globals(
                 .unwrap_or_default())
         }),
         renox_head => Value::from_function(move || head.clone()),
+        renox_pwa => Value::from_function(move || pwa.clone()),
         seo => seo,
         csp_nonce => Value::from_function(move || nonce.clone()),
         csrf_field => Value::from_function(move || field.clone()),

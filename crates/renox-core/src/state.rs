@@ -60,6 +60,8 @@ pub struct AppStateInner {
     pub(crate) mailers: Arc<std::collections::HashMap<String, Mailer>>,
     /// The themes the app can serve at `/_renox/theme/{hash}.css`.
     pub(crate) themes: crate::theme::ThemeRegistry,
+    /// The installable-app configuration (`App::pwa`), for `<rx-pwa/>`.
+    pub(crate) pwa: Option<Arc<crate::pwa::Pwa>>,
     /// Dispatches jobs.
     pub queue: Queue,
     /// The cache (`CACHE_STORE`).
