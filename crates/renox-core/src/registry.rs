@@ -51,6 +51,9 @@ pub struct Registry {
     /// Links modules add to named menus (`nav`), and the ones they hide.
     pub(crate) nav_links: Vec<(String, crate::nav::NavLink)>,
     pub(crate) nav_hidden: Vec<(String, String)>,
+    /// Secrets of the senders whose signed requests are accepted
+    /// (`signing_key`), by key id.
+    pub(crate) signing_keys: HashMap<String, String>,
 }
 
 /// A seeder registered with `App::seeder` or `Registry::seeder`.
@@ -466,6 +469,16 @@ impl Registry {
     /// added it.
     pub fn nav_hide(&mut self, menu: &str, key: &str) -> &mut Self {
         self.nav_hidden.push((menu.to_owned(), key.to_owned()));
+        self
+    }
+
+    /// Registers the secret (`whsec_<base64>`) a sender signs its requests
+    /// with, under the key id it sends in `webhook-key-id` (see
+    /// `Request::sign`). A second key with the same id replaces the first,
+    /// which is how a key is rotated.
+    pub fn signing_key(&mut self, key_id: &str, secret: &str) -> &mut Self {
+        self.signing_keys
+            .insert(key_id.to_owned(), secret.to_owned());
         self
     }
 

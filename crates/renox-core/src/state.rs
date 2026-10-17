@@ -94,6 +94,10 @@ pub struct AppStateInner {
     /// The navigation menus (`App::nav`).
     #[allow(dead_code)]
     pub(crate) nav: Arc<crate::nav::Nav>,
+    /// Secrets of the senders whose signed requests are accepted
+    /// (`App::signing_key`), by key id.
+    #[allow(dead_code)]
+    pub(crate) signing_keys: Arc<std::collections::HashMap<String, String>>,
     /// The `Auth` module's settings, when the app has it.
     pub(crate) auth: Option<Arc<crate::auth::module::Settings>>,
     /// `App::detect_locale`: the browser's `Accept-Language` picks the locale.

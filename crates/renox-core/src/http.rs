@@ -206,6 +206,31 @@ impl Request {
         self
     }
 
+    /// Signs the request for a receiver that knows `key_id`
+    /// (`App::signing_key`): adds `webhook-id`, `webhook-timestamp`,
+    /// `webhook-signature` (the Standard Webhooks format, see
+    /// [`crate::webhook::signing`]) and `webhook-key-id`. `secret` is
+    /// `whsec_<base64>`. Call it after the body is set: the signature covers
+    /// the body as it is now. A bad secret makes `send` fail.
+    pub fn sign(mut self, key_id: &str, secret: &str) -> Self {
+        let id = format!("msg_{}", crate::db::Ulid::new().as_str());
+        let timestamp = crate::clock::unix_secs();
+        let body = self.body.as_ref().map_or(&[][..], |(_, body)| &body[..]);
+        match crate::webhook::signing::sign(secret, &id, timestamp, body) {
+            Ok(signature) => {
+                self.headers
+                    .retain(|(name, _)| !name.to_ascii_lowercase().starts_with("webhook-"));
+                self = self
+                    .header("webhook-id", id)
+                    .header("webhook-timestamp", timestamp.to_string())
+                    .header("webhook-signature", signature)
+                    .header("webhook-key-id", key_id);
+            }
+            Err(err) => self.error = Some(err),
+        }
+        self
+    }
+
     /// How long one attempt may take (30 s by default).
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -688,6 +713,40 @@ mod tests {
         assert!(
             http.get("https://a.test/none").send().await.is_err(),
             "no fake"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_adds_verifiable_standard_webhooks_headers() {
+        let secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+        let http = Http::default();
+        let fake = http.fake();
+        fake.on("POST https://a.test/hook", FakeResponse::status(200));
+        http.post("https://a.test/hook")
+            .json(&serde_json::json!({"a": 1}))
+            .sign("billing", secret)
+            .send()
+            .await
+            .unwrap();
+        let sent = &fake.sent()[0];
+        assert_eq!(sent.header("webhook-key-id"), Some("billing"));
+        assert!(sent.header("webhook-id").unwrap().starts_with("msg_"));
+        assert!(crate::webhook::signing::verify(
+            secret,
+            sent.header("webhook-id").unwrap(),
+            sent.header("webhook-timestamp").unwrap(),
+            sent.header("webhook-signature").unwrap(),
+            sent.body.as_bytes(),
+            Duration::from_secs(300),
+        ));
+
+        // A bad secret fails the send.
+        assert!(
+            http.post("https://a.test/hook")
+                .sign("billing", "whsec_***")
+                .send()
+                .await
+                .is_err()
         );
     }
 

@@ -744,6 +744,12 @@ impl App {
         self
     }
 
+    /// Registers a key for signed requests; see [`Registry::signing_key`].
+    pub fn signing_key(mut self, key_id: &str, secret: &str) -> Self {
+        self.registry.signing_key(key_id, secret);
+        self
+    }
+
     /// Hides the link with `key` from the menu `menu`; see [`Registry::nav_hide`].
     pub fn nav_hide(mut self, menu: &str, key: &str) -> Self {
         self.registry.nav_hide(menu, key);
@@ -826,6 +832,7 @@ impl App {
             settings_module,
             nav_links,
             nav_hidden,
+            signing_keys,
         } = self.registry;
         if !settings_groups.is_empty() && !settings_module {
             return Err(anyhow!(
@@ -1141,6 +1148,7 @@ impl App {
             reporters: Arc::new(reporters),
             second_factor: second_factor.map(Arc::new),
             nav: Arc::new(nav),
+            signing_keys: Arc::new(signing_keys),
             account_sections: {
                 account_sections.sort_by_key(|section| section.order);
                 Arc::new(account_sections)
