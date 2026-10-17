@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use typst::diag::{FileError, FileResult, PackageError};
+use typst::diag::{FileError, FileResult};
 use typst::foundations::{Bytes, Datetime, Dict, Duration};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
@@ -71,13 +71,7 @@ impl RenoxWorld {
     fn bytes(&self, id: FileId) -> FileResult<Bytes> {
         let rooted = id.get();
         if let VirtualRoot::Package(spec) = rooted.root() {
-            return Err(FileError::Package(PackageError::Other(Some(
-                format!(
-                    "package {spec} is not available: PDF templates cannot use packages \
-                     (only the built-in kit)"
-                )
-                .into(),
-            ))));
+            return crate::kit::file(spec, rooted.vpath().get_without_slash());
         }
         let vpath = rooted.vpath();
         if let Some(asset) = self.assets.get(vpath.get_without_slash()) {
