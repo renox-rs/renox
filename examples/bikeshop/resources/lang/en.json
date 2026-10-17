@@ -1396,6 +1396,7 @@
       "step": "A work order can't go there from where it is.",
       "unpaid": "It has to be paid before it is collected.",
       "not_payable": "There's nothing to pay on this work order now.",
+      "signoff_status": "A work order is signed off while it is in progress or ready.",
       "empty_note": "Write a note or add a photo.",
       "no_extra": "Pick a task or a part to propose.",
       "no_customer": "Extra work is proposed to a customer; a fleet repair has none."
@@ -1533,6 +1534,7 @@
       "mechanic": "Mechanic",
       "take": "I'll take it",
       "assigned": "It's yours.",
+      "signed_off": "Signed off.",
       "noted": "Added.",
       "proposed": "Sent to the customer for approval.",
       "paid": "Paid.",
@@ -1577,9 +1579,17 @@
       "note": "Note",
       "before": "Before",
       "after": "After",
+      "signoff": "Sign-off",
       "body": "Note",
       "photo": "Photo",
       "add": "Add"
+    },
+    "signoff": {
+      "title": "Customer sign-off",
+      "signature": "Customer signature",
+      "name": "Or type the customer's name",
+      "photos": "Photos of the finished work",
+      "save": "Record the sign-off"
     },
     "extra": {
       "propose": "Propose extra work",

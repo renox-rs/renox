@@ -49,6 +49,14 @@
             <rx-button variant="secondary" icon="plus">{{ t('workshop.notes.add') }}</rx-button>
           </form>
         </rx-card>
+        <rx-card rx-if="can_update and order.status in ['in_progress', 'ready']" title="{{ t('workshop.signoff.title') }}">
+          <form method="post" action="{{ route('workshop.order.signoff', order.id) }}" enctype="multipart/form-data" id="signoff-form" novalidate>
+            {{ csrf_field() }}
+            <rx-signature-pad name="signature" label="{{ t('workshop.signoff.signature') }}" name-label="{{ t('workshop.signoff.name') }}" required/>
+            <rx-camera-capture name="photos" label="{{ t('workshop.signoff.photos') }}" :max="3"/>
+            <rx-button variant="secondary" icon="check">{{ t('workshop.signoff.save') }}</rx-button>
+          </form>
+        </rx-card>
       </div>
 
       <div class="bs-order__side">

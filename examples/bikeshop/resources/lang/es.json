@@ -3296,6 +3296,7 @@
       "step": "Una orden no puede pasar ahí desde donde está.",
       "unpaid": "Hay que pagarla antes de recogerla.",
       "not_payable": "No hay nada que pagar en esta orden ahora.",
+      "signoff_status": "Una orden se firma mientras está en curso o lista.",
       "empty_note": "Escribe una nota o añade una foto.",
       "no_extra": "Elige una tarea o una pieza para proponer.",
       "no_customer": "El trabajo extra se propone a un cliente; una reparación de la flota no tiene."
@@ -3433,6 +3434,7 @@
       "mechanic": "Mecánico",
       "take": "Me la quedo",
       "assigned": "Es tuya.",
+      "signed_off": "Conformidad registrada.",
       "noted": "Añadido.",
       "proposed": "Enviado al cliente para su aprobación.",
       "paid": "Pagado.",
@@ -3477,9 +3479,17 @@
       "note": "Nota",
       "before": "Antes",
       "after": "Después",
+      "signoff": "Conformidad",
       "body": "Nota",
       "photo": "Foto",
       "add": "Añadir"
+    },
+    "signoff": {
+      "title": "Conformidad del cliente",
+      "signature": "Firma del cliente",
+      "name": "O escriba el nombre del cliente",
+      "photos": "Fotos del trabajo terminado",
+      "save": "Registrar la conformidad"
     },
     "extra": {
       "propose": "Proponer trabajo extra",

@@ -144,7 +144,7 @@ pub async fn show(
             json!({
                 "id": n.id,
                 "time": n.created_at,
-                "kind": match n.kind { NoteKind::Note => "note", NoteKind::Before => "before", NoteKind::After => "after" },
+                "kind": match n.kind { NoteKind::Note => "note", NoteKind::Before => "before", NoteKind::After => "after", NoteKind::Signoff => "signoff" },
                 "body": n.body,
                 "photo": n.photo_path.is_some(),
             })
@@ -242,6 +242,7 @@ pub async fn show(
             NoteKind::Note => "note",
             NoteKind::Before => "before",
             NoteKind::After => "after",
+            NoteKind::Signoff => "signoff",
         };
         let mut body = n.body.clone().unwrap_or_default();
         if n.photo_path.is_some() {
@@ -388,6 +389,85 @@ pub async fn note(
     .await?;
     Ok((
         Toast::success(lang.t("workshop.order.noted", &[])),
+        Redirect::route("workshop.order", &[&order.id])?,
+    ))
+}
+
+/// The customer's sign-off at the bench: a drawn signature or a typed name,
+/// and up to three photos of the finished work.
+#[derive(Deserialize, Debug)]
+pub struct SignoffForm {
+    pub signature: Option<Upload>,
+    pub signature_name: Option<String>,
+    #[serde(default)]
+    pub photos: Vec<Upload>,
+}
+
+impl Validate for SignoffForm {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(1024);
+        v.field("signature_name", &self.signature_name).max(120);
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+        v.field("photos", &self.photos).max(3);
+        v.each("photos", &self.photos, |p| {
+            p.image().mimes(&["jpg", "jpeg", "png", "webp"]).max(5120)
+        });
+    }
+}
+
+/// `POST /staff/workshop/{order}/signoff` (`workshop.order.signoff`): the
+/// customer's sign-off, kept as notes (a `Signoff` note with the signature
+/// or the typed name, an `After` note per photo) through the private
+/// upload path. It does not change the order's status.
+pub async fn signoff(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+    Valid(form): Valid<SignoffForm>,
+) -> Result<(Toast, Redirect)> {
+    let order = workable(&state.db, &user, id).await?;
+    let lang = state.current_lang();
+    if !matches!(order.status, WorkStatus::InProgress | WorkStatus::Ready) {
+        let mut errors = Errors::new();
+        errors.add("signature", lang.t("workshop.errors.signoff_status", &[]));
+        return Err(errors.into());
+    }
+    let staff = staff_id(&state.db, &user).await?;
+    let name = form
+        .signature_name
+        .filter(|n| !n.trim().is_empty())
+        .map(|n| n.trim().to_owned());
+    let signature_path = match &form.signature {
+        Some(signature) => Some(signature.store(&state.storage, "workshop").await?),
+        None => None,
+    };
+    let mut notes = vec![WorkOrderNote {
+        work_order_id: order.id,
+        staff_id: staff,
+        kind: NoteKind::Signoff,
+        body: name,
+        photo_path: signature_path,
+        ..Default::default()
+    }];
+    for photo in &form.photos {
+        notes.push(WorkOrderNote {
+            work_order_id: order.id,
+            staff_id: staff,
+            kind: NoteKind::After,
+            photo_path: Some(photo.store(&state.storage, "workshop").await?),
+            ..Default::default()
+        });
+    }
+    for note in notes {
+        WorkOrderNote::create(&state.db, note).await?;
+    }
+    Ok((
+        Toast::success(lang.t("workshop.order.signed_off", &[])),
         Redirect::route("workshop.order", &[&order.id])?,
     ))
 }

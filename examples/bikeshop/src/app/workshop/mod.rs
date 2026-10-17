@@ -107,6 +107,8 @@ impl Module for Workshop {
             .name("workshop.order.tasks")
             .post("/staff/workshop/{order}/notes", order::note)
             .name("workshop.order.notes")
+            .post("/staff/workshop/{order}/signoff", order::signoff)
+            .name("workshop.order.signoff")
             .post("/staff/workshop/{order}/parts", order::add_part)
             .name("workshop.order.parts")
             .post(

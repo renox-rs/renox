@@ -225,6 +225,8 @@ pub enum NoteKind {
     Before,
     /// A photo after the work.
     After,
+    /// The customer's sign-off: a drawn signature (a private image) or a typed name.
+    Signoff,
 }
 
 /// A mechanic's note or photo on a work order.

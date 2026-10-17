@@ -19,8 +19,8 @@ use bikeshop::app::workshop::approval;
 use bikeshop::app::workshop::capacity::{self, NewBooking};
 use bikeshop::app::workshop::factories::{WorkOrderStates, work_orders};
 use bikeshop::app::workshop::model::{
-    CustomerBike, ExtraStatus, ExtraWork, PartStatus, ServiceTask, WorkOrder, WorkOrderPart,
-    WorkOrderTask, WorkSource, WorkStatus,
+    CustomerBike, ExtraStatus, ExtraWork, NoteKind, PartStatus, ServiceTask, WorkOrder,
+    WorkOrderNote, WorkOrderPart, WorkOrderTask, WorkSource, WorkStatus,
 };
 use bikeshop::app::workshop::tasks;
 use bikeshop::seed::{fixtures, unique};
@@ -1245,4 +1245,113 @@ async fn the_payment_link_needs_the_sell_permission_in_the_orders_store_and_a_re
         .await
         .assert_status(409);
     assert!(links_of(&w, &waiting).await.is_empty());
+}
+
+const SIGN_PNG: &[u8] = include_bytes!("fixtures/bike.png");
+
+#[renox::test]
+async fn a_mechanic_signs_a_work_order_off_with_a_signature_or_a_typed_name_and_photos() {
+    let w = world().await;
+    let db = w.app.db();
+    let mut order = booking(&w, 0, vec![w.check.clone()])
+        .await
+        .unwrap()
+        .unwrap();
+    let url = format!("/staff/workshop/{}/signoff", order.id);
+    let order_id = order.id;
+    let notes = |kind: NoteKind| {
+        WorkOrderNote::query()
+            .where_(WorkOrderNote::WORK_ORDER_ID.eq(order_id))
+            .where_(WorkOrderNote::KIND.eq(kind))
+    };
+
+    // The form is on the bench page only while the work is in progress or ready.
+    w.app.acting_as(&w.mechanic);
+    let page = format!("/staff/workshop/{}", order.id);
+    let html = w.app.get(&page).await.assert_ok().text();
+    assert!(!html.contains("data-rx-signature"));
+    w.app
+        .post_multipart(&url, &[("signature_name", "Rita Rider")], &[])
+        .await
+        .assert_status(303);
+    assert_eq!(notes(NoteKind::Signoff).count(db).await.unwrap(), 0);
+    order.status = WorkStatus::InProgress;
+    order.save(db).await.unwrap();
+    w.app
+        .get(&page)
+        .await
+        .assert_ok()
+        .assert_see("data-rx-signature")
+        .assert_see("data-rx-camera");
+
+    // Neither a signature nor a name, a non-image, and too many photos are refused.
+    w.app
+        .post_multipart(&url, &[], &[])
+        .await
+        .assert_status(303);
+    w.app
+        .post_multipart(
+            &url,
+            &[],
+            &[("signature", "signature.png", b"not an image")],
+        )
+        .await
+        .assert_status(303);
+    let four: Vec<(&str, &str, &[u8])> =
+        (0..4).map(|_| ("photos", "photo.png", SIGN_PNG)).collect();
+    w.app
+        .post_multipart(&url, &[("signature_name", "Rita Rider")], &four)
+        .await
+        .assert_status(303);
+    assert_eq!(notes(NoteKind::Signoff).count(db).await.unwrap(), 0);
+
+    // A typed name alone: one sign-off note without a file.
+    w.app
+        .post_multipart(&url, &[("signature_name", "Rita Rider")], &[])
+        .await
+        .assert_status(303);
+    let typed = notes(NoteKind::Signoff).first(db).await.unwrap().unwrap();
+    assert_eq!(typed.body.as_deref(), Some("Rita Rider"));
+    assert!(typed.photo_path.is_none());
+
+    // A drawn signature and two photos: private files, shown with signed links.
+    w.app
+        .post_multipart(
+            &url,
+            &[],
+            &[
+                ("signature", "signature.png", SIGN_PNG),
+                ("photos", "photo-1.png", SIGN_PNG),
+                ("photos", "photo-2.png", SIGN_PNG),
+            ],
+        )
+        .await
+        .assert_status(303);
+    assert_eq!(notes(NoteKind::Signoff).count(db).await.unwrap(), 2);
+    let after = notes(NoteKind::After).get(db).await.unwrap();
+    assert_eq!(after.len(), 2);
+    assert!(after.iter().all(|n| n.photo_path.is_some()));
+    w.app
+        .get(&format!(
+            "/staff/workshop/{}/notes/{}/photo",
+            order.id, after[0].id
+        ))
+        .await
+        .assert_status(303);
+    w.app.get(&page).await.assert_ok().assert_see("Sign-off");
+
+    // The status is untouched, and who isn't allowed cannot post it.
+    let kept = WorkOrder::find(db, order.id).await.unwrap().unwrap();
+    assert_eq!(kept.status, WorkStatus::InProgress);
+    w.app.acting_as(&w.rider);
+    w.app
+        .post_multipart(&url, &[("signature_name", "Me")], &[])
+        .await
+        .assert_status(403);
+    w.app.acting_as(&w.mechanic_south);
+    w.app
+        .post_multipart(&url, &[("signature_name", "Me")], &[])
+        .await
+        .assert_status(404);
+    assert_eq!(notes(NoteKind::Signoff).count(db).await.unwrap(), 2);
 }
