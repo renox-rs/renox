@@ -33,6 +33,9 @@ async fn the_page_shows_every_block_with_its_signature() {
         "class=\"rx-stepper rx-stepper--horizontal\"",
         "class=\"rx-stepper rx-stepper--vertical\"",
         "data-rx-week",
+        "data-rx-signature",
+        "data-rx-camera",
+        r#"enctype="multipart/form-data""#,
         "class=\"rx-month\"",
         "class=\"rx-availability\"",
         "data-rx-datetime-range",
@@ -52,6 +55,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "keypad(target,",
         "status_stepper(steps, current=none",
         "week_calendar(resources, events=[]",
+        "signature_pad(name, label=none",
+        "camera_capture(name, label=none",
         "kanban(id, columns, url",
         "kanban_card(card)",
         "month_calendar(month, events=[]",
@@ -296,6 +301,56 @@ async fn the_week_calendar_books_a_slot_the_server_checks() {
         )
         .await
         .assert_invalid("end");
+}
+
+const PNG: &[u8] = include_bytes!("fixtures/bike.png");
+
+#[renox::test]
+async fn the_signature_and_photos_arrive_as_uploads_the_server_checks() {
+    let app = TestApp::new(bikeshop::app()).await;
+    // A drawn signature and two photos pass (the toast says what arrived).
+    app.post_multipart(
+        "/about/blocks/sign",
+        &[],
+        &[
+            ("signature", "signature.png", PNG),
+            ("photos", "photo-1.jpg", PNG),
+            ("photos", "photo-2.jpg", PNG),
+        ],
+    )
+    .await
+    .assert_status(303);
+    // A typed name alone is enough...
+    app.post_multipart("/about/blocks/sign", &[("signature_name", "Ana R.")], &[])
+        .await
+        .assert_status(303);
+    // ...but neither is not, a text file is no signature, and four photos
+    // are one too many.
+    app.htmx()
+        .post_multipart("/about/blocks/sign", &[], &[])
+        .await
+        .assert_invalid("signature_name");
+    app.htmx()
+        .post_multipart(
+            "/about/blocks/sign",
+            &[],
+            &[("signature", "signature.png", b"just text")],
+        )
+        .await
+        .assert_invalid("signature");
+    app.htmx()
+        .post_multipart(
+            "/about/blocks/sign",
+            &[("signature_name", "Ana R.")],
+            &[
+                ("photos", "a.jpg", PNG),
+                ("photos", "b.jpg", PNG),
+                ("photos", "c.jpg", PNG),
+                ("photos", "d.jpg", PNG),
+            ],
+        )
+        .await
+        .assert_invalid("photos");
 }
 
 #[renox::test]

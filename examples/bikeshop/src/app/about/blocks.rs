@@ -19,7 +19,10 @@
 //!   saved: the answer only says whether the move is allowed);
 //! - `POST /about/blocks/week`: a free slot clicked on the week calendar
 //!   (`resource`, `start` and `end` as RFC 3339 times; nothing is saved, the
-//!   answer is a toast).
+//!   answer is a toast);
+//! - `POST /about/blocks/sign`: the signature pad and the camera capture,
+//!   multipart (`Upload`s read with `Valid<T>`; nothing is stored, the
+//!   answer is a toast saying what arrived).
 
 use crate::explain::NotAPage;
 use renox::chrono::{Datelike, Duration, NaiveDate, NaiveDateTime};
@@ -40,6 +43,8 @@ pub fn routes() -> Routes {
         .name("about.blocks.move")
         .post("/about/blocks/week", book_slot)
         .name("about.blocks.week")
+        .post("/about/blocks/sign", sign)
+        .name("about.blocks.sign")
 }
 
 /// The GET routes here that aren't pages.
@@ -628,3 +633,61 @@ async fn move_card(Valid(_form): Valid<MoveForm>) -> StatusCode {
     StatusCode::NO_CONTENT
 }
 // [/explain:about.blocks.kanban]
+
+/// The signature pad and the camera capture, as `Valid<T>` reads them: a
+/// PNG in `signature` or a typed `signature_name`, and up to three photos.
+#[derive(Debug, Deserialize)]
+pub struct SignForm {
+    /// The drawn signature (`signature.png`).
+    pub signature: Option<Upload>,
+    /// The typed name, sent instead of a drawing.
+    pub signature_name: Option<String>,
+    /// The photos the camera took (or the fallback input picked).
+    #[serde(default)]
+    pub photos: Vec<Upload>,
+}
+
+impl Validate for SignForm {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(1024);
+        v.field("signature_name", &self.signature_name).max(120);
+        // Either way of signing is enough.
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+        v.field("photos", &self.photos).max(3);
+        v.each("photos", &self.photos, |p| {
+            p.image().mimes(&["jpg", "jpeg", "png", "webp"]).max(5120)
+        });
+    }
+}
+
+/// A signature and photos: the form posts multipart, the handler gets real
+/// `Upload`s that passed `image()` and `mimes()`. A real shop would store
+/// them (`Upload::store`); here the toast only says what arrived.
+async fn sign(lang: Lang, Valid(form): Valid<SignForm>) -> Result<(Toast, Redirect)> {
+    let signature = match (&form.signature, form.signature_name.as_deref()) {
+        (Some(file), _) => lang.t(
+            "blocks.page.sign_drawn",
+            &[
+                ("type", &file.content_type().to_owned()),
+                ("size", &file.bytes().len().to_string()),
+            ],
+        ),
+        (None, name) => lang.t(
+            "blocks.page.sign_typed",
+            &[("name", &name.unwrap_or_default().trim().to_owned())],
+        ),
+    };
+    let message = lang.t(
+        "blocks.page.signed",
+        &[
+            ("signature", &signature),
+            ("photos", &form.photos.len().to_string()),
+        ],
+    );
+    Ok((Toast::success(message), Redirect::to("/about/blocks#sign")))
+}

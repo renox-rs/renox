@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -117,6 +117,29 @@ kanban_card(card)</app-about-signature>
               slot_url=none, slot_target=none, slot_swap=none, label=none, id="rx-week")
   resources: [{id, label, note?}]
   events: [{resource, start, end, label, tone?, href?}]  (RFC 3339)</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="sign">
+  <rx-card :title="t('blocks.page.sign_title')" :subtitle="t('blocks.page.sign_lead')">
+    <form class="rx-stack" method="post" action="{{ route('about.blocks.sign') }}" enctype="multipart/form-data" id="sign-form" novalidate>
+      {{ csrf_field() }}
+      <div class="bs-showcase__demo">
+        <rx-signature-pad name="signature" :label="t('blocks.page.sign_label')" required/>
+        <p class="rx-hint">{{ t('blocks.page.signature') }}</p>
+        <app-about-signature>signature_pad(name, label=none, name_label=none, required=false, width=400,
+              height=160, hint=none, id=none, bag=none)
+  posts: name (a PNG file) or name_name (the typed name)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-camera-capture name="photos" :label="t('blocks.page.photos_label')" :max="3" facing="environment"/>
+        <p class="rx-hint">{{ t('blocks.page.camera') }}</p>
+        <app-about-signature>camera_capture(name, label=none, facing="environment", max=1, max_width=2048,
+               quality=0.85, accept="image/*", required=false, hint=none, id=none, bag=none)
+  posts: name (one JPEG per photo, up to max)</app-about-signature>
+      </div>
+      <div><rx-button :label="t('blocks.page.send')"/></div>
+    </form>
   </rx-card>
   </div>
 
