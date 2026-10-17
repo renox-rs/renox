@@ -434,7 +434,7 @@ and `rnx view:check` names a wrong one with its file and line.
    rx-menu / rx-menu-link / rx-menu-action / rx-menu-separator, rx-tabs / rx-tab, rx-empty.
    Macros with no tag: group, tab_panel. renox_ui(styles=false) loads only the script (styles published with ui:publish). #}
 
-{# The layout's plumbing as tags: <rx-head/> {{ renox_head() }}, <rx-ui/> {{ renox_ui() }} (<rx-ui :styles="false"/>),
+{# The layout's plumbing as tags: <rx-head/> {{ renox_head() }}, <rx-ui/> {{ renox_ui() }} (<rx-ui :styles="false"/>), <rx-theme/> {{ renox_theme() }} (the brand stylesheet, after rx-ui),
    <rx-toasts/> {{ toasts() }}, <rx-outlet stack="scripts"/> {{ stack('scripts') }}; <rx-outlet name="content"/> a layout block
    a page fills (children = its default; name or stack, not both); <rx-pagination :page="products"/> the page links. #}
 
@@ -1512,6 +1512,12 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // (`use renox::nav::NavLink`; also `NavLink::url(url, label).key(k)`, `.gate(g)`, `.when(|user| …)`, `.active("invoices.*")`),
 // `app.nav_hide("staff", "invoices.index")`. `.permission` = held globally or in any scope: `user.has_permission_anywhere(p)`.
 // Drawn by `<rx-sidebar menu="staff"/>` / `<rx-nav-links menu="portal"/>` or `nav('staff')` (docs/ui.md, docs/authorization.md).
+
+// Brand themes (docs/ui.md "Brand themes"): accent tokens from one colour, light and dark, contrast-checked.
+// let theme = Theme::from_brand(&Brand::new("#1E3A5F").second("#B8532E").display_font("Poppins"))?; // Err(ContrastError { suggestion, .. }) for #FFF59D
+// App::new().theme(theme)  // or .theme_for(|req: ThemeRequest| async move { Ok(Some(theme)) }) per host/tenant/setting; Ok(None) = app theme
+// Layout: <rx-theme/> after <rx-ui/>; served at /_renox/theme/{hash}.css (immutable, CSP strict safe).
+// theme.tokens() / theme.dark_tokens() -> BTreeMap; Mail::theme(&theme) colours rx-mail-button/panel, also when queued.
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`

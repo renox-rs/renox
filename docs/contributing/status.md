@@ -539,3 +539,13 @@
   `state.emit` of a registered event dispatches directly. The job payload is encrypted and has ids only.
   `SignedRequest` buffers the body and keeps replay ids in the cache for the tolerance window.
   Guide: docs/operations.md "Outbound webhooks".
+- **#36, brand themes**: `renox-core/src/theme.rs` (colour core: hex, sRGB/OKLCH with gamut clipping, WCAG ratio,
+  nearest-passing lightness search; `Brand`, `Theme::from_brand`, `ContrastError`, `tokens()`/`dark_tokens()`,
+  `css()` with the kit's three selector blocks, a 16-digit content hash). Text variants move in lightness
+  (at most 0.3 OKLCH in light mode, 0.7 in dark); beyond that the brand is refused with the nearest passing
+  colour. The registry (hash to CSS) lives in app state and is filled by `App::theme` and by `theme_for`
+  results; `GET /_renox/theme/{hash}.css` is immutable-cached and 404s for unknown hashes. The request
+  middleware resolves chooser, then app theme, then none, and shares `renox_theme_url` with views;
+  `renox_theme()` / `<rx-theme/>` link it after `<rx-ui/>`. `Mail::theme` rewrites the button and panel colours
+  into the HTML, so queued mail keeps them. bikeshop: a const `Brand` table per store in `stores.rs`.
+  Guide: docs/ui.md "Brand themes".

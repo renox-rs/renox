@@ -33,7 +33,7 @@ full reload.
 - [The UI kit](#the-ui-kit) that ships with Renox (`renox/ui.html`):
   - form fields;
   - the page's frame (navigation bar, sidebar, page headers);
-  - themes and type;
+  - themes and type, and [brand themes](#brand-themes) (one colour in, readable accent tokens out);
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
 - [Menus that modules add to](#menus-that-modules-and-the-app-add-to): `App::nav`, `NavLink`,
@@ -1022,6 +1022,114 @@ Every text colour keeps 4.5:1 on every background (WCAG AA), in light and dark.
 An app's own `:root` tokens, in a stylesheet loaded after `renox_ui()`, win over either
 theme. So a brand colour stays when the theme changes. The bike shop keeps its teal and
 terracotta this way ([public/theme.css](../examples/bikeshop/public/theme.css)).
+
+### Brand themes
+
+To give an app (or each store, tenant or company) its own colour, derive the kit's accent
+tokens from one brand colour instead of writing them by hand. `Theme::from_brand` does the
+colour maths and refuses a colour whose text could not be read:
+
+```rust
+use renox::prelude::*;
+use renox::theme::{Brand, Theme};
+
+fn app() -> App {
+    let brand = Brand::new("#1E3A5F").second("#B8532E").display_font("Poppins");
+    let theme = Theme::from_brand(&brand).expect("a readable brand");
+    App::new().theme(theme)
+}
+```
+
+Put `<rx-theme/>` (or `{{ renox_theme() }}`) right after `<rx-ui/>` in the layout. The layouts
+`rnx new` writes already have it. It links a stylesheet at `/_renox/theme/{hash}.css` and
+renders nothing when the request has no theme, so it is safe to leave in.
+
+What the theme sets, for light and dark mode (the same selectors the kit uses):
+
+| Token | Meaning |
+|---|---|
+| `--rx-accent`, `-hover`, `-pressed` | the brand colour and its states |
+| `--rx-accent-text` | the colour for links and accent-coloured text, 4.5:1 on the page and surfaces |
+| `--rx-on-accent` | the label on an accent button (white or near-black), 3:1 on the accent |
+| `--rx-accent-soft`, `--rx-focus`, `--rx-chart-1` | soft background, focus ring, first chart colour |
+| `--rx-accent-2`, `--rx-accent-2-text` | with `.second(..)`; without it the kit's second accent stays |
+| `--rx-font-display` | with `.display_font(..)`; only sets the name, load the font yourself |
+
+Status colours, spacing, radii and the type scale are not touched. The stylesheet loads after
+the kit's, so the brand wins over `data-rx-theme="warm"` and `"classic"` too.
+
+**Colours that can't be read.** A colour that cannot reach contrast (pale yellow `#FFF59D`) is
+refused with a `ContrastError`; its `suggestion` is the nearest colour that works, and a
+malformed colour is a different `kind` (`InvalidColor`) with no suggestion. Show the message
+next to a colour field:
+
+```rust
+use renox::theme::{Brand, ContrastErrorKind, Theme};
+
+let err = Theme::from_brand(&Brand::new("#FFF59D")).unwrap_err();
+assert_eq!(err.kind, ContrastErrorKind::LowContrast);
+// err.to_string(): "`#FFF59D` cannot reach readable contrast; try #…"
+assert!(Theme::from_brand(&Brand::new(err.suggestion.as_str())).is_ok());
+```
+
+**A brand per request.** `App::theme_for` runs for each rendered page and may return
+`Ok(None)` (use the app's `theme`, or the kit's look). `ThemeRequest` has `host`, `path`,
+`locale`, `user` and `state`. The bike shop picks a store's brand by host
+([stores.rs](../examples/bikeshop/src/app/home/stores.rs)). To let an administrator choose the
+colour, keep it in a [settings](settings.md) group and read it in the chooser:
+
+```rust
+use renox::prelude::*;
+use renox::settings::SettingsGroup;
+use renox::theme::{Brand, Theme, ThemeRequest};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Validate, Default, Clone)]
+pub struct Appearance {
+    /// `#rrggbb`; empty means the kit's look.
+    pub brand_color: String,
+}
+
+impl SettingsGroup for Appearance {
+    const KEY: &'static str = "appearance";
+}
+
+fn app() -> App {
+    App::new().settings::<Appearance>().theme_for(|req: ThemeRequest| async move {
+        let appearance = req.state.settings::<Appearance>().await?;
+        if appearance.brand_color.is_empty() {
+            return Ok(None);
+        }
+        // A bad saved colour falls back to the kit (the error is logged).
+        Ok(Some(Theme::from_brand(&Brand::new(appearance.brand_color.as_str()))?))
+    })
+}
+```
+
+Validate the colour when the form is saved (call `Theme::from_brand` in an `after` rule or the
+handler and show `err.suggestion`), so the chooser seldom fails. Themes are kept by hash, so
+the URL changes when the colour does and a browser never shows an old brand. A theme that has
+been served stays available under its hash.
+
+**CSP.** The stylesheet is a same-origin `<link>`, never inline `<style>`, so it works under
+`CSP=strict` without a nonce. It is cached for a year (`immutable`); the hash in the URL is the
+cache key.
+
+**Tokens and mail.** `theme.tokens()` and `theme.dark_tokens()` return the values as a
+`BTreeMap` (for a PDF, a chart library or a #30 template). `Mail::theme(&theme)` colours the
+mail components (`rx-mail-button`, `rx-mail-panel`) with the brand. The colours are written
+into the mail, so a queued mail needs no theme when it is sent:
+
+```rust
+use renox::mail::Mail;
+use renox::theme::{Brand, Theme};
+
+let theme = Theme::from_brand(&Brand::new("#1E3A5F")).unwrap();
+let accent = theme.tokens()["--rx-accent"].clone();
+let html = r#"<a style="background:#1c1917;color:#ffffff;">Pay</a>"#;
+let mail = Mail::new("ana@example.com", "Invoice", "Invoice").html(html).theme(&theme);
+assert!(mail.html.unwrap().contains(&accent));
+```
 
 ### The type scale
 

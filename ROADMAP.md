@@ -1953,8 +1953,20 @@ Notes:
 - [ ] An admin screen for endpoints, OAuth2 client credentials, per-endpoint payload transforms and
   private-address blocking are out of scope
 
+### Brand themes (#36)
+- [x] `renox::theme`: `Brand`, `Theme::from_brand` (OKLCH, WCAG-checked, `ContrastError` with a passing
+  suggestion), `tokens()`/`dark_tokens()`, `css()`; hashed `/_renox/theme/{hash}.css`; `App::theme`,
+  `App::theme_for` + `ThemeRequest`; `<rx-theme/>` / `renox_theme()`; `Mail::theme`; bikeshop per-store brands
+- [x] Docs (ui.md "Brand themes"), CHEATSHEET.md, llms.txt
+- [ ] Loading the display font, a theme editor in renox-admin and non-accent tokens (status colours,
+  radii) are out of scope
+
 ## Decisions
 
+- **Brand themes are hashed stylesheets only** (#36): no inline `<style>` and no `Vary: Host`, so a theme works
+  under `CSP=strict` without a nonce and caches for a year. Every theme the app serves is kept in memory by hash.
+  A colour that cannot be made readable by moving its text variants in lightness is refused with the nearest
+  passing colour, not silently changed. The settings integration (#29) is documented, not coupled in code.
 - **`--from` is a new option, not a value for `--starter`** (#35), which stays a boolean; it
   conflicts with `--starter`, `--notifications` and `--tailwind`. Templates fill only exact
   `{{key}}` names (no spaces), so a template's own `{{ app.locale }}` survives, and a ref is a tag or

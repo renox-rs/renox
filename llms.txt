@@ -262,6 +262,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   guide: docs/ui.md "Menus that modules and the app add to", examples/bikeshop), `sidebar` + `<rx-shell fill>` for
   dashboard apps (the standard: `rx-fill`, `rx-pane`, `rx-panes`, `--rx-fill-min`), `page_header`, `toolbar`, `row_actions`, `list`, `card_grid`/`media_card`,
   `link_tabs`, `thumbnail`, `progress`, `rx-page--fill`: build pages from these, not app CSS;
+  brand themes (`Theme::from_brand(&Brand::new("#1E3A5F").second(..).display_font(..))` derives contrast-checked accent tokens,
+  light and dark, or `Err(ContrastError { suggestion })`; `App::theme(theme)` or `App::theme_for(|req: ThemeRequest| ..)` per host/tenant/setting;
+  `<rx-theme/>` after `<rx-ui/>` links the hashed `/_renox/theme/{hash}.css`, CSP strict safe; `theme.tokens()`/`dark_tokens()`,
+  `Mail::theme(&theme)`; guide: docs/ui.md "Brand themes", example: examples/bikeshop per-store brands),
   themes and the type scale: the warm default, `data-rx-theme="classic"`, `--rx-type-*`),
   the filters `number`, `money` (`APP_CURRENCY`), `date`, `since`, `words`, `markdown`,
   dashboards (`renox::chart`: `Period` with presets, weeks and custom ranges, `Trend` per
