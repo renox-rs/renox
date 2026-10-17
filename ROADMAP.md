@@ -1971,6 +1971,21 @@ Notes:
 - [x] Docs (ui.md "Right-to-left"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
 - [ ] Arabic translations of the kit's texts, Arabic-Indic digits and the Hijri calendar are out of scope
 
+### State machines (#39)
+- [x] `renox::state_machine`: `StateMachine`, `Machine`, `Transition` (`permission`, `permission_in`,
+  `system`, guards, effects, `reason_required`), `record.transition(..).by/by_system/reason/input/meta`
+  `.run/.run_in`, `Outcome`/`Transitioned`, `TransitionError` as 401/403/404/422, optimistic update
+  (`Conflict`), the `state_transitions` history (migration 000410), `history` and `timeline`
+- [x] `available` (name, label, tone, needs_reason, requires_approval), the global interceptor
+  (`Proceed`/`Defer`, `Outcome::Pending`, side-effect-free `preview`), `#[model(state_machine)]`
+  guarding the status column, `Machine::initial`, `insert_in_state`
+- [x] `Machine::mermaid`, `rnx state:diagram`, admin opt-in (`AdminAction::transitions`),
+  `<rx-transition-actions>` and `state_machine::routes::<M>()`
+- [x] Bikeshop rentals moved onto the machine (`rentals/machine.rs`)
+- [x] Docs (docs/state-machines.md, site page), CHEATSHEET.md, llms.txt, the new-app AGENTS.md stub
+- [ ] Approval workflows themselves, `.approved(ref)` replay, run-time targets (`to_one_of`) and a
+  by-name `run(model, key, transition)` registry are follow-up issues; work orders stay as they are
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2255,6 +2270,19 @@ Notes:
   same. `LoggedIn` has a `via` field. Deviations from the issue: the delivery hook is
   `.deliver(|state, LoginCodeDelivery| ..)` (one struct instead of five arguments); no
   `.json()` paths (the example uses a `phone` column and raw SQL, as the notes said).
+
+- **State machines** (#39, owner's decisions and plan assumptions A1-A13): the call shape is
+  `record.transition("place").by(&user).reason(..).input(&x).meta(json).run(&state)`; `run_in(&mut tx)`
+  does not commit and returns an `Outcome` for the caller to emit after the commit. Checks run in
+  the order authentication, permission (`permission_in` uses `has_permission_in`), `from`, guards,
+  reason, interceptor, optimistic `UPDATE .. WHERE status = <loaded>`, history row, effects. One
+  interceptor is registered globally and may `Defer` (the status stays, its own writes are kept,
+  `Outcome::Pending`); approval workflows are not built. `#[model(state_machine)]` makes `save`
+  match the row on the loaded status instead of writing it; bulk `update` bypasses the guard
+  (documented like hooks); inserts are unrestricted unless the machine declares `initial`.
+  Bikeshop rentals use `.system()` transitions because every caller (store-scoped counter,
+  kiosk token, the customer's own reservation, the scheduler) is authorised by its area first;
+  the staff member goes into the history `metadata`. Work orders were not moved.
 
 ## Not planned
 

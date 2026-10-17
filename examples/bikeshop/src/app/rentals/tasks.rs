@@ -21,6 +21,7 @@
 use renox::chrono::Duration;
 use renox::prelude::*;
 use renox::schedule::Schedule;
+use renox::state_machine::{StateMachine, TransitionError};
 
 use super::FleetRepairNeeded;
 use super::booking::to_local;
@@ -63,9 +64,19 @@ pub async fn lapse_unpaid(state: &AppState) -> Result<u64> {
         .get(&state.db)
         .await?;
     for mut rental in lapsed.iter().cloned() {
-        rental.status = RentalStatus::Cancelled;
         rental.cancelled_at = Some(renox::db::now());
-        rental.save(&state.db).await?;
+        let mut tx = state.db.begin().await?;
+        rental.save(&mut tx).await?;
+        let moved = rental
+            .transition("lapse")
+            .by_system()
+            .reason("the deposit was not paid in time")
+            .run_in(&mut tx)
+            .await
+            .map_err(TransitionError::into_error)?;
+        tx.commit().await?;
+        rental.status = RentalStatus::Cancelled;
+        moved.emit(state).await?;
         if let Some(customer) = Customer::find(&state.db, rental.customer_id).await? {
             notify::customer(
                 state,
@@ -97,14 +108,23 @@ pub async fn no_shows(state: &AppState) -> Result<u64> {
         .get(&state.db)
         .await?;
     for mut rental in missed.iter().cloned() {
-        rental.status = RentalStatus::NoShow;
         let mut kept = 0;
         if rental.deposit_status == DepositStatus::Held {
             kept = no_show_fee(rental.price, rental.deposit);
             rental.deposit_refunded = rental.deposit - kept;
             rental.deposit_status = DepositStatus::Forfeited;
         }
-        rental.save(&state.db).await?;
+        let mut tx = state.db.begin().await?;
+        rental.save(&mut tx).await?;
+        let moved = rental
+            .transition("no_show")
+            .by_system()
+            .run_in(&mut tx)
+            .await
+            .map_err(TransitionError::into_error)?;
+        tx.commit().await?;
+        rental.status = RentalStatus::NoShow;
+        moved.emit(state).await?;
         RentalBike::query()
             .where_(RentalBike::ID.eq(rental.rental_bike_id))
             .where_(RentalBike::STATUS.eq(BikeStatus::Reserved))
@@ -202,11 +222,21 @@ pub async fn overdue(state: &AppState) -> Result<u64> {
             .unwrap_or_default();
         let first_time = rental.status == RentalStatus::Active;
         rental.late_fee = late_fee(hourly, rental.due_at, now);
-        rental.status = RentalStatus::Overdue;
-        rental.save(&state.db).await?;
         if !first_time {
+            rental.save(&state.db).await?;
             continue;
         }
+        let mut tx = state.db.begin().await?;
+        rental.save(&mut tx).await?;
+        let moved = rental
+            .transition("overdue")
+            .by_system()
+            .run_in(&mut tx)
+            .await
+            .map_err(TransitionError::into_error)?;
+        tx.commit().await?;
+        rental.status = RentalStatus::Overdue;
+        moved.emit(state).await?;
         newly += 1;
         RentalBike::query()
             .where_(RentalBike::ID.eq(rental.rental_bike_id))

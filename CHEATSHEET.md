@@ -32,6 +32,7 @@ rnx make:package invoicing           # a reusable crate (Module, migrations, vie
                                      # --fields "..", --with assets,commands, --register <crate> (virtual workspace)
 rnx make:model Product --module products --migration   # --key ulid|uuid|string for other ids
 rnx make:migration add_sku_to_products
+rnx state:diagram Order             # a state machine as a Mermaid diagram (no name: lists the registered ones)
 rnx make:migration --auto add_sku     # SQL from what changed in the models (db:diff); --yes skips questions
 rnx make:policy Product --module products
 rnx make:job SendReceipt --module products
@@ -1904,6 +1905,63 @@ async fn cart_page(ctx: LiveContext) -> Result<View> {
 }
 
 // In tests: let mut c = app.live(Cart::default()); c.call_with("add", json!([3])).await;
+```
+
+## State machines (details in [docs/state-machines.md](docs/state-machines.md), example: [the bike shop's rentals](examples/bikeshop/src/app/rentals/machine.rs))
+
+A model with a status declares its states and transitions once; every change goes through
+`record.transition(name)`, which checks who, the `from` state and the guards, moves the status
+with an optimistic update and writes a history row, in one transaction.
+`#[model(state_machine)]` makes `save` refuse a changed status. Errors: 401, 403, 404 and 422
+(`TransitionError::into_error`). `.system()` transitions run with `by_system()` only.
+
+```rust
+use renox::prelude::*;
+use renox::state_machine::{self, Machine, Outcome, StateMachine, Transition, TransitionError};
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum OrderStatus { Draft, Placed, Cancelled }
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "orders", state_machine)]
+struct Order { id: i64, status: String, lines: i64 }
+
+impl StateMachine for Order {
+    type State = OrderStatus;
+    const COLUMN: renox::db::Col<Self, OrderStatus> = renox::db::Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new()
+            .initial([OrderStatus::Draft])
+            .state(OrderStatus::Cancelled).tone("danger").terminal()
+            .transition(
+                Transition::new("place").label("Place order")
+                    .from([OrderStatus::Draft]).to(OrderStatus::Placed)
+                    .permission("orders.place") // or .permission_in(name, |o| scope) / .system()
+                    .guard("has_lines", |o: &Order, _ctx| Box::pin(async move {
+                        if o.lines > 0 { Ok(()) } else { Err("The order has no lines.".into()) }
+                    })),
+            )
+            .transition(
+                Transition::new("cancel")
+                    .from([OrderStatus::Draft, OrderStatus::Placed]).to(OrderStatus::Cancelled)
+                    .reason_required(),
+            )
+    }
+}
+
+// App::new().state_machine::<Order>()  (rnx state:diagram, the admin panel, db:check)
+async fn cancel(state: AppState, user: AuthUser, order: Order) -> Result<Vec<serde_json::Value>> {
+    order.transition("cancel").by(&user).reason("customer asked").run(&state).await
+        .map_err(TransitionError::into_error)?;   // run_in(&mut tx) does not commit: outcome.emit(&state) after
+    let actions = order.available(&user, &state.db).await?; // name, label, tone, needs_reason, requires_approval
+    let _ = actions; // <rx-transition-actions :actions="actions" action="/orders/1/transitions"/>
+    // Routes::new().group("/orders", "orders.", state_machine::routes::<Order>())
+    let rows = state_machine::history(&state.db, "orders", order.id).await?;
+    Ok(state_machine::timeline(&rows, Some(&state_machine::info_of::<Order>()))) // <rx-history :items=…/>
+}
+// Listen: app.listen(|e: Transitioned<Order>, state: AppState| async move { Ok(()) })
+// Approvals: state_machine::set_interceptor(impl TransitionInterceptor) → Decision::Defer → Outcome::Pending
 ```
 
 ## Raw SQL and transactions (SQLite and PostgreSQL)

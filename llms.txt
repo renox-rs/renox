@@ -133,7 +133,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [catalogue.rs](examples/bikeshop/src/app/access/catalogue.rs),
     [policy.rs](examples/bikeshop/src/app/access/policy.rs),
     [active_store.rs](examples/bikeshop/src/app/access/active_store.rs); rentals:
-    [booking.rs](examples/bikeshop/src/app/rentals/booking.rs); stock ledger:
+    [booking.rs](examples/bikeshop/src/app/rentals/booking.rs), status changes through the
+    state machine [machine.rs](examples/bikeshop/src/app/rentals/machine.rs); stock ledger:
     [stock/ledger.rs](examples/bikeshop/src/app/stock/ledger.rs); books between stores:
     [multistore/books.rs](examples/bikeshop/src/app/multistore/books.rs); reports:
     [reports/dashboard.rs](examples/bikeshop/src/app/reports/dashboard.rs),
@@ -232,6 +233,14 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/live.md](docs/live.md): live components (`LiveComponent`, `#[renox::live_component]`,
   `<live-NAME>`, `rx-click`/`rx-submit`/`rx-model`, the signed snapshot, `TestApp::live`); example: the bike
   shop's `/about/htmx/live` ([live.rs](examples/bikeshop/src/app/about/live.rs)).
+- [docs/state-machines.md](docs/state-machines.md): state machines for models with a status
+  (`StateMachine`, `Machine`, `Transition` with `permission`/`permission_in`/`system`, guards and
+  effects, `record.transition(name).by(&user).reason(..).input(..).meta(..).run(&state)` / `run_in`,
+  `Outcome`, `Transitioned`, `TransitionError` as 401/403/404/422, `available`,
+  `<rx-transition-actions>`, `state_machine::routes`, `history` and `timeline` for `<rx-history>`,
+  `#[model(state_machine)]` guarding the status column, `insert_in_state`, the global interceptor
+  for approvals, `Machine::mermaid`, `rnx state:diagram`, `AdminAction::transitions`); example: the
+  bike shop's rentals ([machine.rs](examples/bikeshop/src/app/rentals/machine.rs)).
 - [docs/testing.md](docs/testing.md): `TestApp` requests and assertions (JSON paths, views,
   session, login), the database, jobs, event and notification fakes, HTTP fakes, time travel,
   counting queries, a browser-test recipe.

@@ -105,6 +105,12 @@ rnx tailwind --watch                                   # rebuild public/css/app.
 - Live components (`#[renox::live_component]`, `rx-click`/`rx-model`, docs/live.md): action names
   starting with `_` are reserved (`_refresh` is built in), and the state is signed, not
   encrypted, so keep secrets out of the component's fields. Check the policy in each action.
+- A model whose status moves along a fixed path is a state machine (`impl StateMachine`,
+  `#[model(state_machine)]`, docs/state-machines.md): change the status only with
+  `record.transition("name").by(&user).run(&state)`, never by assigning the field and saving
+  (`save` refuses a changed status; bulk `update` queries bypass the guard, so don't use them for
+  it). `run_in(&mut tx)` does not commit: emit the outcome after the commit. Guards run for
+  `available` too, so they must not write. `rnx state:diagram Model` draws the machine.
 - Route parameters are `{id}` (axum 0.8), not `:id`: `.get("/products/{id}", show)`.
 - `.require_auth()` guards only the routes added before it in that `Routes`; so do
   `.require_gate`, `.require_role`, `.require_permission`, `.require_ability` and

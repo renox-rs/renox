@@ -129,6 +129,14 @@ pub static PAGES: &[Page] = &[
         "A part of a page with state in a Rust struct: click, and the server draws it again."
     ),
     page!(
+        "state-machines",
+        "State machines",
+        Guides,
+        "arrow-right-left",
+        "docs/state-machines.md",
+        "Declare how a status moves, who may move it, and keep a history of every change."
+    ),
+    page!(
         "grid",
         "The data grid",
         Guides,

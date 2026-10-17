@@ -560,3 +560,15 @@
   `getComputedStyle(el).direction` when used. `tests/browser/rtl.test.mjs` runs the fixture with `APP_LOCALE=ar`
   (its pages, `/rtl` and `/arabic` for the font network check) and flips the Spanish bike shop at run time for
   the blocks and admin. Guide: docs/ui.md "Right-to-left".
+
+- **#39, state machines**: `renox-core/src/state_machine.rs` holds everything: `StateMachine`/`Machine`/`Transition`
+  (plain data, Send-safe boxed guards and effects), the engine (`TransitionBuilder`, `Outcome`, `Transitioned`),
+  `TransitionError` with its 401/403/404/422 mapping, the `state_transitions` history (migration 000410, `metadata`
+  JSONB on PostgreSQL), `available`, the global interceptor, the by-name registry (`App::state_machine`,
+  `machine_info`), `routes::<M>()` and `timeline`. `#[model(state_machine)]` sets `Model::guarded_column`/`check_insert`;
+  `save` matches the row on the loaded status and never writes it. `rnx state:diagram` is answered by the app binary
+  (`App::state_machine`); renox-admin has `state_machine()`, `available_transitions()` and `AdminAction::transitions()`.
+  `<rx-transition-actions>` is a built-in template (`BUILTIN` line in `view.rs`). Bikeshop rentals: `rentals/machine.rs`;
+  `counter.rs`, `reserve.rs` and `tasks.rs` set the other columns, `save`, then `transition(..).run_in(&mut tx)`, and emit
+  after the commit; all transitions are `.system()` (the areas authorise first). Guide: docs/state-machines.md
+  (doctest `StateMachinesGuide`, site page `state-machines`).

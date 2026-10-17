@@ -4,6 +4,7 @@
 use renox::calendar::{Event, Ics, Status};
 use renox::chrono::{Duration, NaiveDateTime, Timelike};
 use renox::prelude::*;
+use renox::state_machine::{StateMachine, TransitionError};
 use renox::validation::FormContext;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -542,13 +543,23 @@ pub async fn cancel_rental(
     if !rental.cancellable() {
         return Ok(false);
     }
-    rental.status = RentalStatus::Cancelled;
     rental.cancelled_at = Some(renox::db::now());
     if rental.deposit_status == DepositStatus::Held {
         rental.deposit_status = DepositStatus::Refunded;
         rental.deposit_refunded = rental.deposit;
     }
-    rental.save(&state.db).await?;
+    let mut tx = state.db.begin().await?;
+    rental.save(&mut tx).await?;
+    let moved = rental
+        .transition("cancel")
+        .by_system()
+        .meta(json!({ "customer": customer.id }))
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    tx.commit().await?;
+    rental.status = RentalStatus::Cancelled;
+    moved.emit(state).await?;
     notify::customer(
         state,
         customer,
@@ -722,9 +733,19 @@ pub async fn deposit_failed(state: &AppState, rental_id: i64) -> Result {
     if !rental.is_reserved() || rental.deposit_status != DepositStatus::Unpaid {
         return Ok(());
     }
-    rental.status = RentalStatus::Cancelled;
     rental.cancelled_at = Some(renox::db::now());
-    rental.save(&state.db).await?;
+    let mut tx = state.db.begin().await?;
+    rental.save(&mut tx).await?;
+    let moved = rental
+        .transition("lapse")
+        .by_system()
+        .reason("the deposit payment failed")
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    tx.commit().await?;
+    rental.status = RentalStatus::Cancelled;
+    moved.emit(state).await?;
     if let Some(customer) = Customer::find(&state.db, rental.customer_id).await? {
         notify::customer(
             state,

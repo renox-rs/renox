@@ -205,7 +205,7 @@ pub enum DepositStatus {
 
 /// A bike rented by a customer for some hours or days.
 #[derive(Model, Serialize, Default, Debug, Clone)]
-#[model(table = "rentals")]
+#[model(table = "rentals", state_machine)]
 pub struct Rental {
     pub id: i64,
     /// What the customer shows at the counter.

@@ -120,6 +120,11 @@ pub struct SchedulingGuide;
 #[doc = include_str!("../../../docs/live.md")]
 pub struct LiveGuide;
 
+/// Compiles the Rust in docs/state-machines.md as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/state-machines.md")]
+pub struct StateMachinesGuide;
+
 /// Compiles the Rust in docs/testing.md as a doctest.
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/testing.md")]

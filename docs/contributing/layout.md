@@ -20,7 +20,8 @@ crates/renox/              facade crate apps depend on: re-exports renox-core, t
                            ReadMe, CheatSheet, TypesGuide, RelationsGuide, AuthorizationGuide,
                            QueueGuide, UiGuide, GridGuide, ValidationGuide, RoutingGuide,
                            MailGuide, SchedulingGuide, TestingGuide, OperationsGuide,
-                           TutorialGuide, LaravelGuide, LiveGuide, MacroCompileErrors
+                           TutorialGuide, LaravelGuide, LiveGuide, StateMachinesGuide,
+                           MacroCompileErrors
   tests/it/                ONE integration-test binary (main.rs + a module per area); add new areas
                            as `mod x;` in main.rs. Notable modules: send_handlers.rs (every data
                            API in a routed handler), web_security.rs, data_resilience.rs,
@@ -445,6 +446,8 @@ docs/ui.md                 components (as rx-* tags first), the UI kit, toasts, 
                            headers, live validation, stacks, view:check, typed views, editor
                            autocomplete, Tailwind (doctest `UiGuide`)
 docs/live.md               live components (doctest `LiveGuide`)
+docs/state-machines.md     state machines for models: Machine, transitions, guards, the guarded status
+                           column, history, interceptor, diagrams (doctest `StateMachinesGuide`)
 docs/grid.md               the data grid (renox::grid): columns, filters, actions, summaries,
                            exports (doctest `GridGuide`)
 docs/routing.md            routes, groups, domains, extractors, middleware, guards, sessions,

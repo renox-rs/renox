@@ -24,6 +24,7 @@ use renox::chrono::{Duration, NaiveDateTime};
 use renox::db::Json as DbJson;
 use renox::prelude::*;
 use renox::select::{OptionQuery, SelectOption};
+use renox::state_machine::{StateMachine, TransitionError};
 use renox::validation::FormContext;
 use serde::{Deserialize, Serialize};
 
@@ -381,7 +382,6 @@ pub async fn hand_over(
     let now = renox::db::now();
     let deposit_due = rental.deposit_status == DepositStatus::Unpaid;
     let mut tx = db.begin().await?;
-    rental.status = RentalStatus::Active;
     rental.picked_up_at = Some(now);
     rental.served_by = staff.or(rental.served_by);
     rental.pickup_checklist = Some(DbJson(form.checklist.clone()));
@@ -389,11 +389,21 @@ pub async fn hand_over(
         rental.deposit_status = DepositStatus::Held;
     }
     rental.save(&mut tx).await?;
+    // The status moves through the machine (`machine.rs`), in this transaction.
+    let moved = rental
+        .transition("pickup")
+        .by_system()
+        .meta(json!({ "staff": staff }))
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    rental.status = RentalStatus::Active;
     RentalBike::query()
         .where_(RentalBike::ID.eq(rental.rental_bike_id))
         .update(&mut tx, &[("status", &BikeStatus::Rented)])
         .await?;
     tx.commit().await?;
+    moved.emit(state).await?;
     // [/explain:rentals.desk.handover]
     let charge = |amount: i64| Charge {
         payable: Payable::Rental(rental.id),
@@ -534,7 +544,6 @@ pub async fn take_back(
 
     // [explain:rentals.desk.return]
     let mut tx = db.begin().await?;
-    rental.status = RentalStatus::Returned;
     rental.returned_at = Some(now);
     rental.returned_by = staff;
     rental.return_store_id = (store != rental.operating_store_id).then_some(store);
@@ -546,6 +555,14 @@ pub async fn take_back(
         rental.deposit_refunded = settlement.refund;
     }
     rental.save(&mut tx).await?;
+    let moved = rental
+        .transition("return")
+        .by_system()
+        .meta(json!({ "staff": staff, "store": store }))
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    rental.status = RentalStatus::Returned;
     // [/explain:rentals.desk.return]
     bike.location_store_id = store;
     bike.ridden_hours += pricing::ridden_hours(minutes);
@@ -575,6 +592,7 @@ pub async fn take_back(
     // [explain:rentals.desk.return]
     tx.commit().await?;
     // [/explain:rentals.desk.return]
+    moved.emit(state).await?;
 
     if settlement.due > 0 {
         payments::record_counter(

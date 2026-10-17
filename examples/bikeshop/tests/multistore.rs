@@ -30,6 +30,7 @@ use bikeshop::seed::fixtures;
 use renox::chrono::{Datelike, Duration as Span};
 use renox::db::capture_queries;
 use renox::prelude::*;
+use renox::state_machine::StateMachine;
 use renox::testing::TestApp;
 use std::time::Duration;
 
@@ -632,9 +633,14 @@ async fn a_recall_never_takes_a_bike_from_under_a_rental() {
             .location_store_id,
         w.south.id
     );
-    let mut done = rental.clone();
-    done.status = bikeshop::app::rentals::model::RentalStatus::Returned;
-    done.save(db).await.unwrap();
+    // Back at the counter: the status moves through the machine.
+    let moved = rental
+        .transition("return")
+        .by_system()
+        .run(w.app.state())
+        .await
+        .unwrap();
+    assert!(!moved.is_pending());
 
     // A recall and a booking at the same moment: exactly one wins.
     let start = renox::db::now() + Span::hours(2);
