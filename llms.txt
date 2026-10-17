@@ -336,7 +336,12 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `Billing::of(&state, &user)` (`subscribed`, `on_trial`, `checkout`, `swap`, `cancel`,
   `resume`, `pause`/`unpause`…), `require_subscription`/`require_plan` (and the `_named` ones), the webhooks (verified, once per event,
   out-of-order safe), its events, billing a team (`Billable`), another gateway (`Gateway`),
-  replacing the pages, testing with `fake_http` and signed webhooks.
+  replacing the pages, testing with `fake_http` and signed webhooks. One-off payments:
+  `Billing::of(..).charge(Charge)`, `Billing::payment_link(PaymentLink)`, `refund`, `payment_status`,
+  `expire_links` (`billing:expire-links`), the `billing_payments` rows with your reference, keys per
+  installation (`Stripe::resolved`, `resolved_accounts`), several accounts (`.account("acme-llc")`,
+  `/billing/webhooks/{gateway}/{account}`), refunds and disputes with their events, the late-success
+  rule, the typed `Unsupported`, N-Genius (`Billing::ngenius()`).
 - [docs/editors.md](docs/editors.md): the renox-editors crate: `rich_editor` (Trix; read as
   `RichText`, cleaned with ammonia; shown with `| rich_text`), `markdown_editor` (toolbar and
   a server-rendered preview), `code_editor` (CodeJar + Prism), `code_entry`; how the files load.
@@ -467,10 +472,12 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   the account section, the listeners: a deleted account's subscriptions end, audit entries),
   `Plan`/`Interval` (`plan.rs`), `Customer`/`Billable`/`Owner` (`customer.rs`), the
   `Gateway` trait with `Remote`, `Notice`, `Payment`, `Checkout`, `CheckoutRequest`
-  (`gateway.rs`), `stripe.rs`, `xendit.rs`, `Subscription`/`BillingCustomer`/
+  (`gateway.rs`), `stripe.rs`, `xendit.rs`, `ngenius.rs`, one-off payments (`payment.rs`:
+  `BillingPayment`, `BillingRefund`, `Charge`, `PaymentLink`, `Refund`, `Unsupported`, tables
+  `billing_payments` and `billing_refunds`), `Subscription`/`BillingCustomer`/
   `SubscriptionStatus` (`model.rs`, tables `subscriptions` and `billing_customers`), how a
   `Remote` becomes a row and events (`sync.rs`), the webhook (`webhook.rs`: one route,
-  `/billing/webhooks/{gateway}`, through `renox::webhook`), the pages (`handlers.rs`,
+  `/billing/webhooks/{gateway}` and `/billing/webhooks/{gateway}/{account}`, through `renox::webhook`), the pages (`handlers.rs`,
   `views/plans.html`, `views/section.html`), the guards (`guard.rs`). Guide:
   [docs/billing.md](docs/billing.md); used in examples/bikeshop (a
   named subscription per bike).

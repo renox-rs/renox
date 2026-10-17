@@ -2032,6 +2032,17 @@ Notes:
   `bikeshop-fields.test.mjs`)
 - [x] Docs (types.md "Quantities and units", ui.md, validation.md, grid.md, admin.md), CHEATSHEET.md, llms.txt
 
+### One-off payments in renox-billing (#44)
+- [x] `billing_payments` / `billing_refunds` tables (SQLite, PostgreSQL, down), `BillingPayment`, `BillingRefund`, status enums, the
+  typed `Unsupported` error
+- [x] `Billing::of(..).charge`, `Billing::payment_link`, `refund`, `payment_status`, `expire_links` with `Charge`, `PaymentLink`, `Refund`
+- [x] Keys per installation (`resolved`, `resolved_accounts`) and several accounts per gateway with `/billing/webhooks/{gateway}/{account}`
+- [x] Webhooks applied to payments, refunds and disputes idempotently, with the late-success rule; events `PaymentRefunded`,
+  `RefundSucceeded`, `RefundFailed`, `DisputeOpened`/`Won`/`Lost`, `PaymentLinkExpired`
+- [x] Stripe, Xendit and the new N-Genius gateway (`Billing::ngenius()`), fixtures from their docs; the `billing:expire-links` sweep
+- [x] Config docs and new-app stubs; docs/billing.md, CHEATSHEET.md, llms.txt, the crate README
+- [ ] The bikeshop "pay by link" example and its browser test; acceptance checks AC1-AC14 and the Stripe PaymentIntent matching (13/13)
+
 ### Custom fields (#41)
 - [x] `renox::custom_fields::{CustomField, FieldKind, LocaleMap, FieldRules, CustomValues}`: definitions in the `custom_fields` table
   (migration 430, SQLite and PostgreSQL), kinds text/number/date/bool/choice/reference/file, labels and choice labels per locale with
@@ -2373,6 +2384,18 @@ Notes:
   `quantity_min`/`quantity_max`, because `min`/`max` count characters of text. A grid never sums across units: one figure per
   unit. Bikeshop keeps the load limit as an `Option<Quantity<3>>` plus `load_unit`, added by a new migration.
 
+- **One-off payments in `renox-billing`** (#44, assumptions A1-A15): a payment is a `billing_payments` row (kind charge or link,
+  the app's reference, the account) with `billing_refunds` beside it; money is `Money`. Keys belong to the installation, never to a
+  `Billable` owner: `Stripe::resolved` / `resolved_accounts` (and Xendit, N-Genius) call the closure on every use and cache nothing,
+  and a key never reaches `Debug` or an error. An account is named per charge (`.account(..)`), stored on the payment and has its own
+  webhook `/billing/webhooks/{gateway}/{account}` with its own secret and no fallback to the default account; the old URL is the
+  default account. New `Gateway` methods default to a typed, downcastable `Unsupported`, so custom gateways keep compiling. The row
+  is written before the gateway call and removed when it fails. Refunds are pending until the gateway says otherwise, and
+  over-refunding is refused before any call. Late-success rule: a success always wins over failed or expired, a failure or expiry
+  after a success is ignored, otherwise the newest gateway time decides. Expiry comes from the gateway's webhook or the hourly
+  `billing:expire-links` sweep, which asks `payment_status` first. N-Genius is one-off only (no subscriptions, no disputes); saved-card
+  tokens were not accepted. Fixtures for all three gateways are written from their public docs, not recorded. Known gap: Stripe
+  disputes and dashboard-made refunds name only the PaymentIntent, which the row does not store yet (fixed in 13/13).
 - **Custom fields** (#41, assumptions A1-A12): definitions live in their own table, not in settings, and a key is stable
   (`[a-z][a-z0-9_]*`) because stored values are keyed by it; only label, rules, meta, position and active change, and deactivating
   keeps the values. Values are one `Json<CustomValues>` column, so no migration per field. Labels are a locale map that falls back

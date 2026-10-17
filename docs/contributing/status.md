@@ -634,3 +634,17 @@
   fixture's `/parties`), `renox-admin/tests`, and `tests/browser/custom-fields.test.mjs` (fixture `parties.rs`). The `error()` view
   function tries the raw name before the dotted one, so `extra[key]` errors mark the right input. The sealed flag is the follow-up
   #71. Guide: docs/types.md "Custom fields".
+
+- **#44, one-off payments in `renox-billing`** (parts 1-12): `payment.rs` holds `BillingPayment`, `BillingRefund`, `PaymentKind`,
+  `PaymentStatus`, `RefundStatus`, the `Unsupported` error, the `Charge`/`PaymentLink`/`Refund` builders, `ChargeRequest`,
+  `PaymentPage`, `PaymentState` and the update types (`PaymentUpdate`, `RefundUpdate`, `DisputeUpdate`), plus
+  `Billing::payment_link`/`refund`/`payment_status`/`expire_links` (`Customer::charge` is in `customer.rs`). Migration
+  `00010101000910_create_billing_payments` (SQLite, PostgreSQL, down). The `Gateway` trait gained `charge`, `payment_link`,
+  `refund`, `payment_status`, `accept_dispute` (default `Unsupported`) and `has_account` / `verify_webhook_account` /
+  `parse_webhook_account`; `Notice` gained `OneOff`, `Refund` and `Dispute`. `Secret::Resolved` (crate-private) backs `resolved` /
+  `resolved_accounts` on `Stripe`, `Xendit` and the new `Ngenius` (`ngenius.rs`, access token kept per account and key). `sync.rs`
+  applies the notices (late-success rule) and fires the new events. The webhook event id is `{gateway}[/{account}]:{id}`.
+  `billing:expire-links` is an app command and an hourly scheduled task. Config: docs/contributing/config.md and `env.stub`.
+  Tests: `crates/renox-billing/tests/billing.rs` with fixtures under `tests/fixtures/{stripe,xendit,ngenius}`, written from the
+  gateways' public docs. Open (13/13): Stripe disputes and dashboard refunds name only the PaymentIntent, which the row does not
+  store; the bikeshop "pay by link" example and its browser test. Guide: docs/billing.md "One-off payments".

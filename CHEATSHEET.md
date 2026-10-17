@@ -2791,6 +2791,27 @@ gateways' webhooks (`/billing/webhooks/{gateway}`), `Billing::of(&state, &user)`
 guards `.require_subscription()` / `.require_plan(&["pro"])` (`_named("garage")` variants for `.named(..)` subscriptions) (`use renox_billing::SubscriptionRoutes`)
 ([docs/billing.md](docs/billing.md), [the bike shop's plans](examples/bikeshop/src/app/plans/billing.rs)).
 
+One-off payments (same crate; Stripe, Xendit and `Billing::ngenius()` with `NGENIUS_API_KEY`, `NGENIUS_OUTLET_REF`,
+`NGENIUS_WEBHOOK_SECRET`), kept in `billing_payments` with your reference:
+
+```text
+// use renox::money::{Currency, Money}; use renox_billing::{Billing, Charge, PaymentLink, Refund, Unsupported};
+let usd = Currency::parse("USD").unwrap();
+let paid = Billing::of(&state, &user)                       // pending row; paid.url is the gateway's page
+    .charge(Charge::new(Money::new(4_500, usd)).reference("job", 42).description("Brake service")).await?;
+let link = Billing::payment_link(&state, PaymentLink::new(Money::new(900, usd)) // anyone can pay; owner optional
+    .via("xendit").account("acme-llc").expires_at(renox::db::now() + renox::chrono::Duration::days(7))).await?;
+let refund = Billing::refund(&state, paid.id, Refund::new(Money::new(1_500, usd)).reason("Part not fitted")).await?; // pending
+let state_now = Billing::payment_status(&state, paid.id).await?;   // asks the gateway, applies it like a webhook
+let expired = Billing::expire_links(&state).await?;                // = command/hourly task `billing:expire-links`
+// Err(e) if Unsupported::of(&e).is_some() → the gateway can't do it (no row left behind)
+// keys per installation (called on every use, never cached): Stripe::resolved(|state| async move { Ok(Some(key)) }),
+// Ngenius::resolved_accounts(|state, account: &str| ...); webhooks /billing/webhooks/{gateway}[/{account}]
+// events: PaymentSucceeded/PaymentFailed (carry reference_type/id), PaymentRefunded, RefundSucceeded, RefundFailed { reason },
+// DisputeOpened { evidence_due_by }, DisputeWon, DisputeLost, PaymentLinkExpired; a success after a failure still wins
+```
+(Compiled examples: [docs/billing.md](docs/billing.md).)
+
 With `CSP=strict`, an inline script needs `<script nonce="{{ csp_nonce() }}">`, and Alpine
 expressions must stay simple (move statements into `Alpine.data(...)`).
 

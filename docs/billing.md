@@ -4,7 +4,10 @@ Billing lets an app charge for plans: a monthly "Pro", a yearly "Business", with
 upgrades and downgrades, and cancellations that keep access until the end of the period paid
 for. Renox's `renox-billing` crate does it with Stripe (cards, worldwide) and Xendit (cards and
 e-wallets in Indonesia and the Philippines): plans declared in code, a plans page, a card on the
-account page, the providers' webhooks, and a guard for pages only subscribers see.
+account page, the providers' webhooks, and a guard for pages only subscribers see. It also takes
+one-off payments (a charge, or a link anyone can pay) with refunds, disputes and expiry, on
+Stripe, Xendit and N-Genius (cards in the Middle East), with keys looked up per installation and
+several accounts per gateway.
 [examples/bikeshop](../examples/bikeshop) bills service plans with it: a named subscription per bike.
 
 In this guide:
@@ -18,6 +21,8 @@ In this guide:
 - [Pages for subscribers only](#pages-for-subscribers-only)
 - [Trials](#trials)
 - [Changing plan, canceling, resuming](#changing-plan-canceling-resuming)
+- [One-off payments](#one-off-payments): [keys per installation](#keys-per-installation), [several accounts](#several-accounts)
+- [Refunds and disputes](#refunds-and-disputes): [a success after a failure](#a-success-after-a-failure), [links that expire](#payment-links-that-expire), [N-Genius](#n-genius)
 - [Webhooks](#webhooks)
 - [Events and the activity log](#events-and-the-activity-log)
 - [Billing teams instead of users](#billing-teams-instead-of-users)
@@ -36,6 +41,8 @@ In this guide:
 | **trial** | Free days before the first charge. |
 | **grace period** | After a cancellation, the time left of the period already paid for: the owner keeps access until it ends. |
 | **webhook** | A call from the gateway to your app when something happens (a payment, a renewal, a cancellation). The subscription's state arrives this way. |
+| **payment** | A one-off charge or payment link: a row in `billing_payments` with your reference (`"job"`, `"42"`). Not a subscription. |
+| **account** | One merchant account at a gateway. An installation may hold several, named in code (`.account("acme-llc")`). |
 | **proration** | Charging (or crediting) the difference when a plan changes in the middle of a period. |
 
 > [!NOTE]
@@ -332,6 +339,211 @@ ends, also when the change arrives by webhook. The account card shows "Pause bil
 while paused. Xendit can't pause: `pause` answers an `Error::BadRequest` and changes nothing.
 A gateway of your own implements `pauses`, `pause` and `unpause`.
 
+## One-off payments
+
+Plans are for things that repeat. A workshop job, an invoice or a deposit is paid once: that is
+a **payment**, a row in `billing_payments` that keeps your own reference (`"job"`, `"42"`) next
+to the gateway's id, so you can tell later what it was for. There are two ways to make one, and
+both work on Stripe, Xendit and N-Genius:
+
+- `Billing::of(&state, &user).charge(Charge::new(amount))` charges an owner: the customer pays
+  on the gateway's page;
+- `Billing::payment_link(&state, PaymentLink::new(amount))` makes a link anyone can pay, with
+  or without an owner (send it by mail or chat, or print it as a QR code).
+
+Both give back the stored `BillingPayment`, still `pending`; `payment.url` is where the customer
+pays. The result arrives by [webhook](#webhooks) and moves the row to `succeeded` or `failed`.
+Amounts are `renox::money::Money`: the smallest unit and a currency.
+
+```rust
+use renox::money::{Currency, Money};
+use renox::prelude::*;
+use renox_billing::{Billing, Charge, PaymentLink};
+
+async fn pay_job(state: AppState, user: User, job_id: i64) -> Result<Redirect> {
+    let usd = Currency::parse("USD").unwrap();
+    let payment = Billing::of(&state, &user)
+        .charge(
+            Charge::new(Money::new(4_500, usd))
+                .reference("job", job_id) // kept on the row and carried by the events
+                .description("Brake service")
+                .success_url("https://shop.example/jobs/thanks")
+                .cancel_url("https://shop.example/jobs"),
+        )
+        .await?;
+    Ok(Redirect::to(payment.url.as_deref().unwrap_or("/")))
+}
+
+async fn send_link(state: AppState, job_id: i64) -> Result<String> {
+    let usd = Currency::parse("USD").unwrap();
+    let payment = Billing::payment_link(
+        &state,
+        PaymentLink::new(Money::new(4_500, usd))
+            .reference("job", job_id)
+            .via("xendit") // a gateway by name; without it, the first one set up
+            .expires_at(renox::db::now() + renox::chrono::Duration::days(7)),
+    )
+    .await?;
+    Ok(payment.url.unwrap_or_default())
+}
+# fn main() { let _ = (pay_job, send_link); }
+```
+
+The row is written before the gateway is called and removed again if the gateway fails, so a
+failed call leaves nothing behind. A gateway that cannot do something answers with the typed
+`Unsupported` error (it names the gateway and the operation) instead of a vague failure; test
+for it with `Unsupported::of(&err)`.
+
+`BillingPayment::for_reference(&state.db, "job", "42")` lists the payments for your record, and `payment.status` is
+one of `pending`, `succeeded`, `failed`, `expired`, `refunded`, `partially_refunded` and
+`disputed`. What each gateway does:
+
+| | Stripe | Xendit | N-Genius |
+|---|---|---|---|
+| charge | a Checkout Session | an invoice | a hosted payment page order |
+| payment link | a Payment Link | an invoice | an order (its pages don't expire) |
+| refund | yes | yes | yes |
+| disputes | notices, and accepting one | `Unsupported` | `Unsupported` |
+| subscriptions | yes | yes | `Unsupported` (one-off payments only) |
+
+Saving a card for later charges (a gateway-held payment-method token) is not part of this.
+
+### Keys per installation
+
+`Billing::new().stripe()` reads its keys from `.env`. An app whose installations each have their
+own Stripe account, typed into a settings page, looks the key up instead: `resolved` takes a
+closure that gets the `AppState` and answers the key, or `None` when this installation has none
+yet. It runs on every call and nothing is cached, so a key changed in the settings page is used
+by the next call, without a restart. The key is never printed: not in `Debug`, not in an error.
+
+```rust
+use renox::prelude::*;
+use renox_billing::{Billing, Stripe};
+
+# let _ =
+Billing::new().gateway(Stripe::resolved(|state: &AppState| {
+    let db = state.db.clone();
+    async move {
+        // Read the key where your app keeps it: a settings row, a table of its own…
+        let _ = db;
+        Ok(Some("sk_test_fake".to_string()))
+    }
+}));
+```
+
+`Xendit::resolved(..)` and `Ngenius::resolved(..)` work the same way. The webhook signing secret
+stays in `.env` (`STRIPE_WEBHOOK_SECRET`). "Per installation" is the limit: keys belong to the
+installation, never to the `Billable` owner who pays.
+
+### Several accounts
+
+Some installations hold more than one account with a gateway: one per issuing company, or test
+and live side by side. Name the account on the charge or link:
+
+```rust
+use renox::money::Money;
+use renox_billing::{Billing, Ngenius, PaymentLink};
+
+# let _ =
+Billing::new().gateway(Ngenius::resolved_accounts(|_state, account: &str| {
+    // "default" is the account of a charge that names none.
+    let key = format!("api-key-for-{account}");
+    async move { Ok(Some(key)) }
+}));
+
+fn invoice_link(amount: Money) -> PaymentLink {
+    PaymentLink::new(amount).via("ngenius").account("acme-llc")
+}
+# fn main() { let _ = invoice_link; }
+```
+
+- The account's name is stored on the payment, so a refund, a status check and a webhook all
+  use the same account's keys.
+- Without `.account(..)` the gateway's default account and the old URLs apply; nothing changes
+  for an app that never names one.
+- With `resolved_accounts` the closure gets the account's name. With keys in `.env`, each key is
+  read with the account appended: `STRIPE_SECRET_ACME_LLC` for `acme-llc` (the full list is in
+  the config reference). An account never falls back to the default account's keys.
+- The account's webhook is `POST /billing/webhooks/{gateway}/{account}` and is verified with
+  that account's secret only: another account's secret is refused with 401, and an account
+  without a secret answers 404.
+
+## Refunds and disputes
+
+```rust
+use renox::money::{Currency, Money};
+use renox::prelude::*;
+use renox_billing::{Billing, Refund};
+
+async fn refund_job(state: AppState, payment_id: i64) -> Result<()> {
+    let usd = Currency::parse("USD").unwrap();
+    let refund = Billing::refund(
+        &state,
+        payment_id,
+        Refund::new(Money::new(1_500, usd)).reason("Part not fitted"),
+    )
+    .await?;
+    tracing::info!(status = ?refund.status, "refund asked");
+    Ok(())
+}
+# fn main() { let _ = refund_job; }
+```
+
+Refunds are asynchronous on most gateways, so `Billing::refund` returns a **pending** refund (a
+row in `billing_refunds`). It becomes `succeeded` or `failed` when the gateway's webhook says so
+(or when `Billing::payment_status` asks); a gateway that refunds at once is reported succeeded
+in the same call. Partial refunds add up, and asking for more than is left to refund, counting
+refunds still pending, is a `BadRequest` before any gateway is called. When a refund succeeds
+the payment becomes `partially_refunded` or `refunded`.
+
+Disputes (chargebacks) reach the payment through the gateway's webhook: it becomes `disputed`
+with `evidence_due_by` stored, and the outcome arrives as `DisputeWon` or `DisputeLost`.
+`Gateway::accept_dispute` gives up contesting one where the gateway supports it (Stripe) and
+answers `Unsupported` elsewhere.
+
+> [!NOTE]
+> Stripe's dispute events and refunds made in Stripe's dashboard name only the PaymentIntent,
+> which the payment row does not store yet, so they are not matched to a payment for now.
+> Refunds made with `Billing::refund` are matched and tracked end to end.
+
+### Asking the gateway
+
+`Billing::payment_status(&state, payment_id)` asks the gateway (with the payment's account)
+where a payment stands, applies the answer to the row and its refunds the way a webhook would,
+and returns it. Use it for a payment left `pending` after a lost webhook, for example behind a
+"check payment" button.
+
+### A success after a failure
+
+Webhooks arrive late, twice and out of order. The rule is fixed, so you can rely on it:
+
+- a **success** always wins: a payment that is `failed` or `expired` becomes `succeeded` and
+  `PaymentSucceeded` is emitted, never rejected (the customer paid, so the books must say so);
+- a **failure or an expiry** that arrives after a success is ignored;
+- otherwise the newest gateway timestamp decides the order of changes;
+- a delivery repeated by the gateway changes nothing and emits nothing (the webhook is stored
+  once per event id).
+
+### Payment links that expire
+
+A link can have an end (`expires_at`). Gateways that send an expiry webhook (Stripe sessions,
+Xendit invoices) deliver it that way. For the rest, `billing:expire-links` (run hourly by the
+module's scheduled task, and a command of your app you can run by hand) marks pending links past
+their date `expired` and emits `PaymentLinkExpired`. It asks the gateway first
+(`payment_status`): a link the gateway reports paid becomes `succeeded` and is never expired. A
+gateway that cannot answer leaves the link to expire by its date, and one that fails leaves it
+pending for the next sweep. `Billing::expire_links(&state)` is the same from code.
+
+### N-Genius
+
+N-Genius (Network International, cards in the Middle East) is set up like the others:
+`Billing::new().ngenius()` with `NGENIUS_API_KEY`, `NGENIUS_OUTLET_REF` and
+`NGENIUS_WEBHOOK_SECRET` in `.env`, or `Ngenius::new(..)` in code, `Ngenius::resolved(..)` for a
+looked-up key, and `.sandbox()` for its test API. Charges and links are hosted-payment-page
+orders (an access token is traded for the API key, kept until it nears its end, and traded again
+when the key changes); the webhook is `/billing/webhooks/ngenius`. It does one-off payments and
+refunds only: subscriptions and disputes answer `Unsupported`.
+
 ## Webhooks
 
 The gateways call `POST /billing/webhooks/{gateway}` (or `/billing/webhooks/{gateway}/{account}`
@@ -364,8 +576,14 @@ older event that arrives late is ignored. A subscription made outside the app (n
 | `SubscriptionCanceled` | it was canceled, now or at the period's end (`subscription.ends_at`) |
 | `SubscriptionPaused` | billing was paused (`Customer::pause`, or the gateway said so) |
 | `SubscriptionUnpaused` | a paused subscription is billed again |
-| `PaymentSucceeded` | the gateway took a payment (`amount`, `currency`, `owner`, `subscription`) |
-| `PaymentFailed` | a payment failed; the subscription is past due while the gateway retries |
+| `PaymentSucceeded` | the gateway took a payment (`amount`, `currency`, `owner`, `subscription`; for a one-off payment its `reference_type` / `reference_id`) |
+| `PaymentFailed` | a payment failed; the subscription is past due while the gateway retries (a one-off payment carries its reference) |
+| `PaymentRefunded` | a one-off payment was refunded in full or in part (`payment`) |
+| `RefundSucceeded` | a refund went through (`payment`, `amount`) |
+| `RefundFailed` | a refund could not be done (`payment`, `amount`, `reason`) |
+| `DisputeOpened` | the customer disputed a payment (`payment`, `evidence_due_by`) |
+| `DisputeWon` / `DisputeLost` | the dispute was decided (`payment`) |
+| `PaymentLinkExpired` | a payment link ran out unpaid (`payment`) |
 
 ```rust
 use renox::prelude::*;
@@ -539,6 +757,12 @@ settings (given with `App::provide`, say) overrides `verify_webhook_with(state, 
 instead: it is what the webhook route calls, and by default it calls `verify_webhook` with
 `state.config`. In the same way `parse_webhook_with(state, body)` defaults to `parse_webhook`.
 Pausing is `pauses`, `pause` and `unpause` (the defaults refuse).
+
+One-off payments are `charge`, `payment_link`, `refund`, `payment_status` and `accept_dispute`,
+each answering `Unsupported` by default, so a gateway implements only what it can. Its webhook
+parser then returns `Notice::OneOff` (a `PaymentUpdate`, whose status may be `Expired`), `Notice::Refund` or
+`Notice::Dispute` besides the subscription notices. A gateway with several accounts overrides `has_account`,
+`verify_webhook_account` and `parse_webhook_account` (they default to the plain methods).
 
 Its webhooks come to `/billing/webhooks/acme`. Event ids for "process once" are the
 `webhook-id` header, else the JSON body's `id`, else a hash of the body; override
