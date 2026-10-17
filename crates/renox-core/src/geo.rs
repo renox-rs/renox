@@ -314,7 +314,35 @@ fn circle_from_value(value: &Value) -> Result<Circle, GeoError> {
 }
 
 fn point_from_value(value: &Value) -> Result<Point, GeoError> {
-    Point::deserialize(value).map_err(|e| GeoError::Invalid(e.to_string()))
+    Point::deserialize(value).map_err(|e| {
+        // Deserializing only carries text; recover the range errors from it.
+        let why = e.to_string();
+        if why.contains(&GeoError::Latitude.to_string()) {
+            GeoError::Latitude
+        } else if why.contains(&GeoError::Longitude.to_string()) {
+            GeoError::Longitude
+        } else {
+            GeoError::Invalid(why)
+        }
+    })
+}
+
+impl GeoError {
+    /// The validation message key for this error (see `messages.rs`).
+    pub(crate) fn rule_key(&self) -> &'static str {
+        match self {
+            Self::Latitude => "latitude",
+            Self::Longitude => "longitude",
+            _ => "point",
+        }
+    }
+}
+
+/// Reads a point from text: JSON `{"lat", "lng"}` or a GeoJSON `Point`.
+pub(crate) fn parse_point(text: &str) -> Result<Point, GeoError> {
+    let value: Value =
+        serde_json::from_str(text.trim()).map_err(|_| GeoError::Invalid("not JSON".to_owned()))?;
+    point_from_value(&value)
 }
 
 /// A polygon: an outer ring and optional holes.

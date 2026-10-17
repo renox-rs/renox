@@ -1250,6 +1250,38 @@ impl Field<'_> {
         self
     }
 
+    /// A latitude: a number, or text such as `25.2048`, from -90 to 90.
+    pub fn latitude(mut self) -> Self {
+        if self.present()
+            && !numeric_value(&self.value).is_some_and(|n| (-90.0..=90.0).contains(&n))
+        {
+            self.fail("latitude", &[]);
+        }
+        self
+    }
+
+    /// A longitude: a number, or text such as `55.2708`, from -180 to 180.
+    pub fn longitude(mut self) -> Self {
+        if self.present()
+            && !numeric_value(&self.value).is_some_and(|n| (-180.0..=180.0).contains(&n))
+        {
+            self.fail("longitude", &[]);
+        }
+        self
+    }
+
+    /// A point as JSON text: `{"lat": 25.2, "lng": 55.3}` or a GeoJSON
+    /// `Point` (`[lng, lat]`). An out-of-range coordinate gets the
+    /// `latitude` or `longitude` message, anything else the `point` one.
+    pub fn point(mut self) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let Err(e) = crate::geo::parse_point(text)
+        {
+            self.fail(e.rule_key(), &[]);
+        }
+        self
+    }
+
     /// A unit code that `units` knows, e.g. `.unit(&units)` with a
     /// [`UnitTable`](crate::quantity::UnitTable) from `Units::build`.
     pub fn unit(mut self, units: &crate::quantity::UnitTable) -> Self {
@@ -2194,6 +2226,54 @@ mod tests {
         v.field("photo", &file(1.0, Some((2000, 10))))
             .dimensions(&Dimensions::new().max_width(100));
         assert!(v.errors.has("photo"));
+    }
+
+    #[test]
+    fn geo_rules_check_ranges_and_point_shapes() {
+        let mut v = Validator::default();
+        v.field("lat", &"25.2048").latitude();
+        v.field("lat_n", &-90.0).latitude();
+        v.field("lng", &" -180 ").longitude();
+        v.field("here", &r#"{"lat": 25.2, "lng": 55.3}"#).point();
+        v.field("geo", &r#"{"type":"Point","coordinates":[55.3,25.2]}"#)
+            .point();
+        v.field("empty", &"").point();
+        assert!(v.errors.is_empty(), "{:?}", v.errors);
+
+        let mut v = Validator::default();
+        v.field("lat", &"91").latitude();
+        v.field("lat_text", &"north").latitude();
+        v.field("lng", &181.5).longitude();
+        v.field("nan", &f64::NAN).longitude();
+        v.field("p_lat", &r#"{"lat": 95, "lng": 0}"#).point();
+        v.field("p_lng", &r#"{"type":"Point","coordinates":[200,0]}"#)
+            .point();
+        v.field("p_junk", &"25.2, 55.3").point();
+        v.field("p_half", &r#"{"lat": 1}"#).point();
+        assert_eq!(
+            v.errors.first("lat"),
+            Some("The lat must be a latitude between -90 and 90.")
+        );
+        assert!(v.errors.has("lat_text"));
+        assert_eq!(
+            v.errors.first("lng"),
+            Some("The lng must be a longitude between -180 and 180.")
+        );
+        assert!(v.errors.has("nan"));
+        assert_eq!(
+            v.errors.first("p_lat"),
+            Some("The p lat must be a latitude between -90 and 90.")
+        );
+        assert_eq!(
+            v.errors.first("p_lng"),
+            Some("The p lng must be a longitude between -180 and 180.")
+        );
+        for field in ["p_junk", "p_half"] {
+            assert!(
+                v.errors.first(field).unwrap().contains("valid point"),
+                "{field}"
+            );
+        }
     }
 
     #[test]
