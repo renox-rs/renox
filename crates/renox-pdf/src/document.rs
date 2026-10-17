@@ -43,8 +43,6 @@ pub struct Document {
 impl Document {
     /// A document whose entry file is `main`, a path below the template root
     /// held by `sources`. It starts with [`default_fonts`] and no data.
-    // The public way to make a document comes with the template loading.
-    #[allow(dead_code)]
     pub(crate) fn new(sources: Sources, main: impl Into<String>) -> Self {
         Document {
             sources,

@@ -3,16 +3,15 @@
 //! there is no headless browser and no separate service.
 //!
 //! Register [`Pdf`] with `App::module`, then make a PDF with [`Document::render`]
-//! (issue #30; templates and the rest of the API follow in later steps).
+//! (issue #30; the kit and the rest of the API follow in later steps).
 
 mod document;
 mod error;
 mod fonts;
 mod module;
 mod pool;
-// Its constructors are used by the template loading (a later step).
-#[allow(dead_code)]
 mod source;
+mod templates;
 mod world;
 
 pub use document::Document;
