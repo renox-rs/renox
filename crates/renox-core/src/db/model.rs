@@ -162,6 +162,21 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
         async { Ok(()) }
     }
 
+    /// The status column a `#[model(state_machine)]` model guards: `save`,
+    /// `save_only` and `save_changes` refuse to change it, only a transition
+    /// does. `None` for every other model.
+    #[doc(hidden)]
+    fn guarded_column() -> Option<&'static str> {
+        None
+    }
+
+    /// Runs before an insert; an error stops it. For a guarded model it
+    /// applies the machine's `initial` states.
+    #[doc(hidden)]
+    fn check_insert(&self) -> Result {
+        Ok(())
+    }
+
     /// Runs before `delete`/`force_delete`; an error stops it. See [`ModelHooks`].
     fn deleting(&self) -> Result {
         Ok(())
@@ -320,6 +335,7 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
     /// one is written as it is (a `String` key must be set).
     fn insert<'c, E: Executor<'c>>(&mut self, db: E) -> impl Future<Output = Result> + Send {
         async move {
+            self.check_insert()?;
             self.saving(true)?;
             self.touch(now(), true);
             if self.id().is_unsaved()
@@ -379,24 +395,69 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
             }
             self.saving(false)?;
             self.touch(now(), false);
-            let columns: Vec<String> = Self::COLUMNS
+            let guarded = Self::guarded_column();
+            let mut sets: Vec<String> = Vec::new();
+            let mut values = Vec::new();
+            let mut status = None;
+            for (column, value) in Self::COLUMNS
                 .iter()
                 .filter(|c| **c != "id")
-                .map(|c| quote(c))
-                .collect();
-            let values = self.values();
+                .zip(self.values())
+            {
+                if guarded == Some(*column) {
+                    status = Some(value);
+                } else {
+                    sets.push(format!("{} = ?", quote(column)));
+                    values.push(value);
+                }
+            }
             let table = quote(Self::TABLE);
-            if columns.is_empty() {
+            if sets.is_empty() && status.is_none() {
                 return self.saved(false).await;
             }
-            let sets: Vec<String> = columns.iter().map(|c| format!("{c} = ?")).collect();
+            let mut conn = db.into_conn();
+            if let (Some(column), Some(status)) = (guarded, status) {
+                // The status is not written: the row is matched on it, so a
+                // record whose status was changed (or is stale) is refused.
+                let quoted = quote(column);
+                let matched = if sets.is_empty() {
+                    sql(format!(
+                        "SELECT COUNT(*) FROM {table} WHERE id = ? AND {quoted} = ?"
+                    ))
+                    .bind(self.id())
+                    .bind_all(vec![status])
+                    .scalar::<i64>(conn.reborrow())
+                    .await? as u64
+                } else {
+                    sql(format!(
+                        "UPDATE {table} SET {} WHERE id = ? AND {quoted} = ?",
+                        sets.join(", ")
+                    ))
+                    .bind_all(values)
+                    .bind(self.id())
+                    .bind_all(vec![status])
+                    .execute(conn.reborrow())
+                    .await?
+                };
+                if matched == 0 {
+                    let exists: i64 = sql(format!("SELECT COUNT(*) FROM {table} WHERE id = ?"))
+                        .bind(self.id())
+                        .scalar(conn.reborrow())
+                        .await?;
+                    if exists == 0 {
+                        return Err(Error::NotFound);
+                    }
+                    return Err(status_refused(Self::TABLE, column));
+                }
+                return self.saved(false).await;
+            }
             let changed = sql(format!(
                 "UPDATE {table} SET {} WHERE id = ?",
                 sets.join(", ")
             ))
             .bind_all(values)
             .bind(self.id())
-            .execute(db)
+            .execute(conn)
             .await?;
             if changed == 0 {
                 return Err(Error::NotFound);
@@ -464,6 +525,11 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
             .collect();
         async move {
             hooked?;
+            if let Some(column) = Self::guarded_column()
+                && changed.iter().any(|c| c == column)
+            {
+                return Err(status_refused(Self::TABLE, column));
+            }
             if changed.is_empty() {
                 return Ok(false);
             }
@@ -524,6 +590,17 @@ pub trait Model: super::FromRow + Sized + Send + Sync + Unpin + 'static {
     }
 }
 
+/// The refusal of a write to a guarded status column.
+fn status_refused(table: &str, column: &str) -> Error {
+    Error::Status(
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+        format!(
+            "the `{column}` of a {table} row moves through its state machine; \
+             run a transition instead of saving it (or reload the record if it is out of date)"
+        ),
+    )
+}
+
 /// `save_only` after the `saving` hook: writes `columns` and `updated_at`,
 /// then runs `saved`.
 async fn update_columns<'c, M: Model, E: Executor<'c>>(
@@ -537,6 +614,9 @@ async fn update_columns<'c, M: Model, E: Executor<'c>>(
     for column in &columns {
         if column == "id" || !M::COLUMNS.contains(&column.as_str()) {
             return Err(anyhow!("{} has no column `{column}` to save", M::TABLE).into());
+        }
+        if M::guarded_column() == Some(column.as_str()) {
+            return Err(status_refused(M::TABLE, column));
         }
     }
     model.touch(now(), false);
@@ -631,6 +711,9 @@ async fn write_many<M: Model>(
     mut models: Vec<M>,
     upsert: Option<(Vec<String>, Vec<String>)>,
 ) -> Result<u64> {
+    for model in &models {
+        model.check_insert()?;
+    }
     let at = now();
     // `i64` keys come from the database; other keys are written, made here
     // (ULID, UUID) when unsaved.

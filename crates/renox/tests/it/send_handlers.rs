@@ -946,11 +946,21 @@ async fn transitions(State(state): State<AppState>, user: AuthUser) -> Result<St
     let moved = job.transition("finish").by_system().run_in(&mut tx).await;
     tx.commit().await?;
     let available = job.available(&user, &state.db).await?;
+    let mut born = SmJob {
+        id: 2,
+        status: "done".into(),
+    };
+    let mut tx = state.db.begin().await?;
+    let inserted = born
+        .insert_in_state(&mut tx, JobStatus::Done, "import")
+        .await;
+    tx.commit().await?;
     Ok(format!(
-        "{} {} {}",
+        "{} {} {} {}",
         done.is_ok(),
         moved.is_ok(),
-        available.len()
+        available.len(),
+        inserted.is_ok()
     ))
 }
 

@@ -709,3 +709,150 @@ fn machines_are_found_by_name() {
     assert!(renox::state_machine::machine_info("Nope").is_none());
     assert!(renox::state_machine::machine_names().contains(&"Order".to_owned()));
 }
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum JobStatus {
+    New,
+    Running,
+    Done,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "guarded_jobs", state_machine)]
+struct Job {
+    id: i64,
+    status: String,
+    title: String,
+}
+
+impl StateMachine for Job {
+    type State = JobStatus;
+    const COLUMN: Col<Self, JobStatus> = Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new()
+            .initial([JobStatus::New])
+            .transition(
+                Transition::new("start")
+                    .from([JobStatus::New])
+                    .to(JobStatus::Running)
+                    .system(),
+            )
+            .transition(
+                Transition::new("finish")
+                    .from([JobStatus::Running])
+                    .to(JobStatus::Done)
+                    .system(),
+            )
+    }
+}
+
+async fn job_app() -> TestApp {
+    let app = TestApp::new(App::new()).await;
+    renox::db::sql(
+        "CREATE TABLE guarded_jobs (id INTEGER PRIMARY KEY, status TEXT NOT NULL, title TEXT NOT NULL)",
+    )
+    .execute(app.db())
+    .await
+    .unwrap();
+    app
+}
+
+fn is_refusal(error: &renox::Error) -> bool {
+    matches!(error, renox::Error::Status(s, _) if s.as_u16() == 422)
+}
+
+#[tokio::test]
+async fn a_guarded_status_is_refused_by_save_and_save_changes() {
+    let app = job_app().await;
+    let db = app.db();
+    let mut job = Job {
+        status: "new".into(),
+        title: "a".into(),
+        ..Default::default()
+    };
+    job.save(db).await.unwrap();
+
+    // Other columns save; the status column is left alone.
+    job.title = "b".into();
+    job.save(db).await.unwrap();
+    assert_eq!(Job::find_or_404(db, job.id).await.unwrap().title, "b");
+
+    let original = Job::find_or_404(db, job.id).await.unwrap();
+    let mut moved = original.clone();
+    moved.status = "done".into();
+    assert!(is_refusal(&moved.save(db).await.unwrap_err()));
+    assert!(is_refusal(
+        &moved.save_changes(db, &original).await.unwrap_err()
+    ));
+    assert!(is_refusal(
+        &moved.save_only(db, &["status"]).await.unwrap_err()
+    ));
+    let mut renamed = original.clone();
+    renamed.title = "c".into();
+    assert!(renamed.save_changes(db, &original).await.unwrap());
+    assert_eq!(Job::find_or_404(db, job.id).await.unwrap().status, "new");
+
+    // A transition moves it; the stale record is then refused by save.
+    let mut stale = Job::find_or_404(db, job.id).await.unwrap();
+    let _ = stale
+        .transition("start")
+        .by_system()
+        .run(app.state())
+        .await
+        .unwrap();
+    assert!(is_refusal(&stale.save(db).await.unwrap_err()));
+    let mut fresh = Job::find_or_404(db, job.id).await.unwrap();
+    assert_eq!(fresh.status, "running");
+    fresh.title = "d".into();
+    fresh.save(db).await.unwrap();
+
+    // A missing row is still a 404.
+    let mut gone = Job {
+        id: 99,
+        status: "new".into(),
+        ..Default::default()
+    };
+    assert!(matches!(
+        gone.save(db).await.unwrap_err(),
+        renox::Error::NotFound
+    ));
+}
+
+#[tokio::test]
+async fn inserts_honour_initial_and_insert_in_state_records_no_from() {
+    let app = job_app().await;
+    let db = app.db();
+    let mut late = Job {
+        status: "running".into(),
+        title: "late".into(),
+        ..Default::default()
+    };
+    assert!(is_refusal(&late.insert(db).await.unwrap_err()));
+    assert!(is_refusal(
+        &Job::insert_many(db, vec![late.clone()]).await.unwrap_err()
+    ));
+    assert!(Job::query().get(db).await.unwrap().is_empty());
+
+    let mut tx = db.begin().await.unwrap();
+    assert!(
+        late.insert_in_state(&mut tx, JobStatus::Done, "x")
+            .await
+            .is_err()
+    );
+    late.insert_in_state(&mut tx, JobStatus::Running, "imported")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let log = history(db, "guarded_jobs", late.id).await.unwrap();
+    assert_eq!(log.len(), 1);
+    assert_eq!(log[0].from_state, None);
+    assert_eq!(log[0].to_state, "running");
+    assert_eq!(log[0].reason.as_deref(), Some("imported"));
+
+    let mut fresh = Job {
+        status: "new".into(),
+        ..Default::default()
+    };
+    fresh.insert(db).await.unwrap();
+}

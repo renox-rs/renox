@@ -45,6 +45,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
     let mut search_normalize: Option<LitStr> = None;
     let mut index_specs: Vec<(bool, Vec<syn::Ident>)> = Vec::new();
     let mut form = false;
+    let mut state_machine = false;
     for attr in input.attrs.iter().filter(|a| a.path().is_ident("model")) {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("table") {
@@ -58,6 +59,9 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else if meta.path.is_ident("form") {
                 form = true;
+                Ok(())
+            } else if meta.path.is_ident("state_machine") {
+                state_machine = true;
                 Ok(())
             } else if meta.path.is_ident("hooks") {
                 hooks = true;
@@ -90,7 +94,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else {
                 Err(meta.error(
-                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `index(col, …)` or `unique(col, …)`",
+                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `state_machine`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `index(col, …)` or `unique(col, …)`",
                 ))
             }
         })?;
@@ -364,6 +368,19 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         }
     });
 
+    let state_machine_fns = state_machine.then(|| {
+        quote! {
+            fn guarded_column() -> ::core::option::Option<&'static str> {
+                ::core::option::Option::Some(
+                    <Self as ::renox::state_machine::StateMachine>::COLUMN.name(),
+                )
+            }
+            fn check_insert(&self) -> ::renox::Result {
+                ::renox::state_machine::check_insert(self)
+            }
+        }
+    });
+
     let hooks_fns = hooks.then(|| {
         quote! {
             fn saving(&mut self, creating: bool) -> ::renox::Result {
@@ -442,6 +459,8 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             #default_scope_fn
 
             #hooks_fns
+
+            #state_machine_fns
         }
     })
 }

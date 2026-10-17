@@ -280,6 +280,27 @@ pub trait StateMachine: Model {
         available_for(self, user, db)
     }
 
+    /// Inserts this record in `state` even though the machine's `initial`
+    /// states don't include it (an import, a fixture, a record born
+    /// mid-way), and writes a history row with no `from` state and `reason`.
+    /// Runs in `tx` and doesn't commit.
+    ///
+    /// The record's status must already be `state` (set the field first):
+    /// the argument is the explicit statement of the exception. A plain
+    /// `insert`/`save` of a record in a non-initial state is refused when the
+    /// machine declares `initial`.
+    fn insert_in_state<'a>(
+        &'a mut self,
+        tx: &'a mut Transaction,
+        state: Self::State,
+        reason: &'a str,
+    ) -> impl Future<Output = Result> + Send + 'a
+    where
+        Self: Sized,
+    {
+        insert_in_state_for(self, tx, state, reason)
+    }
+
     /// Starts running the transition called `name` on this record; chain
     /// `by` (or `by_system`), optionally `reason`, `input` and `meta`, and end
     /// with `run` or `run_in`.
@@ -1046,6 +1067,65 @@ impl<M: StateMachine> TransitionBuilder<'_, M> {
             _model: PhantomData,
         }))
     }
+}
+
+tokio::task_local! {
+    /// Set while `insert_in_state` inserts: the `initial` rule is skipped.
+    static INSERT_ANY_STATE: ();
+}
+
+/// The insert rule of a `#[model(state_machine)]` model, called by the
+/// derive's `check_insert`: when the machine declares `initial` states, a new
+/// record must be in one of them.
+#[doc(hidden)]
+pub fn check_insert<M: StateMachine>(record: &M) -> Result {
+    if INSERT_ANY_STATE.try_with(|_| ()).is_ok() {
+        return Ok(());
+    }
+    let machine = M::machine();
+    let initial = machine.initial_states();
+    if initial.is_empty() {
+        return Ok(());
+    }
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    if initial.contains(&current) {
+        return Ok(());
+    }
+    Err(crate::Error::Status(
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+        format!(
+            "a new {} can't start in the state `{current}` (it starts in {}); \
+             use `insert_in_state` for an exception",
+            M::TABLE,
+            initial
+                .iter()
+                .map(|s| format!("`{s}`"))
+                .collect::<Vec<_>>()
+                .join(" or "),
+        ),
+    ))
+}
+
+async fn insert_in_state_for<M: StateMachine>(
+    record: &mut M,
+    tx: &mut Transaction,
+    state: M::State,
+    reason: &str,
+) -> Result {
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    let wanted = state.to_string();
+    if current != wanted {
+        return Err(anyhow::anyhow!(
+            "insert_in_state: the record's status is `{current}`, not `{wanted}`; set it first"
+        )
+        .into());
+    }
+    INSERT_ANY_STATE.scope((), record.insert(&mut *tx)).await?;
+    TransitionRecord::new(M::TABLE, record.id(), wanted, "insert")
+        .reason(reason)
+        .record(&mut *tx)
+        .await?;
+    Ok(())
 }
 
 /// The record's loaded status, as the text the machine uses.

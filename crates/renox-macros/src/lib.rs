@@ -58,6 +58,11 @@ use syn::{DeriveInput, parse_macro_input};
 ///   `Option<i64>`) for the amount and `Col<_, String>` for the currency.
 ///   An `Option<Money>` is read as `None` when both columns are `NULL`.
 /// - `default_scope = "path::to::fn"` and `hooks`: see `renox::db::Model`.
+/// - `state_machine` guards the status column of a model that implements
+///   `renox::state_machine::StateMachine`: `save`, `save_only` and
+///   `save_changes` refuse to change it (only a transition does; a bulk
+///   `update` query bypasses the guard, like hooks), and inserts must start in
+///   one of the machine's `initial` states unless `insert_in_state` is used.
 /// - `form` also generates `<Model>Form`, with the model's visibility: every
 ///   field except `id`, `created_at`, `updated_at`, `deleted_at` and
 ///   `#[model(skip)]`/`#[form(skip)]` fields, in their own types, deriving
