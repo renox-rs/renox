@@ -55,9 +55,14 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
     `revealable`: a button that shows the password; `copyable`: a button
     that copies the value. A disabled field isn't sent with the form; a
     readonly one is. -#}
-{% macro input(name, label, type="text", value=none, hint=none, required=false, autocomplete=none, placeholder=none, attrs={}, id=none, prefix=none, suffix=none, datalist=none, disabled=false, readonly=false, span=none, revealable=false, copyable=false, hide_label=false, bag=none, min=none, max=none, step=none) -%}
+{% macro input(name, label, type="text", value=none, hint=none, required=false, autocomplete=none, placeholder=none, attrs={}, id=none, prefix=none, suffix=none, datalist=none, disabled=false, readonly=false, span=none, revealable=false, copyable=false, hide_label=false, bag=none, min=none, max=none, step=none, currency=none) -%}
 {%- set id = id or _id(name) %}
 {%- set message = error(name, bag=bag) %}
+{#- type="money": a number field that steps by the currency's smallest unit, with its code as the suffix -#}
+{%- set money = type == "money" %}
+{%- set spec = money_input(currency) if money else none %}
+{%- set suffix = suffix or (spec.code if money else none) %}
+{%- set step = step if step is not none else (spec.step if money else none) %}
 {%- set affixed = prefix or suffix or revealable or copyable %}
 <div class="{{ _field_class(span) }}">
   {{ _label(id, label, required, hide_label) }}
@@ -65,7 +70,8 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
   <div class="rx-affix">
     {%- if prefix %}<span class="rx-affix__text" id="{{ id }}-prefix">{{ prefix }}</span>{% endif %}
   {%- endif %}
-  <input class="rx-input" id="{{ id }}" name="{{ name }}" type="{{ type }}"
+  <input class="rx-input" id="{{ id }}" name="{{ name }}" type="{{ 'number' if money else type }}"
+    {%- if money %} inputmode="decimal"{% endif %}
     {%- if type != "password" %} value="{{ old(name, value if value is defined and value is not none else "") }}"{% endif %}
     {%- if required %} required aria-required="true"{% endif %}
     {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}

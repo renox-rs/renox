@@ -399,6 +399,18 @@ pub(crate) fn attr_value(value: Value) -> Value {
     Value::from(value.to_string())
 }
 
+/// `money_input(code)`: `{code, decimals, step}` for `<rx-input type="money">`
+/// (`step` is the currency's smallest unit as a decimal: `0.01`, `1`, `0.001`).
+pub(crate) fn money_input(code: &str) -> Value {
+    let code = code.trim().to_ascii_uppercase();
+    let decimals = currency_decimals(&code);
+    let step = match decimals {
+        0 => "1".to_owned(),
+        d => format!("0.{}1", "0".repeat(d as usize - 1)),
+    };
+    minijinja::context! { code, decimals, step }
+}
+
 /// `rx_attr("name", value)`: ` name`, ` name="text"` (escaped) or nothing, by [`attr_value`].
 /// What `?name="expr"` compiles to on an HTML element.
 pub(crate) fn rx_attr(name: String, value: Value) -> Value {

@@ -682,7 +682,7 @@ impl Validate for ProductForm {
         // alpha, alpha_num, alpha_dash, lowercase, uppercase, starts_with(&["08"]), ends_with,
         // uuid, ulid, ip, mac_address, json, timezone, hex_color, ascii, size(n), required_without(&other),
         // required_with_all(&[&a, &b]), prohibited(), prohibited_if(cond), prohibits("other", &other),
-        // declined(), numeric(), integer(), decimal(2, 2), multiple_of(500), min_digits(n), not_matches(re),
+        // declined(), numeric(), integer(), decimal(2, 2), currency(), money(&self.currency), multiple_of(500), min_digits(n), not_matches(re),
         // gt("min_price", &self.min_price) / gte / lt / lte (numbers, dates, lengths), mimes(&["pdf", "jpg"])
         // and dimensions(&validation::Dimensions::new().min_width(800)) for an Upload,
         // v.distinct("tags", &self.tags), v.nested("lines", &self.lines) for a Vec of structs,

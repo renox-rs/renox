@@ -672,6 +672,12 @@ impl Views {
             env.add_filter("markdown", crate::view_filters::markdown);
             env.add_function("chart", crate::chart::chart(currency.clone()));
             env.add_function("class_names", crate::view_filters::class_names);
+            env.add_function("money_input", {
+                let app_currency = currency.clone();
+                move |code: Option<String>| {
+                    crate::view_filters::money_input(code.as_deref().unwrap_or(&app_currency))
+                }
+            });
             env.add_function("rx_attr", crate::view_filters::rx_attr);
             env.add_function("rx_attr_value", crate::view_filters::attr_value);
             // The app's own functions and filters (`App::templates`).

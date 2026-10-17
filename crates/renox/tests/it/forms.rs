@@ -182,3 +182,120 @@ async fn form_requests_prepare_authorize_and_check_after() {
         .await;
     res.assert_redirect("/invite");
 }
+
+// #45 part 7: the currency and money rules, `#[model(form)]` for `Money`, and
+// `<rx-input type="money">`.
+
+#[renox::test]
+async fn currency_and_money_rules() {
+    let app = TestApp::new(App::new()).await;
+    let errors = errors_of(&app, |v| {
+        v.field("c_ok", &"aed").currency();
+        v.field("c_bad", &"ABCD").currency();
+        v.field("c_num", &"123").currency();
+        v.field("c_empty", &"").currency();
+        v.field("usd_ok", &"12.50").money("USD");
+        v.field("usd_bad", &"1.234").money("USD");
+        v.field("jpy_ok", &"1250").money("JPY");
+        v.field("jpy_bad", &"10.5").money("JPY");
+        v.field("kwd_ok", &"1.234").money("KWD");
+        v.field("text_bad", &"abc").money("USD");
+        v.field("unknown", &"abc").money("nope");
+    })
+    .await;
+    for ok in ["c_ok", "c_empty", "usd_ok", "jpy_ok", "kwd_ok", "unknown"] {
+        assert!(errors.first(ok).is_none(), "{ok}");
+    }
+    assert_eq!(
+        errors.first("c_bad"),
+        Some("The c bad must be a valid currency code.")
+    );
+    assert!(errors.first("c_num").is_some());
+    assert_eq!(
+        errors.first("jpy_bad"),
+        Some("The jpy bad must be an amount with at most 0 decimal places.")
+    );
+    for bad in ["usd_bad", "text_bad"] {
+        assert!(errors.first(bad).is_some(), "{bad}");
+    }
+}
+
+#[derive(Model, serde::Serialize, Debug, Clone, PartialEq)]
+#[model(table = "quotes", form)]
+struct Quote {
+    id: i64,
+    #[model(money(currency = "currency"))]
+    subtotal: renox::money::Money,
+    #[model(money(currency = "currency"))]
+    refund: Option<renox::money::Money>,
+}
+
+#[renox::test]
+async fn model_form_reads_and_checks_money() {
+    use renox::money::Money;
+    let app = TestApp::new(App::new()).await;
+    let form = |subtotal: &str, refund: &str, currency: &str| QuoteForm {
+        subtotal: subtotal.into(),
+        refund: refund.into(),
+        currency: currency.into(),
+    };
+    let check = |form: &QuoteForm| {
+        let v = Validator::rules_of(form);
+        let db = app.db();
+        async move { v.finish(db).await.unwrap() }
+    };
+
+    let good = form("12.50", "", "usd");
+    assert!(check(&good).await.first("subtotal").is_none());
+    let mut quote = Quote {
+        id: 1,
+        subtotal: Money::usd(1),
+        refund: Some(Money::usd(5)),
+    };
+    good.fill(&mut quote);
+    assert_eq!(quote.subtotal, Money::usd(1250));
+    assert_eq!(quote.refund, None);
+    form("1250", "10", "JPY").fill(&mut quote);
+    assert_eq!(quote.subtotal, Money::jpy(1250));
+    assert_eq!(quote.refund, Some(Money::jpy(10)));
+
+    let errors = check(&form("10.5", "", "JPY")).await;
+    assert!(errors.first("subtotal").is_some());
+    assert!(errors.first("refund").is_none());
+    let errors = check(&form("", "", "ABCD")).await;
+    assert!(errors.first("subtotal").is_some(), "required");
+    assert!(errors.first("currency").is_some());
+}
+
+struct MoneyPages;
+
+impl Module for MoneyPages {
+    fn name(&self) -> &'static str {
+        "money-pages"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/m", || async { view("m.html", context! {}) })
+    }
+}
+
+#[renox::test]
+async fn rx_input_money_steps_by_the_currencys_smallest_unit() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("m.html"),
+        "<rx-input name=\"a\" label=\"A\" type=\"money\" currency=\"JPY\"/>\
+         <rx-input name=\"b\" label=\"B\" type=\"money\" currency=\"kwd\"/>\
+         <rx-input name=\"c\" label=\"C\" type=\"money\"/>",
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app =
+        TestApp::with_config(App::new().module(MoneyPages), move |c| c.views_path = path).await;
+    let html = app.get("/m").await.text();
+    assert!(html.contains("step=\"1\""), "{html}");
+    assert!(html.contains("step=\"0.001\""), "{html}");
+    assert!(html.contains("step=\"0.01\""), "{html}");
+    assert!(html.contains(">JPY</span>") && html.contains(">KWD</span>"));
+    assert!(html.contains("inputmode=\"decimal\""));
+}

@@ -1179,6 +1179,35 @@ impl Field<'_> {
         self
     }
 
+    /// An ISO 4217 currency code such as `USD` or `aed` (see
+    /// [`Currency`](crate::money::Currency)); the table is the one `Money` uses.
+    pub fn currency(mut self) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && crate::money::Currency::parse(text.trim()).is_err()
+        {
+            self.fail("currency", &[]);
+        }
+        self
+    }
+
+    /// An amount in whole units of `currency` (a code such as `"USD"`, often
+    /// another field: `.money(&self.currency)`), typed as `12.50`: digits with
+    /// at most the currency's decimals (JPY 0, USD 2, KWD 3), never rounded.
+    /// An unknown `currency` leaves the rule out; check that field with
+    /// [`currency`](Self::currency).
+    pub fn money(mut self, currency: &str) -> Self {
+        let Ok(currency) = crate::money::Currency::parse(currency.trim()) else {
+            return self;
+        };
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && crate::money::Money::parse(text, currency).is_err()
+        {
+            let decimals = currency.decimals().to_string();
+            self.fail("money", &[("decimals", decimals)]);
+        }
+        self
+    }
+
     /// An uploaded image within `limits`, e.g.
     /// `.dimensions(&Dimensions::new().min_width(400).ratio(16, 9))`; see
     /// [`Dimensions`]. A file that isn't an image fails.

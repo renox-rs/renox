@@ -607,8 +607,38 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
                 )
         })
         .collect();
+    // A `Money` field is typed as text (the amount in whole units) plus a text
+    // currency field, once per currency column, checked against each other.
+    let mut currency_members: Vec<(syn::Ident, bool)> = Vec::new();
+    for f in included.iter().filter(|f| f.money.is_some()) {
+        let ident = format_ident!("{}", f.money.as_deref().unwrap_or_default());
+        let optional = is_option(&f.ty);
+        match currency_members.iter_mut().find(|(i, _)| *i == ident) {
+            Some((_, all_optional)) => *all_optional &= optional,
+            None => currency_members.push((ident, optional)),
+        }
+    }
+    let currency_fields = currency_members.iter().map(|(ident, optional)| {
+        let required = (!optional).then(|| quote! { required, });
+        quote! {
+            #[validate(#required currency)]
+            #[serde(default)]
+            #vis #ident: ::std::string::String
+        }
+    });
     let members = included.iter().map(|f| {
         let (field_vis, name, ty) = (&f.vis, &f.ident, &f.ty);
+        if let Some(currency) = &f.money {
+            let currency = format_ident!("{}", currency);
+            let required = (!is_option(ty)).then(|| quote! { required, });
+            let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
+            return quote! {
+                #[validate(#required money(&self.#currency))]
+                #(#rules)*
+                #[serde(default)]
+                #field_vis #name: ::std::string::String
+            };
+        }
         if f.form.upload {
             let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
             return quote! {
@@ -624,6 +654,30 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
     });
     let assigns = included.iter().filter(|f| !f.form.upload).map(|f| {
         let name = &f.ident;
+        if let Some(currency) = &f.money {
+            let currency = format_ident!("{}", currency);
+            // Validation has passed by now; a value that still doesn't read
+            // leaves the record's field as it was.
+            return if is_option(&f.ty) {
+                quote! {
+                    if self.#name.trim().is_empty() {
+                        record.#name = ::core::option::Option::None;
+                    } else if let ::core::result::Result::Ok(code) = ::renox::money::Currency::parse(self.#currency.trim())
+                        && let ::core::result::Result::Ok(amount) = ::renox::money::Money::parse(&self.#name, code)
+                    {
+                        record.#name = ::core::option::Option::Some(amount);
+                    }
+                }
+            } else {
+                quote! {
+                    if let ::core::result::Result::Ok(code) = ::renox::money::Currency::parse(self.#currency.trim())
+                        && let ::core::result::Result::Ok(amount) = ::renox::money::Money::parse(&self.#name, code)
+                    {
+                        record.#name = amount;
+                    }
+                }
+            };
+        }
         quote! { record.#name = self.#name; }
     });
     let doc = format!("The form for [`{ident}`], made by `#[model(form)]`.");
@@ -633,6 +687,7 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
         #[serde(crate = "::renox::serde")]
         #vis struct #form_ident {
             #(#members,)*
+            #(#currency_fields,)*
         }
 
         impl #form_ident {

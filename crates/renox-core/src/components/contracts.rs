@@ -260,6 +260,7 @@ const INPUT_TYPES: &[&str] = &[
     "search",
     "color",
     "range",
+    "money",
 ];
 
 const FORM_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -1150,6 +1151,11 @@ pub(crate) static BUILTIN: &[Contract] = &[
             text("min", false, "The smallest value (number and date types)."),
             text("max", false, "The largest value (number and date types)."),
             text("step", false, "The step between values (number types)."),
+            text(
+                "currency",
+                false,
+                "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
+            ),
         ],
         slots: &[],
         events: &[],

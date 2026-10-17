@@ -1417,6 +1417,9 @@
             },
             {
               "name": "range"
+            },
+            {
+              "name": "money"
             }
           ]
         },
@@ -1555,6 +1558,11 @@
         {
           "description": "The step between values (number types).",
           "name": "step",
+          "values": []
+        },
+        {
+          "description": "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
+          "name": "currency",
           "values": []
         }
       ],
