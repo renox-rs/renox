@@ -118,17 +118,18 @@ pub(crate) fn check_glyphs(document: &PagedDocument, lenient: bool) -> Result<()
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
+    use crate::document::Document;
     use crate::source::Sources;
-    use crate::world::RenoxWorld;
 
+    /// Laid out through `Document`, which makes the registered fonts the
+    /// default families (a missing character is only drawn as a box then).
     fn compile(fonts: &Fonts, template: &str) -> PagedDocument {
         let sources = Sources::map([("main.typ", template.as_bytes().to_vec())]);
-        let world =
-            RenoxWorld::new(sources, "main.typ", fonts.faces().to_vec(), HashMap::new()).unwrap();
-        typst::compile::<PagedDocument>(&world).output.unwrap()
+        Document::new(sources, "main.typ")
+            .fonts(fonts.clone())
+            .layout()
+            .unwrap()
     }
 
     #[test]

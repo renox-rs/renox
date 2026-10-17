@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use typst::diag::{FileError, FileResult, PackageError};
-use typst::foundations::{Bytes, Datetime, Duration};
+use typst::foundations::{Bytes, Datetime, Dict, Duration};
 use typst::syntax::{FileId, RootedPath, Source, VirtualPath, VirtualRoot};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
@@ -25,6 +25,9 @@ pub(crate) struct RenoxWorld {
     sources: Sources,
     assets: HashMap<String, Bytes>,
     main: FileId,
+    /// Code placed before the entry file's own text (on its first line, so
+    /// line numbers in errors stay right): `data` and the language settings.
+    prelude: String,
     /// Parsed sources, so a file imported twice is parsed once per render.
     cache: Mutex<HashMap<FileId, Source>>,
 }
@@ -47,8 +50,21 @@ impl RenoxWorld {
             sources,
             assets,
             main: RootedPath::new(VirtualRoot::Project, main).intern(),
+            prelude: String::new(),
             cache: Mutex::new(HashMap::new()),
         })
+    }
+
+    /// Code that runs before the entry file's own text.
+    pub(crate) fn with_prelude(mut self, prelude: String) -> Self {
+        self.prelude = prelude;
+        self
+    }
+
+    /// Sets `sys.inputs`.
+    pub(crate) fn with_inputs(mut self, inputs: Dict) -> Self {
+        self.library = LazyHash::new(Library::builder().with_inputs(inputs).build());
+        self
     }
 
     /// Raw bytes for `id`: an in-memory asset first, then the template root.
@@ -100,7 +116,12 @@ impl World for RenoxWorld {
         }
         let bytes = self.bytes(id)?;
         let text = std::str::from_utf8(&bytes).map_err(|_| FileError::InvalidUtf8)?;
-        let source = Source::new(id, text.to_owned());
+        let text = if id == self.main {
+            format!("{}{text}", self.prelude)
+        } else {
+            text.to_owned()
+        };
+        let source = Source::new(id, text);
         if let Ok(mut cache) = self.cache.lock() {
             cache.insert(id, source.clone());
         }

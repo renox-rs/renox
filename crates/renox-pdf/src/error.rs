@@ -14,6 +14,15 @@ pub enum PdfError {
     /// The bytes passed to `Pdf::font` are not a font file Typst can read
     /// (TrueType, OpenType or a collection of them; WOFF is not supported).
     InvalidFont,
+    /// The template did not compile; holds Typst's messages, one per line.
+    Compile(String),
+    /// The value given to `Document::data` cannot be turned into JSON.
+    Data(String),
+    /// A name or value given to `Document::asset` or `Document::locale` is
+    /// not usable; holds the reason.
+    Invalid(String),
+    /// Typst could not write the PDF; holds its messages.
+    Export(String),
 }
 
 impl fmt::Display for PdfError {
@@ -32,6 +41,10 @@ impl fmt::Display for PdfError {
             PdfError::InvalidFont => {
                 f.write_str("the bytes are not a TrueType or OpenType font file")
             }
+            PdfError::Compile(messages) => write!(f, "the template did not compile: {messages}"),
+            PdfError::Data(message) => write!(f, "the template data is not valid JSON: {message}"),
+            PdfError::Invalid(message) => f.write_str(message),
+            PdfError::Export(messages) => write!(f, "the PDF could not be written: {messages}"),
         }
     }
 }

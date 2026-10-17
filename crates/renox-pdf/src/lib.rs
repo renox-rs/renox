@@ -11,6 +11,8 @@ mod source;
 #[allow(dead_code)]
 mod world;
 
+#[allow(dead_code)]
+mod document;
 mod error;
 #[allow(dead_code)]
 mod fonts;
