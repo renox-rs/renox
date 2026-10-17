@@ -107,6 +107,11 @@ impl<Tz: TimeZone> ColumnType for chrono::DateTime<Tz> {
     const KIND: ColumnKind = ColumnKind::DateTime;
 }
 
+/// A `Quantity` is one `BIGINT` column; the scale is in the Rust type only.
+impl<const S: u32> ColumnType for crate::quantity::Quantity<S> {
+    const KIND: ColumnKind = ColumnKind::BigInt;
+}
+
 impl<T: ColumnType> ColumnType for Option<T> {
     const KIND: ColumnKind = T::KIND;
 }

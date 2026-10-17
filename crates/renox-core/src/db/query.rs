@@ -32,8 +32,14 @@ impl Number for f64 {
     const SQL_TYPE: &'static str = "DOUBLE PRECISION";
 }
 
+/// The sum of a `Quantity` column stays a `Quantity` of the same scale.
+impl<const S: u32> Number for crate::quantity::Quantity<S> {
+    const SQL_TYPE: &'static str = "BIGINT";
+}
+
 mod sealed {
     pub trait Sealed {}
+    impl<const S: u32> Sealed for crate::quantity::Quantity<S> {}
     impl Sealed for i64 {}
     impl Sealed for f64 {}
 }
@@ -921,7 +927,8 @@ impl<M: Model> Query<M> {
     }
 
     /// The sum of `column`, 0 without rows: `sum::<i64>(…)` for whole
-    /// numbers (money in its smallest unit), `sum::<f64>(…)` for measures.
+    /// numbers (money in its smallest unit), `sum::<Quantity<S>>(…)` for a
+    /// `Quantity` column, `sum::<f64>(…)` for measures.
     pub async fn sum<'c, T: Number, E: Executor<'c>>(mut self, db: E, column: &str) -> Result<T> {
         let Some(column) = self.column(column) else {
             return Err(self.check().unwrap_err());

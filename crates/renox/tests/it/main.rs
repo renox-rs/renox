@@ -63,6 +63,7 @@ mod polish;
 #[cfg(feature = "postgres")]
 mod postgres;
 mod quantity;
+mod quantity_model;
 mod query_builder;
 mod queue;
 mod rate_limits;

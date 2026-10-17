@@ -356,3 +356,29 @@ async fn schema_check_reports_a_missing_or_mistyped_currency_column() {
     assert!(text.contains("total_currency"), "{text}");
     assert!(text.contains("refund_currency"), "{text}");
 }
+
+#[derive(Model, Debug, Clone)]
+#[model(table = "stocks")]
+struct Stock {
+    id: i64,
+    level: renox::quantity::Quantity<3>,
+    reserved: Option<renox::quantity::Quantity<2>>,
+}
+
+#[renox::test]
+async fn a_quantity_field_gets_one_bigint_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("migrations");
+    diff::<Stock>(dir.path(), &out, "create_stocks", &[], &[])
+        .await
+        .unwrap();
+    let sql = all_sql(&out);
+    assert!(sql.contains("level"), "{sql}");
+    assert!(!sql.contains("level_"), "{sql}");
+    matches::<Stock>(dir.path(), &out).await;
+    let before = files(&out);
+    diff::<Stock>(dir.path(), &out, "again", &[], &[])
+        .await
+        .unwrap();
+    assert_eq!(files(&out), before);
+}

@@ -252,6 +252,8 @@ async fn more(State(state): State<AppState>, user: Option<AuthUser>) -> Result<S
         .fetch_as(db)
         .await?;
     let _ = stock;
+    let stock_total: renox::quantity::Quantity<3> = Note::query().sum(db, "id").await?;
+    let _ = stock_total;
     if let Some(user) = user {
         user.notifications(db, 5).await?;
         user.notifications_before(db, 10, 5).await?;
