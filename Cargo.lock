@@ -3765,6 +3765,7 @@ version = "1.1.1"
 dependencies = [
  "renox",
  "typst",
+ "typst-layout",
  "typst-pdf",
 ]
 

@@ -23,3 +23,6 @@ renox.workspace = true
 # can't see; the crate bundles Inter and the kit's Arabic font itself.
 typst = "0.15.1"
 typst-pdf = "0.15.1"
+# `typst::compile` is generic over the output and `PagedDocument` (what
+# `typst-pdf` takes) is only defined here; already in the tree through `typst`.
+typst-layout = "0.15.1"
