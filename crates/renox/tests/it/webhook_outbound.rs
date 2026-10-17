@@ -322,3 +322,136 @@ async fn deliveries_list_redeliver_and_prune() {
             .is_empty()
     );
 }
+
+#[derive(serde::Deserialize)]
+struct Ping {
+    note: String,
+}
+
+async fn receive(SignedRequest(ping): SignedRequest<Ping>) -> String {
+    format!("got {}", ping.note)
+}
+
+struct Receiver;
+
+impl Module for Receiver {
+    fn name(&self) -> &'static str {
+        "receiver"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().post("/incoming", receive).without_csrf()
+    }
+}
+
+const RECEIVER_KEY: &str = "billing";
+const RECEIVER_SECRET: &str = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+
+async fn receiver() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Receiver)
+            .signing_key(RECEIVER_KEY, RECEIVER_SECRET),
+    )
+    .await
+}
+
+/// Signs `{"note":"hi"}` with `.sign()` on a fake HTTP client and returns what
+/// would have gone over the wire.
+async fn signed_by_sender(app: &TestApp, key_id: &str, secret: &str) -> renox::http::SentRequest {
+    let http = app.fake_http();
+    http.on("POST https://*", FakeResponse::status(200));
+    app.state()
+        .http
+        .post("https://receiver.test/incoming")
+        .json(&json!({ "note": "hi" }))
+        .sign(key_id, secret)
+        .send()
+        .await
+        .unwrap();
+    http.sent().pop().unwrap()
+}
+
+async fn deliver(
+    app: &TestApp,
+    sent: &renox::http::SentRequest,
+    tweak: impl Fn(&str, &str) -> String,
+) -> renox::testing::TestResponse {
+    let mut request = app.request().without_csrf();
+    for (name, value) in &sent.headers {
+        if name.starts_with("webhook-") {
+            request = request.header(name, &tweak(name, value));
+        }
+    }
+    request
+        .post_body("/incoming", "application/json", sent.body.clone())
+        .await
+}
+
+fn same(_: &str, value: &str) -> String {
+    value.to_owned()
+}
+
+#[renox::test]
+async fn signed_request_accepts_a_signed_call_and_rejects_a_replay() {
+    let app = receiver().await;
+    let sent = signed_by_sender(&app, RECEIVER_KEY, RECEIVER_SECRET).await;
+    deliver(&app, &sent, same)
+        .await
+        .assert_ok()
+        .assert_see("got hi");
+    deliver(&app, &sent, same).await.assert_status(401);
+}
+
+#[renox::test]
+async fn signed_request_rejects_a_bad_signature_and_an_unknown_key() {
+    let app = receiver().await;
+    let sent = signed_by_sender(&app, RECEIVER_KEY, RECEIVER_SECRET).await;
+    deliver(&app, &sent, |name, v| {
+        if name == "webhook-signature" {
+            format!("v1,{}=", "A".repeat(43))
+        } else {
+            v.to_owned()
+        }
+    })
+    .await
+    .assert_status(401);
+
+    // Signed with another secret.
+    let other = signed_by_sender(&app, RECEIVER_KEY, &signing::generate_secret()).await;
+    deliver(&app, &other, same).await.assert_status(401);
+
+    // A key id the receiver does not know, even with a valid signature.
+    let stranger = signed_by_sender(&app, "stranger", RECEIVER_SECRET).await;
+    deliver(&app, &stranger, same).await.assert_status(401);
+
+    // A tampered body.
+    let mut tampered = sent.clone();
+    tampered.body = r#"{"note":"evil"}"#.into();
+    deliver(&app, &tampered, same).await.assert_status(401);
+
+    // The untouched call still works: refusals did not burn its id.
+    deliver(&app, &sent, same).await.assert_ok();
+}
+
+#[renox::test]
+async fn signed_request_enforces_the_tolerance_window() {
+    let app = receiver().await;
+    let sent = signed_by_sender(&app, RECEIVER_KEY, RECEIVER_SECRET).await;
+    app.travel(Duration::from_secs(299));
+    deliver(&app, &sent, same).await.assert_ok();
+
+    let late = signed_by_sender(&app, RECEIVER_KEY, RECEIVER_SECRET).await;
+    app.travel(Duration::from_secs(302));
+    deliver(&app, &late, same).await.assert_status(401);
+}
+
+#[renox::test]
+async fn signed_request_without_headers_is_unauthorized() {
+    let app = receiver().await;
+    app.request()
+        .without_csrf()
+        .post_body("/incoming", "application/json", r#"{"note":"hi"}"#)
+        .await
+        .assert_status(401);
+}

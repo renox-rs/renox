@@ -405,7 +405,7 @@ async fn models(State(state): State<AppState>) -> Result<String> {
 
 /// Outbound webhook endpoints, routed (not called: a compile-time `Send` check).
 async fn endpoints(State(state): State<AppState>) -> Result<String> {
-    use renox::webhook::outbound::Endpoint;
+    use renox::webhook::outbound::{Delivery, Endpoint};
     let (endpoint, secret) =
         Endpoint::create(&state, "https://example.com/h", "d", &["a.b"]).await?;
     let listed = Endpoint::list(&state.db).await?;
@@ -418,13 +418,37 @@ async fn endpoints(State(state): State<AppState>) -> Result<String> {
     let mut tx = state.db.begin().await?;
     let queued = renox::webhook::outbound::emit_in(&state, &mut tx, &Ping).await?;
     tx.commit().await?;
+    let deliveries = Delivery::list(&state.db, Some(endpoint.id), true, 10).await?;
+    let redelivered = Delivery::redeliver(&state, 1).await?;
+    let pruned = Delivery::prune(&state.db, Duration::from_secs(86_400)).await?;
     Ok(format!(
-        "{} {} {} {} {queued}",
+        "{} {} {pruned} {redelivered} {} {} {} {queued}",
+        deliveries.len(),
         secret.len() + endpoint.secret(&state)?.len(),
         listed.len(),
         subscribed.len(),
         found.is_some()
     ))
+}
+
+#[derive(serde::Deserialize)]
+struct SignedPing {
+    note: String,
+}
+
+/// A handler that takes a `SignedRequest` and sends a signed call.
+async fn signed(
+    State(state): State<AppState>,
+    SignedRequest(ping): SignedRequest<SignedPing>,
+) -> Result<String> {
+    let response = state
+        .http
+        .post("https://example.com/h")
+        .json(&serde_json::json!({ "note": ping.note }))
+        .sign("billing", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
+        .send()
+        .await?;
+    Ok(response.status().to_string())
 }
 
 /// M20a's cache APIs, routed and called.
@@ -983,6 +1007,7 @@ impl Module for Handlers {
             .get("/models", models)
             .get("/cache", cache)
             .get("/endpoints", endpoints)
+            .post("/signed", signed)
             .get("/settings", settings)
             .get("/background", background)
             .get("/polish", polish)

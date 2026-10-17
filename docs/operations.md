@@ -641,7 +641,8 @@ App::new().signing_key("billing", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
 The extractor answers `401` with the same generic message for an unknown key id, a wrong
 signature, a timestamp more than `WEBHOOK_TOLERANCE_SECS` (300) away from now, and a `webhook-id`
 it has already seen inside that window. Call `.sign` after the body is set. Registering a key
-again under the same id replaces it, which is how a key is rotated.
+again under the same id replaces it, which is how a key is rotated. A route that takes a `SignedRequest`
+needs `.without_csrf()`, as the signature takes the place of the CSRF token.
 
 ## Backups
 

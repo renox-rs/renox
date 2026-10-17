@@ -149,3 +149,60 @@ async fn small_integers_and_json_values_on_postgres() {
     assert_eq!(text.0, doc);
     tx.rollback().await.unwrap();
 }
+
+/// The outbound webhook tables on PostgreSQL: the sealed secret, the delivery
+/// log and the retention prune. `TestApp` gives the test its own schema, so
+/// the webhook migrations run there too.
+#[tokio::test]
+async fn outbound_webhooks_store_and_prune_on_postgres() {
+    use renox::http::FakeResponse;
+    use renox::prelude::*;
+    use renox::webhook::outbound::{Delivery, Endpoint};
+
+    if std::env::var("TEST_DATABASE_URL").is_err() {
+        eprintln!("skipped: TEST_DATABASE_URL is not set");
+        return;
+    }
+    #[derive(Clone)]
+    struct Shipped {
+        id: i64,
+    }
+    impl Event for Shipped {}
+
+    let app = renox::testing::TestApp::new(
+        App::new().webhook_event::<Shipped>("order.shipped", |e| json!({ "id": e.id })),
+    )
+    .await;
+    assert_eq!(app.db().dialect(), Dialect::Postgres);
+    let http = app.fake_http();
+    http.on("POST https://a.test/*", FakeResponse::status(500));
+    http.on("POST https://a.test/*", FakeResponse::status(200));
+    let (endpoint, secret) = Endpoint::create(app.state(), "https://a.test/h", "pg", &[])
+        .await
+        .unwrap();
+    let stored: String = sql("SELECT secret FROM webhook_endpoints WHERE id = ?")
+        .bind(endpoint.id)
+        .scalar(app.db())
+        .await
+        .unwrap();
+    assert_ne!(stored, secret);
+    app.state().emit(Shipped { id: 3 }).await.unwrap();
+    app.run_jobs().await;
+    let rows = Delivery::list(app.db(), Some(endpoint.id), false, 10)
+        .await
+        .unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].response_status, Some(500));
+    assert!(Delivery::redeliver(app.state(), rows[0].id).await.unwrap());
+    app.run_jobs().await;
+    http.assert_sent_count(2);
+    app.travel(std::time::Duration::from_secs(2 * 86_400));
+    let pruned = app
+        .at_travelled_time(Delivery::prune(
+            app.db(),
+            std::time::Duration::from_secs(86_400),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(pruned, 1);
+}
