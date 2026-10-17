@@ -244,6 +244,28 @@ pub struct CheatSheet;
 /// struct Post { id: i64, title: String }
 /// ```
 ///
+/// `custom_fields` names a `Json<CustomValues>` column of the model:
+/// ```compile_fail
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "extra")]
+/// struct Party { id: i64, extra: String }
+/// ```
+/// ```compile_fail
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "missing")]
+/// struct Party { id: i64, name: String }
+/// ```
+/// …while this one compiles:
+/// ```
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "extra")]
+/// struct Party { id: i64, extra: renox::db::Json<renox::custom_fields::CustomValues> }
+/// assert_eq!(Party::CUSTOM_FIELDS, Some("extra"));
+/// ```
+///
 /// Unknown attributes are refused:
 /// ```compile_fail
 /// # use renox::prelude::*;

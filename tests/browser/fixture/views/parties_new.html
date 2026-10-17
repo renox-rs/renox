@@ -1,0 +1,11 @@
+{% extends "layout.html" %}
+{% from "renox/ui.html" import input, button %}
+{% block content %}
+<h1>New party</h1>
+<form id="party" method="post" action="/parties" novalidate>
+  {{ csrf_field() }}
+  {{ input("name", "Name", required=true) }}
+  <rx-custom-fields :fields="fields" name="extra" id="custom"/>
+  {{ button("Save") }}
+</form>
+{% endblock %}

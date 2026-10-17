@@ -13,10 +13,7 @@ use std::path::{Path, PathBuf};
 
 /// The tags no example, fixture or built-in template uses yet, each with the reason. Remove a line when
 /// the tag is used somewhere real.
-const NOT_SHOWN_YET: &[(&str, &str)] = &[(
-    "rx-custom-fields",
-    "#41 part 7 (renox-admin forms and entries) and the browser test (part 10) put it on a page",
-)];
+const NOT_SHOWN_YET: &[(&str, &str)] = &[];
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")

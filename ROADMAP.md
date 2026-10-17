@@ -2035,7 +2035,8 @@ Notes:
   CSV/xlsx/print)
 - [x] renox-admin: custom fields in forms, entries, columns and filters, and a "Custom fields" definitions resource
 - [x] Docs (types.md "Custom fields"), CHEATSHEET.md, llms.txt, `send_handlers.rs`
-- [ ] Acceptance tests and a browser test (part 10/10); the sensitive flag that seals values with `APP_KEY` is deferred to a follow-up
+- [x] Acceptance tests (AC1-AC12 audited; a PostgreSQL test) and a browser test (`tests/browser/custom-fields.test.mjs`, on the fixture's
+  `/parties`); the sensitive flag that seals values with `APP_KEY` is deferred to the follow-up #71
 
 ## Decisions
 
@@ -2366,7 +2367,8 @@ Notes:
   to the `en` entry, then the key. A JSON key is shape-checked and never interpolated; the check against the definitions is the
   explicit `Query::with_custom_fields(&db)` (and `Grid::with_custom_fields`) because `where_` is sync, and it also picks the cast on
   PostgreSQL. `Column::custom_field` is the grid constructor because `Column::custom` already draws a template. Indexes are a
-  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag was accepted but deferred.
+  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag was accepted but deferred (#71). The tag's
+  error lookup also tries the raw name, because custom-field errors are keyed `extra[key]`, not `extra.key`.
 
 ## Not planned
 

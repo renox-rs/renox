@@ -4,6 +4,7 @@
 //! renox-ui.js then do with it. The data grid's pages are in `grid.rs`.
 
 mod grid;
+mod parties;
 mod tickets;
 
 use renox::prelude::*;
@@ -422,6 +423,8 @@ fn main() -> Result {
         .module(Pages)
         // A ticket with a state machine (transition-actions.test.mjs).
         .module(tickets::Tickets)
+        // Parties with custom fields (custom-fields.test.mjs).
+        .module(parties::Parties)
         .state_machine::<tickets::Ticket>()
         .nav(
             "staff",

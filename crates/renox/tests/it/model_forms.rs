@@ -282,15 +282,22 @@ impl Module for CfFormParties {
     }
 
     fn routes(&self) -> Routes {
-        Routes::new().post(
-            "/parties",
-            |State(state): State<AppState>, Valid(form): Valid<CfFormPartyForm>| async move {
-                let mut party = CfFormParty::default();
-                form.fill(&mut party);
-                let party = CfFormParty::create(&state.db, party).await?;
-                Ok::<_, Error>(party.id.to_string())
-            },
-        )
+        Routes::new()
+            .get("/parties/new", |State(state): State<AppState>| async move {
+                let fields =
+                    renox::custom_fields::CustomField::views(&state.db, "cf_form_parties", "en")
+                        .await?;
+                Ok::<_, Error>(view("cf_party_form.html", context! { fields }))
+            })
+            .post(
+                "/parties",
+                |State(state): State<AppState>, Valid(form): Valid<CfFormPartyForm>| async move {
+                    let mut party = CfFormParty::default();
+                    form.fill(&mut party);
+                    let party = CfFormParty::create(&state.db, party).await?;
+                    Ok::<_, Error>(party.id.to_string())
+                },
+            )
     }
 }
 
@@ -348,4 +355,67 @@ async fn custom_value_errors_are_keyed_by_column_and_key() {
     res.assert_invalid("extra[age]");
     res.assert_invalid("extra[passport_no]");
     assert!(CfFormParty::all(app.db()).await.unwrap().is_empty());
+}
+
+#[renox::test]
+async fn the_custom_fields_tag_refills_and_marks_the_right_inputs_after_a_failed_submit() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("cf_party_form.html"),
+        r#"<form method="post" action="/parties">{{ csrf_field() }}
+<rx-custom-fields :fields="fields" name="extra"/></form>"#,
+    )
+    .unwrap();
+    let path = dir.path().to_path_buf();
+    let app = TestApp::with_config(
+        App::new().migrations(&[PARTIES]).module(CfFormParties),
+        move |c| c.views_path = path,
+    )
+    .await;
+    let db = app.db();
+    renox::custom_fields::CustomField::number("cf_form_parties", "age")
+        .max(120)
+        .save(db)
+        .await
+        .unwrap();
+    renox::custom_fields::CustomField::text("cf_form_parties", "passport_no")
+        .required()
+        .save(db)
+        .await
+        .unwrap();
+    renox::custom_fields::CustomField::text("cf_form_parties", "nickname")
+        .position(9)
+        .save(db)
+        .await
+        .unwrap();
+
+    app.request()
+        .header("referer", "/parties/new")
+        .post(
+            "/parties",
+            &[
+                ("name", "Ana"),
+                ("extra[age]", "200"),
+                ("extra[nickname]", "Annie"),
+            ],
+        )
+        .await
+        .assert_redirect("/parties/new");
+    let page = app.get("/parties/new").await;
+    page.assert_ok();
+    let html = page.text();
+    let input = |name: &str| {
+        let at = html
+            .find(&format!(r#"name="extra[{name}]""#))
+            .unwrap_or_else(|| panic!("no input {name}: {html}"));
+        let start = html[..at].rfind("<input").unwrap();
+        let end = start + html[start..].find('>').unwrap();
+        html[start..=end].to_string()
+    };
+    // The old values are back, and only the failed inputs are marked.
+    assert!(input("age").contains(r#"value="200""#), "{}", input("age"));
+    assert!(input("age").contains("aria-invalid=\"true\""));
+    assert!(input("passport_no").contains("aria-invalid=\"true\""));
+    assert!(input("nickname").contains(r#"value="Annie""#));
+    assert!(!input("nickname").contains("aria-invalid"));
 }

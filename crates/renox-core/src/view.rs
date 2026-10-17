@@ -2013,9 +2013,12 @@ fn globals(
                 return Ok::<_, minijinja::Error>(String::new());
             }
             // `items[0][name]`'s errors are keyed `items.0.name`.
+            // Custom fields are keyed as they are named (`extra[passport_no]`).
+            let raw = field.clone();
             let field = crate::validation::nested::normalize(&field);
             Ok(first_errors
-                .get(&field)
+                .get(&raw)
+                .or_else(|| first_errors.get(&field))
                 .or_else(|| {
                     let prefix = format!("{field}.");
                     first_errors

@@ -154,6 +154,29 @@ async fn saving_again_changes_the_label_but_not_the_key_or_kind() {
     assert!(CustomField::find(db, saved.id).await.unwrap().is_none());
 }
 
+#[renox::test]
+async fn meta_reaches_the_views_and_survives_a_new_label() {
+    let app = TestApp::new(App::new()).await;
+    let db = app.db();
+    let saved = CustomField::text("parties", "passport_no")
+        .label("Passport")
+        .meta(serde_json::json!({"where": "sidebar", "order": [1, 2]}))
+        .save(db)
+        .await
+        .unwrap();
+    let views = CustomField::views(db, "parties", "es").await.unwrap();
+    assert_eq!(views[0].meta["where"], "sidebar");
+    assert_eq!(views[0].meta["order"][1], 2);
+    // The label is the fallback when the locale has none.
+    assert_eq!(views[0].label, "Passport");
+
+    saved.label("Passport no.").save(db).await.unwrap();
+    let views = CustomField::views(db, "parties", "en").await.unwrap();
+    assert_eq!(views[0].label, "Passport no.");
+    assert_eq!(views[0].meta["where"], "sidebar", "meta is kept");
+    assert_eq!(views[0].key, "passport_no");
+}
+
 mod json_paths {
     use renox::custom_fields::{CustomField, CustomValues};
     use renox::db::{Dialect, Json, Query, json_index, sql};
