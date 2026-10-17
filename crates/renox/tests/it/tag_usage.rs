@@ -16,6 +16,9 @@ use std::path::{Path, PathBuf};
 const NOT_SHOWN_YET: &[(&str, &str)] = &[(
     "rx-rating",
     "added in #54 part 1/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
+), (
+    "rx-geolocate",
+    "added in #54 part 2/6; the bikeshop /about/blocks page shows it in part 5/6 of #54",
 )];
 
 fn root() -> PathBuf {

@@ -1534,3 +1534,154 @@ async fn an_app_translates_the_signature_and_camera_texts() {
     }
     let _ = std::fs::remove_dir_all(dir);
 }
+
+const GEO_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import geolocate %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/visit">
+{{ csrf_field() }}
+{{ geolocate("location", accuracy=50, label="Where is the bike?", required=true, hint="Stand next to it.") }}
+</form></body></html>"##;
+
+const GEO_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/visit">
+<rx-geolocate name="spot" button-label="Find me"/>
+</form></body></html>"##;
+
+/// What the form posts for the position; `at` is not read.
+#[derive(Debug, Deserialize)]
+struct Loc {
+    lat: f64,
+    lng: f64,
+    accuracy: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Visit {
+    location: Option<Loc>,
+    note: Option<String>,
+}
+
+impl Validate for Visit {
+    fn rules(&self, v: &mut Validator) {
+        v.field("location", &self.location.as_ref().map(|l| l.lat))
+            .required();
+        v.field("note", &self.note).required();
+    }
+}
+
+struct Visits;
+
+impl Module for Visits {
+    fn name(&self) -> &'static str {
+        "visits"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/visit", || async { view("visit.html", ()) })
+            .get("/visit-tag", || async { view("visit-tag.html", ()) })
+            .post("/visit", |Valid(form): Valid<Visit>| async move {
+                let loc = form.location.unwrap();
+                Json(json!({ "lat": loc.lat, "lng": loc.lng, "accuracy": loc.accuracy }))
+            })
+    }
+}
+
+async fn visits_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Visits)
+            .templates(|env| {
+                env.add_template("visit.html", GEO_MACRO).unwrap();
+                renox::view::add_template(env, "visit-tag.html", GEO_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The geolocate block (#54): four hidden inputs, disabled until there is a
+/// fix, a button that is the only thing asking for the position, a polite
+/// status, the wanted accuracy as a data attribute and the part's file; the
+/// tag calls the macro.
+#[renox::test]
+async fn the_geolocate_block_renders_as_a_macro_and_a_tag() {
+    let app = visits_app().await;
+    let html = app.get("/visit").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-geolocate data-rx-geolocate-accuracy="50" data-rx-geolocate-required"#);
+    has("Where is the bike?");
+    has("data-rx-geolocate-button>Use my location</button>");
+    has(r#"id="rx-location-status" role="status" aria-live="polite" data-rx-geolocate-status>"#);
+    has("Your position is asked for only when you press the button.");
+    for field in ["lat", "lng", "accuracy", "at"] {
+        has(&format!(
+            r#"<input type="hidden" name="location[{field}]" value="""#
+        ));
+    }
+    assert_eq!(html.matches("type=\"hidden\" name=\"location[").count(), 4);
+    assert_eq!(html.matches(" disabled>").count(), 4, "{html}");
+    has("Stand next to it.");
+    has(r#"data-error-for="location" aria-live="polite"></p>"#);
+    has("Location access was denied.");
+    has(r#"data-geolocate="/_renox/blocks/geolocate-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/visit-tag").await.assert_ok().text();
+    for needle in [
+        "data-rx-geolocate-button>Find me</button>",
+        r#"name="spot[lat]""#,
+        r#"<span class="rx-required">(optional)</span>"#,
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+    assert!(!html.contains("data-rx-geolocate-required"), "{html}");
+}
+
+/// The four posted fields arrive as a nested struct; with no fix the
+/// inputs are not sent and `required` returns the field's error; a position
+/// that came back with an error is shown again, enabled.
+#[renox::test]
+async fn a_position_arrives_through_valid() {
+    let app = visits_app().await;
+    app.get("/visit").await;
+    let fix = [
+        ("location[lat]", "40.4168"),
+        ("location[lng]", "-3.7038"),
+        ("location[accuracy]", "12.5"),
+        ("location[at]", "2026-10-18T09:30:00.000Z"),
+    ];
+    let mut form = fix.to_vec();
+    form.push(("note", "ok"));
+    app.post("/visit", &form)
+        .await
+        .assert_ok()
+        .assert_json_path("lat", 40.4168)
+        .assert_json_path("accuracy", 12.5);
+
+    app.request()
+        .json()
+        .post("/visit", &[("note", "ok")])
+        .await
+        .assert_status(422)
+        .assert_invalid("location");
+
+    // Another field fails: the position is back, enabled, with its status.
+    app.request()
+        .header("referer", "/visit")
+        .post("/visit", &fix)
+        .await
+        .assert_redirect("/visit");
+    let html = app.get("/visit").await.text();
+    assert!(
+        html.contains(r#"name="location[lat]" value="40.4168" data-rx-geolocate-lat>"#),
+        "{html}"
+    );
+    assert!(
+        html.contains("Position found: 40.4168, -3.7038 (about 12.5 m)."),
+        "{html}"
+    );
+}

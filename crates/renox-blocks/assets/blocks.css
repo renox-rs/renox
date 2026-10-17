@@ -580,3 +580,7 @@
   .rx-rating__item--on .rx-rating__star { color: Highlight; fill: Highlight; }
   .rx-rating__input:focus-visible + .rx-rating__label { outline-color: Highlight; }
 }
+
+/* ---------- geolocate ---------- */
+
+.rx-geolocate { min-width: 0; display: grid; gap: var(--rx-space-2); }

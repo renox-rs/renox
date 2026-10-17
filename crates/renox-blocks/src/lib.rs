@@ -32,7 +32,8 @@
 //!   `signature_pad` (a drawn or typed signature, sent as a PNG file or a name),
 //!   `camera_capture` (photos from the camera, sent as JPEG files),
 //!   `map_picker` (a point, circle or polygon on a map, with typed coordinates),
-//!   `rating` (stars, a radio group that works without JavaScript).
+//!   `rating` (stars, a radio group that works without JavaScript),
+//!   `geolocate` (the device's position, asked for on a button press).
 //! - Showing data: `gallery` (a carousel), `history` (a timeline),
 //!   `compare_plans` (a pricing table), `status_stepper` (a record's
 //!   progress through its statuses), `map` (markers and shapes).
@@ -129,7 +130,7 @@ impl Module for Blocks {
 /// The blocks as tags: `<rx-quantity>`, `<rx-range-slider>`, `<rx-keypad>`,
 /// `<rx-swatches>`, `<rx-datetime-range>`, `<rx-gallery>`, `<rx-history>`,
 /// `<rx-compare-plans>`, `<rx-status-stepper>`, `<rx-month-calendar>`,
-/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-camera-capture>`, `<rx-map-picker>`, `<rx-map>`, `<rx-kanban>`, `<rx-receipt>` and `<rx-rating>`. Each is the macro of
+/// `<rx-availability>`, `<rx-week-calendar>`, `<rx-signature-pad>`, `<rx-camera-capture>`, `<rx-map-picker>`, `<rx-map>`, `<rx-kanban>`, `<rx-receipt>`, `<rx-rating>` and `<rx-geolocate>`. Each is the macro of
 /// the same name, with its parameters as
 /// attributes (`value-start`, `hide-label`…).
 fn components(app: &mut Registry) {
@@ -403,6 +404,21 @@ fn components(app: &mut Registry) {
             .prop(Prop::text("hint"))
             .prop(Prop::text("id"))
             .prop(Prop::text("bag")),
+    );
+    app.component(
+        block(
+            "rx-geolocate",
+            "geolocate",
+            "The device's position, asked for on a button press; sends lat, lng, accuracy and time.",
+        )
+        .prop(Prop::text("name").required())
+        .prop(Prop::number("accuracy"))
+        .prop(Prop::text("label"))
+        .prop(Prop::text("button-label"))
+        .prop(Prop::bool("required"))
+        .prop(Prop::text("hint"))
+        .prop(Prop::text("id"))
+        .prop(Prop::text("bag")),
     );
 }
 

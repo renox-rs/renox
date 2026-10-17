@@ -219,6 +219,42 @@ pub const TEXTS: &[(&str, &str)] = &[
     ("blocks.rating.label", "Rating"),
     ("blocks.rating.option", ":n of :max"),
     ("blocks.rating.none", "Not rated"),
+    ("blocks.geolocate.label", "Location"),
+    ("blocks.geolocate.button", "Use my location"),
+    ("blocks.geolocate.retry", "Try again"),
+    (
+        "blocks.geolocate.idle",
+        "Your position is asked for only when you press the button.",
+    ),
+    ("blocks.geolocate.locating", "Finding your position..."),
+    (
+        "blocks.geolocate.done",
+        "Position found: :lat, :lng (about :accuracy m).",
+    ),
+    (
+        "blocks.geolocate.wanted",
+        "Position found: about :accuracy m, wanted :wanted m.",
+    ),
+    (
+        "blocks.geolocate.denied",
+        "Location access was denied. Allow it in your browser settings, then try again.",
+    ),
+    (
+        "blocks.geolocate.unavailable",
+        "Your position is not available here.",
+    ),
+    (
+        "blocks.geolocate.timeout",
+        "Finding your position took too long. Try again.",
+    ),
+    (
+        "blocks.geolocate.needed",
+        "Press the button to share your position.",
+    ),
+    (
+        "blocks.geolocate.no_script",
+        "Sharing your position needs JavaScript.",
+    ),
 ];
 
 /// The English text of `key`, if the blocks have one.

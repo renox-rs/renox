@@ -22,6 +22,7 @@ const PARTS = [
   ["signature", "[data-rx-signature]"],
   ["camera", "[data-rx-camera]"],
   ["map", "[data-rx-map], [data-rx-map-picker]"],
+  ["geolocate", "[data-rx-geolocate]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

@@ -4,7 +4,8 @@
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
     Input:          quantity, range_slider, keypad, swatches, datetime_range,
-                    signature_pad, camera_capture, map_picker (a point, circle or polygon), rating
+                    signature_pad, camera_capture, map_picker (a point, circle or polygon), rating,
+                    geolocate
     Showing data:   gallery, history, compare_plans, status_stepper, map
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
@@ -1154,4 +1155,66 @@
   <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
 </fieldset>
 {%- endif %}
+{%- endmacro %}
+
+{#- ======================================================================
+    geolocate: the device's position, asked for only when the person
+    presses the button. It sends four fields: `name[lat]`, `name[lng]`,
+    `name[accuracy]` (metres) and `name[at]` (RFC 3339, UTC), so the
+    form's struct reads them as a nested struct, or as `renox::geo::Point`
+    for the latitude and longitude.
+
+    {{ geolocate("location", accuracy=50, label="Where is the bike?") }}
+
+    The four fields are disabled until there is a position, so nothing is
+    sent before a press or after an error. `accuracy` is the accuracy
+    wanted, in metres: it asks the device for its best position, and a
+    worse one is still kept, with the status saying so; the server decides
+    from the posted `accuracy`. The status (a polite live region) says
+    what is going on, including denied, unavailable and timed out, and the
+    button then reads "Try again". Without JavaScript the block explains
+    that it needs it; with `required` the server refuses a form without a
+    position. The page's Permissions-Policy must allow geolocation
+    (`.permissions_policy(|p| { p.allow("geolocation", "self"); })`),
+    which Renox switches off by default.
+    ====================================================================== -#}
+{% macro geolocate(name, accuracy=none, label=none, button_label=none, required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.geolocate.label') %}
+{%- set lat = old(name ~ '[lat]', "") %}
+{%- set lng = old(name ~ '[lng]', "") %}
+{%- set got = old(name ~ '[accuracy]', "") %}
+{%- set at = old(name ~ '[at]', "") %}
+{%- set has = lat not in [none, ""] and lng not in [none, ""] %}
+{%- set texts = {
+  "button": renox_blocks_t('blocks.geolocate.button'),
+  "retry": renox_blocks_t('blocks.geolocate.retry'),
+  "locating": renox_blocks_t('blocks.geolocate.locating'),
+  "done": renox_blocks_t('blocks.geolocate.done'),
+  "wanted": renox_blocks_t('blocks.geolocate.wanted'),
+  "denied": renox_blocks_t('blocks.geolocate.denied'),
+  "unavailable": renox_blocks_t('blocks.geolocate.unavailable'),
+  "timeout": renox_blocks_t('blocks.geolocate.timeout'),
+  "idle": renox_blocks_t('blocks.geolocate.idle'),
+  "needed": renox_blocks_t('blocks.geolocate.needed')
+} %}
+<div class="rx-field rx-geolocate" id="{{ id }}" data-rx-geolocate{% if accuracy %} data-rx-geolocate-accuracy="{{ accuracy }}"{% endif %}{% if required %} data-rx-geolocate-required{% endif %} data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-status{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div>
+    <button class="rx-button rx-button--secondary" type="button" data-rx-geolocate-button>{{ button_label or renox_blocks_t('blocks.geolocate.button') }}</button>
+  </div>
+  <p class="rx-hint" id="{{ id }}-status" role="status" aria-live="polite" data-rx-geolocate-status>
+    {%- if has %}{{ renox_blocks_t('blocks.geolocate.done', lat=lat, lng=lng, accuracy=got) }}{% else %}{{ renox_blocks_t('blocks.geolocate.idle') }}{% endif -%}
+  </p>
+  <input type="hidden" name="{{ name }}[lat]" value="{{ lat }}" data-rx-geolocate-lat{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[lng]" value="{{ lng }}" data-rx-geolocate-lng{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[accuracy]" value="{{ got }}" data-rx-geolocate-accuracy-field{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[at]" value="{{ at }}" data-rx-geolocate-at{% if not has %} disabled{% endif %}>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+  <noscript><p class="rx-hint">{{ renox_blocks_t('blocks.geolocate.no_script') }}</p></noscript>
+</div>
 {%- endmacro %}
