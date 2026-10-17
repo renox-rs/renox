@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use renox::axum::Extension;
 use renox::axum::extract::{FromRequest, Request};
+use renox::custom_fields::{CustomField, FieldKind as CustomKind};
 use renox::db::{Model, Query};
-use renox::grid::{Action, Grid, GridRequest, Selection};
+use renox::grid::{Action, Column, Grid, GridRequest, Selection};
 use renox::prelude::*;
 use renox::serde_json::{Map, Value};
 use renox::validation::Errors;
@@ -519,6 +520,62 @@ impl<R: AdminResource> Ctx<R> {
         texts: &Texts,
     ) -> Result<Vec<FieldView>> {
         form_fields(&*self.resource, state, record, texts, &[]).await
+    }
+
+    /// The list's grid with the model's custom fields as columns (one per
+    /// active definition the resource doesn't already list), resolved so
+    /// their filters, sorts and exports work.
+    async fn grid_for(
+        &self,
+        state: &AppState,
+        user: &AuthUser,
+        trashed: bool,
+        texts: &Texts,
+        request: &GridRequest,
+    ) -> Result<Grid> {
+        let mut grid = self.grid(user, trashed, texts);
+        let Some(column) = R::Model::CUSTOM_FIELDS else {
+            return Ok(grid);
+        };
+        let declared: Vec<String> = self
+            .resource
+            .columns()
+            .iter()
+            .map(|c| c.key().to_owned())
+            .collect();
+        let fields = CustomField::for_model(&state.db, R::Model::TABLE).await?;
+        for field in fields.iter() {
+            let custom = Column::custom_field(column, &field.key);
+            if !declared.iter().any(|key| key == custom.key()) {
+                grid = grid.column(custom);
+            }
+        }
+        grid.with_custom_fields::<R::Model>(request).await
+    }
+
+    /// The custom fields of the model for the form and view pages: the
+    /// column, the active definitions in the request's locale and the
+    /// record's values. `Null` without any.
+    async fn custom(
+        &self,
+        state: &AppState,
+        texts: &Texts,
+        record: Option<&Value>,
+    ) -> Result<Value> {
+        let Some(column) = R::Model::CUSTOM_FIELDS else {
+            return Ok(Value::Null);
+        };
+        let fields = CustomField::views(&state.db, R::Model::TABLE, texts.locale()).await?;
+        if fields.is_empty() {
+            return Ok(Value::Null);
+        }
+        let multipart = fields.iter().any(|f| f.kind == CustomKind::File);
+        Ok(json!({
+            "column": column,
+            "fields": fields,
+            "values": record.and_then(|r| r.get(column)).cloned().unwrap_or(Value::Null),
+            "multipart": multipart,
+        }))
     }
 
     /// The record's tabs: "Details", then each relation manager the user
@@ -1276,7 +1333,9 @@ async fn index<R: AdminResource>(
     let slug = cx.resource.slug();
     let filter = request.param("filter").filter(|f| !f.is_empty());
     let trashed = filter == Some(TRASHED) && R::Model::SOFT_DELETES && cx.offers("restoreAny");
-    let grid = cx.grid(&user, trashed, &texts);
+    let grid = cx
+        .grid_for(&state, &user, trashed, &texts, &request)
+        .await?;
     let query = cx.scoped(filter);
     if let Some(file) = grid.export(query.clone(), &request).await? {
         return Ok(file);
@@ -1359,6 +1418,7 @@ async fn create<R: AdminResource>(
         Value::String(texts.get("create", &[("label", &label)])),
     );
     values.insert("record".into(), Value::Null);
+    values.insert("custom".into(), cx.custom(&state, &texts, None).await?);
     page(&cx, &state, &user, "renox-admin/form.html", values, &texts)
 }
 
@@ -1425,7 +1485,12 @@ async fn show<R: AdminResource>(
     let id = record.id().to_string();
     let label = cx.label(&texts);
     let mut values = Map::new();
-    values.insert("record".into(), to_json(&record)?);
+    let record_json = to_json(&record)?;
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &texts, Some(&record_json)).await?,
+    );
+    values.insert("record".into(), record_json);
     values.insert("entries".into(), to_json(&entries)?);
     values.insert("allowed".into(), to_json(&can)?);
     values.insert("deleted".into(), Value::Bool(deleted));
@@ -1495,6 +1560,10 @@ async fn edit<R: AdminResource>(
     values.insert(
         "submit_label".into(),
         Value::String(texts.get("save_changes", &[])),
+    );
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &texts, Some(&json)).await?,
     );
     values.insert("record".into(), json);
     if cx.allows(&user, "delete", Some(&record)) {
@@ -1751,7 +1820,9 @@ async fn bulk<R: AdminResource>(
             _ => {}
         }
     }
-    let grid = cx.grid(&user, trashed, &texts);
+    let grid = cx
+        .grid_for(&state, &user, trashed, &texts, &request)
+        .await?;
     let records = grid
         .selected(cx.scoped(filter), &request, &selection)?
         .limit(MAX_SELECTED)

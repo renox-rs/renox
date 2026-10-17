@@ -1,0 +1,5 @@
+CREATE TABLE parties (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    extra TEXT NOT NULL DEFAULT '{}'
+);

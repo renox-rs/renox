@@ -5,6 +5,7 @@
 {% extends "renox-admin/layout.html" %}
 {% from "renox/ui.html" import page_header, card, form_grid, form_errors, button, link_button, link_tabs, confirm %}
 {% from "renox-admin/fields.html" import field %}
+{% from "renox/custom_fields.html" import custom_fields %}
 
 {% block title %}{{ title }} · {{ admin.title }}{% endblock %}
 
@@ -17,7 +18,7 @@
 {%- if relations %}
 {{ link_tabs(relations, current=current_tab, label=title) }}
 {%- endif %}
-<form method="post" action="{{ action }}" hx-post="{{ action }}" hx-swap="none" data-live-validate novalidate>
+<form method="post" action="{{ action }}" hx-post="{{ action }}" hx-swap="none" data-live-validate novalidate{% if custom and custom.multipart %} enctype="multipart/form-data" hx-encoding="multipart/form-data"{% endif %}>
   {{ csrf_field() }}{% if method != "POST" %}{{ method_field(method) }}{% endif %}
   {{ form_errors() }}
   {% call card() %}
@@ -25,6 +26,9 @@
       {%- for f in fields %}
       {{ field(f, currency=admin.currency) }}
       {%- endfor %}
+      {%- if custom %}
+      <div class="rx-span-2">{{ custom_fields(custom.fields, name=custom.column, values=custom["values"]) }}</div>
+      {%- endif %}
     {% endcall %}
     <div class="rx-row">
       {{ button(submit_label, key="mod+s") }}

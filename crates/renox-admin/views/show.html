@@ -32,6 +32,12 @@
     {%- endif %}
     {{ entry(e.label, value, format=(none if e.format == "quantity" else e.format), badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span, currency=(record[e.currency_from] if e.currency_from and record[e.currency_from] is defined else none)) }}
     {%- endfor %}
+    {%- if custom %}
+    {%- for f in custom.fields %}
+    {%- set stored = custom["values"][f.key] if custom["values"] and custom["values"][f.key] is defined else none %}
+    {{ entry(f.label, (stored if stored is not none else false) if f.kind == "bool" else stored, format=("bool" if f.kind == "bool" else none), labels=(f.labels if f.kind == "choice" else none)) }}
+    {%- endfor %}
+    {%- endif %}
   {% endcall %}
 {% endcall %}
 {%- if machine %}

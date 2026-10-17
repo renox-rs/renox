@@ -111,6 +111,11 @@ impl Texts {
         }
     }
 
+    /// The request's locale, for custom field labels.
+    pub(crate) fn locale(&self) -> &str {
+        &self.lang.locale
+    }
+
     /// `renox.admin.<key>` if the app translated it.
     fn lookup(&self, key: &str) -> Option<String> {
         let full = format!("renox.admin.{key}");
