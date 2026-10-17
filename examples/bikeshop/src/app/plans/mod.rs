@@ -68,7 +68,12 @@ impl Module for Plans {
             .get("/plans/demo-pay/{user}/{name}/{plan}", demo::page)
             .name("plans.demo")
             .post("/plans/demo-pay/{user}/{name}/{plan}", demo::complete)
-            .name("plans.demo.complete");
+            .name("plans.demo.complete")
+            // A payment link's page (a work order's "pay by link").
+            .get("/plans/demo-pay/link/{payment}", demo::link_show)
+            .name("plans.demo.link")
+            .post("/plans/demo-pay/link/{payment}", demo::link_complete)
+            .name("plans.demo.link.complete");
         let customers = Routes::new()
             .get("/plans/subscribe", subscribe::form)
             .name("plans.subscribe")
@@ -104,7 +109,8 @@ impl Module for Plans {
             .model::<crate::app::plans::model::PlanSubscription>()
             .model::<crate::app::plans::model::PlanVisit>()
             .model::<crate::app::plans::model::PlanInvoice>();
-        app.job::<demo::DemoBillingNotify>();
+        app.job::<demo::DemoBillingNotify>()
+            .job::<demo::DemoPaymentNotify>();
         // renox-billing's events, mirrored into the bike's plan (src/app/plans/sync.rs).
         app.listen(
             |e: renox_billing::SubscriptionCreated, state: AppState| async move {

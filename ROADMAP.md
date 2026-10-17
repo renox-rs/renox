@@ -2041,7 +2041,9 @@ Notes:
   `RefundSucceeded`, `RefundFailed`, `DisputeOpened`/`Won`/`Lost`, `PaymentLinkExpired`
 - [x] Stripe, Xendit and the new N-Genius gateway (`Billing::ngenius()`), fixtures from their docs; the `billing:expire-links` sweep
 - [x] Config docs and new-app stubs; docs/billing.md, CHEATSHEET.md, llms.txt, the crate README
-- [ ] The bikeshop "pay by link" example and its browser test; acceptance checks AC1-AC14 (Stripe PaymentIntent matching is done, 13/14)
+- [x] Stripe PaymentIntent matching for disputes and dashboard refunds; acceptance tests for status checks, expiry and per-account keys
+- [x] The bikeshop "pay by link" example (`POST /staff/workshop/{order}/pay-link`, the demo gateway's `payment_link`/`payment_status`, a
+  `PaymentSucceeded` listener marking the work order paid) with its tests and browser test; acceptance criteria AC1-AC14 are met
 
 ### Custom fields (#41)
 - [x] `renox::custom_fields::{CustomField, FieldKind, LocaleMap, FieldRules, CustomValues}`: definitions in the `custom_fields` table

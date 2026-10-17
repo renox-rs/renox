@@ -3431,6 +3431,16 @@
       "paid": "Pagado.",
       "moved": "Ahora: :status.",
       "pay": "Cobrar :amount",
+      "link": {
+        "title": "Pago por enlace",
+        "send": "Enviar un enlace de pago",
+        "lead": "El cliente paga en línea; la orden se marca pagada cuando la pasarela lo confirma.",
+        "open": "Abrir el enlace",
+        "waiting": "Esperando a que el cliente pague.",
+        "made": "El enlace de pago está listo.",
+        "paid": "Pagada por enlace.",
+        "failed": "El pago falló. Envía un enlace nuevo."
+      },
       "to": {
         "checked_in": "Recibir",
         "in_progress": "Empezar el trabajo",
@@ -4406,6 +4416,10 @@
       "pay": "Pagar :amount",
       "decline": "Rechazar (el pago falla)",
       "renewing": "La renovación está en camino: recarga en un momento.",
+      "link_title": "Enlace de pago de prueba",
+      "link_for": "Orden de taller",
+      "link_amount": "Importe",
+      "link_done": "Este enlace ya se usó.",
       "renew_title": "Prueba: el pago del mes siguiente",
       "renew_text": "Una pasarela real cobra cada mes sola; pruébalo aquí.",
       "renew_paid": "Renovar, pagado",

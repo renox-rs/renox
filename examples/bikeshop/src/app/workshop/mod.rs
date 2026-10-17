@@ -91,6 +91,9 @@ impl Module for Workshop {
             // The counter payment checks `orders.sell` in the order's store itself.
             .post("/staff/workshop/{order}/pay", order::pay)
             .name("workshop.order.pay")
+            // Pay by link: the same check, then renox-billing's payment link.
+            .post("/staff/workshop/{order}/pay-link", order::pay_link)
+            .name("workshop.order.pay.link")
             .require_permission(catalogue::WORKORDERS_VIEW);
         // Taking a walk-in opens a work order: the same permission as working on one.
         let work = Routes::new()
@@ -145,6 +148,18 @@ impl Module for Workshop {
             }
             Ok(())
         });
+        // Paid by a payment link: renox-billing's event carries the reference
+        // `work_order` / id the link was made with (workshop/order.rs, `pay_link`).
+        app.listen(
+            |event: renox_billing::PaymentSucceeded, state: AppState| async move {
+                if event.reference_type.as_deref() == Some("work_order")
+                    && let Some(id) = event.reference_id.as_deref().and_then(|id| id.parse().ok())
+                {
+                    booking::paid(&state, id).await?;
+                }
+                Ok(())
+            },
+        );
         tasks::schedule(app.schedule());
     }
 }

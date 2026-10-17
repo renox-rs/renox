@@ -13,6 +13,13 @@
 //! and the shop's listeners ([`super::sync`]) take over. Nothing is
 //! special-cased.
 //!
+//! **One-off payments.** The same gateway makes payment links
+//! (`payment_link`, docs/billing.md, "One-off payments"): a work order's
+//! "pay by link" (`/staff/workshop/{order}/pay-link`) gets a signed page of
+//! this app (`/plans/demo-pay/link/{payment}`), and paying there queues a
+//! one-off webhook ([`DemoPaymentNotify`]) the same way. `PaymentSucceeded`
+//! then carries the work order's reference and the workshop marks it paid.
+//!
 //! A subscription made this way can also be "renewed" from its page
 //! (paid, or failed, to see the payment-failed mail and the hold), which a
 //! real gateway does on its own each month.
@@ -25,7 +32,8 @@ use renox::axum::http::HeaderMap;
 use renox::prelude::*;
 use renox::signed::ValidSignature;
 use renox_billing::{
-    Billing, BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Owner, Payment, Plan, Remote,
+    Billing, BillingPayment, BoxFuture, ChargeRequest, Checkout, CheckoutRequest, Gateway, Notice,
+    Owner, Payment, PaymentPage, PaymentState, PaymentStatus, PaymentUpdate, Plan, Remote,
     Subscription, SubscriptionStatus,
 };
 use serde::{Deserialize, Serialize};
@@ -160,8 +168,48 @@ impl Gateway for DemoGateway {
         ))
     }
 
+    /// A one-off charge is paid on the same kind of page as a link.
+    fn charge<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        Box::pin(async move { link_page(state, request) })
+    }
+
+    /// The payment link: a signed page of this app, valid for [`LINK_TTL`].
+    fn payment_link<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        Box::pin(async move { link_page(state, request) })
+    }
+
+    /// The demo keeps no ledger of its own: a payment is what the webhook
+    /// last said, so a status check answers the stored state.
+    fn payment_status<'a>(
+        &'a self,
+        _state: &'a AppState,
+        payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result<PaymentState>> {
+        Box::pin(async move { Ok(PaymentState::new(payment.status)) })
+    }
+
     fn parse_webhook(&self, body: &[u8]) -> Result<Vec<Notice>> {
-        let event: DemoEvent = renox::serde_json::from_slice(body)?;
+        let event = match renox::serde_json::from_slice(body)? {
+            DemoBody::OneOff(update) => {
+                let status = if update.paid {
+                    PaymentStatus::Succeeded
+                } else {
+                    PaymentStatus::Failed
+                };
+                return Ok(vec![Notice::OneOff(
+                    PaymentUpdate::new(update.gateway_payment, status).at(update.created),
+                )]);
+            }
+            DemoBody::Subscription(event) => event,
+        };
         let sub = &event.subscription;
         let mut notices = vec![Notice::Subscription(
             Remote::new(sub.id.clone())
@@ -190,6 +238,52 @@ impl Gateway for DemoGateway {
             ));
         }
         Ok(notices)
+    }
+}
+
+/// The page a charge or a link is paid on: its id at the "gateway" is
+/// `demo_pay_{payment}`.
+fn link_page(state: &AppState, request: &ChargeRequest) -> Result<PaymentPage> {
+    let url = state.signed_url("plans.demo.link", &[&request.payment_id], LINK_TTL)?;
+    let expires = renox::db::now() + renox::chrono::Duration::seconds(LINK_TTL.as_secs() as i64);
+    Ok(PaymentPage::new(payment_id_at_gateway(request.payment_id), url).expires_at(expires))
+}
+
+/// The demo's id for the payment row `payment`.
+pub fn payment_id_at_gateway(payment: i64) -> String {
+    format!("demo_pay_{payment}")
+}
+
+/// What the demo's webhook can carry: a one-off payment's outcome or a
+/// subscription (the one-off is tried first, by its own field).
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum DemoBody {
+    OneOff(DemoOneOff),
+    Subscription(DemoEvent),
+}
+
+/// A demo webhook for a one-off payment (a link or a charge).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DemoOneOff {
+    pub id: String,
+    /// Unix seconds.
+    pub created: i64,
+    /// The payment's id at the demo gateway (`demo_pay_7`).
+    pub gateway_payment: String,
+    pub paid: bool,
+}
+
+impl DemoOneOff {
+    /// The webhook for payment row `payment`: paid, or failed.
+    pub fn new(payment: i64, paid: bool) -> Self {
+        let n = renox::random_token();
+        DemoOneOff {
+            id: format!("evt_demo_{}", &n[..16]),
+            created: renox::db::now().timestamp(),
+            gateway_payment: payment_id_at_gateway(payment),
+            paid,
+        }
     }
 }
 
@@ -269,30 +363,47 @@ impl Job for DemoBillingNotify {
     const MAX_ATTEMPTS: u32 = 5;
 
     async fn handle(self, ctx: JobContext) -> Result {
-        let body = renox::serde_json::to_string(&self.event)?;
-        let signature = renox::webhook::hmac_sha256_hex(signing_key(&ctx.state.config), &body);
-        let url = format!(
-            "{}/billing/webhooks/demo",
-            ctx.state.config.url.trim_end_matches('/')
-        );
-        let response = ctx
-            .state
-            .http
-            .post(url)
-            .header(SIGNATURE_HEADER, signature)
-            .body("application/json", body)
-            .timeout(Duration::from_secs(10))
-            .send()
-            .await?;
-        if !response.ok() {
-            return Err(
-                renox::anyhow::anyhow!("the webhook answered {}", response.status()).into(),
-            );
-        }
-        Ok(())
+        deliver(&ctx.state, &self.event).await
     }
 }
 // [/explain:plans.demo.job]
+
+/// Sends a [`DemoOneOff`] (a payment link was paid, or declined) the same way.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct DemoPaymentNotify {
+    pub event: DemoOneOff,
+}
+
+impl Job for DemoPaymentNotify {
+    const NAME: &'static str = "bikeshop.demo-payment-notify";
+    const MAX_ATTEMPTS: u32 = 5;
+
+    async fn handle(self, ctx: JobContext) -> Result {
+        deliver(&ctx.state, &self.event).await
+    }
+}
+
+/// Posts `event`, signed, to this app's own demo webhook.
+async fn deliver<E: Serialize>(state: &AppState, event: &E) -> Result {
+    let body = renox::serde_json::to_string(event)?;
+    let signature = renox::webhook::hmac_sha256_hex(signing_key(&state.config), &body);
+    let url = format!(
+        "{}/billing/webhooks/demo",
+        state.config.url.trim_end_matches('/')
+    );
+    let response = state
+        .http
+        .post(url)
+        .header(SIGNATURE_HEADER, signature)
+        .body("application/json", body)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?;
+    if !response.ok() {
+        return Err(renox::anyhow::anyhow!("the webhook answered {}", response.status()).into());
+    }
+    Ok(())
+}
 
 /// What the demo page shows.
 #[derive(Serialize)]
@@ -363,6 +474,72 @@ pub async fn complete(
 }
 // [/explain:plans.demo.complete]
 
+/// What the payment link's page shows.
+#[derive(Serialize)]
+struct LinkPaying {
+    order: i64,
+    amount: i64,
+    done: bool,
+}
+
+/// The demo gateway's payment of a link's page, 404 for any other.
+async fn link_payment(state: &AppState, id: i64) -> Result<BillingPayment> {
+    let payment = BillingPayment::find(&state.db, id)
+        .await?
+        .ok_or(Error::NotFound)?;
+    if payment.gateway != "demo" {
+        return Err(Error::NotFound);
+    }
+    Ok(payment)
+}
+
+/// `GET /plans/demo-pay/link/{payment}` (`plans.demo.link`): the demo
+/// gateway's page for a payment link, through the signed URL its
+/// `payment_link` made.
+pub async fn link_show(
+    _: ValidSignature,
+    State(state): State<AppState>,
+    uri: renox::axum::http::Uri,
+    Path(id): Path<i64>,
+) -> Result<View> {
+    let payment = link_payment(&state, id).await?;
+    let order = payment
+        .reference_id
+        .as_deref()
+        .and_then(|id| id.parse().ok())
+        .unwrap_or_default();
+    let paying = LinkPaying {
+        order,
+        amount: payment.amount.minor,
+        done: payment.status != PaymentStatus::Pending,
+    };
+    Ok(view(
+        "plans/demo_link.html",
+        context! { paying, action => uri.to_string() },
+    ))
+}
+
+/// `POST /plans/demo-pay/link/{payment}` (`plans.demo.link.complete`):
+/// "takes" the payment (or declines it) and queues the gateway's webhook.
+pub async fn link_complete(
+    _: ValidSignature,
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Valid(form): Valid<DemoForm>,
+) -> Result<Redirect> {
+    abort_if(
+        !DemoGateway.configured(&state.config),
+        StatusCode::NOT_FOUND,
+        "The demo gateway is off.",
+    )?;
+    let payment = link_payment(&state, id).await?;
+    if payment.status == PaymentStatus::Pending {
+        let event = DemoOneOff::new(payment.id, form.outcome == "pay");
+        state.dispatch(DemoPaymentNotify { event }).await?;
+    }
+    Redirect::route("billing.return", &[])
+}
+
 /// Renew now, paid or failed.
 #[derive(Deserialize, Validate, Debug)]
 pub struct RenewForm {
@@ -403,6 +580,14 @@ pub async fn renew(
         Toast::info(state.current_lang().t("plans.demo.renewing", &[])),
         Redirect::route("plans.show", &[&sub.id])?,
     ))
+}
+
+/// The JSON of a [`DemoOneOff`] and its signature, for tests that post the
+/// webhook themselves.
+pub fn signed_one_off(config: &Config, event: &DemoOneOff) -> (String, String) {
+    let body = renox::serde_json::to_string(event).unwrap_or_default();
+    let signature = renox::webhook::hmac_sha256_hex(signing_key(config), &body);
+    (body, signature)
 }
 
 /// The JSON of a [`DemoEvent`] and its signature, for tests that post the

@@ -568,8 +568,15 @@ pub fn entries() -> Vec<Explanation> {
 
 /// GET routes of this area that aren't pages (JSON, files, streams).
 pub fn not_pages() -> Vec<NotAPage> {
-    vec![NotAPage {
-        route: "billing.return",
-        reason: "renox-billing's return from the gateway: a redirect to /plans/mine with a toast",
-    }]
+    vec![
+        NotAPage {
+            route: "billing.return",
+            reason: "renox-billing's return from the gateway: a redirect to /plans/mine with a toast",
+        },
+        NotAPage {
+            route: "plans.demo.link",
+            reason: "the demo gateway's page for a work order's payment link, a stand-in for the \
+                     gateway's own page; the demo payment page (plans.demo) explains how it works",
+        },
+    ]
 }

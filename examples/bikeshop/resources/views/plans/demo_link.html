@@ -1,0 +1,25 @@
+{#- The demo billing gateway's page for a payment link (src/app/plans/demo.rs): a
+    work order's "pay by link" opens here when Stripe's keys aren't set. Paying
+    queues the one-off webhook a gateway would send, signed, to this app's own
+    /billing/webhooks/demo. -#}
+<rx-page layout="layouts/app.html" title="{{ t('plans.demo.link_title') }}">
+<app-plans-assets/>
+<div class="bs-demo-billing" data-bs-reveal>
+  <rx-alert kind="warning" title="{{ t('plans.demo.notice_title') }}" message="{{ t('plans.demo.notice') }}"/>
+  <rx-card title="{{ t('plans.demo.link_title') }}" subtitle="{{ t('plans.demo.merchant', shop=t('shop.name')) }}">
+    <rx-infolist columns="2">
+      <rx-entry label="{{ t('plans.demo.link_for') }}" :value="'#' ~ paying.order"/>
+      <rx-entry label="{{ t('plans.demo.link_amount') }}"><strong>{{ paying.amount | money }}</strong></rx-entry>
+    </rx-infolist>
+    <rx-alert rx-if="paying.done" kind="info" message="{{ t('plans.demo.link_done') }}"/>
+    <rx-form rx-if="not paying.done" :action="action" id="demo-link-pay">
+      <input type="hidden" name="outcome" value="pay">
+      <rx-button label="{{ t('plans.demo.pay', amount=(paying.amount | money)) }}" variant="primary" block key="p"/>
+    </rx-form>
+    <rx-form rx-if="not paying.done" :action="action" id="demo-link-decline">
+      <input type="hidden" name="outcome" value="decline">
+      <rx-button label="{{ t('plans.demo.decline') }}" variant="plain" block/>
+    </rx-form>
+  </rx-card>
+</div>
+</rx-page>

@@ -11,6 +11,7 @@ use bikeshop::app::catalog::factories::{ProductStates, variants_of};
 use bikeshop::app::catalog::model::{
     Brand, Category, CategoryKind, PART_FITS, Product, ProductVariant,
 };
+use bikeshop::app::plans::demo::{DemoOneOff, SIGNATURE_HEADER, signed_one_off};
 use bikeshop::app::rentals::model::{BikeStatus, RentalBike};
 use bikeshop::app::staff::model::Store;
 use bikeshop::app::stock::model::{MovementReason, StockLevel, StockMovement};
@@ -25,8 +26,10 @@ use bikeshop::app::workshop::tasks;
 use bikeshop::seed::{fixtures, unique};
 use renox::chrono::{Duration as Span, NaiveDate};
 use renox::db::capture_queries;
+use renox::http::FakeResponse;
 use renox::prelude::*;
 use renox::testing::TestApp;
+use renox_billing::{BillingPayment, PaymentKind, PaymentStatus};
 use std::time::Duration;
 
 const DAY: Duration = Duration::from_secs(24 * 60 * 60);
@@ -1014,4 +1017,232 @@ async fn every_workshop_page_answers() {
         .await
         .assert_ok()
         .assert_see("Panel del taller");
+}
+
+/// The path of an absolute URL.
+fn path_of(url: &str) -> String {
+    url.split_once("://")
+        .and_then(|(_, rest)| rest.find('/').map(|i| rest[i..].to_owned()))
+        .unwrap_or_else(|| url.to_owned())
+}
+
+/// A ready, unpaid work order of the `tune` ($60.00).
+async fn ready_order(w: &World) -> WorkOrder {
+    let mut order = booking(w, 0, vec![w.tune.clone()]).await.unwrap().unwrap();
+    order.status = WorkStatus::Ready;
+    order.save(w.app.db()).await.unwrap();
+    order
+}
+
+/// The work order's payments by reference, newest first.
+async fn links_of(w: &World, order: &WorkOrder) -> Vec<BillingPayment> {
+    BillingPayment::for_reference(w.app.db(), "work_order", &order.id.to_string())
+        .await
+        .unwrap()
+}
+
+/// Posts the demo gateway's webhook (the body and signature it sent).
+async fn deliver(w: &World, body: String, signature: &str) -> renox::testing::TestResponse {
+    w.app
+        .request()
+        .header(SIGNATURE_HEADER, signature)
+        .post_body("/billing/webhooks/demo", "application/json", body)
+        .await
+}
+
+#[renox::test]
+async fn a_ready_work_order_is_paid_by_link_through_the_demo_gateway() {
+    let w = world().await;
+    let db = w.app.db();
+    let order = ready_order(&w).await;
+    w.app.acting_as(&w.cashier);
+    w.app
+        .get(&format!("/staff/workshop/{}", order.id))
+        .await
+        .assert_ok()
+        .assert_see("Send a payment link");
+    // The link is a payment of the work order's total, with its reference.
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", order.id), &[])
+        .await
+        .assert_redirect(&format!("/staff/workshop/{}", order.id));
+    let links = links_of(&w, &order).await;
+    assert_eq!(links.len(), 1);
+    let link = &links[0];
+    assert_eq!(link.kind, PaymentKind::Link);
+    assert_eq!(link.status, PaymentStatus::Pending);
+    assert_eq!(link.gateway, "demo");
+    assert_eq!(link.amount.minor, order.total);
+    assert_eq!(link.reference_type.as_deref(), Some("work_order"));
+    let path = path_of(link.url.as_deref().unwrap());
+    assert!(path.starts_with("/plans/demo-pay/link/"), "{path}");
+    // The page shows it, and a second click reuses the open link.
+    w.app
+        .get(&format!("/staff/workshop/{}", order.id))
+        .await
+        .assert_ok()
+        .assert_see("Waiting for the customer to pay.")
+        .assert_see("Open the link");
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", order.id), &[])
+        .await
+        .assert_status(303);
+    assert_eq!(links_of(&w, &order).await.len(), 1);
+    // Anyone with the signed link can open it; a tampered one is refused.
+    w.app
+        .get(&path)
+        .await
+        .assert_ok()
+        .assert_see("No real money");
+    w.app
+        .get(&path.replace("signature=", "signature=0"))
+        .await
+        .assert_status(403);
+    // Not paid until the gateway's webhook arrives.
+    let http = w.app.fake_http();
+    http.on("POST */billing/webhooks/demo", FakeResponse::status(200));
+    w.app
+        .post(&path, &[("outcome", "pay")])
+        .await
+        .assert_redirect("/billing/return");
+    assert!(
+        WorkOrder::find(db, order.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .paid_at
+            .is_none()
+    );
+    w.app.run_jobs().await;
+    let sent = http
+        .sent()
+        .into_iter()
+        .find(|r| r.url.ends_with("/billing/webhooks/demo"))
+        .expect("the demo webhook was sent");
+    let signature = sent.header(SIGNATURE_HEADER).unwrap().to_owned();
+    // A forged one is refused and changes nothing.
+    let forged = DemoOneOff::new(link.id, true);
+    let (body, _) = signed_one_off(&w.app.state().config, &forged);
+    deliver(&w, body, "00").await.assert_status(401);
+    w.app.run_jobs().await;
+    assert!(
+        WorkOrder::find(db, order.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .paid_at
+            .is_none()
+    );
+    // The real one marks the payment and the work order paid.
+    deliver(&w, sent.body.clone(), &signature).await.assert_ok();
+    w.app.run_jobs().await;
+    let paid = WorkOrder::find(db, order.id)
+        .await
+        .unwrap()
+        .unwrap()
+        .paid_at;
+    assert!(paid.is_some());
+    assert_eq!(
+        links_of(&w, &order).await[0].status,
+        PaymentStatus::Succeeded
+    );
+    // Delivered twice, it changes nothing.
+    deliver(&w, sent.body.clone(), &signature).await.assert_ok();
+    w.app.run_jobs().await;
+    assert_eq!(
+        WorkOrder::find(db, order.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .paid_at,
+        paid
+    );
+    // The bench shows it paid, and a paid order takes no new link.
+    w.app
+        .get(&format!("/staff/workshop/{}", order.id))
+        .await
+        .assert_ok()
+        .assert_see("Paid by link.");
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", order.id), &[])
+        .await
+        .assert_status(409);
+    assert_eq!(links_of(&w, &order).await.len(), 1);
+}
+
+#[renox::test]
+async fn a_declined_link_stays_unpaid_and_a_new_one_can_be_sent() {
+    let w = world().await;
+    let db = w.app.db();
+    let order = ready_order(&w).await;
+    w.app.acting_as(&w.cashier);
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", order.id), &[])
+        .await
+        .assert_status(303);
+    let link = links_of(&w, &order).await.remove(0);
+    let path = path_of(link.url.as_deref().unwrap());
+    let http = w.app.fake_http();
+    http.on("POST */billing/webhooks/demo", FakeResponse::status(200));
+    w.app
+        .post(&path, &[("outcome", "decline")])
+        .await
+        .assert_status(303);
+    w.app.run_jobs().await;
+    let sent = http
+        .sent()
+        .into_iter()
+        .find(|r| r.url.ends_with("/billing/webhooks/demo"))
+        .unwrap();
+    deliver(
+        &w,
+        sent.body.clone(),
+        sent.header(SIGNATURE_HEADER).unwrap(),
+    )
+    .await
+    .assert_ok();
+    w.app.run_jobs().await;
+    assert_eq!(links_of(&w, &order).await[0].status, PaymentStatus::Failed);
+    assert!(
+        WorkOrder::find(db, order.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .paid_at
+            .is_none()
+    );
+    w.app
+        .get(&format!("/staff/workshop/{}", order.id))
+        .await
+        .assert_see("The payment failed. Send a new link.");
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", order.id), &[])
+        .await
+        .assert_status(303);
+    assert_eq!(links_of(&w, &order).await.len(), 2);
+}
+
+#[renox::test]
+async fn the_payment_link_needs_the_sell_permission_in_the_orders_store_and_a_ready_order() {
+    let w = world().await;
+    let order = ready_order(&w).await;
+    let url = format!("/staff/workshop/{}/pay-link", order.id);
+    // A mechanic of the store may work on the order, not take money.
+    w.app.acting_as(&w.mechanic);
+    w.app.post(&url, &[]).await.assert_forbidden();
+    // Staff of another store don't see the order at all.
+    w.app.acting_as(&w.mechanic_south);
+    w.app.post(&url, &[]).await.assert_status(404);
+    assert!(links_of(&w, &order).await.is_empty());
+    // An order that isn't ready has nothing to pay yet.
+    let waiting = booking(&w, 1, vec![w.check.clone()])
+        .await
+        .unwrap()
+        .unwrap();
+    w.app.acting_as(&w.cashier);
+    w.app
+        .post(&format!("/staff/workshop/{}/pay-link", waiting.id), &[])
+        .await
+        .assert_status(409);
+    assert!(links_of(&w, &waiting).await.is_empty());
 }

@@ -178,7 +178,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [tests/htmx.rs](examples/bikeshop/tests/htmx.rs)
   - The admin panel (renox-admin, a custom column):
     [staff/admin.rs](examples/bikeshop/src/app/staff/admin.rs); service plans billed with
-    renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); the
+    renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); a one-off payment link
+    for a work order (`Billing::payment_link`, a demo gateway with `payment_link`, a `PaymentSucceeded` listener):
+    [workshop/order.rs](examples/bikeshop/src/app/workshop/order.rs), [plans/demo.rs](examples/bikeshop/src/app/plans/demo.rs); the
     Midtrans webhook: [sales/gateway.rs](examples/bikeshop/src/app/sales/gateway.rs); report
     grids grouped, summed and exported: [reports/grids.rs](examples/bikeshop/src/app/reports/grids.rs);
     a CSV or Excel import with `renox::import` (checked first with `dry_run_if`):

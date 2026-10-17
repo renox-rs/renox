@@ -8,7 +8,7 @@ account page, the providers' webhooks, and a guard for pages only subscribers se
 one-off payments (a charge, or a link anyone can pay) with refunds, disputes and expiry, on
 Stripe, Xendit and N-Genius (cards in the Middle East), with keys looked up per installation and
 several accounts per gateway.
-[examples/bikeshop](../examples/bikeshop) bills service plans with it: a named subscription per bike.
+[examples/bikeshop](../examples/bikeshop) bills service plans with it: a named subscription per bike, and staff send a ready work order's payment link (`Billing::payment_link` with the reference `work_order`, marked paid by a `PaymentSucceeded` listener).
 
 In this guide:
 

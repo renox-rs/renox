@@ -46,4 +46,5 @@ What it adds:
 - Stripe, Xendit and N-Genius (`.ngenius()`); another provider is one impl of the `Gateway` trait.
 
 The guide is [docs/billing.md](https://github.com/renox-rs/renox/blob/main/docs/billing.md);
-examples/bikeshop uses it for its service plans (Stripe, Xendit and a demo gateway). Versioned with `renox`: use the same version for both.
+examples/bikeshop uses it for its service plans (Stripe, Xendit and a demo gateway) and to let staff send a work order's payment link
+([examples/bikeshop/src/app/workshop/order.rs](../../examples/bikeshop/src/app/workshop/order.rs), `pay_link`). Versioned with `renox`: use the same version for both.

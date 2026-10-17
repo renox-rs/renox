@@ -11,6 +11,7 @@ use renox::db::Json as DbJson;
 use renox::db::relations::belongs_to;
 use renox::prelude::*;
 use renox::select::{OptionQuery, SelectOption};
+use renox_billing::{Billing, BillingPayment, PaymentKind, PaymentLink, PaymentStatus};
 use serde::{Deserialize, Serialize};
 
 use super::approval;
@@ -189,6 +190,18 @@ pub async fn show(
     );
     let can_take_payment = access::can(&user, catalogue::ORDERS_SELL, StoreAttr::Operating, &order);
     let me = staff_id(db, &user).await?;
+    let pay_link = if can_take_payment {
+        latest_link(db, order.id).await?.map(|p| {
+            json!({
+                "url": p.url,
+                "pending": p.status == PaymentStatus::Pending && !expired(&p),
+                "failed": matches!(p.status, PaymentStatus::Failed | PaymentStatus::Expired)
+                    || (p.status == PaymentStatus::Pending && expired(&p)),
+            })
+        })
+    } else {
+        None
+    };
     let mechanic = match order.mechanic_id {
         Some(id) => match crate::app::staff::model::Staff::find(db, id).await? {
             Some(s) => User::find(db, s.user_id).await?.map(|u| u.name),
@@ -266,6 +279,7 @@ pub async fn show(
             mine => me.is_some() && me == order.mechanic_id,
             can_update,
             can_take_payment,
+            pay_link,
             payable => order.status == WorkStatus::Ready && order.paid_at.is_none() && order.total > 0 && order.source != WorkSource::Fleet,
             next,
             fits,
@@ -273,6 +287,24 @@ pub async fn show(
             order,
         },
     ))
+}
+
+/// A payment link's reference for a work order.
+const LINK_REFERENCE: &str = "work_order";
+
+/// The newest payment link made for the work order, if any.
+async fn latest_link(db: &Db, order: i64) -> Result<Option<BillingPayment>> {
+    Ok(
+        BillingPayment::for_reference(db, LINK_REFERENCE, &order.to_string())
+            .await?
+            .into_iter()
+            .find(|p| p.kind == PaymentKind::Link),
+    )
+}
+
+/// Whether the link's time has run out.
+fn expired(payment: &BillingPayment) -> bool {
+    payment.expires_at.is_some_and(|at| at <= renox::db::now())
 }
 
 /// The checklist: the tasks ticked as done.
@@ -834,6 +866,51 @@ pub async fn pay(
     .await?;
     Ok((
         Toast::success(lang.t("workshop.order.paid", &[])),
+        Redirect::route("workshop.order", &[&order.id])?,
+    ))
+}
+
+/// `POST /staff/workshop/{order}/pay-link` (`workshop.order.pay.link`):
+/// sends the ready, unpaid work order's payment link (`orders.sell` in the
+/// order's store). The payment is stored with the reference
+/// `work_order` / the order's id; when the gateway confirms it,
+/// renox-billing emits `PaymentSucceeded` with that reference and the
+/// listener in [`super`] marks the order paid ([`super::booking::paid`]).
+/// A link still open is shown again instead of making a second one.
+pub async fn pay_link(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<i64>,
+) -> Result<(Toast, Redirect)> {
+    let db = &state.db;
+    let order = access::find::<WorkOrder>(db, &user, id).await?;
+    access::require(&user, catalogue::ORDERS_SELL, StoreAttr::Operating, &order)?;
+    let lang = state.current_lang();
+    if order.status != WorkStatus::Ready
+        || order.paid_at.is_some()
+        || order.total <= 0
+        || order.source == WorkSource::Fleet
+    {
+        return Err(abort(
+            StatusCode::CONFLICT,
+            lang.t("workshop.errors.not_payable", &[]),
+        ));
+    }
+    let open = latest_link(db, order.id)
+        .await?
+        .is_some_and(|p| p.status == PaymentStatus::Pending && !expired(&p));
+    if !open {
+        let currency = renox::money::Currency::parse(&state.config.currency)
+            .map_err(|e| renox::anyhow::anyhow!("APP_CURRENCY: {e}"))?;
+        // Built before the await: the argument list isn't `Send`.
+        let number = order.id.to_string();
+        let link = PaymentLink::new(renox::money::Money::new(order.total, currency))
+            .reference(LINK_REFERENCE, order.id)
+            .description(lang.t("workshop.order.title", &[("number", &number)]));
+        Billing::payment_link(&state, link).await?;
+    }
+    Ok((
+        Toast::success(lang.t("workshop.order.link.made", &[])),
         Redirect::route("workshop.order", &[&order.id])?,
     ))
 }

@@ -635,7 +635,7 @@
   function tries the raw name before the dotted one, so `extra[key]` errors mark the right input. The sealed flag is the follow-up
   #71. Guide: docs/types.md "Custom fields".
 
-- **#44, one-off payments in `renox-billing`** (parts 1-12): `payment.rs` holds `BillingPayment`, `BillingRefund`, `PaymentKind`,
+- **#44, one-off payments in `renox-billing`** (parts 1-15, done): `payment.rs` holds `BillingPayment`, `BillingRefund`, `PaymentKind`,
   `PaymentStatus`, `RefundStatus`, the `Unsupported` error, the `Charge`/`PaymentLink`/`Refund` builders, `ChargeRequest`,
   `PaymentPage`, `PaymentState` and the update types (`PaymentUpdate`, `RefundUpdate`, `DisputeUpdate`), plus
   `Billing::payment_link`/`refund`/`payment_status`/`expire_links` (`Customer::charge` is in `customer.rs`). Migration
@@ -647,7 +647,13 @@
   `billing:expire-links` is an app command and an hourly scheduled task. Config: docs/contributing/config.md and `env.stub`.
   Tests: `crates/renox-billing/tests/billing.rs` with fixtures under `tests/fixtures/{stripe,xendit,ngenius}`, written from the
   gateways' public docs. Stripe disputes and dashboard refunds name only the PaymentIntent: the row stores it
-  (`gateway_intent`, migration `…000920`) and `BillingPayment::find_named` matches by id or intent (13/14). Open (14/14): the bikeshop "pay by link" example and its browser test. Guide: docs/billing.md "One-off payments".
+  (`gateway_intent`, migration `…000920`) and `BillingPayment::find_named` matches by id or intent (13/14). Part 15/15, the bikeshop "pay by link" example: a ready, unpaid work order gets
+  `POST /staff/workshop/{order}/pay-link` (`orders.sell` in the order's store), which calls `Billing::payment_link(PaymentLink::new(..)
+  .reference("work_order", id))`; an open link is shown again instead of a second one. The demo gateway (`plans/demo.rs`) gained
+  `payment_link`, `charge`, `payment_status` and one-off webhooks (`DemoOneOff`, queued as `DemoPaymentNotify`) with a signed hosted page
+  `/plans/demo-pay/link/{payment}`; the workshop's listener on renox-billing's `PaymentSucceeded` with `reference_type == "work_order"`
+  calls `booking::paid`. No migration: the reference lives on the `billing_payments` row. Tests: `examples/bikeshop/tests/workshop.rs`,
+  `tests/browser/bikeshop-workshop-paylink.test.mjs`. Guide: docs/billing.md "One-off payments".
 
 - **#30, `renox-pdf`** (parts 1-10): PDFs from Typst templates compiled in the process. `world.rs`/`source.rs` are our `typst::World`
   (sources from the template root or an embedded map, path confinement, `today()` from `clock`, the only package is the virtual

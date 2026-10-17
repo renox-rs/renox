@@ -1531,6 +1531,16 @@
       "paid": "Paid.",
       "moved": "Now: :status.",
       "pay": "Take :amount",
+      "link": {
+        "title": "Pay by link",
+        "send": "Send a payment link",
+        "lead": "The customer pays online; the work order is marked paid when the gateway confirms.",
+        "open": "Open the link",
+        "waiting": "Waiting for the customer to pay.",
+        "made": "The payment link is ready.",
+        "paid": "Paid by link.",
+        "failed": "The payment failed. Send a new link."
+      },
       "to": {
         "checked_in": "Check in",
         "in_progress": "Start the work",
@@ -2506,6 +2516,10 @@
       "pay": "Pay :amount",
       "decline": "Decline (the payment fails)",
       "renewing": "The renewal is on its way: refresh in a moment.",
+      "link_title": "Demo payment link",
+      "link_for": "Work order",
+      "link_amount": "Amount",
+      "link_done": "This link has been used already.",
       "renew_title": "Demo: next month's payment",
       "renew_text": "A real gateway charges each month on its own; try it here.",
       "renew_paid": "Renew, paid",
