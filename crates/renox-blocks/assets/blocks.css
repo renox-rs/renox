@@ -541,6 +541,14 @@
 .rx-map__fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: var(--rx-space-2); }
 .rx-map__typed { font-family: var(--rx-mono); inline-size: 100%; box-sizing: border-box; }
 .rx-map__list { margin: 0; padding-inline-start: var(--rx-space-4); }
+.rx-map__canvas { position: relative; z-index: 0; }
+.rx-map__pin::before {
+  content: ""; display: block; box-sizing: border-box; inline-size: 22px; block-size: 22px;
+  background: var(--rx-accent); border: 2px solid #fff; border-radius: 50% 50% 50% 0;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.4); transform: rotate(-45deg) translate(2px, 2px);
+}
+.rx-map__shape { stroke: var(--rx-accent); fill: var(--rx-accent); fill-opacity: 0.2; stroke-width: 2; }
+.rx-map__vertex { stroke: #fff; fill: var(--rx-accent); fill-opacity: 1; stroke-width: 2; }
 
 /* ---------- Less motion ---------- */
 

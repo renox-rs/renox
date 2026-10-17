@@ -19,7 +19,7 @@ const LOADER: &str = include_str!("../assets/blocks.js");
 
 /// The blocks that have code: `(name, source)`. The loader finds each one's
 /// file in a `data-{name}` attribute of its `<script>` tag.
-const PARTS: [(&str, &str); 11] = [
+const PARTS: [(&str, &str); 12] = [
     ("gallery", include_str!("../assets/parts/gallery.js")),
     ("range", include_str!("../assets/parts/range.js")),
     ("quantity", include_str!("../assets/parts/quantity.js")),
@@ -31,7 +31,13 @@ const PARTS: [(&str, &str); 11] = [
     ("week", include_str!("../assets/parts/week.js")),
     ("signature", include_str!("../assets/parts/signature.js")),
     ("camera", include_str!("../assets/parts/camera.js")),
+    ("map", include_str!("../assets/parts/map.js")),
 ];
+
+/// Leaflet, vendored (assets/vendor/leaflet/NOTICE). `map.js` adds these two
+/// files to a page that has a map with tiles, and no other page fetches them.
+const LEAFLET_JS: &str = include_str!("../assets/vendor/leaflet/leaflet.js");
+const LEAFLET_CSS: &str = include_str!("../assets/vendor/leaflet/leaflet.css");
 
 const JS: &str = "text/javascript; charset=utf-8";
 
@@ -51,13 +57,21 @@ fn file(name: &str, extension: &str, content_type: &'static str, body: &'static 
     }
 }
 
-/// The stylesheet, the loader, then each block's code (in `PARTS` order).
+/// The stylesheet, the loader, each block's code (in `PARTS` order), then
+/// Leaflet's script and stylesheet.
 static FILES: LazyLock<Vec<File>> = LazyLock::new(|| {
     let mut files = vec![
         file("blocks", "css", "text/css; charset=utf-8", CSS),
         file("blocks", "js", JS, LOADER),
     ];
     files.extend(PARTS.iter().map(|(name, body)| file(name, "js", JS, body)));
+    files.push(file("leaflet", "js", JS, LEAFLET_JS));
+    files.push(file(
+        "leaflet",
+        "css",
+        "text/css; charset=utf-8",
+        LEAFLET_CSS,
+    ));
     files
 });
 
@@ -76,9 +90,10 @@ pub(crate) fn tags() -> String {
         .zip(&FILES[2..])
         .map(|((name, _), file)| format!(" data-{name}=\"{}\"", file.path))
         .collect();
+    let leaflet = &FILES[2 + PARTS.len()..];
     format!(
-        "<link rel=\"stylesheet\" href=\"{}\">\n<script type=\"module\" src=\"{}\" data-renox-blocks{parts}></script>",
-        FILES[0].path, FILES[1].path
+        "<link rel=\"stylesheet\" href=\"{}\">\n<script type=\"module\" src=\"{}\" data-renox-blocks{parts} data-leaflet-js=\"{}\" data-leaflet-css=\"{}\"></script>",
+        FILES[0].path, FILES[1].path, leaflet[0].path, leaflet[1].path
     )
 }
 
@@ -98,7 +113,7 @@ mod tests {
     #[test]
     fn the_tag_names_every_part_the_loader_knows() {
         let tag = tags();
-        assert_eq!(FILES.len(), PARTS.len() + 2);
+        assert_eq!(FILES.len(), PARTS.len() + 4);
         for (name, _) in PARTS {
             assert!(
                 tag.contains(&format!(" data-{name}=\"/_renox/blocks/{name}-")),
@@ -106,5 +121,37 @@ mod tests {
             );
             assert!(super::LOADER.contains(&format!("[\"{name}\", ")), "{name}");
         }
+    }
+
+    // Leaflet is named for map.js to add, never loaded by the loader, and its
+    // licence and NOTICE ship with it.
+    #[test]
+    fn leaflet_is_served_but_only_named() {
+        let tag = tags();
+        assert!(
+            tag.contains(" data-leaflet-js=\"/_renox/blocks/leaflet-"),
+            "{tag}"
+        );
+        assert!(
+            tag.contains(" data-leaflet-css=\"/_renox/blocks/leaflet-"),
+            "{tag}"
+        );
+        assert!(super::LEAFLET_JS.contains("Leaflet 1.9.4"));
+        assert!(!super::LOADER.contains("leaflet"));
+        assert!(super::PARTS.iter().all(|(name, _)| *name != "leaflet"));
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/assets/vendor/leaflet");
+        let licence = std::fs::read_to_string(format!("{dir}/LICENSE")).unwrap();
+        assert!(licence.contains("BSD 2-Clause"));
+        let notice = std::fs::read_to_string(format!("{dir}/NOTICE")).unwrap();
+        assert!(notice.contains("Leaflet 1.9.4"));
+    }
+
+    // map.js reads the paths the tag carries, and the loader starts it for
+    // both blocks.
+    #[test]
+    fn map_js_adds_leaflet_from_the_tag() {
+        let map = super::PARTS.iter().find(|(n, _)| *n == "map").unwrap().1;
+        assert!(map.contains("data-leaflet-js") && map.contains("data-leaflet-css"));
+        assert!(super::LOADER.contains("[data-rx-map-picker]"));
     }
 }

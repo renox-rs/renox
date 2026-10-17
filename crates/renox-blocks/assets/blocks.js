@@ -21,6 +21,7 @@ const PARTS = [
   ["week", "[data-rx-week]"],
   ["signature", "[data-rx-signature]"],
   ["camera", "[data-rx-camera]"],
+  ["map", "[data-rx-map], [data-rx-map-picker]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

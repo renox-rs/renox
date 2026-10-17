@@ -1,0 +1,17 @@
+Third-party files in this directory, compiled into renox-blocks and served
+to pages that show a map block (src/assets.rs). Nothing here is loaded on a
+page without a map.
+
+leaflet.js, leaflet.css
+  Leaflet 1.9.4, by Volodymyr Agafonkin and contributors. BSD 2-Clause
+  licence (LICENSE).
+  Source: https://registry.npmjs.org/leaflet/-/leaflet-1.9.4.tgz
+  (package/dist/leaflet.js, package/dist/leaflet.css, package/LICENSE).
+  Change: none. The marker and layer-control images (package/dist/images)
+  are not vendored: map.js draws its markers with CSS and uses no layer
+  control. Leaflet.draw is not vendored either; map.js draws the shapes.
+
+sha256
+  db49d009c841f5ca34a888c96511ae936fd9f5533e90d8b2c4d57596f4e5641a  leaflet.js
+  a7837102824184820dfa198d1ebcd109ff6d0ff9a2672a074b9a1b4d147d04c6  leaflet.css
+  53e8dc25862014e4324741ca18fbe3611e11d42ef69f59f86ea8c5389647d4cb  LICENSE
