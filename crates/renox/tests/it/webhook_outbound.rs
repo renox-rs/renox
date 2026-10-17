@@ -2,7 +2,11 @@
 
 use renox::prelude::*;
 use renox::testing::TestApp;
-use renox::webhook::outbound::Endpoint;
+use std::time::Duration;
+
+use renox::http::FakeResponse;
+use renox::webhook::outbound::{Endpoint, EndpointDisabled, emit_in};
+use renox::webhook::signing;
 
 #[renox::test]
 async fn endpoint_secret_is_shown_once_and_stored_sealed() {
@@ -94,4 +98,171 @@ async fn endpoint_url_must_be_http() {
 async fn disable_after_defaults_to_twenty() {
     let app = TestApp::new(App::new()).await;
     assert_eq!(app.state().config.webhook_disable_after, 20);
+}
+
+#[derive(Clone)]
+struct InvoiceIssued {
+    id: i64,
+}
+impl Event for InvoiceIssued {}
+
+fn app() -> App {
+    App::new().webhook_event::<InvoiceIssued>("invoice.issued", |e| json!({ "id": e.id }))
+}
+
+async fn statuses(app: &TestApp) -> Vec<String> {
+    renox::db::sql("SELECT status FROM webhook_deliveries ORDER BY id")
+        .fetch_all(app.db())
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.try_get::<String>("status").unwrap())
+        .collect()
+}
+
+async fn create(app: &TestApp, url: &str, events: &[&str]) -> (Endpoint, String) {
+    Endpoint::create(app.state(), url, "", events)
+        .await
+        .unwrap()
+}
+
+#[renox::test]
+async fn emit_in_delivers_once_per_subscribed_endpoint_after_commit() {
+    let app = TestApp::new(app()).await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on("POST https://*", FakeResponse::status(200));
+    let (_, secret) = create(&app, "https://a.test/h", &["invoice.issued"]).await;
+    create(&app, "https://b.test/h", &["other"]).await;
+    let (disabled, _) = create(&app, "https://c.test/h", &[]).await;
+    Endpoint::disable(app.db(), disabled.id, "x").await.unwrap();
+
+    let mut tx = app.db().begin().await.unwrap();
+    let queued = emit_in(state, &mut tx, &InvoiceIssued { id: 7 })
+        .await
+        .unwrap();
+    assert_eq!(queued, 1);
+    tx.rollback().await.unwrap();
+    app.run_jobs().await;
+    http.assert_sent_count(0);
+
+    let mut tx = app.db().begin().await.unwrap();
+    emit_in(state, &mut tx, &InvoiceIssued { id: 7 })
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    app.run_jobs().await;
+    http.assert_sent_count(1);
+
+    let sent = http.sent().remove(0);
+    assert_eq!(sent.url, "https://a.test/h");
+    let body: serde_json::Value = serde_json::from_str(&sent.body).unwrap();
+    assert_eq!(body["type"], "invoice.issued");
+    assert_eq!(body["data"], json!({ "id": 7 }));
+    assert!(body["created_at"].as_str().unwrap().ends_with('Z'));
+    let id = sent.header("webhook-id").unwrap();
+    assert_eq!(body["id"], id);
+    let timestamp = sent.header("webhook-timestamp").unwrap();
+    let signature = sent.header("webhook-signature").unwrap();
+    let tolerance = Duration::from_secs(300);
+    assert!(signing::verify(
+        &secret,
+        id,
+        timestamp,
+        signature,
+        sent.body.as_bytes(),
+        tolerance
+    ));
+    assert_eq!(statuses(&app).await, ["succeeded"]);
+}
+
+#[renox::test]
+async fn a_plain_emit_of_a_registered_event_delivers() {
+    let app = TestApp::new(app()).await;
+    let http = app.fake_http();
+    http.on("POST https://a.test/*", FakeResponse::status(204));
+    create(&app, "https://a.test/h", &[]).await;
+    app.state().emit(InvoiceIssued { id: 1 }).await.unwrap();
+    app.run_jobs().await;
+    http.assert_sent_count(1);
+}
+
+#[renox::test]
+async fn server_errors_are_retried_and_a_success_resets_the_count() {
+    let app = TestApp::new(app()).await;
+    let http = app.fake_http();
+    http.on("POST https://a.test/*", FakeResponse::status(503));
+    http.on("POST https://a.test/*", FakeResponse::status(200));
+    let (endpoint, _) = create(&app, "https://a.test/h", &[]).await;
+    app.state().emit(InvoiceIssued { id: 1 }).await.unwrap();
+    app.run_jobs().await;
+    assert_eq!(statuses(&app).await, ["retrying"]);
+    let row = renox::db::sql("SELECT attempted_at, next_attempt_at FROM webhook_deliveries")
+        .fetch_one(app.db())
+        .await
+        .unwrap();
+    let (at, next): (i64, i64) = (
+        row.try_get("attempted_at").unwrap(),
+        row.try_get("next_attempt_at").unwrap(),
+    );
+    assert_eq!(next - at, 5);
+
+    app.travel(Duration::from_secs(6));
+    app.run_jobs().await;
+    assert_eq!(statuses(&app).await, ["succeeded"]);
+    let row = renox::db::sql("SELECT attempt, response_status FROM webhook_deliveries")
+        .fetch_one(app.db())
+        .await
+        .unwrap();
+    assert_eq!(row.try_get::<i64>("attempt").unwrap(), 2);
+    assert_eq!(row.try_get::<i64>("response_status").unwrap(), 200);
+    http.assert_sent_count(2);
+    let found = Endpoint::find(app.db(), endpoint.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(found.consecutive_failures, 0);
+}
+
+#[renox::test]
+async fn a_410_disables_the_endpoint_at_once() {
+    let app = TestApp::new(app()).await;
+    app.fake_http()
+        .on("POST https://a.test/*", FakeResponse::status(410));
+    let (endpoint, _) = create(&app, "https://a.test/h", &[]).await;
+    app.state().emit(InvoiceIssued { id: 1 }).await.unwrap();
+    app.fake_events();
+    app.run_jobs().await;
+    let found = Endpoint::find(app.db(), endpoint.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!found.enabled);
+    assert_eq!(statuses(&app).await, ["failed"]);
+    app.assert_emitted(|e: &EndpointDisabled| e.endpoint_id == endpoint.id);
+}
+
+#[renox::test]
+async fn consecutive_failed_deliveries_disable_the_endpoint() {
+    let app = TestApp::with_config(app(), |c| c.webhook_disable_after = 2).await;
+    app.fake_http()
+        .on("POST https://a.test/*", FakeResponse::status(400));
+    let (endpoint, _) = create(&app, "https://a.test/h", &[]).await;
+    for id in 1..=2 {
+        let mut tx = app.db().begin().await.unwrap();
+        emit_in(app.state(), &mut tx, &InvoiceIssued { id })
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+    app.fake_events();
+    app.run_jobs().await;
+    assert_eq!(statuses(&app).await, ["failed", "failed"]);
+    let found = Endpoint::find(app.db(), endpoint.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!found.enabled);
+    assert_eq!(found.consecutive_failures, 2);
+    app.assert_emitted(|e: &EndpointDisabled| e.endpoint_id == endpoint.id);
 }

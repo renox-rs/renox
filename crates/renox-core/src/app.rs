@@ -443,6 +443,17 @@ impl App {
         self
     }
 
+    /// Makes `E` a webhook event named `name`; see
+    /// [`Registry::webhook_event`].
+    pub fn webhook_event<E: Event>(
+        mut self,
+        name: &str,
+        map: impl Fn(&E) -> serde_json::Value + Send + Sync + 'static,
+    ) -> Self {
+        self.registry.webhook_event(name, map);
+        self
+    }
+
     /// Runs `listener` whenever an `E` is emitted with `state.emit(..)`.
     pub fn listen<E, F, Fut>(mut self, listener: F) -> Self
     where
@@ -762,6 +773,8 @@ impl App {
         self.registry
             .job::<crate::auth::passwordless::SendLoginSecret>();
         self.registry.job::<crate::webhook::ProcessWebhook>();
+        self.registry
+            .job::<crate::webhook::outbound::DeliverWebhook>();
         #[cfg(feature = "server-events")]
         self.registry.job::<crate::analytics::ServerEvent>();
         let mut migrations = crate::queue::MIGRATIONS.to_vec();
@@ -783,6 +796,7 @@ impl App {
             schedule,
             duplicate_job,
             webhooks,
+            webhook_events,
             live_components,
             duplicate_live,
             commands,
@@ -1068,6 +1082,7 @@ impl App {
         let state = AppState::new(crate::state::AppStateInner {
             security,
             webhooks: Arc::new(webhooks),
+            webhook_events: Arc::new(webhook_events),
             live_components: Arc::new(live_components),
             mailer,
             mailers: Arc::new(mailers),

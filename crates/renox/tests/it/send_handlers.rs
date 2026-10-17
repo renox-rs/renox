@@ -415,8 +415,11 @@ async fn endpoints(State(state): State<AppState>) -> Result<String> {
     Endpoint::enable(&state.db, endpoint.id).await?;
     let found = Endpoint::find(&state.db, endpoint.id).await?;
     Endpoint::delete(&state.db, endpoint.id).await?;
+    let mut tx = state.db.begin().await?;
+    let queued = renox::webhook::outbound::emit_in(&state, &mut tx, &Ping).await?;
+    tx.commit().await?;
     Ok(format!(
-        "{} {} {} {}",
+        "{} {} {} {} {queued}",
         secret.len() + endpoint.secret(&state)?.len(),
         listed.len(),
         subscribed.len(),

@@ -2,11 +2,18 @@
 //! events in this app. [`Endpoint`] is the subscription; its `whsec_` secret
 //! is shown once, by [`Endpoint::create`], and stored sealed with `APP_KEY`.
 
+use std::any::{Any, TypeId};
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::time::Duration;
+
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 use super::signing;
-use crate::db::{Db, DbError, Row};
-use crate::queue::unix_now;
+use crate::db::{Db, DbError, Row, Transaction};
+use crate::events::Event;
+use crate::queue::{Job, JobContext, unix_now};
 use crate::{AppState, Error, Result};
 
 /// A URL that receives this app's webhook events.
@@ -215,4 +222,401 @@ fn from_row(row: &Row) -> std::result::Result<Endpoint, DbError> {
         created_at: crate::db::from_unix(row.try_get("created_at")?),
         updated_at: crate::db::from_unix(row.try_get("updated_at")?),
     })
+}
+
+/// Emitted when an endpoint was disabled: its URL answered `410 Gone`, or
+/// `WEBHOOK_DISABLE_AFTER` deliveries in a row failed. Listen to it to tell
+/// whoever owns the endpoint.
+///
+/// ```
+/// # use renox::prelude::*;
+/// use renox::webhook::outbound::EndpointDisabled;
+///
+/// # let _ =
+/// App::new().listen(|event: EndpointDisabled, _state| async move {
+///     tracing::warn!(endpoint = event.endpoint_id, "webhook endpoint disabled");
+///     Ok(())
+/// })
+/// # ;
+/// ```
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EndpointDisabled {
+    /// The [`Endpoint::id`] that was disabled.
+    pub endpoint_id: i64,
+}
+
+impl Event for EndpointDisabled {}
+
+type PayloadFn = Arc<dyn Fn(&dyn Any) -> Option<serde_json::Value> + Send + Sync>;
+
+/// The webhook name and payload mapping of one event type, from
+/// `App::webhook_event`.
+pub(crate) struct EventDef {
+    pub(crate) name: String,
+    map: PayloadFn,
+}
+
+impl EventDef {
+    pub(crate) fn new<E: Event>(
+        name: &str,
+        map: impl Fn(&E) -> serde_json::Value + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            name: name.to_owned(),
+            map: Arc::new(move |event| event.downcast_ref::<E>().map(&map)),
+        }
+    }
+}
+
+pub(crate) type EventDefs = Arc<HashMap<TypeId, EventDef>>;
+
+/// Queues one delivery per enabled endpoint subscribed to `event`, inside
+/// `tx`: the deliveries are sent only if the transaction commits, and
+/// never if it rolls back (a transactional outbox). `E` must be registered
+/// with `App::webhook_event`. Returns how many deliveries were queued.
+///
+/// Outside a transaction a plain `state.emit(event)` delivers too.
+///
+/// ```
+/// # use renox::prelude::*;
+/// # #[derive(Clone)] struct InvoiceIssued { id: i64 }
+/// # impl Event for InvoiceIssued {}
+/// # async fn demo(state: AppState) -> Result {
+/// use renox::webhook::outbound::emit_in;
+///
+/// let mut tx = state.db.begin().await?;
+/// // … write the invoice with `tx` …
+/// emit_in(&state, &mut tx, &InvoiceIssued { id: 7 }).await?;
+/// tx.commit().await?; // sent after this, never if it rolls back
+/// # Ok(()) }
+/// ```
+///
+/// # Errors
+/// When `E` is not registered or the insert fails.
+pub async fn emit_in<E: Event>(state: &AppState, tx: &mut Transaction, event: &E) -> Result<usize> {
+    let def = state
+        .webhook_events
+        .get(&TypeId::of::<E>())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "`{}` is not a webhook event: register it with App::webhook_event",
+                std::any::type_name::<E>()
+            )
+        })?;
+    let data = (def.map)(event).unwrap_or(serde_json::Value::Null);
+    enqueue(state, tx, &def.name, data).await
+}
+
+/// What a plain `state.emit` does: `emit_in` in its own transaction.
+pub(crate) async fn emit_alone(state: &AppState, name: &str, data: serde_json::Value) -> Result {
+    let mut tx = state.db.begin().await?;
+    let queued = enqueue(state, &mut tx, name, data).await?;
+    tx.commit().await?;
+    if queued > 0 {
+        state.queue.wake_workers();
+    }
+    Ok(())
+}
+
+async fn enqueue(
+    state: &AppState,
+    tx: &mut Transaction,
+    event: &str,
+    data: serde_json::Value,
+) -> Result<usize> {
+    // Read through `tx`: with one pooled connection, `state.db` would wait for it.
+    let rows = crate::db::sql(format!(
+        "SELECT {COLUMNS} FROM webhook_endpoints WHERE enabled = 1 ORDER BY id"
+    ))
+    .fetch_all(&mut *tx)
+    .await?;
+    let mut endpoints = Vec::new();
+    for row in &rows {
+        let endpoint = from_row(row)?;
+        if endpoint.subscribes_to(event) {
+            endpoints.push(endpoint);
+        }
+    }
+    if endpoints.is_empty() {
+        return Ok(0);
+    }
+    let message_id = format!("msg_{}", crate::db::Ulid::new().as_str());
+    let created_at = unix_now();
+    let payload = serde_json::to_string(&serde_json::json!({
+        "id": message_id,
+        "type": event,
+        "created_at": crate::db::from_unix(created_at)
+            .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        "data": data,
+    }))?;
+    for endpoint in &endpoints {
+        let delivery_id: i64 = crate::db::sql(
+            "INSERT INTO webhook_deliveries (endpoint_id, message_id, event_type, payload, status, created_at) \
+             VALUES (?, ?, ?, ?, 'pending', ?) RETURNING id",
+        )
+        .bind(endpoint.id)
+        .bind(&message_id)
+        .bind(event)
+        .bind(&payload)
+        .bind(created_at)
+        .scalar(&mut *tx)
+        .await?;
+        let job = DeliverWebhook {
+            endpoint_id: endpoint.id,
+            delivery_id,
+        };
+        state.queue.dispatch_in(tx, job).await?;
+    }
+    Ok(endpoints.len())
+}
+
+/// The queue job that sends one stored delivery and records the outcome.
+/// Retried on 5xx, 429, timeouts and connection errors, on the Standard
+/// Webhooks schedule; other answers end the delivery.
+#[derive(Serialize, Deserialize)]
+pub(crate) struct DeliverWebhook {
+    endpoint_id: i64,
+    delivery_id: i64,
+}
+
+/// How long one request may take.
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// What the receiver's answer means for the delivery.
+enum Outcome {
+    Delivered(u16),
+    /// 410: the receiver asked not to be called again.
+    Gone(u16),
+    /// Another answer that retrying can't change.
+    Rejected(u16),
+    /// Worth another try: 5xx, 429, a timeout or a connection error.
+    Retry(Option<u16>, String),
+}
+
+impl Job for DeliverWebhook {
+    const NAME: &'static str = "renox:deliver-webhook";
+    /// The first try plus seven retries.
+    const MAX_ATTEMPTS: u32 = 8;
+    const ENCRYPTED: bool = true;
+
+    /// The Standard Webhooks schedule after the first try: 5 s, 5 min, 30
+    /// min, 2 h, 5 h, then 10 h.
+    fn backoff(attempt: u32) -> Duration {
+        const SECONDS: [u64; 7] = [5, 300, 1_800, 7_200, 18_000, 36_000, 36_000];
+        let index = (attempt.max(1) - 1) as usize;
+        Duration::from_secs(SECONDS[index.min(SECONDS.len() - 1)])
+    }
+
+    async fn handle(self, ctx: JobContext) -> Result {
+        let state = &ctx.state;
+        let db = &state.db;
+        let row = crate::db::sql(
+            "SELECT message_id, payload, status FROM webhook_deliveries WHERE id = ?",
+        )
+        .bind(self.delivery_id)
+        .fetch_optional(db)
+        .await?;
+        let Some(row) = row else { return Ok(()) };
+        if row.try_get::<String>("status")? == "succeeded" {
+            return Ok(());
+        }
+        let message_id: String = row.try_get("message_id")?;
+        let payload: String = row.try_get("payload")?;
+        let id = self.delivery_id;
+        let attempt = ctx.attempt;
+        let endpoint = match Endpoint::find(db, self.endpoint_id).await? {
+            Some(endpoint) if endpoint.enabled => endpoint,
+            _ => {
+                let why = "the endpoint is disabled or gone";
+                return record(db, id, "failed", attempt, None, Some(why), 0, None).await;
+            }
+        };
+        if endpoint.url.starts_with("http://")
+            && matches!(state.config.env, crate::config::Environment::Production)
+        {
+            let why = "the endpoint URL must be https in production";
+            record(db, id, "failed", attempt, None, Some(why), 0, None).await?;
+            return fail(state, &endpoint, why).await;
+        }
+
+        let timestamp = unix_now();
+        let secret = endpoint.secret(state)?;
+        let signature = signing::sign(&secret, &message_id, timestamp, payload.as_bytes())?;
+        let started = crate::clock::unix_millis();
+        let sent = state
+            .http
+            .post(endpoint.url.as_str())
+            .header("webhook-id", message_id)
+            .header("webhook-timestamp", timestamp.to_string())
+            .header("webhook-signature", signature)
+            .body("application/json", payload.into_bytes())
+            .timeout(REQUEST_TIMEOUT)
+            .no_redirects()
+            .send()
+            .await;
+        let duration = crate::clock::unix_millis() - started;
+        let outcome = match sent {
+            Ok(response) => {
+                let code = response.status().as_u16();
+                match code {
+                    200..=299 => Outcome::Delivered(code),
+                    410 => Outcome::Gone(code),
+                    429 | 500..=599 => {
+                        Outcome::Retry(Some(code), format!("the endpoint answered {code}"))
+                    }
+                    _ => Outcome::Rejected(code),
+                }
+            }
+            Err(err) => Outcome::Retry(None, err.to_string()),
+        };
+
+        match outcome {
+            Outcome::Delivered(code) => {
+                record(
+                    db,
+                    id,
+                    "succeeded",
+                    attempt,
+                    Some(code),
+                    None,
+                    duration,
+                    None,
+                )
+                .await?;
+                crate::db::sql(
+                    "UPDATE webhook_endpoints SET consecutive_failures = 0 \
+                     WHERE id = ? AND consecutive_failures <> 0",
+                )
+                .bind(endpoint.id)
+                .execute(db)
+                .await?;
+                Ok(())
+            }
+            Outcome::Gone(code) => {
+                let why = "the endpoint answered 410 Gone";
+                record(
+                    db,
+                    id,
+                    "failed",
+                    attempt,
+                    Some(code),
+                    Some(why),
+                    duration,
+                    None,
+                )
+                .await?;
+                Endpoint::disable(db, endpoint.id, why).await?;
+                let event = EndpointDisabled {
+                    endpoint_id: endpoint.id,
+                };
+                state.emit(event).await
+            }
+            Outcome::Rejected(code) => {
+                let why = format!("the endpoint answered {code}");
+                record(
+                    db,
+                    id,
+                    "failed",
+                    attempt,
+                    Some(code),
+                    Some(&why),
+                    duration,
+                    None,
+                )
+                .await?;
+                fail(state, &endpoint, &why).await
+            }
+            Outcome::Retry(code, why) if attempt >= Self::MAX_ATTEMPTS => {
+                record(db, id, "failed", attempt, code, Some(&why), duration, None).await?;
+                fail(state, &endpoint, &why).await
+            }
+            Outcome::Retry(code, why) => {
+                let wait = i64::try_from(Self::backoff(attempt).as_secs()).unwrap_or(i64::MAX);
+                let next = Some(unix_now().saturating_add(wait));
+                record(
+                    db,
+                    id,
+                    "retrying",
+                    attempt,
+                    code,
+                    Some(&why),
+                    duration,
+                    next,
+                )
+                .await?;
+                Err(anyhow::anyhow!(why).into())
+            }
+        }
+    }
+}
+
+/// Writes the outcome of an attempt on the delivery row.
+#[allow(clippy::too_many_arguments)]
+async fn record(
+    db: &Db,
+    id: i64,
+    status: &str,
+    attempt: u32,
+    response_status: Option<u16>,
+    error: Option<&str>,
+    duration_ms: i64,
+    next_attempt_at: Option<i64>,
+) -> Result {
+    crate::db::sql(
+        "UPDATE webhook_deliveries SET status = ?, attempt = ?, response_status = ?, error = ?, \
+         duration_ms = ?, attempted_at = ?, next_attempt_at = ? WHERE id = ?",
+    )
+    .bind(status)
+    .bind(i64::from(attempt))
+    .bind(response_status.map(i64::from))
+    .bind(error)
+    .bind(duration_ms)
+    .bind(unix_now())
+    .bind(next_attempt_at)
+    .bind(id)
+    .execute(db)
+    .await?;
+    Ok(())
+}
+
+/// Counts a delivery that ended in failure; disables the endpoint (and emits
+/// [`EndpointDisabled`]) once `WEBHOOK_DISABLE_AFTER` in a row failed.
+async fn fail(state: &AppState, endpoint: &Endpoint, reason: &str) -> Result {
+    crate::db::sql(
+        "UPDATE webhook_endpoints SET consecutive_failures = consecutive_failures + 1, \
+         updated_at = ? WHERE id = ?",
+    )
+    .bind(unix_now())
+    .bind(endpoint.id)
+    .execute(&state.db)
+    .await?;
+    let Some(current) = Endpoint::find(&state.db, endpoint.id).await? else {
+        return Ok(());
+    };
+    let limit = i64::from(state.config.webhook_disable_after);
+    if current.enabled && current.consecutive_failures >= limit {
+        let why = format!("{limit} deliveries in a row failed (last: {reason})");
+        Endpoint::disable(&state.db, endpoint.id, &why).await?;
+        let event = EndpointDisabled {
+            endpoint_id: endpoint.id,
+        };
+        state.emit(event).await?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn backoff_follows_the_standard_webhooks_schedule() {
+        let waits: Vec<u64> = (1..=9)
+            .map(|attempt| DeliverWebhook::backoff(attempt).as_secs())
+            .collect();
+        assert_eq!(
+            waits,
+            [5, 300, 1_800, 7_200, 18_000, 36_000, 36_000, 36_000, 36_000]
+        );
+    }
 }

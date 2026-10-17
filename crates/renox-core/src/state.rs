@@ -102,6 +102,8 @@ pub struct AppStateInner {
     pub(crate) rtl_locales: Option<Arc<Vec<String>>>,
     pub(crate) security: Arc<crate::security::Security>,
     pub(crate) webhooks: crate::webhook::Handlers,
+    /// Events `App::webhook_event` made subscribable.
+    pub(crate) webhook_events: crate::webhook::outbound::EventDefs,
     /// Read by the live component route (#433).
     #[allow(dead_code)]
     pub(crate) live_components: crate::live_component::LiveMap,

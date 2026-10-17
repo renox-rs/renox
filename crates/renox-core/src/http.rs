@@ -113,6 +113,7 @@ impl Http {
             timeout: DEFAULT_TIMEOUT,
             retries: 0,
             retry_delay: Duration::from_millis(100),
+            follow_redirects: true,
             error: None,
         }
     }
@@ -142,6 +143,7 @@ pub struct Request {
     timeout: Duration,
     retries: u32,
     retry_delay: Duration,
+    follow_redirects: bool,
     error: Option<Error>,
 }
 
@@ -218,6 +220,13 @@ impl Request {
         self
     }
 
+    /// Answers to a redirect are returned as they are, not followed (a
+    /// receiver must not send a delivery on to another address).
+    pub(crate) fn no_redirects(mut self) -> Self {
+        self.follow_redirects = false;
+        self
+    }
+
     /// The URL with its query parameters.
     fn full_url(&self) -> Result<String> {
         if self.query.is_empty() {
@@ -259,7 +268,12 @@ impl Request {
 
     #[cfg(feature = "http")]
     async fn send_once(&self, url: &str) -> Result<Response> {
-        let mut request = client()
+        let client = if self.follow_redirects {
+            client()
+        } else {
+            client_without_redirects()
+        };
+        let mut request = client
             .request(self.method.clone(), url)
             .timeout(self.timeout);
         for (name, value) in &self.headers {
@@ -328,6 +342,20 @@ pub(crate) fn client() -> &'static reqwest::Client {
         let _ = rustls::crypto::ring::default_provider().install_default();
         reqwest::Client::builder()
             .user_agent(concat!("renox/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .unwrap_or_default()
+    });
+    &CLIENT
+}
+
+/// Like [`client`], but a redirect is an answer, not followed.
+#[cfg(feature = "http")]
+fn client_without_redirects() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        reqwest::Client::builder()
+            .user_agent(concat!("renox/", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default()
     });

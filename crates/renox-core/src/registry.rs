@@ -16,6 +16,7 @@ pub struct Registry {
     pub(crate) schedule: Schedule,
     pub(crate) duplicate_job: Option<&'static str>,
     pub(crate) webhooks: HashMap<&'static str, crate::webhook::HandleFn>,
+    pub(crate) webhook_events: HashMap<TypeId, crate::webhook::outbound::EventDef>,
     pub(crate) live_components: HashMap<&'static str, crate::live_component::LiveFn>,
     pub(crate) duplicate_live: Option<&'static str>,
     pub(crate) commands: Vec<crate::command::Command>,
@@ -128,6 +129,28 @@ impl Registry {
             self.duplicate_job.get_or_insert(W::PROVIDER);
         }
         self
+    }
+
+    /// Makes `E` a webhook event named `name`: endpoints subscribed to it
+    /// get `map(&event)` as the payload's `data`. A plain `state.emit(event)`
+    /// queues the deliveries; inside a transaction use
+    /// `renox::webhook::outbound::emit_in`.
+    pub fn webhook_event<E: Event>(
+        &mut self,
+        name: &str,
+        map: impl Fn(&E) -> serde_json::Value + Send + Sync + 'static,
+    ) -> &mut Self {
+        let map = std::sync::Arc::new(map);
+        let mapper = std::sync::Arc::clone(&map);
+        self.webhook_events.insert(
+            TypeId::of::<E>(),
+            crate::webhook::outbound::EventDef::new::<E>(name, move |event| mapper(event)),
+        );
+        let name = name.to_owned();
+        self.listen(move |event: E, state| {
+            let (name, data) = (name.clone(), map(&event));
+            async move { crate::webhook::outbound::emit_alone(&state, &name, data).await }
+        })
     }
 
     /// Runs `listener` whenever an `E` is emitted.
