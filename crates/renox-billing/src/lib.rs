@@ -237,6 +237,30 @@ impl Setup {
             .cloned()
     }
 
+    /// The gateway named `name` (the first configured one without a name)
+    /// for a one-off payment.
+    pub(crate) fn payment_gateway(
+        &self,
+        state: &AppState,
+        name: Option<&str>,
+    ) -> Result<Arc<dyn Gateway>> {
+        let found = match name {
+            Some(name) => self.gateway(state, name),
+            None => self
+                .gateways
+                .iter()
+                .find(|g| g.configured(&state.config))
+                .cloned(),
+        };
+        found.ok_or_else(|| {
+            renox::anyhow::anyhow!(
+                "no payment gateway is set up{}: set its keys in .env",
+                name.map(|n| format!(" for `{n}`")).unwrap_or_default()
+            )
+            .into()
+        })
+    }
+
     /// The gateway that sells `plan`.
     pub(crate) fn gateway_for(&self, state: &AppState, plan: &Plan) -> Result<Arc<dyn Gateway>> {
         let found = match &plan.gateway {

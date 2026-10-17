@@ -8,7 +8,8 @@ use renox::money::Money;
 use renox::prelude::*;
 use serde::Serialize;
 
-use crate::Owner;
+use crate::events::{PaymentRefunded, RefundSucceeded};
+use crate::{Billing, Owner};
 
 /// What a payment is (`billing_payments.kind`).
 #[derive(DbEnum, Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -254,6 +255,146 @@ impl fmt::Display for Unsupported {
 }
 
 impl std::error::Error for Unsupported {}
+
+/// Starts a charge or a link: the row is written first (the gateway stores
+/// its id), then the gateway is called. If the gateway cannot (or fails),
+/// the row is removed again, so nothing is left behind.
+pub(crate) async fn start(
+    state: &AppState,
+    gateway: Option<&str>,
+    mut request: ChargeRequest,
+) -> Result<BillingPayment> {
+    if request.amount.minor <= 0 {
+        return Err(Error::BadRequest(
+            "A payment must be for more than zero.".into(),
+        ));
+    }
+    let gateway = crate::setup(state)?.payment_gateway(state, gateway)?;
+    let mut row = BillingPayment::new(gateway.name(), request.kind, request.amount);
+    row.account = request.account.clone();
+    row.expires_at = request.expires_at;
+    row.reference_type = request.reference_type.clone();
+    row.reference_id = request.reference_id.clone();
+    if let Some(owner) = &request.owner {
+        row.billable_type = Some(owner.kind.clone());
+        row.billable_id = Some(owner.id);
+    }
+    let mut row = BillingPayment::create(&state.db, row).await?;
+    request.payment_id = row.id;
+    let page = match request.kind {
+        PaymentKind::Charge => gateway.charge(state, &request).await,
+        PaymentKind::Link => gateway.payment_link(state, &request).await,
+    };
+    let page = match page {
+        Ok(page) => page,
+        Err(err) => {
+            BillingPayment::query()
+                .where_eq("id", row.id)
+                .delete(&state.db)
+                .await?;
+            return Err(err);
+        }
+    };
+    row.gateway_id = Some(page.gateway_id);
+    row.url = page.url;
+    if page.expires_at.is_some() {
+        row.expires_at = page.expires_at;
+    }
+    row.save(&state.db).await?;
+    Ok(row)
+}
+
+impl Billing {
+    /// Makes a payment link anyone can pay, with or without an owner. The
+    /// payment is stored (pending) with its reference; `payment.url` is the
+    /// link. A gateway that cannot make links answers [`Unsupported`] and
+    /// leaves no row.
+    pub async fn payment_link(state: &AppState, link: PaymentLink) -> Result<BillingPayment> {
+        start(state, link.gateway(), link.request().clone()).await
+    }
+
+    /// Refunds `refund.amount` of the payment `payment_id` (partial refunds
+    /// add up). More than what is left to refund, counting refunds still
+    /// pending, is refused before the gateway is called. The refund is
+    /// pending unless the gateway refunded at once; then the payment moves
+    /// to refunded or partially refunded and `RefundSucceeded` and
+    /// `PaymentRefunded` are announced.
+    pub async fn refund(
+        state: &AppState,
+        payment_id: i64,
+        refund: Refund,
+    ) -> Result<BillingRefund> {
+        let mut payment = BillingPayment::find(&state.db, payment_id)
+            .await?
+            .ok_or(Error::NotFound)?;
+        if refund.amount.currency != payment.amount.currency || refund.amount.minor <= 0 {
+            return Err(Error::BadRequest(
+                "A refund is a positive amount in the payment's currency.".into(),
+            ));
+        }
+        let pending: i64 = BillingRefund::where_eq("payment_id", payment.id)
+            .where_eq("status", RefundStatus::Pending)
+            .sum(&state.db, "amount")
+            .await?;
+        if refund.amount.minor > payment.refundable().minor - pending {
+            return Err(Error::BadRequest(
+                "That is more than is left to refund.".into(),
+            ));
+        }
+        let gateway = crate::setup(state)?.payment_gateway(state, Some(&payment.gateway))?;
+        let mut row = BillingRefund::create(
+            &state.db,
+            BillingRefund {
+                payment_id: payment.id,
+                amount: refund.amount.minor,
+                reason: refund.reason.clone(),
+                ..Default::default()
+            },
+        )
+        .await?;
+        let result = match gateway.refund(state, &payment, &refund).await {
+            Ok(result) => result,
+            Err(err) => {
+                BillingRefund::query()
+                    .where_eq("id", row.id)
+                    .delete(&state.db)
+                    .await?;
+                return Err(err);
+            }
+        };
+        row.gateway_id = result.gateway_id;
+        row.status = result.status;
+        row.save(&state.db).await?;
+        if row.status == RefundStatus::Succeeded {
+            payment.refunded_amount += row.amount;
+            payment.status = if payment.refunded_amount >= payment.amount.minor {
+                PaymentStatus::Refunded
+            } else {
+                PaymentStatus::PartiallyRefunded
+            };
+            payment.save(&state.db).await?;
+            state
+                .emit(RefundSucceeded {
+                    payment: payment.clone(),
+                    amount: row.amount,
+                })
+                .await?;
+            state.emit(PaymentRefunded { payment }).await?;
+        }
+        Ok(row)
+    }
+
+    /// Asks the gateway where the payment `payment_id` stands now (with the
+    /// account it was made through). It reports; it does not change the
+    /// row.
+    pub async fn payment_status(state: &AppState, payment_id: i64) -> Result<PaymentState> {
+        let payment = BillingPayment::find(&state.db, payment_id)
+            .await?
+            .ok_or(Error::NotFound)?;
+        let gateway = crate::setup(state)?.payment_gateway(state, Some(&payment.gateway))?;
+        gateway.payment_status(state, &payment).await
+    }
+}
 
 /// The builder methods `Charge` and `PaymentLink` share.
 macro_rules! request_builder {

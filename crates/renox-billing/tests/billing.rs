@@ -2649,3 +2649,277 @@ async fn operations_a_gateway_does_not_have_answer_unsupported() {
         assert_eq!(found.operation, operation);
     }
 }
+
+/// A gateway of the app's own that can charge, link, refund and report.
+struct PayHub {
+    calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl renox_billing::Gateway for PayHub {
+    fn name(&self) -> &str {
+        "payhub"
+    }
+    fn label(&self) -> &str {
+        "PayHub"
+    }
+    fn configured(&self, _config: &Config) -> bool {
+        true
+    }
+    fn create_customer<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _owner: &'a renox_billing::Owner,
+    ) -> renox_billing::BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok("hub-1".into()) })
+    }
+    fn checkout<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a renox_billing::CheckoutRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Checkout>> {
+        Box::pin(async { Ok(renox_billing::Checkout::redirect("/hub")) })
+    }
+    fn swap<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _plan: &'a Plan,
+        _prorate: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn cancel<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _at_period_end: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn verify_webhook(
+        &self,
+        _config: &Config,
+        _headers: &renox::axum::http::HeaderMap,
+        _body: &[u8],
+    ) -> Result {
+        Ok(())
+    }
+    fn parse_webhook(&self, _body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
+        Ok(Vec::new())
+    }
+    fn charge<'a>(
+        &'a self,
+        _state: &'a AppState,
+        request: &'a renox_billing::ChargeRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentPage>> {
+        self.calls.lock().unwrap().push(format!(
+            "charge {} {} {:?} {:?}",
+            request.payment_id,
+            request.amount.minor,
+            request.account,
+            request.metadata()
+        ));
+        let id = request.payment_id;
+        Box::pin(async move {
+            Ok(renox_billing::PaymentPage::new(
+                format!("pay_{id}"),
+                format!("https://pay.example/{id}"),
+            ))
+        })
+    }
+    fn payment_link<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a renox_billing::ChargeRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentPage>> {
+        self.charge(state, request)
+    }
+    fn refund<'a>(
+        &'a self,
+        _state: &'a AppState,
+        payment: &'a renox_billing::BillingPayment,
+        refund: &'a renox_billing::Refund,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::RefundResult>> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("refund {} {}", payment.id, refund.amount.minor));
+        let now = refund.reason.as_deref() == Some("now");
+        Box::pin(async move {
+            Ok(if now {
+                renox_billing::RefundResult::succeeded("re_1")
+            } else {
+                renox_billing::RefundResult::pending("re_2")
+            })
+        })
+    }
+    fn payment_status<'a>(
+        &'a self,
+        _state: &'a AppState,
+        payment: &'a renox_billing::BillingPayment,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentState>> {
+        let paid = payment.gateway_id.is_some();
+        Box::pin(async move {
+            Ok(renox_billing::PaymentState::new(if paid {
+                renox_billing::PaymentStatus::Succeeded
+            } else {
+                renox_billing::PaymentStatus::Pending
+            }))
+        })
+    }
+}
+
+fn assert_send<T: Send>(_: &T) {}
+
+/// Charges and links are written with their reference, owner and account,
+/// refunds are checked before the gateway and add up, and a gateway that
+/// cannot leaves no row.
+#[renox::test]
+async fn one_off_payments_are_stored_refunded_and_checked() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, Charge, PaymentLink, PaymentRefunded, PaymentStatus, Refund,
+        RefundStatus, RefundSucceeded, Unsupported,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(
+        Billing::new()
+            .gateway(PayHub {
+                calls: calls.clone(),
+            })
+            .gateway(Manual),
+    )
+    .await;
+    app.fake_events();
+    let user = user(&app, "Mia").await;
+    let state = app.state();
+
+    let customer = Billing::of(state, &user);
+    let charge = customer.charge(
+        Charge::new(Money::usd(4_500))
+            .reference("job", 42)
+            .account("acme"),
+    );
+    assert_send(&charge);
+    let payment = charge.await.unwrap();
+    assert_eq!(payment.gateway, "payhub");
+    assert_eq!(payment.account.as_deref(), Some("acme"));
+    assert_eq!(
+        payment.gateway_id.as_deref(),
+        Some(&*format!("pay_{}", payment.id))
+    );
+    assert_eq!(
+        payment.url.as_deref(),
+        Some(&*format!("https://pay.example/{}", payment.id))
+    );
+    assert_eq!(payment.status, PaymentStatus::Pending);
+    assert_eq!(payment.billable_id, Some(user.id));
+    assert_eq!(payment.reference_id.as_deref(), Some("42"));
+    let seen = calls.lock().unwrap()[0].clone();
+    assert!(
+        seen.contains("4500") && seen.contains("Some(\"acme\")"),
+        "{seen}"
+    );
+    assert!(
+        seen.contains(&format!("renox_payment\", \"{}", payment.id)),
+        "{seen}"
+    );
+    let found = BillingPayment::for_reference(&state.db, "job", "42")
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+
+    // A link has no owner.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::usd(900)).reference("invoice", "7"),
+    )
+    .await
+    .unwrap();
+    assert!(link.billable_id.is_none() && link.url.is_some());
+
+    // Unsupported leaves nothing behind.
+    let before = BillingPayment::query().count(&state.db).await.unwrap();
+    let err = Billing::of(state, &user)
+        .charge(Charge::new(Money::usd(100)).via("manual"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "charge");
+    let err = Billing::payment_link(state, PaymentLink::new(Money::usd(100)).via("manual"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "payment_link");
+    assert_eq!(
+        BillingPayment::query().count(&state.db).await.unwrap(),
+        before
+    );
+    assert!(
+        Billing::of(state, &user)
+            .charge(Charge::new(Money::usd(0)))
+            .await
+            .is_err()
+    );
+
+    // Refunds need a paid payment.
+    let refund = |minor, reason: &str| Refund::new(Money::usd(minor)).reason(reason);
+    assert!(matches!(
+        Billing::refund(state, payment.id, refund(100, "x")).await,
+        Err(Error::BadRequest(_))
+    ));
+    let status = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(status.status, PaymentStatus::Succeeded);
+    let mut paid = payment.clone();
+    paid.status = PaymentStatus::Succeeded;
+    paid.save(&state.db).await.unwrap();
+
+    // Pending refunds count against what is left; over-refunding never
+    // reaches the gateway.
+    let calls_before = calls.lock().unwrap().len();
+    let pending = Billing::refund(state, payment.id, refund(3_000, "late"))
+        .await
+        .unwrap();
+    assert_eq!(pending.status, RefundStatus::Pending);
+    assert_eq!(pending.gateway_id.as_deref(), Some("re_2"));
+    assert!(matches!(
+        Billing::refund(state, payment.id, refund(1_501, "now")).await,
+        Err(Error::BadRequest(_))
+    ));
+    let euro = Money::new(1, renox::money::Currency::parse("EUR").unwrap());
+    assert!(matches!(
+        Billing::refund(state, payment.id, Refund::new(euro)).await,
+        Err(Error::BadRequest(_))
+    ));
+    assert_eq!(calls.lock().unwrap().len(), calls_before + 1);
+
+    // A refund done at once moves the payment and is announced.
+    let done = Billing::refund(state, payment.id, refund(1_000, "now"))
+        .await
+        .unwrap();
+    assert_eq!(done.status, RefundStatus::Succeeded);
+    let stored = BillingPayment::find(&state.db, payment.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    app.assert_emitted::<PaymentRefunded>(|e| e.payment.id == payment.id);
+    assert_eq!(stored.refunds(&state.db).await.unwrap().len(), 2);
+
+    // A gateway without refunds leaves no refund row.
+    let rows = BillingRefund::query().count(&state.db).await.unwrap();
+    let mut other = BillingPayment::new(
+        "manual",
+        renox_billing::PaymentKind::Charge,
+        Money::usd(500),
+    );
+    other.status = PaymentStatus::Succeeded;
+    let other = BillingPayment::create(&state.db, other).await.unwrap();
+    let err = Billing::refund(state, other.id, refund(100, "x"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "refund");
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), rows);
+}

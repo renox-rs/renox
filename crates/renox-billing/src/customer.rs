@@ -9,8 +9,9 @@ use serde::Serialize;
 
 use crate::events::SubscriptionCreated;
 use crate::model::{BillingCustomer, Subscription, SubscriptionStatus};
+use crate::payment::Charge;
 use crate::sync::{apply, emit_changes};
-use crate::{Billing, CheckoutRequest, Remote, Setup};
+use crate::{Billing, BillingPayment, CheckoutRequest, Remote, Setup};
 
 /// Who pays: a kind (`user`, or the app's name for what it bills, such
 /// as `team`) and an id, with an email address and a name for the
@@ -167,6 +168,16 @@ impl Customer<'_> {
 
     fn setup(&self) -> Result<Arc<Setup>> {
         crate::setup(self.state)
+    }
+
+    /// Charges the owner a one-off `charge`: the payment is stored
+    /// (pending) with its reference and the gateway's page is in
+    /// `payment.url`; the result arrives by webhook. A gateway that cannot
+    /// charge answers [`Unsupported`](crate::Unsupported) and leaves no row.
+    pub async fn charge(&self, charge: Charge) -> Result<BillingPayment> {
+        let mut request = charge.request().clone();
+        request.owner = Some(self.owner.clone());
+        crate::payment::start(self.state, charge.gateway(), request).await
     }
 
     /// The newest subscription of this name, whatever its state.
