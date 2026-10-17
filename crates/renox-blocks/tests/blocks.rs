@@ -1327,3 +1327,152 @@ async fn the_map_blocks_are_tags_too() {
         assert!(html.contains(needle), "missing {needle}\n{html}");
     }
 }
+
+const RATING_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import rating %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/review">
+{{ csrf_field() }}
+{{ rating("score", max=5, label="Your rating", required=true, hint="Stars, one to five.") }}
+</form>
+{{ rating("seen", max=4, value=3, label="Average", readonly=true) }}
+{{ rating("none_yet", readonly=true) }}
+</body></html>"##;
+
+const RATING_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/review">
+<rx-rating name="stars" :max="3" :value="2"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize, Validate)]
+struct Review {
+    #[validate(required, between(1, 5))]
+    score: Option<u8>,
+    #[validate(required)]
+    title: Option<String>,
+}
+
+struct Reviews;
+
+impl Module for Reviews {
+    fn name(&self) -> &'static str {
+        "reviews"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/review", || async { view("review.html", ()) })
+            .get("/review-tag", || async { view("review-tag.html", ()) })
+            .post("/review", |Valid(form): Valid<Review>| async move {
+                Json(json!({ "score": form.score }))
+            })
+    }
+}
+
+async fn reviews_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Reviews)
+            .templates(|env| {
+                env.add_template("review.html", RATING_MACRO).unwrap();
+                renox::view::add_template(env, "review-tag.html", RATING_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The rating (#54): a fieldset of `max` radios with one name, each named
+/// "N of MAX" for a screen reader, with no script of its own; the readonly
+/// form is text and sends nothing; the tag calls the macro.
+#[renox::test]
+async fn the_rating_renders_as_a_radio_group() {
+    let app = reviews_app().await;
+    let html = app.get("/review").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"<fieldset class="rx-field rx-rating" id="rx-score" data-rx-rating aria-describedby="rx-score-hint rx-score-error">"#,
+    );
+    has(r#"<legend class="rx-label">Your rating</legend>"#);
+    for n in 1..=5 {
+        has(&format!(
+            r#"type="radio" id="rx-score-{n}" name="score" value="{n}""#
+        ));
+        has(&format!(
+            r#"<span class="rx-visually-hidden">{n} of 5</span>"#
+        ));
+    }
+    assert_eq!(html.matches(r#"name="score""#).count(), 5, "{html}");
+    // `required` sits on the first radio only; nothing is checked.
+    has(r#"id="rx-score-1" name="score" value="1" required>"#);
+    assert!(!html.contains(" checked"), "{html}");
+    has("Stars, one to five.");
+    has(r#"data-error-for="score" aria-live="polite"></p>"#);
+    // No handlers or style attributes (CSP=strict) and no part of its own.
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+    assert!(!html.contains("data-rating"), "{html}");
+
+    // Readonly: text for a screen reader, and no input to send.
+    has(r#"<span class="rx-label" id="rx-seen-label">Average</span>"#);
+    has(r#"role="img" aria-labelledby="rx-seen-label rx-seen-value""#);
+    has(r#"id="rx-seen-value">3 of 4</span>"#);
+    assert_eq!(html.matches("rx-rating__item--on").count(), 3, "{html}");
+    has(r#"id="rx-none_yet-value">Not rated</span>"#);
+    assert!(!html.contains(r#"name="seen""#) && !html.contains(r#"name="none_yet""#));
+
+    let html = app.get("/review-tag").await.assert_ok().text();
+    assert_eq!(html.matches(r#"name="stars""#).count(), 3, "{html}");
+    assert!(
+        html.contains(r#"id="rx-stars-2" name="stars" value="2" checked>"#),
+        "{html}"
+    );
+    assert!(
+        html.contains(r#"<span class="rx-required">(optional)</span>"#),
+        "{html}"
+    );
+}
+
+/// The chosen number arrives as an integer; none at all fails `required`
+/// with the field's message; a value out of range fails `between`, and the
+/// radio chosen is checked again on the page that shows the error.
+#[renox::test]
+async fn a_rating_posts_a_plain_integer_through_valid() {
+    let app = reviews_app().await;
+    app.get("/review").await;
+    app.post("/review", &[("score", "4"), ("title", "Fast")])
+        .await
+        .assert_ok()
+        .assert_json_path("score", 4);
+
+    app.request()
+        .json()
+        .post("/review", &[("title", "Fast")])
+        .await
+        .assert_status(422)
+        .assert_invalid("score");
+
+    // Out of range: the message comes back to the group.
+    app.request()
+        .header("referer", "/review")
+        .post("/review", &[("score", "9"), ("title", "Fast")])
+        .await
+        .assert_redirect("/review");
+    let html = app.get("/review").await.text();
+    assert!(html.contains(r#"<p class="rx-error" id="rx-score-error" data-error-for="score" aria-live="polite">The score must be between 1 and 5.</p>"#), "{html}");
+    assert!(html.contains(r#"aria-invalid="true""#), "{html}");
+
+    // Another field fails: the radio chosen is checked again.
+    app.request()
+        .header("referer", "/review")
+        .post("/review", &[("score", "3")])
+        .await
+        .assert_redirect("/review");
+    let html = app.get("/review").await.text();
+    assert!(
+        html.contains(r#"id="rx-score-3" name="score" value="3" checked>"#),
+        "{html}"
+    );
+    assert_eq!(html.matches(" checked").count(), 1, "{html}");
+}

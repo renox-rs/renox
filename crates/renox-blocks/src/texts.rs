@@ -216,6 +216,9 @@ pub const TEXTS: &[(&str, &str)] = &[
     ("blocks.receipt.item", "Item"),
     ("blocks.receipt.amount", "Amount"),
     ("blocks.receipt.print", "Print receipt"),
+    ("blocks.rating.label", "Rating"),
+    ("blocks.rating.option", ":n of :max"),
+    ("blocks.rating.none", "Not rated"),
 ];
 
 /// The English text of `key`, if the blocks have one.

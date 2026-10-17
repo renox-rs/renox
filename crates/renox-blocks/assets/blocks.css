@@ -555,3 +555,28 @@
 @media (prefers-reduced-motion: reduce) {
   .rx-gallery__thumb, .rx-keypad__key, .rx-swatches__chip { transition: none; }
 }
+
+/* ---------- rating ---------- */
+
+.rx-rating { min-width: 0; margin: 0; padding: 0; border: 0; display: grid; gap: var(--rx-space-1); }
+.rx-rating__stars { display: flex; flex-wrap: wrap; gap: var(--rx-space-1); }
+.rx-rating__item { position: relative; display: inline-flex; }
+.rx-rating__label { display: inline-flex; align-items: center; justify-content: center; min-inline-size: var(--rx-target); min-block-size: var(--rx-target); cursor: pointer; }
+.rx-rating__star { display: block; color: var(--rx-tertiary-label); fill: none; }
+/* Filled up to the chosen star: solid against outline, so it is not colour alone. */
+.rx-rating__item:has(input:checked) .rx-rating__star,
+.rx-rating__item:has(~ .rx-rating__item input:checked) .rx-rating__star,
+.rx-rating__item--on .rx-rating__star { color: var(--rx-accent); fill: currentColor; }
+/* Hover previews the star under the pointer and those before it. */
+.rx-rating__stars:hover .rx-rating__item .rx-rating__star { color: var(--rx-tertiary-label); fill: none; }
+.rx-rating__stars:hover .rx-rating__item:hover .rx-rating__star,
+.rx-rating__stars:hover .rx-rating__item:has(~ .rx-rating__item:hover) .rx-rating__star { color: var(--rx-accent); fill: currentColor; }
+.rx-rating__input:focus-visible + .rx-rating__label { outline: 2px solid var(--rx-focus); outline-offset: 2px; border-radius: var(--rx-radius-s); }
+.rx-rating__input[aria-invalid="true"] + .rx-rating__label .rx-rating__star { color: var(--rx-danger-text); }
+@media (forced-colors: active) {
+  .rx-rating__star { color: CanvasText; }
+  .rx-rating__item:has(input:checked) .rx-rating__star,
+  .rx-rating__item:has(~ .rx-rating__item input:checked) .rx-rating__star,
+  .rx-rating__item--on .rx-rating__star { color: Highlight; fill: Highlight; }
+  .rx-rating__input:focus-visible + .rx-rating__label { outline-color: Highlight; }
+}
