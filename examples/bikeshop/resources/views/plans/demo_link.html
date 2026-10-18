@@ -11,12 +11,13 @@
       <rx-entry label="{{ t('plans.demo.link_for') }}" :value="'#' ~ paying.order"/>
       <rx-entry label="{{ t('plans.demo.link_amount') }}"><strong>{{ paying.amount | money }}</strong></rx-entry>
     </rx-infolist>
-    <rx-alert rx-if="paying.done" kind="info" message="{{ t('plans.demo.link_done') }}"/>
-    <rx-form rx-if="not paying.done" :action="action" id="demo-link-pay">
+    <rx-alert rx-if="paying.sent" kind="success" message="{{ t('plans.demo.link_sent') }}"/>
+    <rx-alert rx-if="paying.done and not paying.sent" kind="info" message="{{ t('plans.demo.link_done') }}"/>
+    <rx-form rx-if="not paying.done and not paying.sent" :action="action" id="demo-link-pay">
       <input type="hidden" name="outcome" value="pay">
       <rx-button label="{{ t('plans.demo.pay', amount=(paying.amount | money)) }}" variant="primary" block key="p"/>
     </rx-form>
-    <rx-form rx-if="not paying.done" :action="action" id="demo-link-decline">
+    <rx-form rx-if="not paying.done and not paying.sent" :action="action" id="demo-link-decline">
       <input type="hidden" name="outcome" value="decline">
       <rx-button label="{{ t('plans.demo.decline') }}" variant="plain" block/>
     </rx-form>

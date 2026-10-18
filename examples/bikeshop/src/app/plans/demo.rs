@@ -480,6 +480,24 @@ struct LinkPaying {
     order: i64,
     amount: i64,
     done: bool,
+    /// Just paid or declined here: the webhook is on its way.
+    sent: bool,
+}
+
+impl LinkPaying {
+    /// The page for `payment`; `sent` after it was just paid or declined here.
+    fn of(payment: &BillingPayment, sent: bool) -> Self {
+        Self {
+            order: payment
+                .reference_id
+                .as_deref()
+                .and_then(|id| id.parse().ok())
+                .unwrap_or_default(),
+            amount: payment.amount.minor,
+            done: !sent && payment.status != PaymentStatus::Pending,
+            sent,
+        }
+    }
 }
 
 /// The demo gateway's payment of a link's page, 404 for any other.
@@ -503,16 +521,7 @@ pub async fn link_show(
     Path(id): Path<i64>,
 ) -> Result<View> {
     let payment = link_payment(&state, id).await?;
-    let order = payment
-        .reference_id
-        .as_deref()
-        .and_then(|id| id.parse().ok())
-        .unwrap_or_default();
-    let paying = LinkPaying {
-        order,
-        amount: payment.amount.minor,
-        done: payment.status != PaymentStatus::Pending,
-    };
+    let paying = LinkPaying::of(&payment, false);
     Ok(view(
         "plans/demo_link.html",
         context! { paying, action => uri.to_string() },
@@ -526,7 +535,7 @@ pub async fn link_complete(
     State(state): State<AppState>,
     Path(id): Path<i64>,
     Valid(form): Valid<DemoForm>,
-) -> Result<Redirect> {
+) -> Result<View> {
     abort_if(
         !DemoGateway.configured(&state.config),
         StatusCode::NOT_FOUND,
@@ -537,7 +546,13 @@ pub async fn link_complete(
         let event = DemoOneOff::new(payment.id, form.outcome == "pay");
         state.dispatch(DemoPaymentNotify { event }).await?;
     }
-    Redirect::route("billing.return", &[])
+    // The payer has no account here, so not /billing/return (it asks for a
+    // login): the same page again, saying the result is on its way.
+    let paying = LinkPaying::of(&payment, true);
+    Ok(view(
+        "plans/demo_link.html",
+        context! { paying, action => "" },
+    ))
 }
 
 /// Renew now, paid or failed.

@@ -2563,6 +2563,7 @@
       "link_for": "Work order",
       "link_amount": "Amount",
       "link_done": "This link has been used already.",
+      "link_sent": "Thank you: the shop will see the result in a moment.",
       "renew_title": "Demo: next month's payment",
       "renew_text": "A real gateway charges each month on its own; try it here.",
       "renew_paid": "Renew, paid",

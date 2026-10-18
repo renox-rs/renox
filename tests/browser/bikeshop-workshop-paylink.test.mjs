@@ -63,7 +63,7 @@ async function readyOrder(page) {
       return true;
     });
     if (!moved) continue;
-    await page.waitFor(() => /Ready/.test(document.body.textContent) && location.pathname.startsWith('/staff/workshop/'), { message: 'the order is ready' });
+    await page.waitFor(() => /Ready/.test(document.body?.textContent ?? '') && location.pathname.startsWith('/staff/workshop/'), { message: 'the order is ready' });
     await page.goto(`${app.url}/staff/workshop/${id}`);
     if (await page.eval(() => !!document.querySelector('#pay-link-form'))) return id;
   }
@@ -94,9 +94,12 @@ describe('paying a work order by link', () => {
       assert.ok(await fitsWidth(page), 'the payment page fits a phone');
       await shot(page, 'workshop-paylink-demo-phone');
       await page.eval(() => document.querySelector('#demo-link-pay').requestSubmit());
-      await page.waitFor(() => location.pathname === '/billing/return', { message: 'back from the gateway' });
+      // The payer has no account: back on the same page, saying the result is on its way.
+      await page.waitFor(() => /the shop will see the result/.test(document.body?.textContent ?? ''), { message: 'back from the gateway' });
       // The webhook arrives through the queue: reload the bench until it shows paid.
-      await login(page, 'manager.north@bikeshop.test');
+      // Logged in from a tab of its own: in headless Chrome the tab that sent a
+      // login form gets no key presses afterwards (the cookie is the browser's).
+      await browser.with((other) => login(other, 'manager.north@bikeshop.test'), PHONE);
       let paid = false;
       for (let i = 0; i < 40 && !paid; i++) {
         await page.goto(`${app.url}/staff/workshop/${id}`);

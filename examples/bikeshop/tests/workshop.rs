@@ -1104,7 +1104,8 @@ async fn a_ready_work_order_is_paid_by_link_through_the_demo_gateway() {
     w.app
         .post(&path, &[("outcome", "pay")])
         .await
-        .assert_redirect("/billing/return");
+        .assert_ok()
+        .assert_see("the shop will see the result");
     assert!(
         WorkOrder::find(db, order.id)
             .await

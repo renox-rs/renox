@@ -4479,6 +4479,7 @@
       "link_for": "Orden de taller",
       "link_amount": "Importe",
       "link_done": "Este enlace ya se usó.",
+      "link_sent": "Gracias: la tienda verá el resultado en un momento.",
       "renew_title": "Prueba: el pago del mes siguiente",
       "renew_text": "Una pasarela real cobra cada mes sola; pruébalo aquí.",
       "renew_paid": "Renovar, pagado",
