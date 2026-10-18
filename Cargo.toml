@@ -5,7 +5,7 @@ members = ["crates/*", "examples/*", "site", "www", "learn", "tests/browser/fixt
 exclude = ["learn/course"]
 
 [workspace.package]
-version = "1.1.1"
+version = "1.2.0"
 edition = "2024"
 # The oldest Rust that builds Renox (sqlx 0.9 needs 1.94); checked in CI.
 rust-version = "1.94"
@@ -18,17 +18,17 @@ categories = ["web-programming::http-server"]
 [workspace.dependencies]
 # Released together, in lockstep: the macros write code against renox-core's
 # items of the same release, so each crate pins the others exactly (`=`).
-renox = { path = "crates/renox", version = "=1.1.1" }
-renox-core = { path = "crates/renox-core", version = "=1.1.1", default-features = false }
-renox-macros = { path = "crates/renox-macros", version = "=1.1.1" }
+renox = { path = "crates/renox", version = "=1.2.0" }
+renox-core = { path = "crates/renox-core", version = "=1.2.0", default-features = false }
+renox-macros = { path = "crates/renox-macros", version = "=1.2.0" }
 # The plugin crates, released with renox at the same version.
-renox-2fa = { path = "crates/renox-2fa", version = "=1.1.1" }
-renox-editors = { path = "crates/renox-editors", version = "=1.1.1" }
-renox-blocks = { path = "crates/renox-blocks", version = "=1.1.1" }
-renox-admin = { path = "crates/renox-admin", version = "=1.1.1" }
-renox-oauth = { path = "crates/renox-oauth", version = "=1.1.1" }
-renox-billing = { path = "crates/renox-billing", version = "=1.1.1" }
-renox-pdf = { path = "crates/renox-pdf", version = "=1.1.1" }
+renox-2fa = { path = "crates/renox-2fa", version = "=1.2.0" }
+renox-editors = { path = "crates/renox-editors", version = "=1.2.0" }
+renox-blocks = { path = "crates/renox-blocks", version = "=1.2.0" }
+renox-admin = { path = "crates/renox-admin", version = "=1.2.0" }
+renox-oauth = { path = "crates/renox-oauth", version = "=1.2.0" }
+renox-billing = { path = "crates/renox-billing", version = "=1.2.0" }
+renox-pdf = { path = "crates/renox-pdf", version = "=1.2.0" }
 
 # Password hashing (Argon2) is deliberately slow, and far slower unoptimised:
 # every login, registration and auth test paid for it. Optimise just these

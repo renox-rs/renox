@@ -10,6 +10,8 @@ changes by milestone (each one pull request; details in its description and in
 
 ## Unreleased
 
+## 1.2.0 · 2026-10-18
+
 Right-to-left pages and Arabic, PDFs, installable and offline apps, and the building blocks a
 business app keeps rebuilding: money, quantities with units, custom fields, state machines,
 gapless numbers, typed settings, outbound webhooks, one-off payments and company sign-in. There

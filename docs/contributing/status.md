@@ -279,6 +279,12 @@
   cssparser and dtoa-short (MPL-2.0) as cargo-deny license exceptions (#7; a Dependabot bump to
   4.2.1, inside the advisories, was undone by #15). The workspace, its nine `=` pins, the landing page's badge and
   terminal and the README name 1.1.1.
+- **1.2.0** (#77, 2026-10-18): the backlog of #72 released: right-to-left and Arabic, `renox-pdf`
+  (the eleventh crate; its first publish is by hand, then Trusted Publishing), installable and
+  offline apps, brand themes, module admin resources and navigation, outbound webhooks, state
+  machines, custom fields, one-off payments, money and quantities, geo and the field blocks. The
+  workspace, its eleven `=` pins, the landing page, the plugin guides, llms.txt and the README
+  name 1.2.0.
 - **#24, the dashboard standard** (Renoxium, 2026-10-15): `<rx-shell fill>` (`rx-shell--fill`,
   a `flag` on the `rx-shell` contract) is the standard mechanism of a Renox dashboard
   application. From 64rem wide and 36rem tall (screen only) the shell is `100dvh` with
