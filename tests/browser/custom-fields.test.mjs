@@ -3,6 +3,10 @@
 // a form missing the required one comes back with the old input and the error
 // on the right input; a valid one is saved, and /parties shows the custom
 // values as entries and filters on the segment through a JSON path.
+//
+// #71: the Tax id field is sensitive. It is an empty password input in the
+// form, it is stored sealed, /parties shows it as the mask to a guest, and the
+// demo user (who holds the `custom_fields.reveal` ability) sees the value.
 
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -13,7 +17,7 @@ let browser;
 let app;
 
 before(async () => {
-  app = await fixture();
+  app = await fixture({ seed: true }); // the seed holds the demo user
   browser = await Browser.launch();
 });
 
@@ -51,9 +55,13 @@ async function addParty(page, { name, passport, segment, visa }) {
 test('the form draws an input per custom field, named extra[key]', () => browser.with(async (page) => {
   await page.goto(`${app.url}/parties/new`);
   const names = await page.eval(() => [...document.querySelectorAll('#custom [name]')].map((e) => e.name));
-  assert.deepEqual(names, ['extra[passport_no]', 'extra[segment]', 'extra[visa_expiry]']);
+  assert.deepEqual(names, ['extra[passport_no]', 'extra[segment]', 'extra[visa_expiry]', 'extra[tax_id]']);
   assert.equal(await page.eval(() => document.querySelector('[name="extra[passport_no]"]').maxLength), 10);
   assert.equal(await page.eval(() => document.querySelector('[name="extra[visa_expiry]"]').type), 'date');
+  // A sensitive field is an empty password input that says "unchanged".
+  assert.equal(await page.eval(() => document.querySelector('[name="extra[tax_id]"]').type), 'password');
+  assert.equal(await page.eval(() => document.querySelector('[name="extra[tax_id]"]').value), '');
+  assert.equal(await page.eval(() => document.querySelector('[name="extra[tax_id]"]').placeholder), 'unchanged');
   page.assertClean();
 }));
 
@@ -88,5 +96,43 @@ test('saved values show as entries and the list filters on a custom field', () =
   await setValue(page, '#filter [name=segment]', 'retail');
   await submit(page, '#filter button[type=submit]');
   assert.deepEqual(await names(), ['Ruth']);
+  page.assertClean();
+}));
+
+test('a sensitive value is masked for a guest and revealed to the viewer who holds the ability', () => browser.with(async (page) => {
+  const secret = 'TX-FAKE-4471';
+  await page.goto(`${app.url}/parties/new`);
+  await page.type('[name=name]', 'Tess');
+  await page.type('[name="extra[passport_no]"]', 'P300');
+  await page.type('[name="extra[tax_id]"]', secret);
+  await submit(page, '#party button[type=submit]');
+  assert.equal(await page.eval(() => location.pathname), '/parties');
+
+  // A guest sees the mask: the value and the sealed token are nowhere in the page.
+  const entry = () => page.eval(() => {
+    const li = [...document.querySelectorAll('#parties .party')].find((e) => e.dataset.name === 'Tess');
+    return li.textContent;
+  });
+  const guest = await entry();
+  assert.match(guest, /Tax id/);
+  assert.match(guest, /••••••/);
+  assert.match(guest, /P300/);
+  const html = await page.eval(() => document.documentElement.outerHTML);
+  assert.ok(!html.includes(secret), 'the plain value is not in the page');
+  assert.ok(!html.includes('rx-sealed'), 'the sealed token is not in the page');
+
+  // The demo user holds the ability.
+  await page.goto(`${app.url}/login`);
+  await page.type('#rx-email', 'demo@example.com');
+  await page.type('#rx-password', 'password');
+  await submit(page, 'form button[type=submit]');
+  await page.goto(`${app.url}/parties`);
+  const revealed = await entry();
+  assert.match(revealed, new RegExp(secret));
+  assert.ok(!revealed.includes('••••••'));
+
+  // Even then the form never holds the stored value.
+  await page.goto(`${app.url}/parties/new`);
+  assert.equal(await page.eval(() => document.querySelector('[name="extra[tax_id]"]').value), '');
   page.assertClean();
 }));

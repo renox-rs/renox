@@ -188,7 +188,16 @@ async fn custom_field_defs(State(db): State<Db>, viewer: Option<AuthUser>) -> Re
     let views = CustomField::views_for(&db, "parties", "en", viewer.as_ref()).await?;
     let shown = CustomValues::default().shown(&db, &views).is_empty();
     CustomField::delete(&db, saved.id).await?;
-    Ok(format!("{found} {active} {all} {shown}"))
+    // A sensitive field: saved, masked for this viewer, opened from the values.
+    let secret = CustomField::text("parties", "tax_id")
+        .sensitive()
+        .reveal_with("see-tax-ids")
+        .save(&db)
+        .await?;
+    let may = secret.can_reveal(viewer.as_ref());
+    let sealed = CustomValues::default().open(&db, "tax_id").is_none();
+    CustomField::delete(&db, secret.id).await?;
+    Ok(format!("{found} {active} {all} {shown} {may} {sealed}"))
 }
 
 /// Custom field values: `CustomValues::validate`, inside a routed handler.
@@ -1206,7 +1215,7 @@ async fn data_apis_work_in_routed_handlers() {
     app.get("/custom-field-defs")
         .await
         .assert_ok()
-        .assert_see("true 1 1");
+        .assert_see("true 1 1 true false true");
     app.get("/idempotency-store")
         .await
         .assert_ok()

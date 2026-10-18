@@ -666,8 +666,20 @@
   is the "Custom fields" resource the panel adds by itself. Tests: `tests/it/custom_fields.rs`, `model_forms.rs`, `grid.rs`,
   `send_handlers.rs`, `postgres.rs` (definitions, validation and JSON paths on PostgreSQL), `tag_usage.rs` (the tag is on the browser
   fixture's `/parties`), `renox-admin/tests`, and `tests/browser/custom-fields.test.mjs` (fixture `parties.rs`). The `error()` view
-  function tries the raw name before the dotted one, so `extra[key]` errors mark the right input. The sealed flag is the follow-up
-  #71. Guide: docs/types.md "Custom fields".
+  function tries the raw name before the dotted one, so `extra[key]` errors mark the right input. The sealed flag is #71 (below).
+  Guide: docs/types.md "Custom fields".
+
+- **#71, sensitive custom fields** (parts 1-5, done): `FieldRules.sensitive`/`reveal` (in the `rules` JSON, no migration) and
+  `CustomField::sensitive()`/`reveal_with()`; `custom_fields/values.rs` seals after validation (`SEALED_PREFIX`, `is_sealed`,
+  `CustomValues::open`/`shown`, `Opened`) and the `#[model(form)]` merge in `renox-macros/src/model.rs` keeps a stored seal on a
+  blank submit. `DbError::SealedCustomField` is raised by `with_custom_fields` (`db/json.rs`, `db/query.rs`) and the grid
+  (`grid/mod.rs`: non-sortable, non-filterable column, search skip, export omission, `GridRequest::viewed_by`).
+  `CustomField::views_for`/`can_reveal` give `FieldView.sensitive`/`masked`; the built-in `custom_fields.html` shows `••••••`,
+  `unreadable`, or an empty "unchanged" input. renox-admin: definitions form, masked forms, entries and lists. Tests:
+  `tests/it/custom_fields.rs` (`sealed`, `masking`, `acceptance`), `model_forms.rs` (keep on blank), `grid.rs`, `send_handlers.rs`,
+  `postgres.rs` (sealed storage and refusal; skips without `TEST_DATABASE_URL`), `renox-admin/tests/custom_fields.rs`, and
+  `tests/browser/custom-fields.test.mjs` (the fixture's `/parties` has a `tax_id` field; the demo user holds the ability).
+  Guide: docs/types.md "Sensitive fields"; key rotation: docs/operations.md.
 
 - **#44, one-off payments in `renox-billing`** (parts 1-15, done): `payment.rs` holds `BillingPayment`, `BillingRefund`, `PaymentKind`,
   `PaymentStatus`, `RefundStatus`, the `Unsupported` error, the `Charge`/`PaymentLink`/`Refund` builders, `ChargeRequest`,

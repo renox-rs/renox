@@ -2,6 +2,9 @@
 //! `/parties/new` is a form with the model's fields and the custom ones,
 //! `POST /parties` validates and stores them, `/parties` lists the parties with
 //! their custom values and filters on the `segment` key (`?segment=retail`).
+//! `tax_id` is a sensitive field: it is sealed in the row, shown masked, and
+//! revealed to the viewer who holds the `custom_fields.reveal` ability (the
+//! demo user, see main.rs).
 
 use std::collections::HashMap;
 
@@ -19,6 +22,13 @@ pub struct Party {
     #[form(validate(required))]
     pub name: String,
     pub extra: Json<CustomValues>,
+}
+
+/// One list row: the name and the custom values as the viewer may see them.
+#[derive(Serialize)]
+struct Row {
+    name: String,
+    extra: CustomValues,
 }
 
 /// Defines the fields once (an administrator would do it in renox-admin).
@@ -43,6 +53,12 @@ async fn define_fields(db: &Db) -> Result<()> {
         .position(2)
         .save(db)
         .await?;
+    CustomField::text(MODEL, "tax_id")
+        .label("Tax id")
+        .sensitive()
+        .position(3)
+        .save(db)
+        .await?;
     Ok(())
 }
 
@@ -55,11 +71,15 @@ impl Module for Parties {
 
     fn routes(&self) -> Routes {
         Routes::new()
-            .get("/parties/new", |State(state): State<AppState>| async move {
-                define_fields(&state.db).await?;
-                let fields = CustomField::views(&state.db, MODEL, "en").await?;
-                Ok::<_, Error>(view("parties_new.html", context! { fields }))
-            })
+            .get(
+                "/parties/new",
+                |State(state): State<AppState>, viewer: Option<AuthUser>| async move {
+                    define_fields(&state.db).await?;
+                    let fields =
+                        CustomField::views_for(&state.db, MODEL, "en", viewer.as_ref()).await?;
+                    Ok::<_, Error>(view("parties_new.html", context! { fields }))
+                },
+            )
             .post(
                 "/parties",
                 |State(state): State<AppState>, Valid(form): Valid<PartyForm>| async move {
@@ -71,9 +91,12 @@ impl Module for Parties {
             )
             .get(
                 "/parties",
-                |State(state): State<AppState>, Query(params): Query<HashMap<String, String>>| async move {
+                |State(state): State<AppState>,
+                 viewer: Option<AuthUser>,
+                 Query(params): Query<HashMap<String, String>>| async move {
                     define_fields(&state.db).await?;
-                    let fields = CustomField::views(&state.db, MODEL, "en").await?;
+                    let fields =
+                        CustomField::views_for(&state.db, MODEL, "en", viewer.as_ref()).await?;
                     let segment = params.get("segment").cloned().unwrap_or_default();
                     let mut query = Party::query();
                     if !segment.is_empty() {
@@ -85,10 +108,15 @@ impl Module for Parties {
                         .order_by("id")
                         .get(&state.db)
                         .await?;
-                    Ok::<_, Error>(view(
-                        "parties.html",
-                        context! { parties, fields, segment },
-                    ))
+                    // A masked sensitive value never reaches the template.
+                    let parties: Vec<_> = parties
+                        .iter()
+                        .map(|p| Row {
+                            name: p.name.clone(),
+                            extra: p.extra.shown(&state.db, &fields),
+                        })
+                        .collect();
+                    Ok::<_, Error>(view("parties.html", context! { parties, fields, segment }))
                 },
             )
     }

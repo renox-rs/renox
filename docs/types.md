@@ -414,8 +414,64 @@ Two things to know about the queries. A key is never put into SQL unless it matc
 shape, and values are always bound, so `Party::EXTRA.json("x'; --")` is an error, not an
 injection. And `.json(key)` is not indexed: for a key you filter on often, run
 `db::json_index(dialect, "parties", "extra", "segment")` from a migration and it gives you the
-`CREATE INDEX` statement for SQLite or PostgreSQL. A sensitive flag that seals a value with
-`APP_KEY` is not built yet.
+`CREATE INDEX` statement for SQLite or PostgreSQL.
+
+#### Sensitive fields
+
+A tax id or a salary should not sit in the table as plain text, nor show on every page. Mark the
+definition `.sensitive()` and its value is sealed with `APP_KEY` (the AES-256-GCM that `Encrypted<T>`
+columns use) inside the JSON column: the stored value is the text `rx-sealed:1:…`, a new
+nonce per write, so the same text seals differently each time. The value is validated as plain text
+first (required, max, number, date, choice), then sealed. Only text, number, date, bool and choice
+fields can be sensitive; `save` refuses a sensitive reference or file, because a sealed record id or file
+key would not protect the record or the file.
+
+```rust
+# use renox::prelude::*;
+use renox::custom_fields::CustomField;
+
+# async fn demo(db: &Db) -> Result {
+CustomField::text("parties", "tax_id")
+    .label("Tax id")
+    .sensitive()                    // sealed with APP_KEY
+    .reveal_with("see-tax-ids")     // optional: the ability that shows it
+    .save(db)
+    .await?;
+# Ok(())
+# }
+
+// The ability is a gate you declare like any other; an undeclared name denies.
+let app = App::new().gate("see-tax-ids", |user| user.email.ends_with("@hr.example"));
+# let _ = app;
+```
+
+Who sees the value is the ability: the definition's own `reveal_with` name, else the app-wide
+`custom_fields.reveal`. A viewer without it (and a request with no logged-in user) gets `••••••`, never the
+length or a part of the value, and the plain text is never put into the template's context. Use
+`CustomField::views_for(&db, "parties", locale, auth.as_ref())` instead of `views` so the viewer's ability
+decides (`views` masks every sensitive field), and `party.extra.shown(&db, &fields)` for the values:
+
+```html
+<rx-custom-fields :fields="fields" name="extra"/>                          {# empty input, placeholder "unchanged" #}
+<rx-custom-fields :fields="fields" :values="extra" mode="show"/>           {# ••••••, or the value with the ability #}
+```
+
+- **Editing.** A form never holds the stored value: a sensitive input is empty and says "unchanged". A
+  blank submit keeps the stored sealed value (even for someone who may not see it), a filled one replaces it.
+- **Not filterable or sortable.** A sealed value cannot be compared in SQL. After `with_custom_fields`, a
+  condition, `order_by_json[_desc]`, a grid filter, sort or search on a sensitive key is refused with a
+  typed error (`DbError::SealedCustomField`, a 400 in the grid). The grid column of a sensitive field is
+  not sortable or filterable, and the global search skips it.
+- **Exports.** CSV, xlsx and print leave a sensitive column out for a viewer without the ability (a
+  spreadsheet never holds a fake value) and contain the plain value with it. The grid takes the viewer from
+  the logged-in user (`GridRequest::viewed_by` in tests and commands).
+- **renox-admin** has a "Sensitive" checkbox and a "Reveal ability" on the definitions form, and masks
+  the forms, entries and lists of a resource the same way. It declares no ability: you do.
+- **Changing the flag** affects new writes only. Stored values are not rewritten: a plain value stays
+  plain (and is masked from then on) until the record is saved again; a sealed one stays sealed.
+- **Rotating `APP_KEY`** makes sealed values unreadable, like `Encrypted<T>` columns: they show as
+  `unreadable` to someone with the ability and as the mask to everyone else, and nothing errors. Re-save them
+  under the new key before you switch ([operations](operations.md#backups)). There is no automatic re-seal.
 
 ### Time zones
 

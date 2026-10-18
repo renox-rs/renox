@@ -1324,6 +1324,24 @@ async fn custom_fields(db: &Db) -> Result {
 resource, for a model that declares `custom_fields`; `db::json_index(dialect, "parties", "extra", "segment")` gives the
 `CREATE INDEX` for a hot key.
 
+A sensitive field is sealed with `APP_KEY` inside the JSON (`rx-sealed:1:…`), masked as `••••••` unless the viewer holds
+the ability (the definition's `.reveal_with("name")`, else `custom_fields.reveal`; an undeclared gate denies), never
+filterable or sortable (typed error), and left out of exports without the ability:
+
+```rust
+use renox::custom_fields::CustomField;
+use renox::prelude::*;
+
+async fn sensitive(db: &Db, viewer: Option<AuthUser>) -> Result {
+    CustomField::text("parties", "tax_id").sensitive().reveal_with("see-tax-ids").save(db).await?; // not reference or file
+    let fields = CustomField::views_for(db, "parties", "en", viewer.as_ref()).await?; // masks by the viewer's ability
+    let _ = fields; // party.extra.shown(db, &fields) is what <rx-custom-fields :values> gets
+    Ok(())
+}
+```
+
+A blank submit keeps the stored seal; changing `APP_KEY` makes sealed values `unreadable` (re-save them first).
+
 ## Pagination
 
 Show a long list one page at a time. `Page` reads the page number from `?page=` in the URL.

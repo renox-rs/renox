@@ -907,3 +907,140 @@ mod masking {
         assert!(!page.contains("garbled"), "{page}");
     }
 }
+
+// Issue-level checks of the sensitive flag (fake test values only).
+mod acceptance {
+    use std::collections::BTreeMap;
+
+    use renox::custom_fields::{CustomField, CustomValues, FieldRules, Opened};
+    use renox::prelude::*;
+    use renox::testing::TestApp;
+    use serde_json::{Value, json};
+
+    async fn seal(app: &TestApp, input: Value) -> CustomValues {
+        CustomValues::validate(
+            app.state(),
+            "parties",
+            "extra",
+            input.as_object().unwrap(),
+            &BTreeMap::new(),
+            "en",
+        )
+        .await
+        .unwrap()
+        .unwrap()
+    }
+
+    #[test]
+    fn a_definition_stored_before_the_flag_existed_is_not_sensitive() {
+        let rules: FieldRules = serde_json::from_str(r#"{"required":true,"max":8}"#).unwrap();
+        assert!(!rules.sensitive && rules.reveal.is_none() && rules.required);
+        // The flag is only written when set, so old readers keep working.
+        let plain = serde_json::to_string(&FieldRules::default()).unwrap();
+        assert!(
+            !plain.contains("sensitive") && !plain.contains("reveal"),
+            "{plain}"
+        );
+    }
+
+    #[renox::test]
+    async fn a_changed_key_leaves_sealed_values_unreadable_and_masked_without_errors() {
+        let before = TestApp::new(App::new()).await;
+        CustomField::text("parties", "tax_id")
+            .sensitive()
+            .save(before.db())
+            .await
+            .unwrap();
+        let stored = seal(&before, json!({"tax_id": "TX-FAKE-9"})).await;
+        assert_eq!(
+            stored.open(before.db(), "tax_id"),
+            Some(Opened::Value(json!("TX-FAKE-9")))
+        );
+
+        // Another app has another key (TestApp makes a new one each time).
+        let after = TestApp::new(App::new()).await;
+        CustomField::text("parties", "tax_id")
+            .sensitive()
+            .save(after.db())
+            .await
+            .unwrap();
+        assert_eq!(stored.open(after.db(), "tax_id"), Some(Opened::Unreadable));
+        // Masked for a viewer without the ability: left out of the context.
+        let fields = CustomField::views_for(after.db(), "parties", "en", None)
+            .await
+            .unwrap();
+        let shown = stored.shown(after.db(), &fields);
+        assert!(shown.get("tax_id").is_none());
+    }
+
+    #[renox::test]
+    async fn a_plain_value_in_a_field_flagged_later_is_kept_and_masked_for_guests() {
+        let app = TestApp::new(App::new()).await;
+        let db = app.db();
+        let mut stored = CustomValues::default();
+        stored.set("tax_id", "TX-OLD-1"); // saved while the field was not sensitive
+        CustomField::text("parties", "tax_id")
+            .sensitive()
+            .save(db)
+            .await
+            .unwrap();
+        // Still readable as stored, never an error.
+        assert_eq!(
+            stored.open(db, "tax_id"),
+            Some(Opened::Value(json!("TX-OLD-1")))
+        );
+        // A guest gets the mask and the context does not carry the text.
+        let fields = CustomField::views_for(db, "parties", "en", None)
+            .await
+            .unwrap();
+        assert!(fields[0].sensitive && fields[0].masked);
+        assert!(stored.shown(db, &fields).get("tax_id").is_none());
+    }
+
+    #[renox::test]
+    async fn the_plain_value_is_not_in_debug_output_or_validation_messages() {
+        let app = TestApp::new(App::new()).await;
+        let db = app.db();
+        CustomField::text("parties", "tax_id")
+            .label("Tax id")
+            .sensitive()
+            .max(8)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::number("parties", "salary")
+            .sensitive()
+            .max(100)
+            .save(db)
+            .await
+            .unwrap();
+        let errors = CustomValues::validate(
+            app.state(),
+            "parties",
+            "extra",
+            json!({"tax_id": "TX-FAKE-TOO-LONG", "salary": "987654"})
+                .as_object()
+                .unwrap(),
+            &BTreeMap::new(),
+            "en",
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        assert!(errors.has("extra[tax_id]") && errors.has("extra[salary]"));
+        let text = format!("{errors:?}");
+        assert!(
+            !text.contains("TX-FAKE-TOO-LONG") && !text.contains("987654"),
+            "{text}"
+        );
+
+        let stored = seal(&app, json!({"tax_id": "TX-F1", "salary": "55"})).await;
+        let debug = format!("{stored:?} {:?}", stored.open(db, "tax_id"));
+        assert!(!debug.contains("TX-F1"), "{debug}");
+        let fields = CustomField::views_for(db, "parties", "en", None)
+            .await
+            .unwrap();
+        let context = format!("{fields:?} {:?}", stored.shown(db, &fields));
+        assert!(!context.contains("TX-F1"), "{context}");
+    }
+}

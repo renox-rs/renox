@@ -442,6 +442,9 @@ fn main() -> Result {
         .module(tickets::Tickets)
         // Parties with custom fields (custom-fields.test.mjs).
         .module(parties::Parties)
+        .gate("custom_fields.reveal", |user| {
+            user.email == "demo@example.com"
+        })
         .state_machine::<tickets::Ticket>()
         .nav(
             "staff",

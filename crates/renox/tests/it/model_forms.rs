@@ -298,6 +298,17 @@ impl Module for CfFormParties {
                     Ok::<_, Error>(party.id.to_string())
                 },
             )
+            .post(
+                "/parties/{id}",
+                |State(state): State<AppState>,
+                 Path(id): Path<i64>,
+                 Valid(form): Valid<CfFormPartyForm>| async move {
+                    let mut party = CfFormParty::find(&state.db, id).await?.unwrap();
+                    form.fill(&mut party);
+                    party.save(&state.db).await?;
+                    Ok::<_, Error>("saved")
+                },
+            )
     }
 }
 
@@ -418,4 +429,75 @@ async fn the_custom_fields_tag_refills_and_marks_the_right_inputs_after_a_failed
     assert!(input("passport_no").contains("aria-invalid=\"true\""));
     assert!(input("nickname").contains(r#"value="Annie""#));
     assert!(!input("nickname").contains("aria-invalid"));
+}
+
+#[renox::test]
+async fn a_blank_sensitive_value_keeps_the_stored_seal_and_a_filled_one_replaces_it() {
+    use renox::custom_fields::{CustomField, Opened, SEALED_PREFIX};
+
+    let app = TestApp::new(App::new().migrations(&[PARTIES]).module(CfFormParties)).await;
+    let db = app.db();
+    CustomField::text("cf_form_parties", "tax_id")
+        .sensitive()
+        .save(db)
+        .await
+        .unwrap();
+    CustomField::text("cf_form_parties", "nick")
+        .position(1)
+        .save(db)
+        .await
+        .unwrap();
+    app.post(
+        "/parties",
+        &[
+            ("name", "Ana"),
+            ("extra[tax_id]", "TX-FAKE-1"),
+            ("extra[nick]", "annie"),
+        ],
+    )
+    .await
+    .assert_ok();
+    let row: String = renox::db::sql("SELECT extra FROM cf_form_parties")
+        .scalar::<String>(db)
+        .await
+        .unwrap();
+    assert!(
+        row.contains(SEALED_PREFIX) && !row.contains("TX-FAKE-1"),
+        "{row}"
+    );
+    let sealed = CfFormParty::all(db).await.unwrap()[0]
+        .extra
+        .get("tax_id")
+        .cloned()
+        .unwrap();
+
+    // Blank: the stored seal stays, other values still change (and may clear).
+    app.post(
+        "/parties/1",
+        &[
+            ("name", "Ana B"),
+            ("extra[tax_id]", ""),
+            ("extra[nick]", ""),
+        ],
+    )
+    .await
+    .assert_ok();
+    let party = &CfFormParty::all(db).await.unwrap()[0];
+    assert_eq!(party.name, "Ana B");
+    assert_eq!(party.extra.get("tax_id"), Some(&sealed));
+    assert!(party.extra.get("nick").is_none());
+
+    // Filled: replaced by a new seal of the new value.
+    app.post(
+        "/parties/1",
+        &[("name", "Ana B"), ("extra[tax_id]", "TX-FAKE-2")],
+    )
+    .await
+    .assert_ok();
+    let party = &CfFormParty::all(db).await.unwrap()[0];
+    assert_ne!(party.extra.get("tax_id"), Some(&sealed));
+    assert_eq!(
+        party.extra.open(db, "tax_id"),
+        Some(Opened::Value("TX-FAKE-2".into()))
+    );
 }

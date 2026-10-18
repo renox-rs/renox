@@ -2066,7 +2066,21 @@ Notes:
 - [x] renox-admin: custom fields in forms, entries, columns and filters, and a "Custom fields" definitions resource
 - [x] Docs (types.md "Custom fields"), CHEATSHEET.md, llms.txt, `send_handlers.rs`
 - [x] Acceptance tests (AC1-AC12 audited; a PostgreSQL test) and a browser test (`tests/browser/custom-fields.test.mjs`, on the fixture's
-  `/parties`); the sensitive flag that seals values with `APP_KEY` is deferred to the follow-up #71
+  `/parties`); the sensitive flag that seals values with `APP_KEY` was built in the follow-up #71 (below)
+
+### Sensitive custom fields (#71)
+- [x] `FieldRules.sensitive` / `reveal` (no migration: they live in the `rules` JSON), `CustomField::sensitive()` / `reveal_with(..)`;
+  `save` refuses a sensitive reference or file field
+- [x] Sealed storage: `rx-sealed:1:<token>` (the `Encrypted<T>` AES-256-GCM under `APP_KEY`) after validation on the plain value,
+  `CustomValues::open` / `Opened`, `is_sealed`, `SEALED_PREFIX`; a blank submit keeps the stored seal
+- [x] `DbError::SealedCustomField` for conditions, `order_by_json[_desc]`, grid filter, sort and search; the grid column is not
+  sortable or filterable
+- [x] Masking: `FieldView.sensitive`/`masked`, `CustomField::views_for` / `can_reveal`, `CustomValues::shown`, the `custom_fields`
+  built-in, grid cells; exports omit the column without the ability (`GridRequest::viewed_by`)
+- [x] renox-admin: "Sensitive" and "Reveal ability" on the definitions form; masked forms, entries and lists
+- [x] Docs (types.md "Sensitive fields", operations.md key rotation), CHEATSHEET.md, llms.txt, `send_handlers.rs`
+- [x] Acceptance tests (AC1-AC10 audited; a PostgreSQL test that skips without `TEST_DATABASE_URL`) and a browser test
+  (`tests/browser/custom-fields.test.mjs`: fill, mask, reveal on the fixture's `/parties`)
 
 ### PDF documents (#30)
 - [x] `crates/renox-pdf` (eleventh crate, same version, not in `renox`'s features): Typst compiled in the process with our own
@@ -2467,8 +2481,15 @@ Notes:
   to the `en` entry, then the key. A JSON key is shape-checked and never interpolated; the check against the definitions is the
   explicit `Query::with_custom_fields(&db)` (and `Grid::with_custom_fields`) because `where_` is sync, and it also picks the cast on
   PostgreSQL. `Column::custom_field` is the grid constructor because `Column::custom` already draws a template. Indexes are a
-  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag was accepted but deferred (#71). The tag's
+  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag came with #71 (below). The tag's
   error lookup also tries the raw name, because custom-field errors are keyed `extra[key]`, not `extra.key`.
+- **Sensitive custom fields** (#71, assumptions A1-A12): the flag lives in the definition's `rules` JSON, so there is no migration
+  and old rows load as not sensitive. A value is validated as plain text, then sealed once (`rx-sealed:1:` + the `Encrypted<T>`
+  token); whether a stored value is sealed is decided by its prefix, not by the flag now, so toggling the flag changes new writes
+  only. Masking is by an ability (`reveal_with` name, else `custom_fields.reveal`, checked with `Auth::allows`; unknown names deny)
+  and the plain value never reaches a template context for a viewer without it. Filtering, sorting and searching a sealed key is a
+  typed error and exports omit (not mask) the column, so a spreadsheet never holds a fake value. Rotation follows `Encrypted<T>`:
+  re-save before changing `APP_KEY`; there is no automatic re-seal, and a key change shows `unreadable`/the mask, never an error.
 - **PDFs are Typst templates compiled in the process** (#30): no headless browser and no service, so Arabic is shaped by the
   compiler itself. The `typst::World` is ours, not `typst-kit`: a render reads only the template root and the document's own
   assets and never touches the network, so the only package is the virtual `@renox/kit:0.1.0` (`Pdf::package` is deferred). A

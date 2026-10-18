@@ -684,6 +684,14 @@ depends on it. Without it:
 > Changing (rotating) the key has the same effect. So decrypt such values and encrypt them
 > again with the new key before you switch.
 
+> [!NOTE]
+> The values of **sensitive custom fields** ([types](types.md#sensitive-fields)) are sealed with
+> the same key, inside the model's `Json<CustomValues>` column. After a key change they show as
+> `unreadable` (to a viewer with the ability) or masked, and no page fails, but the values are
+> gone. Before you switch, read them with the old key and save them again under the new one (an
+> `rnx` command in your app that loads each record, `open`s the values and sets them again is
+> enough); the framework has no automatic re-seal.
+
 ## Deploys and migrations
 
 When you deploy, you usually run `migrate` first. Here is how it behaves:
