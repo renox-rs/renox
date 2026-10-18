@@ -1345,12 +1345,15 @@ impl App {
     /// ```
     pub async fn run_args(self, args: impl IntoIterator<Item = impl Into<String>>) -> Result {
         let args: Vec<String> = args.into_iter().map(Into::into).collect();
-        self.run_command(&args).await
+        // The command future is large (one arm per command), and a debug build
+        // copies it: on the heap it cannot overflow a test's or a small thread's
+        // stack (Windows, 1 MiB main stack).
+        Box::pin(self.run_command(&args)).await
     }
 
     /// Starts the server on the current Tokio runtime.
     pub async fn serve(self) -> Result {
-        self.run_command(&[]).await
+        Box::pin(self.run_command(&[])).await
     }
 
     async fn run_command(self, args: &[String]) -> Result {
