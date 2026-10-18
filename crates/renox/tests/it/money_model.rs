@@ -136,7 +136,7 @@ async fn several_fields_share_one_currency_column() {
 #[renox::test]
 async fn from_row_reads_money_pairs() {
     let app = TestApp::new(App::new()).await;
-    let row = renox::db::sql("SELECT 1250 AS total, 'USD' AS total_currency, 300 AS refund")
+    let row = renox::db::sql("SELECT CAST(1250 AS BIGINT) AS total, 'USD' AS total_currency, CAST(300 AS BIGINT) AS refund")
         .fetch_as::<Summary>(app.db())
         .await
         .unwrap();
@@ -148,7 +148,7 @@ async fn from_row_reads_money_pairs() {
         }]
     );
     // A set currency with a NULL amount is an error, not a silent `None`.
-    let row = renox::db::sql("SELECT 1250 AS total, 'USD' AS total_currency, NULL AS refund")
+    let row = renox::db::sql("SELECT CAST(1250 AS BIGINT) AS total, 'USD' AS total_currency, CAST(NULL AS BIGINT) AS refund")
         .fetch_as::<Summary>(app.db())
         .await;
     assert!(
