@@ -271,7 +271,7 @@ def package(base, database, binary):
     # The package's migrations ran in the app's database (`rnx migrate`).
     tables = {r[0] for r in sqlite3.connect(database).execute(
         "SELECT name FROM sqlite_master WHERE type = 'table'")}
-    for table in ("invoicing_entries", "invoicing_invoices"):
+    for table in ("invoicing_entries", "invoices"):  # the package's base table and its resource's own table
         if table not in tables:
             sys.exit(f"smoke: the package's table {table} is not in the app's database: {sorted(tables)}")
     print("ok   …and the package's tables are in the app's database")
