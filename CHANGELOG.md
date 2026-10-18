@@ -10,6 +10,184 @@ changes by milestone (each one pull request; details in its description and in
 
 ## Unreleased
 
+Right-to-left pages and Arabic, PDFs, installable and offline apps, and the building blocks a
+business app keeps rebuilding: money, quantities with units, custom fields, state machines,
+gapless numbers, typed settings, outbound webhooks, one-off payments and company sign-in. There
+is one new crate, `renox-pdf` (the eleventh), and every change to the existing ones is
+additive: `cargo semver-checks` against 1.1.1 finds nothing breaking, and 1.1 apps keep
+compiling. Install it with `cargo install renox-cli`, or set `renox = "1.2"` (and
+`renox-pdf = "1.2"` for PDFs).
+
+**Behaviour changes**
+
+- **New framework migrations:** run `migrate` after upgrading. Every app gets
+  `00010101000230_create_import_batches_table` (#50),
+  `00010101000310_create_webhook_endpoints_table` and
+  `00010101000311_create_webhook_deliveries_table` (#38),
+  `00010101000410_create_state_transitions_table` (#39),
+  `00010101000420_create_sequences_table` (#40),
+  `00010101000430_create_custom_fields_table` (#41) and
+  `00010101000440_create_idempotency_keys_table` (#52). Apps with the `Auth` module also get
+  `00010101000008_create_one_time_codes_table` (#42). The opt-in `Settings` module brings
+  `00010101000400_create_settings_table` (#29), and `renox-billing` brings
+  `00010101000910_create_billing_payments` (#44) and
+  `00010101000920_add_gateway_intent_to_billing_payments`. Each has a SQLite file, a
+  PostgreSQL file and a down file.
+- **New environment variables, all optional:** `WEBHOOK_DISABLE_AFTER` (20) and
+  `WEBHOOK_TOLERANCE_SECS` (300) for webhooks (#38); `IDEMPOTENCY_RETENTION_DAYS` (7) for
+  offline forms (#52); `PDF_TIMEOUT` (30) and `PDF_MAX_CONCURRENT` (2) for `renox-pdf` (#30);
+  `BLOCKS_MAP_TILES` and `BLOCKS_MAP_ATTRIBUTION` for the map blocks, which have no default
+  tile server (#47); `MICROSOFT_TENANT` for Microsoft sign-in (#51); and the keys of the
+  N-Genius gateway in `renox-billing`, `NGENIUS_API_KEY`, `NGENIUS_OUTLET_REF` and
+  `NGENIUS_WEBHOOK_SECRET`, where a named account appends its name to each key
+  (`STRIPE_SECRET_ACME_LLC`) (#44). `rnx new` lists them, commented out, in `.env.example`.
+- **`nav()` is a request global (#37):** a template can call `nav("staff")`. A view that
+  passes its own value named `nav` still wins, so existing pages are unaffected.
+- **`app.dir` is available in every view (#28):** `ltr` or `rtl`, from the locale. The
+  framework's own pages write `<html dir="{{ app.dir }}">`; an app's layout should do the
+  same. Nothing changes for left-to-right apps.
+- **The default Permissions-Policy is unchanged (#54):** geolocation and the camera stay off.
+  The geolocation, barcode and camera blocks need the app to allow them with
+  `App::permissions_policy`.
+- **An import's row closure receives `&mut ImportTx` (#50):** it derefs to the transaction, so
+  closures written for `&mut Transaction` compile unchanged.
+- **New layouts use `<rx-shell fill>` (#24):** `rnx new`'s signed-in layout and renox-admin's
+  layout stop the window scrolling on a desktop screen, and each panel scrolls on its own. An
+  app that copied the old layout keeps it.
+- **`renox-pdf` is a dependency of its own (#30):** it is not a feature of `renox` and adds
+  nothing to an app that does not use it.
+- **Dependencies:** `rustls` 0.23.46 (RUSTSEC-2026-0346 to 0349, #26); `calamine` for the
+  `xlsx` feature (#50); a new `images` feature for upload image steps (#43). The map block
+  vendors Leaflet 1.9.4 and the barcode block zxing 0.23.0, each loaded only on a page that
+  uses it.
+
+**Added: pages and the browser**
+
+- **Right-to-left and Arabic (#28):** `i18n::direction` and `Direction`, `App::rtl_locales`
+  (Arabic, Hebrew, Persian, Urdu and the other usual languages by default), `app.dir` in views
+  and mail, Noto Sans Arabic bundled, arrows and chevrons that flip, and logical CSS across the
+  kit, the grid, the blocks and the editors (a lint test keeps it that way).
+  The guide is [docs/ui.md](docs/ui.md#right-to-left).
+- **Installable apps (#33):** `App::pwa(Pwa::new(…))` serves the manifest, a versioned service
+  worker and an offline page; `App::pwa_for` picks a `PwaBrand` per host; `<rx-pwa/>`
+  registers the worker; `rnx make:pwa` writes the offline page, the icons and the call.
+  Navigations are never cached.
+- **Offline forms (#52):** `Routes::offline()` and `offline_with(Skew)` make a route
+  idempotent through an `Idempotency-Key`; the `Offline` extractor gives the handler
+  `recorded_at`, `received_at` and `skew_exceeded`; `<rx-form offline="name">` keeps a failed
+  post in the browser and replays it in order. `rnx idempotency:prune` deletes old keys, and
+  runs daily when the app has such routes.
+- **Brand themes (#36):** `Theme::from_brand(&Brand::new("#1E3A5F").second(…))` makes the
+  accent tokens for light and dark mode from one or two colours, and refuses a brand that
+  fails WCAG contrast with the nearest passing colour (`ContrastError`). `App::theme`, or
+  `App::theme_for` per host or tenant; `<rx-theme/>` links it; `Mail::theme` colours mail
+  buttons and panels, queued mail included.
+- **Menus from modules (#37):** `NavLink` with `App::nav` / `Registry::nav` and `nav_hide`;
+  a link carries `.permission`, `.gate`, `.when`, `.group`, `.order` and a `.badge`.
+  `menu="staff"` on `<rx-sidebar>` and `<rx-nav-links>`, or `nav("staff")` in a template.
+- **Modules contribute to the app (#31):** `Registry::contribute`, read through
+  `Contributions` in `Module::routes_with` or with `AppState::contributions`. renox-admin builds
+  on it: `renox_admin::contribute` adds a resource to a panel from a module, `Admin::named`
+  names a panel and `Admin::only_own_resources` ignores contributions.
+- **Two named admin panels in one app (#70):** each has its own route names and module name.
+- **The dashboard standard (#24):** `<rx-shell fill>` with `rx-fill`, `rx-pane` and `rx-panes`
+  makes a layout whose window does not scroll on a desktop while each panel does.
+- **Blocks, now twenty-one in renox-blocks:** `signature_pad` and `camera_capture` (#53);
+  `rating`, `geolocate` and `barcode_scan` (#54); `status_stepper` and `week_calendar` (#55);
+  `map` and `map_picker` (#47); `receipt` for 80 mm and 58 mm till printers (#48). Each is
+  also a tag (`<rx-signature-pad>`, `<rx-map-picker>`…), posts plain fields or files that
+  `Valid<T>` reads like any others, and works from the keyboard.
+
+**Added: data and business logic**
+
+- **Money (#45):** `renox::money::{Money, Currency, Rounding, Rate}` with exact arithmetic,
+  `allocate`, `convert` and an explicit rounding. `#[model(money)]` stores an amount and its
+  currency in two columns; `Validator::currency` and `money`, `<rx-input type="money">`, the
+  `money` filter, `Column::currency_from` in the grid (a summary per currency) and
+  `Field::currency_from` in the admin.
+- **Quantities with units (#69):** `Quantity<SCALE>` is an exact decimal in one `BIGINT`, and
+  `Units` converts between units without floats. Rules `quantity`, `quantity_min`,
+  `quantity_max` and `unit`, `<rx-input type="quantity">`, the `quantity` filter,
+  `Column::unit_from` and `Field::unit_from`.
+- **Custom fields (#41):** administrators add fields at run time, with no migration.
+  `CustomField` definitions (text, number, date, choice, bool, reference and file) with labels
+  per locale and rules; the values live in one `Json<CustomValues>` column named by
+  `#[model(custom_fields = "extra")]`; typed JSON paths in queries
+  (`Party::EXTRA.json("segment")`, `Query::with_custom_fields`, `json_index`);
+  `<rx-custom-fields>`; `Column::custom_field` in the grid; and forms, lists, filters and a
+  "Custom fields" resource in renox-admin.
+- **Sensitive custom fields (#71):** `CustomField::sensitive()` seals a value with `APP_KEY`,
+  shows `••••••` unless the viewer holds an ability (`reveal_with`), and keeps the field out of
+  sorting, filtering and exports.
+- **State machines (#39):** `impl StateMachine for Order` with `Machine` and `Transition`
+  (guards, permissions, required reasons), `record.transition(name)`, a `state_transitions`
+  history, `#[model(state_machine)]` so `save` cannot change the status, `App::state_machine`,
+  `rnx state:diagram`, `AdminAction::transitions()` and `<rx-transition-actions>`. The guide is
+  [docs/state-machines.md](docs/state-machines.md).
+- **Gapless sequences (#40):** `Sequence::next` numbers invoices and receipts inside the
+  caller's transaction, so a rollback gives the number back; `Period` restarts a series each
+  year or month, `NumberFormat` formats it, and `rnx sequence:list` shows them.
+- **Typed settings in the database (#29):** `SettingsGroup`, the opt-in `Settings` module,
+  `App::settings`, `settings_in_views` and `settings_from`, `AppState::settings` and
+  `save_settings`, the `Setting<T>` extractor, the `SettingsChanged` event,
+  `rnx settings:get|set|list`, `TestApp::with_settings` and `Admin::settings` for an admin
+  page. The guide is [docs/settings.md](docs/settings.md).
+- **Places (#47):** `renox::geo::{Point, Circle, Polygon}` with haversine distance,
+  containment and GeoJSON, and the rules `latitude`, `longitude` and `point`.
+- **Imports beyond CSV (#50):** `Import::xlsx` (the `xlsx` feature) and `Import::from_upload`
+  (CSV or Excel, by content), `template_xlsx`, `.dry_run()`, `.undoable(window)` with
+  `renox::import::undo`, and `rnx import:prune`.
+- **Arabic-aware search (#49):** `#[model(search = "…", normalize = "arabic")]` and the
+  `renox::text` helpers `normalize_arabic`, `transliterate` and `match_key`, on both databases.
+- **Calendar files (#48):** `renox::calendar::{Ics, Event}`, `Mail::attach_ics` and
+  `Download::ics` make invitations and cancellations (RFC 5545).
+
+**Added: web, auth and integrations**
+
+- **Outbound webhooks (#38):** `Endpoint::create` registers a URL and returns its `whsec_`
+  secret once; `emit_in` sends signed Standard Webhooks messages from the queue with retries,
+  and an endpoint is switched off after `WEBHOOK_DISABLE_AFTER` failures in a row
+  (`EndpointDisabled`). `rnx webhook:endpoints`, `webhook:deliveries`, `webhook:redeliver` and
+  `webhook:prune-deliveries`.
+- **Signed requests (#38):** requests from `renox::http` take `.sign(key_id, secret)`, and the
+  `SignedRequest<T>` extractor verifies one, refusing a replay inside `WEBHOOK_TOLERANCE_SECS`.
+- **One-off payments in renox-billing (#44):** `Customer::charge(Charge)`,
+  `Billing::payment_link`, `refund`, `payment_status` and `expire_links` (also the hourly
+  `billing:expire-links` task), disputes, the events `PaymentSucceeded`, `PaymentFailed`,
+  `PaymentRefunded`, `RefundSucceeded`, `DisputeOpened`, `DisputeWon`, `DisputeLost` and
+  `PaymentLinkExpired`, gateway keys resolved per installation, several accounts per gateway
+  (`Charge::account`), and a third gateway, `Billing::ngenius()`.
+- **Passwordless login (#42):** `Auth::magic_link()`, `same_browser()`,
+  `register_on_first_use()` and `login_codes(LoginCodes::new()…)` for codes sent by mail, SMS
+  or WhatsApp; `OneTimeCode` for any other action; `LoggedIn::via` says how someone logged in.
+- **Company sign-in (#51):** the `Microsoft` provider, `Google::hosted_domain` and
+  `OAuth::allow_domains`; a refused account emits `OAuthRefused`.
+- **Upload pipeline (#43):** `App::uploads` runs `UploadStep`s in a `Pipeline` after
+  validation: `ClamAv` scanning and, with the `images` feature, `Images` (size limits,
+  orientation, thumbnails). `Storage::put_encrypted` and `get_decrypted` keep a file sealed
+  with `APP_KEY`.
+- **Rate limits for queued sends (#46):** `App::channel_rate_limit` and
+  `App::mailer_rate_limit` cap how fast queued notifications and mail go to a provider.
+
+**Added: PDFs and tooling**
+
+- **`renox-pdf` (#30):** `Pdf::new()` and `Document` make PDFs from Typst templates compiled
+  in the process (no browser to install), with Inter and Noto Sans Arabic embedded, the
+  `@renox/kit` library, a render pool capped by `PDF_MAX_CONCURRENT` and `PDF_TIMEOUT`,
+  `renox_pdf::testing` and `rnx make:pdf`. The guide is [docs/pdf.md](docs/pdf.md).
+- **`rnx make:package` (#34):** a reusable crate (module, migrations, views, texts and tests)
+  in the workspace, registered in the app.
+- **`rnx new --from` (#35):** starts an app from your own template, a directory or
+  `git+<url>`, with the questions in `renox-template.toml`. Nothing from the template is
+  executed.
+
+**Fixed**
+
+- **#26:** the `cargo-deny` job passes again, with rustls 0.23.46.
+- **#66:** the semver job resolves the yanked `zip` that `calamine` needs.
+- **#19:** the guides say that kit parts have no outer margin and that siblings go in
+  `rx-stack` or `rx-row`.
+
 ## 1.1.1 · 2026-10-14
 
 A patch release with no API changes: the first one published from

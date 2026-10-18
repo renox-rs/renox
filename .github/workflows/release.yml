@@ -1,4 +1,4 @@
-# Publishes the ten crates to crates.io and creates the GitHub release when a
+# Publishes the eleven crates to crates.io and creates the GitHub release when a
 # `v*` tag is pushed (RELEASING.md). No crates.io token is stored: crates.io's
 # Trusted Publishing trusts this repository, this file and the `release`
 # environment, and `crates-io-auth-action` swaps the job's OIDC token for a

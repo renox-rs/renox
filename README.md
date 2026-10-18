@@ -336,6 +336,21 @@ type in Rust, templates or the terminal.
   payment gateways and other services (`impl Webhook`, `.webhook::<W>(path)`):
   signature checks (HMAC, Stripe-style), each event stored and processed once in the queue,
   with `webhook:retry` when something failed.
+- Outbound webhooks, the other direction: your app tells other systems what happened with
+  signed Standard Webhooks messages (`Endpoint::create`, `emit_in`), sent from the queue with
+  retries and switched off for an endpoint that keeps failing. `SignedRequest<T>` verifies a
+  signed request, and `Request::sign` signs yours.
+- Installable apps: `App::pwa(Pwa::new("Bike Shop"))` serves the manifest, a service worker
+  and an offline page (`rnx make:pwa` writes the rest), and `App::pwa_for` brands it per host.
+- One-off payments from `renox-billing`, next to subscriptions: `Customer::charge`,
+  `Billing::payment_link`, refunds, disputes and several accounts per gateway, on Stripe,
+  Xendit and N-Genius, with events such as `PaymentSucceeded` ([guide](docs/billing.md)).
+- Offline forms: `Routes::offline()` makes a route safe to send twice (an `Idempotency-Key`),
+  and `<rx-form offline="stops">` keeps a failed post in the browser and replays it in order
+  when the connection is back.
+- Modules can add to the app they sit in: `Registry::contribute` hands any value to whoever
+  reads it, and menu links (`NavLink`, drawn by `<rx-sidebar menu="staff"/>`) and admin
+  resources (`renox_admin::contribute`) travel that way.
 - Maintenance mode (`my-app down --secret …`) and `/health` are included.
 - Plain and encrypted cookies (`Cookies`, `SetCookie`), downloads and streamed responses
   (`Download`), and `abort(StatusCode::GONE, "…")` for any status with a message.
@@ -395,6 +410,16 @@ type in Rust, templates or the terminal.
   - keyboard support and WCAG AA contrast;
   - toasts (`Toast::success(…)`, with a body, links, a duration and a position) and live
     validation.
+- Right-to-left languages work out of the box: `app.dir` follows the locale (`App::rtl_locales`
+  changes the list), the kit, grid, blocks and editors are written in logical CSS, and Noto
+  Sans Arabic is bundled ([guide](docs/ui.md#right-to-left)).
+- Brand themes: `Theme::from_brand(&Brand::new("#1E3A5F"))` makes the accent colours, light
+  and dark, from one or two brand colours and refuses a pair that fails WCAG contrast;
+  `App::theme_for` picks one per host or tenant, and `Mail::theme` colours the mail too.
+- Blocks beyond the kit (`renox-blocks`, twenty-one tags): a signature pad and camera capture
+  that post ordinary files, rating, geolocation and barcode scanner fields, maps with a
+  point, circle or polygon picker (`<rx-map-picker>`), a status stepper, a week calendar, a
+  kanban board and a till receipt ([guide](docs/blocks.md)).
 - Dashboards without a chart library (`renox::chart`): figures with their change and a
   sparkline, line, area, bar, pie, doughnut, scatter and heatmap charts drawn on the server as
   HTML and SVG
@@ -453,8 +478,25 @@ type in Rust, templates or the terminal.
 - Full-text search over a model's columns, ranked, on both databases (SQLite FTS5, PostgreSQL
   `tsvector`): `#[model(search = "title, body")]`, a migration from
   `renox::db::search::migration::<Post>`, then `Post::search(&q)` with any other filter and
-  pagination; the database keeps the index current, and the data grid's search box uses it
+  pagination; the database keeps the index current, and the data grid's search box uses it.
+  `normalize = "arabic"` ignores marks and spelling variants of Arabic text
   ([guide](docs/search.md)).
+- Money with a currency per record: `Money` is an amount in the smallest unit plus its ISO 4217
+  `Currency`, with exact arithmetic, `allocate` and explicit rounding. `#[model(money)]` stores
+  it in two columns, and the form, grid and admin follow ([guide](docs/types.md)). `Quantity<3>`
+  is an exact decimal with units (`Units` converts kilograms to grams) in one column.
+- Custom fields an administrator adds at run time, with no migration: `CustomField` definitions,
+  values in one JSON column (`#[model(custom_fields = "extra")]`), typed paths in queries,
+  `<rx-custom-fields>`, grid columns and admin forms. A `sensitive` field is sealed with
+  `APP_KEY` and masked for anyone without the ability to see it.
+- State machines for models with a status: states, transitions with guards and permissions,
+  `record.transition("place")`, a history table, a `save` that cannot change the status behind
+  the machine's back, `rnx state:diagram` and `<rx-transition-actions>`
+  ([guide](docs/state-machines.md)).
+- Gapless document numbers (`Sequence::next` inside your transaction, so a rollback gives the
+  number back), typed settings an administrator edits without a deploy (`SettingsGroup`,
+  `Admin::settings`; [guide](docs/settings.md)), and places (`renox::geo::{Point, Circle,
+  Polygon}`) with distance and "inside" checks.
 - For anything else there's raw SQL with `?` placeholders, and transactions that can retry on a
   busy database (`db.transaction_retrying(3, …)`): `renox::db::sql("…").bind(x).fetch_all(&db)`.
 - SQLite is the default. PostgreSQL is one feature flag away, with the same code
@@ -491,6 +533,9 @@ type in Rust, templates or the terminal.
 - API tokens (`Authorization: Bearer`) with abilities and expiry serve mobile apps and
   integrations, and device tokens (`auth::DeviceToken`, the `Device` extractor) serve kiosks
   and tills that belong to a place rather than a person.
+- Passwordless login: `Auth::new().magic_link()` mails a single-use link, and
+  `.login_codes(LoginCodes::new())` sends a code by mail, SMS or WhatsApp. `renox-oauth` adds
+  company sign-in (`Microsoft`, `Google::hosted_domain`, `OAuth::allow_domains`).
 - Policies and gates, the rules for who may do what: `user.authorize("update", &product)?` in
   handlers, `can(...)` in views, `App::gate_before` for super-admins, and an opt-in
   `Permissions` module with roles and permissions (`user.assign_role(db, "editor")`,
@@ -532,6 +577,14 @@ type in Rust, templates or the terminal.
 - Uploads are ordinary form fields, checked by their content. They're stored locally or on S3/R2,
   with signed temporary URLs; `storage.list`, `copy` and `rename` work on both. More disks,
   each with a name (`App::disk("backups", …)`, `state.disk_named("backups")`), sit next to the default.
+- PDFs from Typst templates, made inside your app with no headless browser: add `renox-pdf`,
+  `Pdf::new()` and a `Document`; fonts with Arabic are embedded, and `rnx make:pdf` writes a
+  starter ([guide](docs/pdf.md)).
+- The upload pipeline checks files after validation: `ClamAv` scanning, image limits and
+  thumbnails (`Images`), and files kept encrypted at rest (`Storage::put_encrypted`).
+  Imports read Excel as well as CSV (`Import::from_upload`), with a dry run and an undo.
+- Calendar invitations (`renox::calendar::Ics`, `Mail::attach_ics`) and a queue that respects a
+  provider's throughput cap (`App::channel_rate_limit`, `App::mailer_rate_limit`).
 - The cache keeps results you don't want to work out again (`remember`, `put`, `forget`, `add`,
   `pull`, `increment`). It lives in memory or in the database, with atomic locks
   (`state.cache.lock("stock:42", ttl)`) that hold across servers on the database store.
@@ -579,6 +632,8 @@ rnx make:migration --auto add_sku                 # the SQL that brings the tabl
 rnx db:check && rnx view:check                    # models vs tables, templates vs components and routes
 rnx doctor                                        # what this machine or this app is missing
 rnx route:list                                    # every route with its name, module and guards
+rnx make:package invoicing                        # a reusable crate (module, migrations, views, tests) in the workspace
+rnx new shop --from ../template                   # start from your own template: a directory or git+<url>
 rnx db:shell                                      # SQL prompt, no sqlite3/psql needed
 rnx build && rnx make:deploy                      # dist/blog + Dockerfile, systemd (+ socket), Litestream
 ```
@@ -705,11 +760,13 @@ change on `main`. The landing page and blog are [renox.rs](https://renox.rs) ([`
   [scheduler, events, cache and commands](docs/scheduling.md), [testing](docs/testing.md),
   [relations](docs/relations.md), [full-text search](docs/search.md),
   [authorization and tenants](docs/authorization.md), [two-factor authentication](docs/two-factor.md),
-  [the queue](docs/queue.md), [field types](docs/types.md),
+  [the queue](docs/queue.md), [field types](docs/types.md), [state machines](docs/state-machines.md),
+  [settings in the database](docs/settings.md),
   [PostgreSQL](docs/postgresql.md), [production](docs/operations.md),
   [faster builds](docs/development.md), [stability and versions](docs/stability.md).
 - Plugins: [the admin panel](docs/admin.md), [billing](docs/billing.md),
-  [social login](docs/oauth.md), [editors](docs/editors.md), [UI blocks](docs/blocks.md).
+  [social login](docs/oauth.md), [editors](docs/editors.md), [UI blocks](docs/blocks.md),
+  [PDF documents](docs/pdf.md).
 - [llms.txt](llms.txt): a map of the docs and examples for coding agents.
 - The API reference: [docs.rs/renox](https://docs.rs/renox).
 - [ROADMAP.md](ROADMAP.md) and [CHANGELOG.md](CHANGELOG.md).
