@@ -84,10 +84,6 @@ pub enum Kind {
     /// An amount in the smallest unit (cents, fils), with thousands
     /// separators; filtered like a number.
     Money,
-    /// An exact quantity (`Quantity<S>`, a scaled integer in the database),
-    /// shown with its scale's digits and a unit per row; filtered like a
-    /// number. See [`Column::quantity`].
-    Quantity,
     /// A date (`NaiveDate`); filtered with a date range.
     Date,
     /// A moment (`DateTime`); filtered with a date range.
@@ -106,6 +102,11 @@ pub enum Kind {
     Image,
     /// A CSS color (`#0a7d5a`) shown as a swatch with its code.
     Color,
+    // Variants are only appended: the discriminants are part of the public API.
+    /// An exact quantity (`Quantity<S>`, a scaled integer in the database),
+    /// shown with its scale's digits and a unit per row; filtered like a
+    /// number. See [`Column::quantity`].
+    Quantity,
 }
 
 /// Which edge a frozen column sticks to while the grid scrolls sideways.
