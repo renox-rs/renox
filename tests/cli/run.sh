@@ -501,6 +501,9 @@ done
 cd "$WORK"
 
 step "rnx new --from: clear errors, nothing left behind"
+# Building the apps above ran the template's build.rs (it is app code now), which
+# wrote the marker. From here on, only `rnx new` runs: it must write nothing.
+rm -f "$MARKER"
 # fail_new <expected text> <rnx new args...>: must fail, say the text, make no directory.
 fail_new() {
     local want=$1 out
