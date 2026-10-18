@@ -779,3 +779,131 @@ mod tag {
         app.assert_views_compile();
     }
 }
+
+// Masking of sensitive values in `<rx-custom-fields>` (fake test values only).
+mod masking {
+    use std::collections::BTreeMap;
+
+    use renox::custom_fields::{CustomField, CustomValues, SEALED_PREFIX};
+    use renox::prelude::*;
+    use renox::testing::TestApp;
+    use serde_json::json;
+
+    struct Pages;
+
+    impl Module for Pages {
+        fn name(&self) -> &'static str {
+            "masking-pages"
+        }
+
+        fn routes(&self) -> Routes {
+            Routes::new().get(
+                "/party/{mode}",
+                |State(state): State<AppState>,
+                 viewer: Option<AuthUser>,
+                 Path(mode): Path<String>| async move {
+                    let fields =
+                        CustomField::views_for(&state.db, "parties", "en", viewer.as_ref()).await?;
+                    let input = json!({"tax_id": "TX-9981", "nick": "ana", "level": "gold"});
+                    let mut stored = CustomValues::validate(
+                        &state,
+                        "parties",
+                        "extra",
+                        input.as_object().unwrap(),
+                        &BTreeMap::new(),
+                        "en",
+                    )
+                    .await?
+                    .unwrap();
+                    if mode == "broken" {
+                        stored.set("tax_id", format!("{SEALED_PREFIX}garbled"));
+                    }
+                    let extra = stored.shown(&state.db, &fields);
+                    // The context never holds a masked plain value.
+                    let context_text = serde_json::to_string(&extra).unwrap();
+                    if fields.iter().any(|f| f.key == "tax_id" && f.masked) {
+                        assert!(!context_text.contains("TX-9981"), "{context_text}");
+                    }
+                    Ok::<_, renox::Error>(view("party.html", context! { fields, extra }))
+                },
+            )
+        }
+    }
+
+    #[renox::test]
+    async fn sensitive_values_are_masked_unless_the_viewer_holds_the_ability() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("party.html"),
+            r#"<rx-custom-fields :fields="fields" :values="extra"/>
+<hr>
+<rx-custom-fields :fields="fields" :values="extra" mode="show"/>"#,
+        )
+        .unwrap();
+        let path = dir.path().to_path_buf();
+        let app = TestApp::with_config(
+            App::new()
+                .module(Auth::new())
+                .gate("custom_fields.reveal", |u| u.email.starts_with("hr@"))
+                .gate("see-level", |u| u.email.starts_with("lvl@"))
+                .module(Pages),
+            move |c| c.views_path = path,
+        )
+        .await;
+        let db = app.db();
+        CustomField::text("parties", "tax_id")
+            .label("Tax id")
+            .sensitive()
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::text("parties", "nick")
+            .label("Nick")
+            .position(1)
+            .save(db)
+            .await
+            .unwrap();
+        CustomField::choice("parties", "level")
+            .label("Level")
+            .options(&["gold", "silver"])
+            .reveal_with("see-level")
+            .position(2)
+            .save(db)
+            .await
+            .unwrap();
+
+        // No viewer: masked, and the form never carries the stored value.
+        let page = app.get("/party/ok").await.assert_ok().text();
+        assert!(page.contains("••••••"), "{page}");
+        assert!(!page.contains("TX-9981"), "{page}");
+        // `gold` is an option (value and text) of the form's select, nothing else.
+        assert_eq!(page.matches("gold").count(), 2, "{page}");
+        assert!(!page.contains("rx-sealed"), "{page}");
+        assert!(page.contains("ana"), "{page}");
+        assert!(page.contains(r#"placeholder="unchanged""#), "{page}");
+
+        // The app-wide ability shows the field that names none.
+        let hr = User::register(db, "HR", "hr@example.com", "password123")
+            .await
+            .unwrap();
+        app.acting_as(&hr);
+        let page = app.get("/party/ok").await.assert_ok().text();
+        assert_eq!(page.matches("TX-9981").count(), 1, "{page}"); // the entry only
+        assert_eq!(page.matches("gold").count(), 2, "{page}"); // its own ability is missing
+        assert!(!page.contains(r#"value="TX-9981""#), "{page}");
+
+        let lvl = User::register(db, "Lvl", "lvl@example.com", "password123")
+            .await
+            .unwrap();
+        app.acting_as(&lvl);
+        let page = app.get("/party/ok").await.assert_ok().text();
+        assert_eq!(page.matches("gold").count(), 3, "{page}");
+        assert!(!page.contains("TX-9981"), "{page}");
+
+        // A sealed value that cannot be opened: `unreadable`, never an error.
+        app.acting_as(&hr);
+        let page = app.get("/party/broken").await.assert_ok().text();
+        assert!(page.contains("unreadable"), "{page}");
+        assert!(!page.contains("garbled"), "{page}");
+    }
+}

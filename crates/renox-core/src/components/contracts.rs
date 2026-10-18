@@ -1114,7 +1114,7 @@ pub(crate) static BUILTIN: &[Contract] = &[
             data(
                 "fields",
                 true,
-                "The list from `CustomField::views(&db, \"parties\", locale)`.",
+                "The list from `CustomField::views_for(&db, \"parties\", locale, auth.as_ref())` (`views` without a viewer masks sensitive fields).",
             ),
             text(
                 "name",
@@ -1124,7 +1124,7 @@ pub(crate) static BUILTIN: &[Contract] = &[
             data(
                 "values",
                 false,
-                "The record's custom values (`party.extra`).",
+                "The record's custom values (`party.extra.shown(&db, &fields)` so masked values stay out of the context).",
             ),
             choice(
                 "mode",

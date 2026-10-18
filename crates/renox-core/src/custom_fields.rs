@@ -52,7 +52,19 @@ use std::sync::{Arc, Mutex};
 
 mod values;
 
+pub(crate) use values::open_stored;
 pub use values::{CustomValues, Opened, SEALED_PREFIX, is_sealed};
+
+use crate::auth::AuthUser;
+
+/// What a sensitive value shows as for a viewer without the ability
+/// (a constant: neither the length nor a part of the value).
+pub const MASK: &str = "••••••";
+
+/// The app-wide ability (a gate or permission name) that lets a viewer see
+/// sensitive custom field values, unless the definition names its own
+/// ([`CustomField::reveal_with`]).
+pub const REVEAL_ABILITY: &str = "custom_fields.reveal";
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -280,6 +292,11 @@ pub struct FieldView {
     pub target: Option<String>,
     /// The definition's free `meta` JSON.
     pub meta: Value,
+    /// The value is sealed in the database (see [`CustomField::sensitive`]).
+    pub sensitive: bool,
+    /// A sensitive value the viewer may not see: show [`MASK`], never the
+    /// value. Always false for a field that is not sensitive.
+    pub masked: bool,
 }
 
 /// Whether `key` is a valid custom field key: `[a-z][a-z0-9_]*`, at most 64
@@ -471,7 +488,7 @@ impl CustomField {
 
     /// The definition as a template reads it: the label and option labels
     /// already resolved for `locale` (then `fallback`, then the key).
-    fn view(&self, locale: &str, fallback: &str) -> FieldView {
+    fn view(&self, locale: &str, fallback: &str, viewer: Option<&AuthUser>) -> FieldView {
         let options: Vec<(String, String)> = self
             .rules
             .options
@@ -492,7 +509,31 @@ impl CustomField {
             options,
             target: self.rules.target.clone(),
             meta: self.meta.clone(),
+            sensitive: self.rules.sensitive,
+            masked: !self.can_reveal(viewer),
         }
+    }
+
+    /// Whether `viewer` may see this field's value: always for a field that is
+    /// not sensitive; else when the viewer passes the definition's own
+    /// [`reveal_with`](CustomField::reveal_with) ability or, when it has none,
+    /// the app-wide [`REVEAL_ABILITY`] (checked with `AuthUser::allows`, so
+    /// an undeclared name denies). No viewer means no.
+    ///
+    /// ```
+    /// use renox::custom_fields::CustomField;
+    ///
+    /// let open = CustomField::text("parties", "segment");
+    /// assert!(open.can_reveal(None));
+    /// let secret = CustomField::text("parties", "tax_id").sensitive();
+    /// assert!(!secret.can_reveal(None));
+    /// ```
+    pub fn can_reveal(&self, viewer: Option<&AuthUser>) -> bool {
+        if !self.rules.sensitive {
+            return true;
+        }
+        let ability = self.rules.reveal.as_deref().unwrap_or(REVEAL_ABILITY);
+        viewer.is_some_and(|auth| auth.allows(ability))
     }
 
     /// The active definitions of `model` as the list `<rx-custom-fields
@@ -508,11 +549,38 @@ impl CustomField {
     /// # let _ = fields;
     /// # Ok(()) }
     /// ```
+    ///
+    /// Without a viewer every sensitive field is `masked`; use
+    /// [`views_for`](CustomField::views_for) to let the viewer's ability
+    /// decide.
     pub async fn views(db: &Db, model: &str, locale: &str) -> Result<Vec<FieldView>> {
+        Self::views_for(db, model, locale, None).await
+    }
+
+    /// Like [`views`](CustomField::views), with each sensitive field `masked`
+    /// unless `viewer` holds its reveal ability (see
+    /// [`can_reveal`](CustomField::can_reveal)). Pair it with
+    /// [`CustomValues::shown`], which drops the values a viewer may not see
+    /// from the context.
+    ///
+    /// ```
+    /// use renox::custom_fields::CustomField;
+    ///
+    /// # async fn demo(db: renox::db::Db, auth: Option<renox::prelude::AuthUser>) -> renox::Result<()> {
+    /// let fields = CustomField::views_for(&db, "parties", "en", auth.as_ref()).await?;
+    /// # let _ = fields;
+    /// # Ok(()) }
+    /// ```
+    pub async fn views_for(
+        db: &Db,
+        model: &str,
+        locale: &str,
+        viewer: Option<&AuthUser>,
+    ) -> Result<Vec<FieldView>> {
         let fields = Self::for_model(db, model).await?;
         Ok(fields
             .iter()
-            .map(|f| f.view(locale, DEFAULT_LABEL_LOCALE))
+            .map(|f| f.view(locale, DEFAULT_LABEL_LOCALE, viewer))
             .collect())
     }
 

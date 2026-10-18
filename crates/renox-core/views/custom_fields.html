@@ -3,7 +3,11 @@
     mode="form": one input per field, named `{name}[{key}]` (so the errors
     and the refill after a failed submit find it); mode="show": one entry
     per field. `values` is the record's `CustomValues`. A file field needs
-    a form that posts `multipart/form-data`. -#}
+    a form that posts `multipart/form-data`. A sensitive field (`f.sensitive`)
+    is an empty input with an "unchanged" placeholder in a form, and shows
+    `••••••` as an entry unless the viewer holds the ability (`f.masked`;
+    build `fields` with `CustomField::views_for` and `values` with
+    `CustomValues::shown`). -#}
 {%- from "renox/ui.html" import input, select, checkbox, file, entry %}
 {% macro custom_fields(fields, name="extra", values=none, mode="form", id=none) -%}
 <div class="rx-custom-fields"{% if id %} id="{{ id }}"{% endif %} data-rx-custom-fields>
@@ -11,9 +15,16 @@
   {%- set field_name = name ~ "[" ~ f.key ~ "]" %}
   {%- set value = values[f.key] if values and values[f.key] is defined else none %}
   {%- if mode == "show" %}
-    {%- if f.kind == "bool" %}{{ entry(f.label, value if value is not none else false, format="bool") }}
+    {%- if (f.sensitive and f.masked) or (value is string and value[:12] == "rx-sealed:1:") %}{{ entry(f.label, "••••••") }}
+    {%- elif value is mapping and value.unreadable %}{{ entry(f.label, "unreadable") }}
+    {%- elif f.kind == "bool" %}{{ entry(f.label, value if value is not none else false, format="bool") }}
     {%- elif f.kind == "choice" %}{{ entry(f.label, value, labels=f.labels) }}
     {%- else %}{{ entry(f.label, value) }}{% endif %}
+  {#- A sensitive field never shows its stored value; a blank submit keeps it. -#}
+  {%- elif f.sensitive and f.kind == "choice" %}{{ select(field_name, f.label, f.options, selected=none, placeholder="unchanged") }}
+  {%- elif f.sensitive and f.kind == "bool" %}{{ select(field_name, f.label, [("true", "Yes"), ("false", "No")], selected=none, placeholder="unchanged") }}
+  {%- elif f.sensitive and f.kind == "date" %}{{ input(field_name, f.label, type="date", hint="Leave empty to keep the stored value.") }}
+  {%- elif f.sensitive %}{{ input(field_name, f.label, type="password", placeholder="unchanged", autocomplete="new-password") }}
   {%- elif f.kind == "bool" %}{{ checkbox(field_name, f.label, checked=(value == true), value="true") }}
   {%- elif f.kind == "choice" %}{{ select(field_name, f.label, f.options, selected=value, required=f.required, placeholder="") }}
   {%- elif f.kind == "file" %}{{ file(field_name, f.label, required=f.required, current=value) }}

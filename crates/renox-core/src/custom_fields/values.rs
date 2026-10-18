@@ -61,6 +61,18 @@ fn seal_value(db: &Db, plain: &Value) -> Result<Value> {
     Ok(Value::String(format!("{SEALED_PREFIX}{token}")))
 }
 
+/// A stored value, opened if it is sealed (see [`CustomValues::open`]).
+pub(crate) fn open_stored(db: &Db, value: &Value) -> Opened {
+    let Some(token) = value.as_str().and_then(|s| s.strip_prefix(SEALED_PREFIX)) else {
+        return Opened::Value(value.clone());
+    };
+    let opened = db
+        .seal_key()
+        .and_then(|k| crate::db::encrypted::open(k, token))
+        .and_then(|json| serde_json::from_str(&json).ok());
+    opened.map_or(Opened::Unreadable, Opened::Value)
+}
+
 /// The custom field values of one record, by field key: the type of a
 /// `Json<CustomValues>` column. Serializes as the plain JSON object.
 ///
@@ -105,15 +117,43 @@ impl CustomValues {
     /// # }
     /// ```
     pub fn open(&self, db: &Db, key: &str) -> Option<Opened> {
-        let value = self.0.get(key)?;
-        let Some(token) = value.as_str().and_then(|s| s.strip_prefix(SEALED_PREFIX)) else {
-            return Some(Opened::Value(value.clone()));
-        };
-        let opened = db
-            .seal_key()
-            .and_then(|k| crate::db::encrypted::open(k, token))
-            .and_then(|json| serde_json::from_str(&json).ok());
-        Some(opened.map_or(Opened::Unreadable, Opened::Value))
+        self.0.get(key).map(|value| open_stored(db, value))
+    }
+
+    /// The values as a template should get them (`<rx-custom-fields
+    /// :values="…">`) for the `fields` of [`CustomField::views_for`]: the
+    /// value of a masked sensitive field is left out, so the plain text never
+    /// reaches the context; one the viewer may see is opened (an unopenable
+    /// one becomes `{"unreadable": true}`); the others stay as stored.
+    ///
+    /// ```
+    /// use renox::custom_fields::{CustomField, CustomValues};
+    ///
+    /// # async fn demo(db: renox::db::Db, auth: Option<renox::prelude::AuthUser>, values: CustomValues) -> renox::Result<()> {
+    /// let fields = CustomField::views_for(&db, "parties", "en", auth.as_ref()).await?;
+    /// let shown = values.shown(&db, &fields);
+    /// # let _ = shown;
+    /// # Ok(()) }
+    /// ```
+    pub fn shown(&self, db: &Db, fields: &[super::FieldView]) -> CustomValues {
+        let mut out = self.clone();
+        for field in fields.iter().filter(|f| f.sensitive) {
+            if field.masked {
+                out.0.remove(&field.key);
+                continue;
+            }
+            match self.open(db, &field.key) {
+                Some(Opened::Value(plain)) => {
+                    out.0.insert(field.key.clone(), plain);
+                }
+                Some(Opened::Unreadable) => {
+                    out.0
+                        .insert(field.key.clone(), serde_json::json!({"unreadable": true}));
+                }
+                None => {}
+            }
+        }
+        out
     }
 
     /// Removes the value stored under `key`.

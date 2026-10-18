@@ -175,6 +175,10 @@ pub struct Column {
     custom: Option<(String, String)>,
     /// A value from another table: SQL with `{T}` for this model's table.
     expr: Option<String>,
+    /// A sensitive custom field: its cells are sealed text, shown masked
+    /// unless the viewer holds the ability (`reveal`, else the app-wide one).
+    sensitive: bool,
+    reveal: Option<String>,
 }
 
 impl Column {
@@ -211,6 +215,8 @@ impl Column {
             scale: 0,
             custom: None,
             expr: None,
+            sensitive: false,
+            reveal: None,
         }
     }
 
@@ -1069,6 +1075,8 @@ impl Grid {
                 c.sortable = false;
                 c.filterable = false;
                 c.searchable = false;
+                c.sensitive = true;
+                c.reveal = field.rules.reveal.clone();
                 if names_column(&request.params, &c.key) {
                     sealed.get_or_insert(key.clone());
                 }
@@ -1079,6 +1087,8 @@ impl Grid {
                 Dialect::Postgres => format!("({{T}}.\"{column}\"::jsonb ->> '{key}')"),
             };
             c.kind = match field.kind {
+                // The cells are sealed text, whatever the field holds.
+                _ if field.rules.sensitive => Kind::Text,
                 FieldKind::Number => Kind::Number,
                 FieldKind::Date => Kind::Date,
                 FieldKind::Bool => Kind::Select,
@@ -1086,6 +1096,7 @@ impl Grid {
                 _ => Kind::Text,
             };
             c.options = match field.kind {
+                _ if field.rules.sensitive => Vec::new(),
                 FieldKind::Bool => {
                     vec![("true".into(), "Yes".into()), ("false".into(), "No".into())]
                 }
@@ -1101,6 +1112,7 @@ impl Grid {
                 _ => Vec::new(),
             };
             c.expr = Some(match (field.kind, dialect) {
+                _ if field.rules.sensitive => text,
                 // Booleans are compared and shown as `true` / `false`.
                 (FieldKind::Bool, Dialect::Sqlite) => {
                     format!("CASE {text} WHEN 1 THEN 'true' WHEN 0 THEN 'false' END")
@@ -1136,7 +1148,8 @@ impl Grid {
         let rows = query
             .paginate(&request.db, state.page, state.per_page)
             .await?;
-        let related = self.related_values(&request.db, &rows.items).await?;
+        let mut related = self.related_values(&request.db, &rows.items).await?;
+        self.unseal_custom(request, &mut related);
         let summaries = self.summarize(&unsorted, &request.db, None).await?;
         let group_summaries = match &state.group {
             Some(group) if self.find(group).is_some() => {
@@ -1373,6 +1386,39 @@ impl Grid {
             }
         }
         Ok(out)
+    }
+
+    /// Whether the request's viewer may see the values of `column`: always for
+    /// a column that is not a sensitive custom field.
+    pub(super) fn may_see(&self, column: &Column, request: &GridRequest) -> bool {
+        !column.sensitive || request.can_reveal(column.reveal.as_deref())
+    }
+
+    /// Replaces the sealed cells of the sensitive custom columns: the plain
+    /// value for a viewer with the ability (`unreadable` when `APP_KEY`
+    /// changed), the mask for everyone else.
+    pub(super) fn unseal_custom(&self, request: &GridRequest, rows: &mut [Map<String, Value>]) {
+        use crate::custom_fields::{MASK, Opened, open_stored};
+        for column in self.columns.iter().filter(|c| c.sensitive) {
+            let allowed = self.may_see(column, request);
+            for row in rows.iter_mut() {
+                let Some(cell) = row.get_mut(&column.key) else {
+                    continue;
+                };
+                if cell.is_null() {
+                    continue;
+                }
+                *cell = if !allowed {
+                    Value::from(MASK)
+                } else {
+                    match open_stored(&request.db, cell) {
+                        Opened::Unreadable => Value::from("unreadable"),
+                        Opened::Value(Value::String(text)) => Value::from(text),
+                        Opened::Value(other) => Value::from(other.to_string()),
+                    }
+                };
+            }
+        }
     }
 
     /// `query` with the request's filters applied (also used by `page`):
@@ -1854,6 +1900,7 @@ struct State_ {
 fn names_column(params: &[(String, String)], key: &str) -> bool {
     params.iter().any(|(name, value)| match name.as_str() {
         "sort" => value.trim().trim_start_matches('-') == key,
+        "group" => value.trim() == key,
         _ if name.starts_with("r.") && name.ends_with(".c") => value.trim() == key,
         _ => name
             .split_once('.')
@@ -2289,6 +2336,8 @@ pub struct GridRequest {
     db: Db,
     session: Option<Session>,
     user_id: Option<i64>,
+    /// The logged-in user, for the ability that reveals sensitive custom fields.
+    viewer: Option<AuthUser>,
     lang: Option<crate::Lang>,
     zone: crate::timezone::Zone,
     /// `APP_CURRENCY`'s usual decimals: money is stored in its smallest unit.
@@ -2308,12 +2357,28 @@ impl GridRequest {
             db: db.clone(),
             session: None,
             user_id: None,
+            viewer: None,
             lang: None,
             zone: crate::timezone::Zone::UTC,
             money_decimals: crate::view_filters::currency_decimals(
                 &crate::Config::default().currency,
             ),
         }
+    }
+
+    /// The same request for `viewer`, whose abilities decide whether a
+    /// sensitive custom field shows its values (for tests and commands; the
+    /// extractor takes the logged-in user).
+    pub fn viewed_by(mut self, viewer: AuthUser) -> Self {
+        self.user_id = Some(viewer.id);
+        self.viewer = Some(viewer);
+        self
+    }
+
+    /// Whether the viewer holds `ability`, else the app-wide reveal ability.
+    fn can_reveal(&self, ability: Option<&str>) -> bool {
+        let ability = ability.unwrap_or(crate::custom_fields::REVEAL_ABILITY);
+        self.viewer.as_ref().is_some_and(|v| v.allows(ability))
     }
 
     /// The query string's value for `name`, if any.
@@ -2363,7 +2428,8 @@ impl<S: Send + Sync> FromRequestParts<S> for GridRequest {
             path,
             db: app.db.clone(),
             session,
-            user_id: user.map(|u| u.id),
+            user_id: user.as_ref().map(|u| u.id),
+            viewer: user,
             lang,
             zone: app.config.timezone,
             money_decimals: crate::view_filters::currency_decimals(&app.config.currency),

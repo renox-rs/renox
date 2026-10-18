@@ -174,8 +174,8 @@ async fn numbering(State(db): State<Db>) -> Result<String> {
 }
 
 /// Custom field definitions: every `CustomField` call, inside a routed handler.
-async fn custom_field_defs(State(db): State<Db>) -> Result<String> {
-    use renox::custom_fields::CustomField;
+async fn custom_field_defs(State(db): State<Db>, viewer: Option<AuthUser>) -> Result<String> {
+    use renox::custom_fields::{CustomField, CustomValues};
     let saved = CustomField::text("parties", "passport_no")
         .label("Passport no.")
         .save(&db)
@@ -185,8 +185,10 @@ async fn custom_field_defs(State(db): State<Db>) -> Result<String> {
     CustomField::deactivate(&db, saved.id).await?;
     CustomField::activate(&db, saved.id).await?;
     let all = CustomField::all_for_model(&db, "parties").await?.len();
+    let views = CustomField::views_for(&db, "parties", "en", viewer.as_ref()).await?;
+    let shown = CustomValues::default().shown(&db, &views).is_empty();
     CustomField::delete(&db, saved.id).await?;
-    Ok(format!("{found} {active} {all}"))
+    Ok(format!("{found} {active} {all} {shown}"))
 }
 
 /// Custom field values: `CustomValues::validate`, inside a routed handler.

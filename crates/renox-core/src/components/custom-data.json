@@ -1324,7 +1324,7 @@
     {
       "attributes": [
         {
-          "description": "(required) The list from `CustomField::views(&db, \"parties\", locale)`.",
+          "description": "(required) The list from `CustomField::views_for(&db, \"parties\", locale, auth.as_ref())` (`views` without a viewer masks sensitive fields).",
           "name": ":fields",
           "values": []
         },
@@ -1334,7 +1334,7 @@
           "values": []
         },
         {
-          "description": "The record's custom values (`party.extra`).",
+          "description": "The record's custom values (`party.extra.shown(&db, &fields)` so masked values stay out of the context).",
           "name": ":values",
           "values": []
         },

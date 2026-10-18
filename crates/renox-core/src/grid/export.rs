@@ -56,7 +56,10 @@ impl Grid {
     /// ```
     ///
     /// Custom columns are left out, and so are the columns the user hid on
-    /// wide screens. Up to [`MAX_EXPORT_ROWS`] rows.
+    /// wide screens. A sensitive custom field's column (see
+    /// [`CustomField::sensitive`](crate::custom_fields::CustomField::sensitive))
+    /// is left out too unless the viewer holds its reveal ability, in which
+    /// case it holds the plain values. Up to [`MAX_EXPORT_ROWS`] rows.
     pub async fn export<M: Model + Serialize>(
         &self,
         query: Query<M>,
@@ -80,7 +83,9 @@ impl Grid {
         let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&prefs)
             .into_iter()
-            .filter(|(c, _)| c.kind != Kind::Custom && wide.contains(&c.key))
+            .filter(|(c, _)| {
+                c.kind != Kind::Custom && wide.contains(&c.key) && this.may_see(c, request)
+            })
             .collect();
         let query = this.filter(query, request);
         this.file(&columns, query, format, request).await.map(Some)
@@ -119,7 +124,9 @@ impl Grid {
         let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&GridPrefs::default())
             .into_iter()
-            .filter(|(c, _)| c.kind != Kind::Custom && shown.contains(&c.key))
+            .filter(|(c, _)| {
+                c.kind != Kind::Custom && shown.contains(&c.key) && this.may_see(c, request)
+            })
             .collect();
         this.file(&columns, query, format, request).await
     }
@@ -132,7 +139,8 @@ impl Grid {
         request: &GridRequest,
     ) -> Result<Vec<Map<String, Value>>> {
         let items = query.limit(MAX_EXPORT_ROWS).get(&request.db).await?;
-        let related = self.related_values(&request.db, &items).await?;
+        let mut related = self.related_values(&request.db, &items).await?;
+        self.unseal_custom(request, &mut related);
         Ok(items
             .iter()
             .zip(related)

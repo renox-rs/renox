@@ -2135,6 +2135,7 @@ fn parties_grid() -> Grid {
         .column(Column::custom_field("extra", "age"))
         .column(Column::custom_field("extra", "gone"))
         .column(Column::custom_field("extra", "tax").searchable())
+        .column(Column::custom_field("extra", "pay"))
         .sort_by("name")
         .exports()
 }
@@ -2254,4 +2255,97 @@ async fn a_sensitive_custom_column_cannot_be_sorted_filtered_or_searched() {
     app.get("/parties?min.extra_age=1&search=x")
         .await
         .assert_ok();
+}
+
+#[renox::test]
+async fn sensitive_custom_columns_are_masked_and_exported_only_with_the_ability() {
+    use renox::custom_fields::{CustomField, CustomValues};
+    use renox::db::{Json, sql};
+    use std::collections::BTreeMap;
+    let (_, views) = app().await; // for its views
+    let app = TestApp::with_config(
+        App::new()
+            .migrations(&[GRID_PARTIES])
+            .module(Auth::new())
+            .gate("custom_fields.reveal", |u| u.email.starts_with("hr@"))
+            .gate("see-pay", |u| u.email.starts_with("pay@"))
+            .module(Crm),
+        |c| c.views_path = views.path().to_path_buf(),
+    )
+    .await;
+    let db = app.db();
+    CustomField::text("grid_parties", "tax")
+        .label("Tax")
+        .sensitive()
+        .save(db)
+        .await
+        .unwrap();
+    CustomField::number("grid_parties", "pay")
+        .label("Pay")
+        .reveal_with("see-pay")
+        .save(db)
+        .await
+        .unwrap();
+    let input = serde_json::json!({"tax": "TX-4417", "pay": "5200"});
+    let extra = CustomValues::validate(
+        app.state(),
+        "grid_parties",
+        "extra",
+        input.as_object().unwrap(),
+        &BTreeMap::new(),
+        "en",
+    )
+    .await
+    .unwrap()
+    .unwrap();
+    sql("INSERT INTO grid_parties (name, extra) VALUES (?, ?)")
+        .bind("Ana")
+        .bind(Json(extra))
+        .execute(db)
+        .await
+        .unwrap();
+
+    let masked = |html: &str| {
+        assert!(
+            !html.contains("TX-4417") && !html.contains("5200"),
+            "{html}"
+        );
+        assert!(!html.contains("rx-sealed"), "{html}");
+    };
+    // A guest sees the mask, and the exports leave the columns out.
+    let html = app.get("/parties").await.text();
+    masked(&html);
+    assert_eq!(cells(&html, "extra_tax"), ["••••••"], "{html}");
+    let csv = app.get("/parties?export=csv").await.text();
+    masked(&csv);
+    assert!(!csv.contains("Tax") && !csv.contains("Pay"), "{csv}");
+    let print = app.get("/parties?export=print").await.text();
+    masked(&print);
+    assert!(!print.contains("Tax"), "{print}");
+
+    // The app-wide ability reveals a field without its own; a field with
+    // its own ability needs that one.
+    let hr = User::register(db, "HR", "hr@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&hr);
+    let html = app.get("/parties").await.text();
+    assert_eq!(cells(&html, "extra_tax"), ["TX-4417"], "{html}");
+    assert_eq!(cells(&html, "extra_pay"), ["••••••"], "{html}");
+    let csv = app.get("/parties?export=csv").await.text();
+    assert!(csv.contains("Tax") && csv.contains("TX-4417"), "{csv}");
+    assert!(!csv.contains("5200"), "{csv}");
+    let print = app.get("/parties?export=print").await.text();
+    assert!(print.contains("TX-4417"), "{print}");
+
+    let pay = User::register(db, "Pay", "pay@example.com", "password123")
+        .await
+        .unwrap();
+    app.acting_as(&pay);
+    let html = app.get("/parties").await.text();
+    assert_eq!(cells(&html, "extra_tax"), ["••••••"], "{html}");
+    assert_eq!(cells(&html, "extra_pay"), ["5200"], "{html}");
+    let csv = app.get("/parties?export=csv").await.text();
+    assert!(csv.contains("Pay") && csv.contains("5200"), "{csv}");
+    assert!(!csv.contains("Tax") && !csv.contains("TX-4417"), "{csv}");
 }
