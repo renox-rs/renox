@@ -36,8 +36,8 @@ Add the crate next to `renox`, at the same version:
 
 ```toml
 [dependencies]
-renox = "1.1"
-renox-2fa = "1.1"
+renox = "1.2"
+renox-2fa = "1.2"
 ```
 
 Then add the module, next to the `Auth` module with its account page:

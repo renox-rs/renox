@@ -140,7 +140,7 @@ pages. Run `cargo test`, `rnx db:check` and `rnx view:check` after changes.
    instead of fetching or guessing:
 
    ```bash
-   git clone --depth 1 --branch v1.1.1 https://github.com/renox-rs/renox ~/src/renox
+   git clone --depth 1 --branch v1.2.0 https://github.com/renox-rs/renox ~/src/renox
    claude --add-dir ~/src/renox     # or, inside a session: /add-dir ~/src/renox
    ```
 
@@ -773,9 +773,9 @@ change on `main`. The landing page and blog are [renox.rs](https://renox.rs) ([`
 
 ## Status
 
-Renox **1.1.1** is on crates.io: `renox`, `renox-core`, `renox-macros`, `renox-cli`, and the
-plugins `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin` and
-`renox-billing`. It follows semver ([docs/stability.md](docs/stability.md)): a 1.x release only
+Renox **1.2.0** is on crates.io: `renox`, `renox-core`, `renox-macros`, `renox-cli`, and the
+plugins `renox-2fa`, `renox-editors`, `renox-blocks`, `renox-oauth`, `renox-admin`,
+`renox-billing` and `renox-pdf`. It follows semver ([docs/stability.md](docs/stability.md)): a 1.x release only
 adds, so 1.0 apps keep compiling.
 
 - **1.0** brought the API audit with semver checks in CI, the documentation site with the
@@ -784,6 +784,10 @@ adds, so 1.0 apps keep compiling.
 - **1.1** made `rx-*` tags the way to write pages, and added live components, typed columns,
   `#[model(form)]`, migrations generated from models, `db:check`, `view:check`, typed view
   contexts, editor autocomplete and `rnx doctor`, plus what the bike shop had to work around.
+- **1.2** added right-to-left layouts and Arabic, PDFs from Typst templates (`renox-pdf`),
+  installable apps, brand themes, module-contributed admin resources and navigation, outbound
+  webhooks, state machines, run-time custom fields, one-off payments in `renox-billing`, money
+  with a currency and decimal quantities, map and field blocks, and offline forms.
 - The [Laravel parity review](docs/audit/2026-10-laravel-parity.md) compares Renox with Laravel
   and Filament feature by feature, as of October 2026.
 
