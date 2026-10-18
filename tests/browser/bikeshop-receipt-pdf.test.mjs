@@ -114,7 +114,8 @@ describe('the rental receipt as a PDF', () => {
       assert.equal(file.head, '%PDF-', 'the body is a PDF');
       assert.ok(file.size > 1000, 'a real document');
       assert.ok(file.disposition.includes(`receipt-${code}.pdf`), file.disposition);
-      page.assertClean();
+      // The one 404 is the early fetch above, which the test asks for.
+      page.assertClean({ allow: [/404/] });
     }));
 
   test("a customer can't fetch the staff link", () =>
