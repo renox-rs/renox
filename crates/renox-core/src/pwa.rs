@@ -596,14 +596,31 @@ impl Pwa {
         precache: &[String],
         brand_hash: &str,
     ) -> anyhow::Result<PwaAssets> {
+        self.assets_with(render, precache, brand_hash, None)
+    }
+
+    /// [`Pwa::assets`], reading an icon from the compiled-in `public` files
+    /// (`renox::embedded!()`, used when `APP_DEBUG` is off) when it is not on
+    /// disk: a deployed binary has no `public` folder next to it.
+    pub(crate) fn assets_with(
+        &self,
+        render: impl Fn(&str) -> anyhow::Result<String>,
+        precache: &[String],
+        brand_hash: &str,
+        public: Option<&'static [(&'static str, &'static [u8])]>,
+    ) -> anyhow::Result<PwaAssets> {
         let dir = self.icons.as_deref().context(
             "PWA icons are not set: call Pwa::icons(dir) with icon-192.png, icon-512.png and icon-maskable-512.png",
         )?;
         let mut icons = BTreeMap::new();
         for (file, _, _) in ICON_FILES {
             let path = dir.join(file);
-            let bytes = std::fs::read(&path)
-                .with_context(|| format!("PWA icon {} is missing or unreadable", path.display()))?;
+            let bytes = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                Err(err) => embedded_icon(public, &path).ok_or(err).with_context(|| {
+                    format!("PWA icon {} is missing or unreadable", path.display())
+                })?,
+            };
             if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
                 bail!("PWA icon {} is not a PNG file", path.display());
             }
@@ -622,6 +639,22 @@ impl Pwa {
             version,
         })
     }
+}
+
+/// An icon from the compiled-in `public` files: `public/icons/icon-192.png`
+/// on disk is `icons/icon-192.png` in the embedded list.
+fn embedded_icon(
+    public: Option<&'static [(&'static str, &'static [u8])]>,
+    path: &std::path::Path,
+) -> Option<Vec<u8>> {
+    let public = public?;
+    let relative = path.strip_prefix("public").unwrap_or(path);
+    let key = relative.to_string_lossy().replace('\\', "/");
+    let key = key.trim_start_matches('/');
+    public
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, bytes)| bytes.to_vec())
 }
 
 /// How a per-request resolver is kept.

@@ -1270,10 +1270,11 @@ impl App {
             Some(pwa) => {
                 let precache = assets::precache_urls();
                 let assets = pwa
-                    .assets(
+                    .assets_with(
                         |view| state.views.render(view, serde_json::json!({})),
                         &precache,
                         "",
+                        public,
                     )
                     .map_err(|e| anyhow!("{e:#}"))?;
                 let resolver = self

@@ -841,6 +841,10 @@ def commands():
         # The kit copied into the app (into a temporary place), then kept
         # without --force and replaced with it.
         place = {"VIEWS_PATH": os.path.join(app.dir, "views"), "PUBLIC_PATH": os.path.join(app.dir, "public")}
+        # The fixture's installable-app setup renders its offline page at boot,
+        # so the temporary views folder needs that one view.
+        os.makedirs(place["VIEWS_PATH"], exist_ok=True)
+        shutil.copy(os.path.join(FIXTURE_DIR, "views", "offline.html"), place["VIEWS_PATH"])
         assert "Wrote " in app.run("ui:publish", env=place).stdout
         kept = app.run("ui:publish", check=False, env=place)
         assert kept.returncode != 0 and "add --force to replace it" in kept.stderr + kept.stdout
