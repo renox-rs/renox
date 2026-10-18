@@ -73,11 +73,15 @@ async function field(page, before) {
 const watchSubmits = (page) =>
   page.eval(() => {
     window.__submits = 0;
+    window.__holdSubmits = true;
     document.querySelector('#field-form').addEventListener('submit', (event) => {
       window.__submits += 1;
-      event.preventDefault();
+      if (window.__holdSubmits) event.preventDefault();
     });
   });
+
+/** Lets the form post again after `watchSubmits` held it. */
+const releaseSubmits = (page) => page.eval(() => (window.__holdSubmits = false));
 
 const submits = (page) => page.eval(() => window.__submits);
 
@@ -97,7 +101,9 @@ describe('rating', () => {
       assert.equal(await page.eval(() => document.querySelector('#rate input:checked').value), '5');
       await page.press('ArrowLeft');
       assert.equal(await page.eval(() => document.querySelector('#rate input:checked').value), '4');
-      // The stars up to the chosen one are filled, the others are outlines.
+      // The stars up to the chosen one are filled, the others are outlines (with the pointer
+      // away: over the stars, hovering previews the star under it instead).
+      await page.hover('h1');
       const fills = await page.eval(() =>
         [...document.querySelectorAll('#rate .rx-rating__star')].map((s) => getComputedStyle(s).fill !== 'none'),
       );
@@ -213,6 +219,7 @@ describe('barcode_scan: keys', () => {
       // The status did not claim a scan.
       assert.doesNotMatch(await page.text('#scan-shelf [data-rx-barcode-status]'), /Code read/);
       // With `submit`, Enter after typing posts like any form.
+      await releaseSubmits(page);
       await page.focus('#scan-sku-input');
       for (const ch of 'B7') {
         await page.press(ch);

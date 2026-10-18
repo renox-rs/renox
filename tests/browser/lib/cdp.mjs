@@ -68,29 +68,36 @@ export class Browser {
   }
 
   /**
-   * A browser-level command, on a connection of its own (permissions are the
-   * browser's, not a page's): `send('Browser.grantPermissions', { permissions:
-   * ['geolocation'], origin })`. What it sets outlives the connection.
+   * A browser-level command, on a connection kept open for the browser's life
+   * (permissions are the browser's, not a page's, and Chrome takes them back
+   * when the connection that set them closes): `send('Browser.grantPermissions',
+   * { permissions: ['geolocation'], origin })`.
    */
   async send(method, params = {}) {
-    const socket = new WebSocket(this.url);
-    await new Promise((resolve, reject) => {
-      socket.addEventListener('open', resolve, { once: true });
-      socket.addEventListener('error', reject, { once: true });
-    });
-    try {
-      return await new Promise((resolve, reject) => {
-        socket.addEventListener('message', (event) => {
-          const message = JSON.parse(event.data);
-          if (message.id !== 1) return;
-          if (message.error) reject(new Error(`${message.error.message} (${message.error.data || ''})`));
-          else resolve(message.result);
-        });
-        socket.send(JSON.stringify({ id: 1, method, params }));
+    this.control ??= (async () => {
+      const socket = new WebSocket(this.url);
+      await new Promise((resolve, reject) => {
+        socket.addEventListener('open', resolve, { once: true });
+        socket.addEventListener('error', reject, { once: true });
       });
-    } finally {
-      socket.close();
-    }
+      this.answers = new Map();
+      socket.addEventListener('message', (event) => {
+        const message = JSON.parse(event.data);
+        const answer = this.answers.get(message.id);
+        if (!answer) return;
+        this.answers.delete(message.id);
+        if (message.error) answer.reject(new Error(`${message.error.message} (${message.error.data || ''})`));
+        else answer.resolve(message.result);
+      });
+      return socket;
+    })();
+    const socket = await this.control;
+    this.nextId = (this.nextId || 0) + 1;
+    const id = this.nextId;
+    return new Promise((resolve, reject) => {
+      this.answers.set(id, { resolve, reject });
+      socket.send(JSON.stringify({ id, method, params }));
+    });
   }
 
   /**
@@ -134,6 +141,9 @@ export class Browser {
   }
 
   async close() {
+    try {
+      (await this.control)?.close();
+    } catch {}
     this.proc.kill('SIGTERM');
     await new Promise((resolve) => {
       if (this.proc.exitCode !== null) return resolve();
