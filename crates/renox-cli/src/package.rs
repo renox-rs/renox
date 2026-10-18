@@ -168,28 +168,30 @@ pub(crate) fn render(plan: &Plan, version: &str) -> Result<Vec<(PathBuf, String)
     // `src/lib.rs` declares and registers the extras, in the order rustfmt
     // keeps the `mod` lines.
     let line = |on: bool, text: &str| if on { text.to_owned() } else { String::new() };
+    // A stub checked out with CRLF (git on Windows) fills the same way.
     let fill = |text: &str| {
-        text.replace(
-            "__modassets__\n",
-            &line(has(Extra::Assets), "mod assets;\n"),
-        )
-        .replace(
-            "__modcommands__\n",
-            &line(has(Extra::Commands), "mod commands;\n"),
-        )
-        .replace(
-            "        __extras__\n",
-            &format!(
-                "{}{}",
-                line(has(Extra::Assets), "        assets::register(app);\n"),
-                line(has(Extra::Commands), "        commands::register(app);\n"),
-            ),
-        )
-        .replace("__Struct__", &plan.struct_name)
-        .replace("__Title__", &title)
-        .replace("__crate__", &plan.crate_name)
-        .replace("__lib__", &plan.lib_name)
-        .replace("__renox__", &plan.renox_dependency)
+        text.replace("\r\n", "\n")
+            .replace(
+                "__modassets__\n",
+                &line(has(Extra::Assets), "mod assets;\n"),
+            )
+            .replace(
+                "__modcommands__\n",
+                &line(has(Extra::Commands), "mod commands;\n"),
+            )
+            .replace(
+                "        __extras__\n",
+                &format!(
+                    "{}{}",
+                    line(has(Extra::Assets), "        assets::register(app);\n"),
+                    line(has(Extra::Commands), "        commands::register(app);\n"),
+                ),
+            )
+            .replace("__Struct__", &plan.struct_name)
+            .replace("__Title__", &title)
+            .replace("__crate__", &plan.crate_name)
+            .replace("__lib__", &plan.lib_name)
+            .replace("__renox__", &plan.renox_dependency)
     };
     let stem = format!("{version}_create_{}_entries_table", plan.lib_name);
     let mut files = Vec::new();
@@ -544,7 +546,10 @@ fn rebase_path(value: &str, package_dir: &Path) -> String {
         return value.to_owned();
     };
     let original = &after[open + 1..open + 1 + len];
-    if Path::new(original).is_absolute() {
+    // A path starting with a slash is absolute in a Cargo.toml on every system
+    // (on Windows `Path::is_absolute` wants a drive letter as well).
+    if Path::new(original).is_absolute() || original.starts_with('/') || original.starts_with('\\')
+    {
         return value.to_owned();
     }
     let depth = package_dir
