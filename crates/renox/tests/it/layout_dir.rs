@@ -5,6 +5,14 @@
 
 use std::path::{Path, PathBuf};
 
+/// The PWA offline pages are rendered once at boot, with no request and so no
+/// locale (`app.dir` does not exist there); they say `dir="auto"` and the
+/// browser picks the direction from the page's own text.
+const PWA_OFFLINE: &[&str] = &[
+    "crates/renox-cli/stubs/pwa/offline.html",
+    "tests/browser/fixture/views/offline.html",
+];
+
 /// The files that are English-only on purpose and must say `dir="ltr"`.
 const ENGLISH_ONLY: &[&str] = &[
     "crates/renox-core/views/error.html",
@@ -56,6 +64,8 @@ fn every_shipped_layout_writes_dir() {
             .replace('\\', "/");
         let want = if ENGLISH_ONLY.contains(&relative.as_str()) {
             "dir=\"ltr\""
+        } else if PWA_OFFLINE.contains(&relative.as_str()) {
+            "dir=\"auto\""
         } else {
             "dir=\"{{ app.dir }}\""
         };
