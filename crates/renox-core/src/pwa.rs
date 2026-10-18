@@ -590,6 +590,7 @@ impl Pwa {
     /// render is an error naming the file or view, for the boot to report.
     /// `precache` lists the hashed asset paths; `brand_hash` is mixed into
     /// the version (empty without a resolver).
+    #[cfg(test)]
     pub(crate) fn assets(
         &self,
         render: impl Fn(&str) -> anyhow::Result<String>,
