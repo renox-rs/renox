@@ -22,15 +22,38 @@ after(async () => {
   await app?.stop();
 });
 
-/** Waits until the worker is active and controls the page. */
-const controlled = (page) =>
-  page.waitFor(
-    async () => {
-      await navigator.serviceWorker.ready;
-      return !!navigator.serviceWorker.controller;
-    },
-    { message: 'the service worker to control the page' },
-  );
+/**
+ * Waits until the worker is active and controls the page. It polls the state
+ * instead of awaiting `serviceWorker.ready` inside one evaluation: `ready`
+ * resolves when the worker is activating, before `clients.claim()` has run,
+ * and an evaluation parked on it cannot be cut short by the deadline. A page
+ * that finished loading while the worker was still installing is controlled
+ * only by the claim; if the worker is active and the page still is not, one
+ * reload (a navigation under an active worker is always controlled) settles it.
+ */
+const controlled = async (page) => {
+  const until = Date.now() + 10_000;
+  let reloaded = false;
+  let last;
+  while (Date.now() < until) {
+    last = await page.eval(async () => {
+      const reg = await navigator.serviceWorker.getRegistration('/');
+      return {
+        controlled: !!navigator.serviceWorker.controller,
+        installing: reg?.installing?.state,
+        waiting: reg?.waiting?.state,
+        active: reg?.active?.state,
+      };
+    });
+    if (last.controlled) return;
+    if (last.active === 'activated' && !reloaded) {
+      reloaded = true;
+      await page.goto(await page.eval(() => location.href));
+    }
+    await new Promise((done) => setTimeout(done, 50));
+  }
+  throw new Error(`timed out waiting for the service worker to control the page (last: ${JSON.stringify(last)})`);
+};
 
 /** Every URL in every cache the page can see, as paths. */
 const cachedPaths = (page) =>
