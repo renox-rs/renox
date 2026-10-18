@@ -156,7 +156,7 @@ test('a load in grams keeps its three decimals and its unit, and a fourth decima
     await page.type('#rx-stock', '1', { clear: true });
     await page.type('#rx-weight_kg', '10', { clear: true });
     await page.type('#rx-price', '100', { clear: true });
-    await page.click('label[for="rx-size-1"]');
+    await page.click('label[for="rx-size"]');
     await page.eval(() => {
       const select = document.getElementById('rx-load_unit');
       select.value = 'g';
