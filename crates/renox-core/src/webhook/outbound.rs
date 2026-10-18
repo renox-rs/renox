@@ -644,11 +644,11 @@ impl Delivery {
         let rows = crate::db::sql(
             "SELECT id, endpoint_id, message_id, event_type, status, attempt, response_status, \
              error, duration_ms, created_at FROM webhook_deliveries \
-             WHERE (? IS NULL OR endpoint_id = ?) AND (? = 0 OR status = 'failed') \
+             WHERE (? = 0 OR endpoint_id = ?) AND (? = 0 OR status = 'failed') \
              ORDER BY id DESC LIMIT ?",
         )
-        .bind(endpoint_id)
-        .bind(endpoint_id)
+        .bind(i64::from(endpoint_id.is_some()))
+        .bind(endpoint_id.unwrap_or(0))
         .bind(i64::from(failed_only))
         .bind(i64::from(limit))
         .fetch_all(db)
