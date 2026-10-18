@@ -35,7 +35,13 @@
     {%- if custom %}
     {%- for f in custom.fields %}
     {%- set stored = custom["values"][f.key] if custom["values"] and custom["values"][f.key] is defined else none %}
+    {%- if f.sensitive and f.masked %}
+    {{ entry(f.label, "••••••") }}
+    {%- elif stored is mapping and stored.unreadable %}
+    {{ entry(f.label, "unreadable") }}
+    {%- else %}
     {{ entry(f.label, (stored if stored is not none else false) if f.kind == "bool" else stored, format=("bool" if f.kind == "bool" else none), labels=(f.labels if f.kind == "choice" else none)) }}
+    {%- endif %}
     {%- endfor %}
     {%- endif %}
   {% endcall %}

@@ -56,6 +56,7 @@ async fn app() -> TestApp {
     let app = TestApp::new(
         App::new()
             .module(Auth::new())
+            .gate("custom_fields.reveal", |u| u.email.starts_with("hr@"))
             .module(
                 Admin::new()
                     .authorize(|user| user.email.ends_with("@example.com"))
@@ -260,4 +261,144 @@ async fn the_definitions_resource_refuses_bad_input() {
         .delete(&format!("/admin/custom-fields/{id}"))
         .await
         .assert_not_found();
+}
+
+#[renox::test]
+async fn the_definitions_form_sets_and_clears_sensitive() {
+    let app = app().await;
+    app.get("/admin/custom-fields/create")
+        .await
+        .assert_ok()
+        .assert_see("Sensitive")
+        .assert_see("Reveal ability")
+        .assert_see("new writes only");
+    let base = [
+        ("model", "parties"),
+        ("key", "tax_id"),
+        ("kind", "text"),
+        ("label", "Tax id"),
+        ("sensitive", "true"),
+        ("reveal", " see-tax-ids "),
+        ("active", "true"),
+    ];
+    app.htmx()
+        .post("/admin/custom-fields", &base)
+        .await
+        .assert_hx_redirect("/admin/custom-fields");
+    let fields = CustomField::for_model(app.db(), "parties").await.unwrap();
+    let tax = fields.iter().find(|f| f.key == "tax_id").unwrap();
+    assert!(tax.rules.sensitive);
+    assert_eq!(tax.rules.reveal.as_deref(), Some("see-tax-ids"));
+    // The edit page shows the saved ability; saving without the box clears both.
+    app.get(&format!("/admin/custom-fields/{}/edit", tax.id))
+        .await
+        .assert_ok()
+        .assert_see("see-tax-ids");
+    app.htmx()
+        .put(
+            &format!("/admin/custom-fields/{}", tax.id),
+            &[
+                ("label", "Tax id"),
+                ("reveal", "see-tax-ids"),
+                ("active", "true"),
+            ],
+        )
+        .await
+        .assert_hx_redirect("/admin/custom-fields");
+    let fields = CustomField::for_model(app.db(), "parties").await.unwrap();
+    let tax = fields.iter().find(|f| f.key == "tax_id").unwrap();
+    assert!(!tax.rules.sensitive && tax.rules.reveal.is_none());
+    // A reference or file field can't be sensitive.
+    for (kind, target) in [("file", "local"), ("reference", "users")] {
+        app.htmx()
+            .post(
+                "/admin/custom-fields",
+                &[
+                    ("model", "parties"),
+                    ("key", "doc"),
+                    ("kind", kind),
+                    ("label", "Doc"),
+                    ("target", target),
+                    ("sensitive", "true"),
+                ],
+            )
+            .await
+            .assert_invalid("sensitive");
+    }
+}
+
+#[renox::test]
+async fn sensitive_values_are_masked_in_forms_entries_and_lists() {
+    let app = app().await;
+    CustomField::text("parties", "tax_id")
+        .label("Tax id")
+        .sensitive()
+        .save(app.db())
+        .await
+        .unwrap();
+    app.htmx()
+        .post(
+            "/admin/parties",
+            &[("name", "Ana"), ("extra[tax_id]", "TX-9981")],
+        )
+        .await
+        .assert_hx_redirect("/admin/parties");
+    let party = Party::query().first(app.db()).await.unwrap().unwrap();
+    let stored = party.extra.get("tax_id").and_then(|v| v.as_str()).unwrap();
+    assert!(stored.starts_with("rx-sealed:1:") && !stored.contains("TX-9981"));
+    let sealed = stored.to_owned();
+    let edit = format!("/admin/parties/{}/edit", party.id);
+    let show = format!("/admin/parties/{}", party.id);
+
+    // Without the ability: masked everywhere, the form input is empty.
+    for url in [show.as_str(), edit.as_str(), "/admin/parties"] {
+        let page = app.get(url).await.assert_ok().text();
+        assert!(!page.contains("TX-9981"), "{url}: {page}");
+        assert!(!page.contains("rx-sealed"), "{url}: {page}");
+    }
+    app.get(&show).await.assert_see("••••••");
+    app.get(&edit)
+        .await
+        .assert_see(r#"name="extra[tax_id]""#)
+        .assert_see(r#"placeholder="unchanged""#);
+
+    // A blank submit keeps the sealed value.
+    app.htmx()
+        .put(
+            &format!("/admin/parties/{}", party.id),
+            &[("name", "Ana B"), ("extra[tax_id]", "")],
+        )
+        .await
+        .assert_hx_redirect("/admin/parties");
+    let party = Party::query().first(app.db()).await.unwrap().unwrap();
+    assert_eq!(party.name, "Ana B");
+    assert_eq!(
+        party.extra.get("tax_id").and_then(|v| v.as_str()),
+        Some(sealed.as_str())
+    );
+
+    // With the ability the entry and the list show the value; the form still does not.
+    let hr = User::register(app.db(), "HR", "hr@example.com", "secret-password-1")
+        .await
+        .unwrap();
+    app.acting_as(&hr);
+    app.get(&show).await.assert_ok().assert_see("TX-9981");
+    app.get("/admin/parties")
+        .await
+        .assert_ok()
+        .assert_see("TX-9981");
+    let page = app.get(&edit).await.assert_ok().text();
+    assert!(
+        !page.contains("TX-9981") && !page.contains("rx-sealed"),
+        "{page}"
+    );
+    // A filled input replaces the value.
+    app.htmx()
+        .put(
+            &format!("/admin/parties/{}", party.id),
+            &[("name", "Ana B"), ("extra[tax_id]", "TX-0001")],
+        )
+        .await
+        .assert_hx_redirect("/admin/parties");
+    app.get(&show).await.assert_see("TX-0001");
 }

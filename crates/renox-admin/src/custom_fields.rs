@@ -113,6 +113,8 @@ impl Serialize for Definition {
             "label": label.0.get(DEFAULT_LABEL_LOCALE).cloned().unwrap_or_default(),
             "translations": translations,
             "required": rules.required,
+            "sensitive": rules.sensitive,
+            "reveal": rules.reveal.unwrap_or_default(),
             "min": rules.min.map(|n| n.to_string()).unwrap_or_default(),
             "max": rules.max.map(|n| n.to_string()).unwrap_or_default(),
             "options": options,
@@ -140,6 +142,10 @@ pub(crate) struct DefinitionForm {
     translations: String,
     #[serde(default)]
     required: bool,
+    #[serde(default)]
+    sensitive: bool,
+    #[serde(default)]
+    reveal: String,
     #[serde(default)]
     min: String,
     #[serde(default)]
@@ -230,6 +236,13 @@ impl AdminResource for CustomFields {
                 .hint("One per line: `es: Segmento`.")
                 .span_full(),
             Field::toggle("required", "Required"),
+            Field::toggle("sensitive", "Sensitive").hint(
+                "Seals the value with the app key and masks it unless the viewer holds the \
+                 ability. Changing this affects new writes only; stored values are not rewritten.",
+            ),
+            Field::text("reveal", "Reveal ability").hint(
+                "The gate or permission that shows a sensitive value. Empty: `custom_fields.reveal`.",
+            ),
             Field::text("min", "Minimum").hint("Text length or number."),
             Field::text("max", "Maximum").hint("Text length or number."),
             Field::textarea("options", "Choices")
@@ -286,6 +299,15 @@ impl AdminResource for CustomFields {
         if matches!(kind, Some(Kind::Reference | Kind::File)) && form.target.trim().is_empty() {
             v.error("target", "This kind needs a target.");
         }
+        if form.sensitive && matches!(kind, Some(Kind::Reference | Kind::File)) {
+            v.error(
+                "sensitive",
+                "Only text, number, date, yes/no and choice fields can be sensitive.",
+            );
+        }
+        if form.reveal.trim().chars().count() > 120 {
+            v.error("reveal", "At most 120 characters.");
+        }
         if number(&form.position).is_none() {
             v.error("position", "Must be a whole number.");
         }
@@ -329,11 +351,10 @@ impl AdminResource for CustomFields {
             options.push(choice);
         }
         let target = form.target.trim();
-        // The sensitive flag has no form input yet: keep what is stored.
-        let stored: FieldRules = serde_json::from_str(&record.rules).unwrap_or_default();
+        let reveal = form.reveal.trim();
         let rules = FieldRules {
-            sensitive: stored.sensitive,
-            reveal: stored.reveal,
+            sensitive: form.sensitive,
+            reveal: (form.sensitive && !reveal.is_empty()).then(|| reveal.to_owned()),
             required: form.required,
             min: number(&form.min).flatten(),
             max: number(&form.max).flatten(),

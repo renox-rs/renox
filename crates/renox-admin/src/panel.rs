@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use renox::axum::Extension;
 use renox::axum::extract::{FromRequest, Request};
-use renox::custom_fields::{CustomField, FieldKind as CustomKind};
+use renox::custom_fields::{CustomField, CustomValues, FieldKind as CustomKind};
 use renox::db::{Model, Query};
 use renox::grid::{Action, Column, Grid, GridRequest, Selection};
 use renox::prelude::*;
@@ -566,21 +566,32 @@ impl<R: AdminResource> Ctx<R> {
     async fn custom(
         &self,
         state: &AppState,
+        user: &AuthUser,
         texts: &Texts,
         record: Option<&Value>,
     ) -> Result<Value> {
         let Some(column) = R::Model::CUSTOM_FIELDS else {
             return Ok(Value::Null);
         };
-        let fields = CustomField::views(&state.db, R::Model::TABLE, texts.locale()).await?;
+        let fields =
+            CustomField::views_for(&state.db, R::Model::TABLE, texts.locale(), Some(user)).await?;
         if fields.is_empty() {
             return Ok(Value::Null);
         }
         let multipart = fields.iter().any(|f| f.kind == CustomKind::File);
+        // A masked sensitive value never reaches the template context; one the
+        // user may see is opened (and the form shows it empty anyway).
+        let values = match record.and_then(|r| r.get(column)) {
+            Some(stored) => match renox::serde_json::from_value::<CustomValues>(stored.clone()) {
+                Ok(stored) => to_json(&stored.shown(&state.db, &fields))?,
+                Err(_) => Value::Null,
+            },
+            None => Value::Null,
+        };
         Ok(json!({
             "column": column,
             "fields": fields,
-            "values": record.and_then(|r| r.get(column)).cloned().unwrap_or(Value::Null),
+            "values": values,
             "multipart": multipart,
         }))
     }
@@ -1425,7 +1436,10 @@ async fn create<R: AdminResource>(
         Value::String(texts.get("create", &[("label", &label)])),
     );
     values.insert("record".into(), Value::Null);
-    values.insert("custom".into(), cx.custom(&state, &texts, None).await?);
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &user, &texts, None).await?,
+    );
     page(&cx, &state, &user, "renox-admin/form.html", values, &texts)
 }
 
@@ -1495,7 +1509,7 @@ async fn show<R: AdminResource>(
     let record_json = to_json(&record)?;
     values.insert(
         "custom".into(),
-        cx.custom(&state, &texts, Some(&record_json)).await?,
+        cx.custom(&state, &user, &texts, Some(&record_json)).await?,
     );
     values.insert("record".into(), record_json);
     values.insert("entries".into(), to_json(&entries)?);
@@ -1570,7 +1584,7 @@ async fn edit<R: AdminResource>(
     );
     values.insert(
         "custom".into(),
-        cx.custom(&state, &texts, Some(&json)).await?,
+        cx.custom(&state, &user, &texts, Some(&json)).await?,
     );
     values.insert("record".into(), json);
     if cx.allows(&user, "delete", Some(&record)) {
