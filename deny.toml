@@ -25,6 +25,13 @@ ignore = [
     { id = "RUSTSEC-2026-0192", reason = "ttf-parser, Typst's font parser; fonts are the app's own" },
     { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml via serde_yaml in hayagriva (Typst bibliographies)" },
     { id = "RUSTSEC-2024-0320", reason = "yaml-rust in syntect (Typst syntax highlighting)" },
+    # Published after the lock file was last updated (October 2026); the lock
+    # still has ammonia 4.2.3, zip 8.6.0 and zip 9.0.1. None of the paths is
+    # reachable here: bump the crates when a compatible release is wanted.
+    { id = "RUSTSEC-2026-0373", reason = "ammonia: only reached when inline styles are allowed; renox-editors allows `href` and `title` on `a` and no `style` attribute" },
+    { id = "RUSTSEC-2026-0367", reason = "zip: ZipArchive::extract; calamine (xlsx import) reads workbooks in memory with open_workbook_from_rs and never extracts to disk" },
+    { id = "RUSTSEC-2026-0368", reason = "zip: ZipArchive::extract symlinks; same as 0367 (zip 9 is a dev-dependency of the tests)" },
+    { id = "RUSTSEC-2026-0369", reason = "zip: extract() permissions through symlinks; same as 0367" },
 ]
 
 [licenses]
