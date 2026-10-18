@@ -337,6 +337,16 @@ impl AuthUser {
         self.grants.has_permission(permission)
     }
 
+    /// Whether a role of the user grants `permission` now, globally or in
+    /// at least one scope, whatever the request's scope. For showing
+    /// things such as menu links to someone who holds the permission only
+    /// through a scoped role; the page itself then filters by scope
+    /// (`scopes_with`, `has_permission_in`). `false` without the
+    /// `Permissions` module.
+    pub fn has_permission_anywhere(&self, permission: &str) -> bool {
+        self.grants.has_permission_anywhere(permission)
+    }
+
     /// Whether the user has `role` globally or in `scope` (the record's,
     /// not the request's), within its dates.
     pub fn has_role_in(&self, role: &str, scope: &permissions::Scope) -> bool {
@@ -460,6 +470,20 @@ impl<S: Send + Sync> OptionalFromRequestParts<S> for AuthUser {
     ) -> std::result::Result<Option<Self>, Infallible> {
         Ok(current(&parts.extensions))
     }
+}
+
+/// The request's user as an [`AuthUser`], for code outside a handler (the
+/// navigation menus a page draws).
+pub(crate) fn auth_user_of(current: &CurrentUser, state: &AppState) -> Option<AuthUser> {
+    Some(AuthUser {
+        user: current.user.clone()?,
+        gates: current.gates.clone(),
+        state: Some(state.clone()),
+        token_id: current.token_id,
+        abilities: current.abilities.clone(),
+        grants: current.grants.clone(),
+        role_names: std::sync::OnceLock::new(),
+    })
 }
 
 fn current(extensions: &axum::http::Extensions) -> Option<AuthUser> {

@@ -9,7 +9,7 @@ use renox::grid::{Column, Kind};
 use serde::Serialize;
 
 /// One labelled value on a record's view page. `format` is one of the
-/// kit's `entry` formats: `date`, `datetime`, `since`, `money`, `number`,
+/// kit's `entry` formats: `date`, `datetime`, `since`, `money`, `quantity`, `number`,
 /// `bool`, `color`, `image`, `markdown`, or none for text.
 ///
 /// ```
@@ -33,6 +33,9 @@ pub struct Entry {
     badge: bool,
     copyable: bool,
     span: Option<String>,
+    currency_from: Option<String>,
+    scale: u32,
+    unit_from: Option<String>,
 }
 
 impl Entry {
@@ -47,6 +50,9 @@ impl Entry {
             badge: false,
             copyable: false,
             span: None,
+            currency_from: None,
+            scale: 0,
+            unit_from: None,
         }
     }
 
@@ -72,6 +78,55 @@ impl Entry {
             .into_iter()
             .map(|(value, label)| (value.into(), label.into()))
             .collect();
+        self
+    }
+
+    /// For a `money` entry: shows the amount in the currency the record
+    /// keeps in its `key` field (an ISO 4217 code such as `total_currency`),
+    /// with that currency's symbol and decimals. Without it the entry uses
+    /// `APP_CURRENCY`.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let total = Entry::new("total", "Total")
+    ///     .format("money")
+    ///     .currency_from("total_currency");
+    /// # let _ = total;
+    /// ```
+    pub fn currency_from(mut self, key: &str) -> Self {
+        self.currency_from = Some(key.to_owned());
+        self
+    }
+
+    /// For a `quantity` entry: the decimals of its `Quantity<SCALE>` (at
+    /// most 9), so `2.5` shows as `2.500` with `3`.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let stock = Entry::new("stock", "Stock").format("quantity").scale(3);
+    /// # let _ = stock;
+    /// ```
+    pub fn scale(mut self, scale: u32) -> Self {
+        self.scale = scale.min(9);
+        self
+    }
+
+    /// For a `quantity` entry: shows the quantity with the unit the record
+    /// keeps in its `key` field (such as `stock_unit`), after the value.
+    ///
+    /// ```
+    /// use renox_admin::Entry;
+    ///
+    /// let stock = Entry::new("stock", "Stock")
+    ///     .format("quantity")
+    ///     .scale(3)
+    ///     .unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn unit_from(mut self, key: &str) -> Self {
+        self.unit_from = Some(key.to_owned());
         self
     }
 
@@ -101,7 +156,20 @@ impl Entry {
         let entry = match column.kind() {
             Kind::Custom => return None,
             Kind::Number => entry.format("number"),
-            Kind::Money => entry.format("money"),
+            Kind::Money => {
+                let entry = entry.format("money");
+                match column.currency_column() {
+                    Some(key) => entry.currency_from(key),
+                    None => entry,
+                }
+            }
+            Kind::Quantity => {
+                let entry = entry.format("quantity").scale(column.quantity_scale());
+                match column.unit_column() {
+                    Some(key) => entry.unit_from(key),
+                    None => entry,
+                }
+            }
             Kind::Date => entry.format("date"),
             Kind::DateTime => entry.format("datetime"),
             Kind::Bool => entry.format("bool"),

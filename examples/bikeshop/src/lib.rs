@@ -38,6 +38,9 @@ pub fn app() -> App {
     App::new()
         .embed(renox::embedded!())
         .migrations(renox::migrations!())
+        // A rental's status moves only through its state machine
+        // (src/app/rentals/machine.rs): `rnx state:diagram Rental` draws it.
+        .state_machine::<app::rentals::model::Rental>()
         // A visitor's browser language wins when the shop has it (en, es),
         // until they pick one in the language menu.
         .detect_locale()
@@ -52,6 +55,21 @@ pub fn app() -> App {
                     .thumbnail("thumb", 320, 320),
             ),
         )
+        // The browser may ask for the camera (the photo and barcode blocks)
+        // and the position (`geolocate`) on the shop's own pages only; every
+        // other feature stays off (the Permissions-Policy header).
+        .permissions_policy(|p| {
+            p.allow("geolocation", "self").allow("camera", "self");
+        })
+        // Each store's host wears the store's brand (#36): `<rx-theme/>` in
+        // the head links the stylesheet of the theme chosen here.
+        .theme_for({
+            let themes = app::home::stores::themes();
+            move |req: renox::theme::ThemeRequest| {
+                let theme = app::home::stores::theme_for_host(&themes, &req.host);
+                async move { Ok(theme) }
+            }
+        })
         // The "About this page" panel: `about_page(request.route, request.path)` in the layouts,
         // hidden with BIKESHOP_EXPLAIN=false.
         .templates(explain::register)
@@ -105,6 +123,7 @@ pub fn app() -> App {
         .module(app::home::Home)
         .module(app::multistore::Multistore)
         .module(app::plans::Plans)
+        .module(app::purchasing::Purchasing)
         .module(app::rentals::Rentals)
         .module(app::reports::Reports)
         .module(app::sales::Sales)
@@ -132,6 +151,9 @@ pub fn app() -> App {
         // the editors its forms use (renox-editors).
         .module(app::staff::admin::panel())
         .module(renox_editors::Editors::new())
+        // PDFs from Typst templates (renox-pdf): the rental receipt, downloaded and
+        // mailed. Templates are read from disk in debug, from the binary in release.
+        .module(renox_pdf::Pdf::new().templates(renox::embedded!()))
         // The blocks the kit doesn't have (renox-blocks, #347): the product
         // gallery and variant chips, the cart's stepper, the counter's keypad,
         // the workshop board, the rental timeline, the plans' table.

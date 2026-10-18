@@ -422,6 +422,57 @@ impl Routes {
         self.mark("no-csrf")
     }
 
+    /// Makes the routes added so far safe to replay: a non-`GET` request must
+    /// carry an `Idempotency-Key` header (else 400); the first answer for a
+    /// key is stored and sent again, with `Idempotent-Replayed: true`, for
+    /// the same key and body without running the handler again; the same key
+    /// with a different body is 422; two requests with one key at once run
+    /// the handler once. Answers with a 5xx status are not stored, so the
+    /// client can try again. Keys belong to the user (or the session) and the
+    /// route, and are kept for
+    /// [`DEFAULT_RETENTION`](crate::idempotency::DEFAULT_RETENTION).
+    ///
+    /// Add `.offline()` before `.require_auth()` and similar guards, so
+    /// those run first and nothing is stored for a refused request. See
+    /// [`Routes::offline_with`] for the clock limits.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # async fn complete_stop() -> &'static str { "done" }
+    /// # let _: Routes =
+    /// Routes::new()
+    ///     .post("/stops/{id}/complete", complete_stop)
+    ///     .offline()
+    ///     .require_auth()
+    /// # ;
+    /// ```
+    pub fn offline(self) -> Self {
+        self.offline_with(crate::idempotency::Skew::default())
+    }
+
+    /// Like [`Routes::offline`], with the limits for how far a device's clock
+    /// may differ from the server's.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use std::time::Duration;
+    /// use renox::idempotency::Skew;
+    /// # async fn complete_stop() -> &'static str { "done" }
+    /// # let _: Routes =
+    /// Routes::new()
+    ///     .post("/stops/{id}/complete", complete_stop)
+    ///     .offline_with(Skew::new().past(Duration::from_secs(72 * 3600)))
+    /// # ;
+    /// ```
+    pub fn offline_with(self, skew: crate::idempotency::Skew) -> Self {
+        self.route_layer(from_fn(
+            move |req: Request, next: axum::middleware::Next| async move {
+                crate::idempotency::middleware(skew, req, next).await
+            },
+        ))
+        .mark("offline")
+    }
+
     /// Lets browsers on `origins` (e.g. `https://app.example.com`, or `*`
     /// for any) call the routes added so far with `fetch`: answers CORS
     /// preflights and adds the `Access-Control-Allow-*` headers. Allows the

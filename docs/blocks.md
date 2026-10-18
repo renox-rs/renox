@@ -2,16 +2,22 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds fourteen such components, as template macros
+of cards to drag. The `renox-blocks` crate adds twenty-one such components, as template macros
 built on the kit:
 
-| Input | Showing data | Scheduling and work | Printing |
+| Input | Showing data | Scheduling and work | Printing and maps |
 |---|---|---|---|
 | [`quantity`](#quantity): a stepper | [`gallery`](#gallery): photos in a carousel | [`month_calendar`](#month_calendar): a month of events | [`receipt`](#receipt): a till receipt for a thermal printer |
 | [`range_slider`](#range_slider): two handles on one track | [`history`](#history): a timeline | [`availability`](#availability): resources against hours | |
 | [`keypad`](#keypad): a point-of-sale number pad | [`compare_plans`](#compare_plans): pricing cards and a table | [`week_calendar`](#week_calendar): resources against a week, click to book | |
 | [`swatches`](#swatches): variant chips | [`status_stepper`](#status_stepper): a record's progress through its statuses | [`kanban`](#kanban): cards moved between columns | |
-| [`datetime_range`](#datetime_range): a start and an end, with times | | | |
+| [`datetime_range`](#datetime_range): a start and an end, with times | | | [`map_picker`](#map_picker): a point, circle or polygon on a map |
+| | | | [`map`](#map): markers and areas on a map |
+| [`signature_pad`](#signature_pad): a drawn or typed signature, sent as a PNG | | | |
+| [`camera_capture`](#camera_capture): photos from the camera, sent as JPEG files | | | |
+| [`rating`](#rating): stars, a radio group | | | |
+| [`geolocate`](#geolocate): the device's position, on a button press | | | |
+| [`barcode_scan`](#barcode_scan): a code typed, scanned or read by the camera | | | |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
 blocks' script only when it has a block, and then only the code of the blocks it has.
@@ -25,6 +31,7 @@ In this guide:
 - [Input blocks](#input-blocks)
 - [Showing data](#showing-data)
 - [Scheduling and work](#scheduling-and-work)
+- [Maps](#maps)
 - [Printing](#printing)
 - [Texts in other languages](#texts-in-other-languages)
 - [Changing the look](#changing-the-look)
@@ -256,6 +263,326 @@ This block needs JavaScript (the sent fields are written by it).
 | `step` | `60` | minutes between the times offered |
 | `opens`, `closes` | `8`, `20` | the first and last hour offered |
 | `required`, `hint`, `id`, `bag` | | as for the kit's fields |
+
+### signature_pad
+
+A signature drawn with a finger, a pen or the mouse, or the name typed instead. It sends a
+real file, so the form must be `multipart/form-data`:
+
+```html
+<form method="post" enctype="multipart/form-data">
+  {{ csrf_field() }}
+  <rx-signature-pad name="signature" label="Customer signature" required/>
+  <rx-button label="Sign off"/>
+</form>
+```
+
+Exactly one of two things is sent: `signature`, a PNG named `signature.png` on a white
+background (so it reads on any page), or `signature_name`, the typed text (`{name}_name`),
+with no file. The last way used wins and clears the other: typing drops a drawing, and
+drawing empties the name. Read both as options, and let either satisfy `required`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct SignOff {
+    signature: Option<Upload>,
+    signature_name: Option<String>,
+}
+
+impl Validate for SignOff {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(1024); // kilobytes
+        v.field("signature_name", &self.signature_name).max(120);
+        // Either way of signing is enough.
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+    }
+}
+```
+
+The pad is a canvas drawn with pointer events (mouse, pen and touch alike; it is sized for the
+screen's pixel density and redrawn when it resizes). **Undo** takes back the last stroke and
+**Clear** empties the pad; the file follows each change. The pad is white with dark ink in light and
+dark mode alike, and so is the exported picture. With `required`, the typed field is `required` only
+while the pad is empty, and the file input itself never is, so the browser does not stop a
+submit that has a drawing.
+
+The typed name is a plain text field beside the pad, always there and without JavaScript, so a
+signature can be completed with the keyboard alone: Tab goes past the pad to the field. The
+canvas is a labelled region (it never traps keys), and the help text that says so is linked
+with `aria-describedby`. A change is said in a live region ("Signature drawn.", "Last stroke
+removed."). Nothing is animated.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the file field's name; the typed one is `{name}_name` |
+| `label` | "Signature" | the group's label |
+| `name_label` | "Or type your name" | the typed field's label |
+| `required` | `false` | a drawing or a name is needed |
+| `width`, `height` | 400, 160 | the pad's size in CSS pixels at most (it shrinks to fit a phone) |
+| `hint`, `id`, `bag` | | as for the kit's fields (`id` defaults to `rx-{name}`) |
+
+A failed submit shows the old typed name and the error of `name` or `{name}_name` under the
+block. A drawing is not put back (a file cannot be): the person draws again.
+
+### camera_capture
+
+Photos taken with the device's camera, sent as files, with a plain file input when there is no
+camera. Like the pad it needs a `multipart/form-data` form:
+
+```html
+<rx-camera-capture name="photos" label="Photos of the work" :max="3" facing="environment"/>
+```
+
+The shutter takes a frame from a live preview, draws it at most `max_width` pixels wide (the
+aspect kept) and keeps it as `photo-N.jpg`, a JPEG of the given `quality`. The photos are put
+on a file input named `name` (with `multiple` when `max` is above 1), each with a thumbnail and
+a **Remove** button; the shutter greys out at `max`. Read them as `Vec<Upload>` (or
+`Option<Upload>` for one photo) and count them with `max`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Photos {
+    #[serde(default)]
+    photos: Vec<Upload>,
+}
+
+impl Validate for Photos {
+    fn rules(&self, v: &mut Validator) {
+        v.field("photos", &self.photos).max(3);
+        v.each("photos", &self.photos, |photo| {
+            photo.image().mimes(&["jpg", "jpeg"]).max(5120)
+        });
+    }
+}
+```
+
+Storing them (`Upload::store`) and any processing are the handler's; the block does neither.
+
+**When there is no camera.** Without JavaScript the same file input is simply visible, and
+on a phone `capture` opens the camera app. With JavaScript, when the browser has no camera API,
+the person says no to the permission prompt, there is no device or it fails, the preview and
+the shutter give way to that same file input, made visible, with a message that says why
+("Camera access was denied. Choose a photo from your device instead."). What it picks is
+downsized the same way and shown as thumbnails, so the server sees the same kind of file
+either way. The browser only offers the camera on a secure page (HTTPS, or `localhost`). The
+camera is switched off when the block is removed (an htmx swap) or the page is left.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the file field's name |
+| `label` | "Photos" | the group's label |
+| `facing` | `"environment"` | `"user"` (the front camera) or `"environment"` (the back one); also the input's `capture` |
+| `max` | 1 | how many photos (above 1, the input is `multiple`) |
+| `max_width` | 2048 | the widest a photo is kept, in pixels |
+| `quality` | 0.85 | the JPEG quality, 0.1 to 1 |
+| `accept` | `"image/*"` | the file input's `accept` |
+| `required` | `false` | a photo is needed (the visible input is `required` only while it is the way in) |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+The bike shop uses both on a work order's bench page (a customer sign-off, kept as notes with
+private photos) and shows them on `/about/blocks`.
+
+### rating
+
+A score as stars, for how a customer rated a repair or a product. It is a group of radio
+buttons under the stars, so it works without JavaScript (and has no code of its own):
+
+```html
+<rx-rating name="score" label="Your rating" required/>
+```
+
+It sends the chosen number in `name`, and nothing when none was chosen, so the form's struct
+reads an `Option<u8>` (or any integer):
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Review {
+    score: Option<u8>,
+}
+
+impl Validate for Review {
+    fn rules(&self, v: &mut Validator) {
+        v.field("score", &self.score).required().between(1, 5);
+    }
+}
+```
+
+Tab reaches the group once and the arrow keys change the choice, as in any radio group (in a
+right-to-left page the arrows swap direction with the text). Each star is named "3 of 5" for a
+screen reader. The stars up to the chosen one are solid and the others outlines, so the state
+does not rest on colour (under forced colours too), and hovering a star previews it. After a
+failed submit the chosen star is checked again, and the error is said under the group.
+
+`readonly` shows a value as text for a screen reader and stars for the eye, and sends nothing:
+`<rx-rating name="average" :value="3" :max="4" label="Average" readonly/>`.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field's name |
+| `max` | 5 | how many stars, 1 to 10 |
+| `value` | | the number chosen to begin with (old input wins) |
+| `label` | "Rating" | the group's label |
+| `required` | `false` | a star is needed (without it the label says "optional") |
+| `readonly` | `false` | display only: stars and text, no input |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+### geolocate
+
+The device's position, asked for only when the person presses a button:
+
+```html
+<rx-geolocate name="location" :accuracy="50" label="Where is the bike?"/>
+```
+
+It sends four fields, `location[lat]`, `location[lng]`, `location[accuracy]` (metres) and
+`location[at]` (the time of the fix, RFC 3339 in UTC), which `Valid<T>` reads as a nested
+struct. The same shape is what `renox::geo::Point` reads for the latitude and longitude, so a
+handler can also take the position as a `Point` and ignore the rest:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Position {
+    lat: f64,
+    lng: f64,
+    accuracy: f64,
+}
+
+#[derive(serde::Deserialize)]
+struct Visit {
+    location: Option<Position>,
+}
+
+impl Validate for Visit {
+    fn rules(&self, v: &mut Validator) {
+        v.field("location", &self.location.as_ref().map(|p| p.lat))
+            .required()
+            .between(-90, 90);
+        v.field("location", &self.location.as_ref().map(|p| p.lng))
+            .between(-180, 180);
+        v.field("location", &self.location.as_ref().map(|p| p.accuracy))
+            .min(0);
+    }
+}
+```
+
+The four inputs are disabled until there is a position, so nothing is sent before the press, or
+after an error. The permission is asked for in the click and nowhere else, never on load. A
+polite status says what is going on: locating, found (with the numbers), denied, not available
+and timed out (after 15 seconds; a cached position is never used), and the button then reads
+"Try again". `accuracy` is the accuracy you want, in metres: it asks the device for its best
+position, and a worse one is still kept, with the status saying so ("about 120 m, wanted 50
+m"); the server decides from the posted `accuracy`. With `required`, a submit without a
+position is stopped and the status says to press the button, and the server refuses it with
+the field's error. After a failed submit the position comes back, enabled. Without JavaScript
+the block says it needs it; make the field optional or have a typed alternative where that
+matters.
+
+> [!IMPORTANT]
+> **Allow it in the Permissions-Policy.** Renox sends a `Permissions-Policy` header that
+> switches `geolocation` and `camera` off, and a block cannot change that: the browser then
+> refuses the position and the status says it is not available. Allow what your app uses:
+>
+> ```rust
+> use renox::prelude::*;
+>
+> # let _ =
+> App::new().permissions_policy(|p| {
+>     p.allow("geolocation", "self").allow("camera", "self");
+> })
+> # ;
+> ```
+>
+> The browser also offers the position only on a secure page (HTTPS, or `localhost`).
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the prefix of the four fields |
+| `accuracy` | | the accuracy wanted, in metres: turns on high accuracy, and a worse fix is flagged |
+| `label` | "Location" | the group's label |
+| `button_label` | "Use my location" | the button's text |
+| `required` | `false` | a position is needed |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+### barcode_scan
+
+One text field that a code can fill three ways: typing, a barcode scanner that types like a
+keyboard, or the device's camera:
+
+```html
+<rx-barcode-scan name="sku" label="Part number" formats="ean_13,code_128"/>
+```
+
+The form posts the field as a plain string, so the server never knows which way it was filled
+and reads a `String`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Lookup {
+    sku: String,
+}
+
+impl Validate for Lookup {
+    fn rules(&self, v: &mut Validator) {
+        v.field("sku", &self.sku).required().max(64);
+    }
+}
+```
+
+Without JavaScript it is the field alone. With it:
+
+- **A scanner** (a "keyboard wedge") sends its keys fast and ends with Enter. Keys less than 50
+  ms apart ending in Enter count as one scan: the value is set, `input` and `change` fire, and
+  the Enter is not sent as a submit, so a scan never posts a half-filled form. With `submit`
+  the scan submits the form.
+- **Typing** is kept as typed. Enter in the field does not post the form either, unless the
+  block was given `submit` (then it submits like any form).
+- **The camera** opens in the block, with a Close button (Escape closes it too), and fills the
+  field with the first code it reads, closes and puts the focus back on the field. The camera
+  button appears only where the browser can open a camera. The stream is stopped when the
+  camera is closed, the page is hidden or left, or the block is removed. If the camera is
+  denied or missing, the status says so and the field still works.
+
+The camera path uses the browser's `BarcodeDetector` where it exists. Where it does not (Firefox,
+Safari, desktop Chrome on some systems), the block loads a bundled decoder, [@zxing/library]
+0.23.0 (Apache-2.0, about 360 KB, in `assets/vendor/zxing/`), served from your own app like the
+rest, and only when the camera is opened: a page without the block, and a browser with
+`BarcodeDetector`, never download it. `formats` is a comma list of `BarcodeDetector` format
+names (`ean_13`, `ean_8`, `upc_a`, `code_128`, `code_39`, `itf`, `qr_code`, `data_matrix`,
+`pdf417`, `aztec`…), which the decoder maps to its own; a name it does not know is ignored, with
+a warning in the console. The default, `ean_13,qr_code`, reads shop barcodes and QR codes.
+
+[@zxing/library]: https://github.com/zxing-js/library
+
+The camera needs `camera` in the Permissions-Policy (see the note under [geolocate](#geolocate))
+and a secure page.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field's name |
+| `value` | | the code to begin with (old input wins) |
+| `label` | "Code" | the field's label |
+| `formats` | `"ean_13,qr_code"` | the code types to read, as `BarcodeDetector` names |
+| `required` | `false` | a code is needed |
+| `submit` | `false` | a scanned code (or typed Enter) submits the form |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+The bike shop shows all three on `/about/blocks` (a rating, a position and a code, posted to a
+demo route that says what arrived) and allows `geolocation` and `camera` for its own pages.
 
 ## Showing data
 
@@ -587,6 +914,131 @@ After the server answered, the board sends `rx:kanban-moved` with
 `kanban_card(card)` prints one card, for a fragment that adds a card to a board already on the
 page; the board sets it up when htmx swaps it in.
 
+## Maps
+
+Two blocks put a place on a map: `map_picker` chooses one (a point, a circle or a polygon) and
+`map` shows markers and areas. The map library is [Leaflet](https://leafletjs.com) 1.9.4
+(BSD-2-Clause), vendored in the crate with its licence; the drawing is the crate's own. A page
+fetches `map.js` only when it has a map block, and Leaflet only when that block has tiles
+to show: a page without a map block requests neither.
+
+**The tiles are configuration, not a default.** Renox does not choose a tile service for you.
+Set a URL template, and the text the map shows for its source:
+
+```text
+BLOCKS_MAP_TILES=https://tiles.example.com/{z}/{x}/{y}.png
+BLOCKS_MAP_ATTRIBUTION=© Example maps contributors
+```
+
+or `Blocks::new().map_tiles("…").map_attribution("…")`. The template must be an `http(s)` URL
+(anything else counts as unset); `{s}` is a subdomain if your provider has them. Check your
+provider's terms: the public OpenStreetMap servers, for one, are not meant for an app's
+traffic. Without tiles each block says so in a note that names `BLOCKS_MAP_TILES`, and the
+picker still works from its typed coordinates, so entering a place never depends on a tile
+server.
+
+**Content-Security-Policy.** The default policy lets images come from `'self'`, `data:`,
+`blob:` and any `https:` host, so an `https` tile host needs nothing. Leaflet's code and
+stylesheet are served by your app (`'self'`), with no inline script, so `CSP=strict` works. A
+tile host that is not `https` (a local or internal server) must be added:
+
+```rust
+use renox::prelude::*;
+
+fn app() -> App {
+    App::new()
+        .module(renox_blocks::Blocks::new())
+        .csp(|csp| {
+            csp.allow("img-src", "http://tiles.internal:8080");
+        })
+}
+```
+
+### map_picker
+
+```html
+<form method="post" action="/deliveries">
+  {{ csrf_field() }}
+  <rx-map-picker name="spot" label="Meeting point"/>
+  <rx-map-picker name="zone" mode="polygon" label="Delivery zone"/>
+  <rx-map-picker name="range" mode="circle" label="Service circle"/>
+</form>
+```
+
+| Mode | What you do | What is posted |
+|---|---|---|
+| `point` (the default) | click the map, or drag the pin | two number fields, `spot[lat]` and `spot[lng]` |
+| `circle` | click the centre, then click again for the radius | `range`: a GeoJSON `Point` with a `radius` in metres |
+| `polygon` | click a vertex per click; double-click or Enter closes it | `zone`: a GeoJSON `Polygon` |
+
+**The keyboard.** Everything the pointer does has a typed way: a point has latitude and
+longitude fields; a circle one line, `lat, lng, radius` (metres); a polygon one `lat, lng`
+line per vertex. They stay in step with the map in both directions, and give the same value
+as drawing does. On the map itself, Tab to it, then Enter closes a polygon, Backspace removes
+the last vertex (or the circle or the point), Escape discards the drawing, and the arrow keys
+and `+` / `-` move and zoom as in any Leaflet map. A shape that is not complete (a polygon with
+fewer than three vertices, a line that does not parse) posts nothing, so a `required` rule
+catches it.
+
+GeoJSON order is `[lng, lat]`; Renox's API and the typed fields are `(lat, lng)`. The posted
+values read with `renox::geo` ([types.md](types.md#places-points-circles-and-areas)), and
+the server checks them again, as for every block:
+
+```rust
+use renox::geo::{Point, Polygon};
+use renox::prelude::*;
+
+#[derive(serde::Deserialize, Validate)]
+struct Delivery {
+    spot: Option<Point>, // spot[lat] and spot[lng]: a bad coordinate is a validation error
+    #[validate(required, json)]
+    zone: String, // the GeoJSON text
+}
+
+/// Is the meeting point inside the delivery zone?
+async fn check(Valid(form): Valid<Delivery>) -> Result<String> {
+    let zone: Polygon = renox::serde_json::from_str(&form.zone)
+        .map_err(|_| Error::BadRequest("The zone is not a polygon.".into()))?;
+    let inside = form.spot.is_some_and(|spot| zone.contains(spot));
+    Ok(format!("inside: {inside}"))
+}
+```
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field name (`name[lat]` and `name[lng]` for a point) |
+| `mode` | `"point"` | `"point"`, `"circle"` or `"polygon"` |
+| `value` | none | the place to start from: a `Point` (or `{lat, lng}`), `Circle` or `Polygon`, or its GeoJSON |
+| `label` | "Location" | the picker's label |
+| `height` | 320 | the map's height in CSS pixels |
+| `hint`, `id`, `bag` | | as for the kit's fields; the error shows under the block |
+
+### map
+
+```html
+<rx-map id="places" label="Our stores"
+  :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Workshop'}]"
+  :shapes="[delivery_zone]"/>
+```
+
+A read-only map that fits its view to what it shows. A marker is `{lat, lng, label?}` (the
+label is its tooltip and its popup); a shape is a `Circle` or `Polygon` value or its GeoJSON
+(a circle as a `Point` with `radius`). The markers are also a list for screen readers, and
+the only thing shown when there are no tiles. The attribution for the tiles sits in the
+corner, as the tile providers require.
+
+| Option | Default | What it does |
+|---|---|---|
+| `markers` | `[]` | a list of `{lat, lng, label?}` |
+| `shapes` | `[]` | a list of circles and polygons |
+| `label` | "Map" | the map's name for screen readers |
+| `height` | 320 | the map's height in CSS pixels |
+| `id` | `"rx-map"` | the block's id |
+
+The texts are `blocks.map.*` keys ([Texts in other languages](#texts-in-other-languages)).
+[examples/bikeshop](../examples/bikeshop)'s `/about/blocks` shows both; set `BLOCKS_MAP_TILES`
+there to see the tiles.
+
 ## Printing
 
 ### receipt
@@ -693,7 +1145,8 @@ JavaScript module. The module looks at the page (and at whatever htmx swaps in l
 imports a block's code only when the page has that block: a product page with a gallery and a
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
 `status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
-`week.js` for its keyboard, and `receipt` has a few lines, for its Print button.
+`week.js` for its keyboard, `map_picker` and `map` load `map.js` (and Leaflet, only when they have tiles to show), and `receipt` has a few lines, for its Print button. `signature_pad` loads `signature.js` and
+`camera_capture` loads `camera.js`, so a page with neither downloads neither. `rating` needs no code; `geolocate` loads `geolocate.js` and `barcode_scan` loads `barcode.js`, and `barcode.js` fetches the bundled zxing decoder only when the camera is opened in a browser without `BarcodeDetector`.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

@@ -28,6 +28,10 @@ pub enum FieldKind {
     /// An amount kept in the currency's smallest unit, shown and typed in
     /// whole units, with the currency's code before it.
     Money,
+    /// An exact quantity (`Quantity<S>`), shown and typed as a decimal with
+    /// the scale's digits and, with [`Field::unit_from`], the record's unit
+    /// after it.
+    Quantity,
     /// A date with a calendar (`NaiveDate`, sent as `YYYY-MM-DD`).
     Date,
     /// A date and a time (`type="datetime-local"`, sent as
@@ -84,6 +88,11 @@ pub struct Field {
     on_create: bool,
     on_edit: bool,
     readonly_on_edit: bool,
+    scale: u32,
+    #[serde(skip)]
+    currency_from: Option<String>,
+    #[serde(skip)]
+    unit_from: Option<String>,
     #[serde(skip)]
     relation: Option<(String, String)>,
 }
@@ -111,6 +120,9 @@ impl Field {
             on_create: true,
             on_edit: true,
             readonly_on_edit: false,
+            scale: 0,
+            currency_from: None,
+            unit_from: None,
             relation: None,
         }
     }
@@ -164,6 +176,85 @@ impl Field {
         let mut field = Self::new(name, label, FieldKind::Money);
         field.min = Some("0".into());
         field
+    }
+
+    /// For a `money` field: the amount is in the currency the record keeps
+    /// in its `key` field (an ISO 4217 code such as `total_currency`, the
+    /// `<field>_currency` column of a `#[model(money)]` field), which the
+    /// resource also lists as a field (a [`select`](Self::select) of codes,
+    /// say). The edit page shows the amount in whole units with that
+    /// currency's decimals and code, the create page uses the currency
+    /// field's [default value](Self::default_value), and the posted amount
+    /// is read with the decimals of the currency posted with it. Without it
+    /// the field uses `APP_CURRENCY`.
+    ///
+    /// ```
+    /// use renox_admin::Field;
+    ///
+    /// let fields = vec![
+    ///     Field::money("total", "Total").currency_from("total_currency"),
+    ///     Field::select("total_currency", "Currency", [("USD", "USD"), ("JPY", "JPY")])
+    ///         .default_value("USD"),
+    /// ];
+    /// # assert_eq!(fields.len(), 2);
+    /// ```
+    pub fn currency_from(mut self, key: &str) -> Self {
+        if self.kind == FieldKind::Money && plain_name(key) {
+            self.currency_from = Some(key.to_owned());
+        }
+        self
+    }
+
+    /// An exact quantity (a `Quantity<S>` field of the model, kept as a
+    /// scaled integer and serialized as the decimal text `"2.500"`). The
+    /// form shows and takes that decimal text (`<rx-input type="quantity">`,
+    /// stepping by the scale's last digit); the form's field is a
+    /// `Quantity<S>` (or a `String`) and no conversion is needed. Set the
+    /// scale with [`scale`](Self::scale) and the record's unit with
+    /// [`unit_from`](Self::unit_from).
+    ///
+    /// ```
+    /// use renox_admin::Field;
+    ///
+    /// let stock = Field::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn quantity(name: &str, label: &str) -> Self {
+        Self::new(name, label, FieldKind::Quantity)
+    }
+
+    /// For a `quantity` field: the decimals of its `Quantity<SCALE>`, `3`
+    /// for thousandths (at most 9, 0 by default). It sets the input's step.
+    /// Other fields ignore it.
+    pub fn scale(mut self, scale: u32) -> Self {
+        if self.kind == FieldKind::Quantity {
+            self.scale = scale.min(9);
+        }
+        self
+    }
+
+    /// For a `quantity` field: the quantity is in the unit the record keeps
+    /// in its `key` field (a code such as `stock_unit`), which the resource
+    /// also lists as a field (a [`select`](Self::select) of codes, say). The
+    /// edit page shows that unit after the input, the create page uses the
+    /// unit field's [default value](Self::default_value). Without it the
+    /// field has no unit.
+    ///
+    /// ```
+    /// use renox_admin::Field;
+    ///
+    /// let fields = vec![
+    ///     Field::quantity("stock", "Stock").scale(3).unit_from("stock_unit"),
+    ///     Field::select("stock_unit", "Unit", [("kg", "kg"), ("g", "g")])
+    ///         .default_value("kg"),
+    /// ];
+    /// # assert_eq!(fields.len(), 2);
+    /// ```
+    pub fn unit_from(mut self, key: &str) -> Self {
+        if self.kind == FieldKind::Quantity && plain_name(key) {
+            self.unit_from = Some(key.to_owned());
+        }
+        self
     }
 
     /// A date with the kit's calendar, sent as `YYYY-MM-DD` (a `NaiveDate`).
@@ -324,6 +415,18 @@ impl Field {
     /// The field's kind.
     pub fn kind(&self) -> FieldKind {
         self.kind
+    }
+
+    pub(crate) fn currency_column(&self) -> Option<&str> {
+        self.currency_from.as_deref()
+    }
+
+    pub(crate) fn unit_column(&self) -> Option<&str> {
+        self.unit_from.as_deref()
+    }
+
+    pub(crate) fn default_text(&self) -> Option<&str> {
+        self.default.as_ref().and_then(Value::as_str)
     }
 
     pub(crate) fn is_readonly_on_edit(&self) -> bool {

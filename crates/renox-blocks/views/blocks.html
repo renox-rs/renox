@@ -3,8 +3,10 @@
 
     {% from "renox-blocks/blocks.html" import quantity, swatches, gallery %}
 
-    Input:          quantity, range_slider, keypad, swatches, datetime_range
-    Showing data:   gallery, history, compare_plans, status_stepper
+    Input:          quantity, range_slider, keypad, swatches, datetime_range,
+                    signature_pad, camera_capture, map_picker (a point, circle or polygon), rating,
+                    geolocate, barcode_scan
+    Showing data:   gallery, history, compare_plans, status_stepper, map
     Scheduling:     month_calendar, availability, week_calendar, kanban
                     (+ kanban_card)
     Printing:       receipt (a till receipt, 80 mm or 58 mm)
@@ -35,7 +37,7 @@
 {%- endmacro -%}
 
 {%- macro _chevron(direction, size=20) -%}
-<svg viewBox="0 0 20 20" width="{{ size }}" height="{{ size }}" aria-hidden="true"><path d="{{ 'M12.5 4.5L7 10l5.5 5.5' if direction == 'left' else 'M7.5 4.5L13 10l-5.5 5.5' }}" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+<svg class="rx-icon--directional" viewBox="0 0 20 20" width="{{ size }}" height="{{ size }}" aria-hidden="true"><path d="{{ 'M12.5 4.5L7 10l5.5 5.5' if direction == 'left' else 'M7.5 4.5L13 10l-5.5 5.5' }}" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
 {%- endmacro -%}
 
 {#- ======================================================================
@@ -888,5 +890,384 @@
     {{ button(print_label or renox_blocks_t('blocks.receipt.print'), variant="primary", type="button", attrs={"data-rx-receipt-print": ""}) }}
   </div>
   {%- endif %}
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    signature_pad: a signature drawn with a finger, a pen or the mouse, or
+    typed as a name. It sends a PNG file in `name` (`signature.png`, on a
+    white background) or, when the name was typed, the text in `name_name`
+    and no file; the last way used wins and clears the other.
+
+    <form method="post" enctype="multipart/form-data">
+      {{ signature_pad("signature", required=true) }}
+
+    Read them as `signature: Option<Upload>` (rules `image()`,
+    `mimes(&["png"])`) and `signature_name: Option<String>`. The pad is
+    drawn only with the script; the typed name is a plain field that always
+    works, so the signature can be completed with the keyboard alone and
+    without JavaScript. `required` is met by either: the typed field is
+    `required` until the pad has ink. Undo takes back the last stroke.
+    `width` and `height` are the pad's size in CSS pixels at most (it
+    shrinks to fit a narrow screen).
+    ====================================================================== -#}
+{% macro signature_pad(name, label=none, name_label=none, required=false, width=400, height=160, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set typed = name ~ "_name" %}
+{%- set message = error(name, bag=bag) or error(typed, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.signature.label') %}
+{%- set texts = {
+  "drawn": renox_blocks_t('blocks.signature.drawn'),
+  "cleared": renox_blocks_t('blocks.signature.cleared'),
+  "undone": renox_blocks_t('blocks.signature.undone')
+} %}
+<div class="rx-field rx-signature" id="{{ id }}" data-rx-signature data-rx-signature-width="{{ width }}" data-rx-signature-height="{{ height }}" data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div class="rx-signature__pad" data-rx-signature-pad>
+    <canvas class="rx-signature__canvas" tabindex="0" role="img" aria-label="{{ renox_blocks_t('blocks.signature.area') }}" aria-describedby="{{ id }}-help" data-rx-signature-canvas></canvas>
+    <div class="rx-signature__tools">
+      <button class="rx-button rx-button--secondary rx-button--small" type="button" disabled data-rx-signature-undo>{{ renox_blocks_t('blocks.signature.undo') }}</button>
+      <button class="rx-button rx-button--secondary rx-button--small" type="button" disabled data-rx-signature-clear>{{ renox_blocks_t('blocks.signature.clear') }}</button>
+    </div>
+  </div>
+  <p class="rx-hint" id="{{ id }}-help">{{ renox_blocks_t('blocks.signature.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <label class="rx-label" for="{{ id }}-name">{{ name_label or renox_blocks_t('blocks.signature.typed') }}</label>
+  <input class="rx-input" type="text" id="{{ id }}-name" name="{{ typed }}" value="{{ old(typed, '') }}" autocomplete="off"
+    {%- if required %} required data-rx-signature-required{% endif %}
+    {%- if message %} aria-invalid="true"{% endif %} data-rx-signature-name>
+  <input type="file" hidden name="{{ name }}" accept="image/png" data-rx-signature-file>
+  <p class="rx-visually-hidden" role="status" data-rx-signature-status></p>
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    camera_capture: photos taken with the device's camera, sent as real
+    files. The shutter downsizes each frame to `max_width` pixels and puts
+    it, as `photo-N.jpg`, on a file input named `name` (with `multiple`
+    when `max` is above 1), so the handler gets `Option<Upload>` (or
+    `Vec<Upload>`) and the usual rules (`image()`, `mimes(&["jpg"])`,
+    `max(..)`) apply. Count the photos with `v.field(name, &photos).max(n)`.
+
+    <form method="post" enctype="multipart/form-data">
+      {{ camera_capture("photos", max=3, facing="environment") }}
+
+    Without JavaScript, when the camera is denied, missing or fails, the same
+    file input stays visible (`capture` opens the camera app on a phone) and
+    a message says why; what it picks is downsized the same way. `facing` is
+    `user` or `environment`; `quality` is the JPEG quality from 0.1 to 1.
+    ====================================================================== -#}
+{% macro camera_capture(name, label=none, facing="environment", max=1, max_width=2048, quality=0.85, accept="image/*", required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.camera.label') %}
+{%- set texts = {
+  "denied": renox_blocks_t('blocks.camera.denied'),
+  "missing": renox_blocks_t('blocks.camera.missing'),
+  "failed": renox_blocks_t('blocks.camera.failed'),
+  "taken": renox_blocks_t('blocks.camera.taken'),
+  "removed": renox_blocks_t('blocks.camera.removed'),
+  "full": renox_blocks_t('blocks.camera.full'),
+  "photo": renox_blocks_t('blocks.camera.photo'),
+  "remove": renox_blocks_t('blocks.camera.remove')
+} %}
+<div class="rx-field rx-camera" id="{{ id }}" data-rx-camera data-rx-camera-max="{{ max }}" data-rx-camera-width="{{ max_width }}" data-rx-camera-quality="{{ quality }}" data-rx-camera-facing="{{ facing }}" data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div class="rx-camera__live" data-rx-camera-live hidden>
+    <video class="rx-camera__video" autoplay playsinline muted data-rx-camera-video></video>
+    <button class="rx-button rx-button--small" type="button" disabled data-rx-camera-shutter>{{ renox_blocks_t('blocks.camera.shutter') }}</button>
+  </div>
+  <ul class="rx-camera__shots" data-rx-camera-shots></ul>
+  <div class="rx-camera__fallback" data-rx-camera-fallback>
+    <input class="rx-input" type="file" id="{{ id }}-input" name="{{ name }}" accept="{{ accept }}" capture="{{ facing }}"
+      {%- if max > 1 %} multiple{% endif %}
+      {%- if required %} required data-rx-camera-required{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %} aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help" data-rx-camera-file>
+  </div>
+  <p class="rx-hint" id="{{ id }}-help" role="status" data-rx-camera-status>{{ renox_blocks_t('blocks.camera.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+{#- ======================================================================
+    map_picker: choose a place on a map: a point, a circle or a polygon.
+    The tiles come from BLOCKS_MAP_TILES (see `map`); without them the
+    picker is the typed-coordinates form alone, so data entry never needs
+    a tile server. The typed fields also serve as the keyboard way to
+    place a shape on a map.
+
+    <form method="post">
+      {{ map_picker("location", label="Pick-up point") }}
+      {{ map_picker("zone", mode="polygon", value=zone) }}
+
+    `mode="point"` (the default) sends `name[lat]` and `name[lng]`, two
+    plain number fields: read them as a `renox::geo::Point`. `circle` and
+    `polygon` send a GeoJSON string in `name` (a circle is a GeoJSON `Point`
+    with a `radius` in metres, a polygon a GeoJSON `Polygon`, positions as
+    `[lng, lat]`), filled in by the script from the map or from the typed
+    `lat, lng` lines. `value` is a `Point`, `Circle` or `Polygon` (or its
+    JSON); `height` is the map's height in CSS pixels.
+    ====================================================================== -#}
+{% macro map_picker(name, mode="point", value=none, label=none, height=320, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set tiles = renox_blocks_map() %}
+{%- set message = error(name, bag=bag) or error(name ~ "[lat]", bag=bag) or error(name ~ "[lng]", bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.map.picker') %}
+{%- set help = renox_blocks_t('blocks.map.help_' ~ mode) %}
+<div class="rx-field rx-map-picker" id="{{ id }}" data-rx-map-picker data-rx-map-mode="{{ mode }}" data-rx-map-height="{{ height }}"
+  {%- if tiles %} data-rx-map-tiles="{{ tiles.tiles }}" data-rx-map-attribution="{{ tiles.attribution }}"{% endif %}
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-help{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}</span>
+  {%- if tiles %}
+  <div class="rx-map__canvas" tabindex="0" role="application" aria-label="{{ renox_blocks_t('blocks.map.area') }}" aria-describedby="{{ id }}-help" data-rx-map-canvas></div>
+  {%- else %}
+  <p class="rx-map__empty" role="note">{{ renox_blocks_t('blocks.map.no_tiles', variable='BLOCKS_MAP_TILES') }}</p>
+  {%- endif %}
+  <p class="rx-hint" id="{{ id }}-help">{{ help }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  {%- if mode == "point" %}
+  {%- set lat = value.lat if value and value.lat is defined else (value.coordinates[1] if value and value.coordinates else "") %}
+  {%- set lng = value.lng if value and value.lng is defined else (value.coordinates[0] if value and value.coordinates else "") %}
+  <div class="rx-map__fields">
+    <div class="rx-field">
+      <label class="rx-label" for="{{ id }}-lat">{{ renox_blocks_t('blocks.map.latitude') }}</label>
+      <input class="rx-input" type="number" inputmode="decimal" id="{{ id }}-lat" name="{{ name }}[lat]" value="{{ old(name ~ '[lat]', lat) }}" min="-90" max="90" step="any"
+        {%- if message %} aria-invalid="true"{% endif %} data-rx-map-lat>
+    </div>
+    <div class="rx-field">
+      <label class="rx-label" for="{{ id }}-lng">{{ renox_blocks_t('blocks.map.longitude') }}</label>
+      <input class="rx-input" type="number" inputmode="decimal" id="{{ id }}-lng" name="{{ name }}[lng]" value="{{ old(name ~ '[lng]', lng) }}" min="-180" max="180" step="any"
+        {%- if message %} aria-invalid="true"{% endif %} data-rx-map-lng>
+    </div>
+  </div>
+  {%- else %}
+  {%- set raw = old(name, "") %}
+  {%- set shape = value if value and value is not string else none %}
+  <label class="rx-label" for="{{ id }}-typed">{{ renox_blocks_t('blocks.map.typed_' ~ mode) }}</label>
+  <textarea class="rx-input rx-map__typed" id="{{ id }}-typed" rows="{{ 1 if mode == 'circle' else 4 }}" spellcheck="false" autocomplete="off"
+    {%- if message %} aria-invalid="true"{% endif %} data-rx-map-typed>
+    {%- if shape and mode == "circle" -%}
+      {{ shape.center.lat if shape.center else shape.coordinates[1] }}, {{ shape.center.lng if shape.center else shape.coordinates[0] }}, {{ shape.radius }}
+    {%- elif shape -%}
+      {%- set ring = shape.coordinates[0] -%}
+      {%- for p in ring -%}{%- if not (loop.last and p == ring[0] and ring | length > 1) -%}{{ p[1] }}, {{ p[0] }}{{ "\n" if not loop.last }}{%- endif -%}{%- endfor -%}
+    {%- endif -%}
+  </textarea>
+  <input type="hidden" name="{{ name }}" data-rx-map-value value='
+    {%- if raw -%}{{ raw }}
+    {%- elif shape and mode == "circle" -%}{{ {"type": "Point", "coordinates": [shape.center.lng, shape.center.lat] if shape.center else shape.coordinates, "radius": shape.radius} | tojson }}
+    {%- elif shape -%}{{ shape | tojson }}{%- endif -%}'>
+  {%- endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    map: show markers and shapes on a map (read only).
+
+    {{ map(markers=[{"lat": 40.4168, "lng": -3.7038, "label": "Workshop"}], shapes=[delivery_zone]) }}
+
+    `markers` are `{lat, lng, label}`; `shapes` are `Circle` or `Polygon`
+    values or their GeoJSON (a circle as a GeoJSON `Point` with `radius`).
+    The tiles and their attribution come from the app's
+    `BLOCKS_MAP_TILES` and `BLOCKS_MAP_ATTRIBUTION` variables (or
+    `Blocks::map_tiles`, `Blocks::map_attribution`). Without tiles the
+    block says so and lists the markers as text; with them the same list
+    stays for screen readers.
+    ====================================================================== -#}
+{% macro map(markers=[], shapes=[], label=none, height=320, id="rx-map") -%}
+{{- _assets() }}
+{%- set tiles = renox_blocks_map() %}
+{%- set label = label or renox_blocks_t('blocks.map.label') %}
+<div class="rx-map" id="{{ id }}" data-rx-map data-rx-map-height="{{ height }}" data-rx-map-markers='{{ markers | tojson }}' data-rx-map-shapes='{{ shapes | tojson }}'
+  {%- if tiles %} data-rx-map-tiles="{{ tiles.tiles }}" data-rx-map-attribution="{{ tiles.attribution }}"{% endif %}
+  role="group" aria-label="{{ label }}">
+  {%- if tiles %}
+  <div class="rx-map__canvas" tabindex="0" role="application" aria-label="{{ label }}" data-rx-map-canvas></div>
+  {%- else %}
+  <p class="rx-map__empty" role="note">{{ renox_blocks_t('blocks.map.no_tiles', variable='BLOCKS_MAP_TILES') }}</p>
+  {%- endif %}
+  {%- if markers %}
+  <ul class="rx-map__list{% if tiles %} rx-visually-hidden{% endif %}" aria-label="{{ renox_blocks_t('blocks.map.markers') }}">
+    {%- for marker in markers %}
+    <li>{{ marker.label or renox_blocks_t('blocks.map.marker') }} ({{ marker.lat }}, {{ marker.lng }})</li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    rating: a score of stars, e.g. how a customer rated a repair. It sends
+    the chosen number in `name` (nothing when none was chosen), so the
+    form's struct reads an `Option<u8>`.
+
+    {{ rating("score", max=5, label="Your rating", required=true) }}
+
+    A radio group under the hood: one visually hidden radio per value, so
+    it works without JavaScript and without a part. Tab reaches the group,
+    the arrow keys change the choice, and a screen reader says "3 of 5".
+    The stars fill up to the chosen one (and preview the hovered one); a
+    filled star is solid and an empty one an outline, so the state does
+    not rely on colour. `max` is 1 to 10. `readonly` shows the value as
+    text for a screen reader and stars for the eye, and sends nothing.
+    ====================================================================== -#}
+{%- macro _star() -%}
+<svg class="rx-rating__star" viewBox="0 0 20 20" width="24" height="24" aria-hidden="true" focusable="false"><path d="M10 2.2l2.3 4.9 5.3.7-3.9 3.7 1 5.3L10 14.2 5.3 16.8l1-5.3L2.4 7.8l5.3-.7z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+{%- endmacro -%}
+
+{% macro rating(name, max=5, value=none, label=none, required=false, readonly=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set max = [[max | int, 1] | max, 10] | min %}
+{%- set shown = old(name, value) %}
+{%- set current = (shown | int) if shown not in [none, ""] else 0 %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.rating.label') %}
+{%- if readonly %}
+<div class="rx-field rx-rating rx-rating--readonly" id="{{ id }}">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}</span>
+  <span class="rx-rating__stars" role="img" aria-labelledby="{{ id }}-label {{ id }}-value">
+    {%- for n in range(1, max + 1) %}
+    <span class="rx-rating__item{% if n <= current %} rx-rating__item--on{% endif %}">{{ _star() }}</span>
+    {%- endfor %}
+  </span>
+  <span class="rx-visually-hidden" id="{{ id }}-value">{% if current %}{{ renox_blocks_t('blocks.rating.option', n=current, max=max) }}{% else %}{{ renox_blocks_t('blocks.rating.none') }}{% endif %}</span>
+</div>
+{%- else %}
+<fieldset class="rx-field rx-rating" id="{{ id }}" data-rx-rating aria-describedby="{% if hint %}{{ id }}-hint {% endif %}{{ id }}-error">
+  <legend class="rx-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</legend>
+  <div class="rx-rating__stars">
+    {%- for n in range(1, max + 1) %}
+    <span class="rx-rating__item">
+      <input class="rx-visually-hidden rx-rating__input" type="radio" id="{{ id }}-{{ n }}" name="{{ name }}" value="{{ n }}"{% if n == current %} checked{% endif %}{% if required and n == 1 %} required{% endif %}{% if message %} aria-invalid="true"{% endif %}>
+      <label class="rx-rating__label" for="{{ id }}-{{ n }}">{{ _star() }}<span class="rx-visually-hidden">{{ renox_blocks_t('blocks.rating.option', n=n, max=max) }}</span></label>
+    </span>
+    {%- endfor %}
+  </div>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+</fieldset>
+{%- endif %}
+{%- endmacro %}
+
+{#- ======================================================================
+    geolocate: the device's position, asked for only when the person
+    presses the button. It sends four fields: `name[lat]`, `name[lng]`,
+    `name[accuracy]` (metres) and `name[at]` (RFC 3339, UTC), so the
+    form's struct reads them as a nested struct, or as `renox::geo::Point`
+    for the latitude and longitude.
+
+    {{ geolocate("location", accuracy=50, label="Where is the bike?") }}
+
+    The four fields are disabled until there is a position, so nothing is
+    sent before a press or after an error. `accuracy` is the accuracy
+    wanted, in metres: it asks the device for its best position, and a
+    worse one is still kept, with the status saying so; the server decides
+    from the posted `accuracy`. The status (a polite live region) says
+    what is going on, including denied, unavailable and timed out, and the
+    button then reads "Try again". Without JavaScript the block explains
+    that it needs it; with `required` the server refuses a form without a
+    position. The page's Permissions-Policy must allow geolocation
+    (`.permissions_policy(|p| { p.allow("geolocation", "self"); })`),
+    which Renox switches off by default.
+    ====================================================================== -#}
+{% macro geolocate(name, accuracy=none, label=none, button_label=none, required=false, hint=none, id=none, bag=none) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.geolocate.label') %}
+{%- set lat = old(name ~ '[lat]', "") %}
+{%- set lng = old(name ~ '[lng]', "") %}
+{%- set got = old(name ~ '[accuracy]', "") %}
+{%- set at = old(name ~ '[at]', "") %}
+{%- set has = lat not in [none, ""] and lng not in [none, ""] %}
+{%- set texts = {
+  "button": renox_blocks_t('blocks.geolocate.button'),
+  "retry": renox_blocks_t('blocks.geolocate.retry'),
+  "locating": renox_blocks_t('blocks.geolocate.locating'),
+  "done": renox_blocks_t('blocks.geolocate.done'),
+  "wanted": renox_blocks_t('blocks.geolocate.wanted'),
+  "denied": renox_blocks_t('blocks.geolocate.denied'),
+  "unavailable": renox_blocks_t('blocks.geolocate.unavailable'),
+  "timeout": renox_blocks_t('blocks.geolocate.timeout'),
+  "idle": renox_blocks_t('blocks.geolocate.idle'),
+  "needed": renox_blocks_t('blocks.geolocate.needed')
+} %}
+<div class="rx-field rx-geolocate" id="{{ id }}" data-rx-geolocate{% if accuracy %} data-rx-geolocate-accuracy="{{ accuracy }}"{% endif %}{% if required %} data-rx-geolocate-required{% endif %} data-rx-blocks-texts='{{ texts | tojson }}'
+  role="group" aria-labelledby="{{ id }}-label" aria-describedby="{{ id }}-status{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error">
+  <span class="rx-label" id="{{ id }}-label">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</span>
+  <div>
+    <button class="rx-button rx-button--secondary" type="button" data-rx-geolocate-button>{{ button_label or renox_blocks_t('blocks.geolocate.button') }}</button>
+  </div>
+  <p class="rx-hint" id="{{ id }}-status" role="status" aria-live="polite" data-rx-geolocate-status>
+    {%- if has %}{{ renox_blocks_t('blocks.geolocate.done', lat=lat, lng=lng, accuracy=got) }}{% else %}{{ renox_blocks_t('blocks.geolocate.idle') }}{% endif -%}
+  </p>
+  <input type="hidden" name="{{ name }}[lat]" value="{{ lat }}" data-rx-geolocate-lat{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[lng]" value="{{ lng }}" data-rx-geolocate-lng{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[accuracy]" value="{{ got }}" data-rx-geolocate-accuracy-field{% if not has %} disabled{% endif %}>
+  <input type="hidden" name="{{ name }}[at]" value="{{ at }}" data-rx-geolocate-at{% if not has %} disabled{% endif %}>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
+  <noscript><p class="rx-hint">{{ renox_blocks_t('blocks.geolocate.no_script') }}</p></noscript>
+</div>
+{%- endmacro %}
+
+{#- ======================================================================
+    barcode_scan: one text field that a barcode can fill three ways: a
+    scanner that types like a keyboard (a "keyboard wedge"), typing, or the
+    device's camera. The form posts the field as a plain string, so the
+    server never knows which way it was filled.
+
+    {{ barcode_scan("sku", formats="ean_13,qr_code", label="Part number") }}
+
+    Without JavaScript it is the field alone. `formats` is a comma list of
+    `BarcodeDetector` format names. Keys that arrive less than 50 ms apart
+    and end in Enter count as one scan; Enter is then not sent as a submit,
+    so a scan never posts a half-filled form (`submit=true` submits after
+    a scan; typed Enter submits only then too). The camera button is shown
+    where the browser can open a camera; it uses `BarcodeDetector` when the
+    browser has it, and otherwise says so and leaves the field to type in.
+    The page's Permissions-Policy must allow the camera
+    (`.permissions_policy(|p| { p.allow("camera", "self"); })`), which Renox
+    switches off by default.
+    ====================================================================== -#}
+{% macro barcode_scan(name, value=none, label=none, formats="ean_13,qr_code", required=false, hint=none, id=none, bag=none, submit=false) -%}
+{{- _assets() }}
+{%- set id = id or ("rx-" ~ _id(name)) %}
+{%- set current = old(name, value) %}
+{%- set message = error(name, bag=bag) %}
+{%- set label = label or renox_blocks_t('blocks.barcode.label') %}
+{%- set texts = {
+  "read": renox_blocks_t('blocks.barcode.read'),
+  "scanning": renox_blocks_t('blocks.barcode.scanning'),
+  "denied": renox_blocks_t('blocks.barcode.denied'),
+  "missing": renox_blocks_t('blocks.barcode.missing'),
+  "failed": renox_blocks_t('blocks.barcode.failed'),
+  "unsupported": renox_blocks_t('blocks.barcode.unsupported'),
+  "closed": renox_blocks_t('blocks.barcode.closed')
+} %}
+<div class="rx-field rx-barcode" id="{{ id }}" data-rx-barcode data-rx-barcode-formats="{{ formats }}"{% if submit %} data-rx-barcode-submit{% endif %} data-rx-blocks-texts='{{ texts | tojson }}'>
+  <label class="rx-label" for="{{ id }}-input">{{ label }}{% if not required %} <span class="rx-required">({{ t('ui.optional') }})</span>{% endif %}</label>
+  <div class="rx-barcode__row">
+    <input class="rx-input" type="text" id="{{ id }}-input" name="{{ name }}" value="{{ current if current is not none else '' }}" inputmode="text" autocomplete="off" autocapitalize="off" spellcheck="false"
+      {%- if required %} required{% endif %}
+      {%- if message %} aria-invalid="true"{% endif %}
+      aria-describedby="{{ id }}-status{% if hint %} {{ id }}-hint{% endif %} {{ id }}-error" data-rx-barcode-input>
+    <button class="rx-button rx-button--secondary" type="button" hidden aria-controls="{{ id }}-live" aria-expanded="false" data-rx-barcode-button>{{ renox_blocks_t('blocks.barcode.button') }}</button>
+  </div>
+  <div class="rx-barcode__live" id="{{ id }}-live" data-rx-barcode-live hidden>
+    <video class="rx-barcode__video" autoplay playsinline muted aria-label="{{ renox_blocks_t('blocks.barcode.scanning') }}" data-rx-barcode-video></video>
+    <button class="rx-button rx-button--secondary rx-button--small" type="button" data-rx-barcode-close>{{ renox_blocks_t('blocks.barcode.close') }}</button>
+  </div>
+  <p class="rx-hint" id="{{ id }}-status" role="status" aria-live="polite" data-rx-barcode-status>{{ renox_blocks_t('blocks.barcode.help') }}</p>
+  {%- if hint %}<p class="rx-hint" id="{{ id }}-hint">{{ hint }}</p>{% endif %}
+  <p class="rx-error" id="{{ id }}-error" data-error-for="{{ _key(name) }}" aria-live="polite">{{ message }}</p>
 </div>
 {%- endmacro %}

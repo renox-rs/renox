@@ -1,0 +1,11 @@
+{
+  "id": "cs_test_a1B2c3",
+  "object": "checkout.session",
+  "mode": "payment",
+  "status": "open",
+  "payment_status": "unpaid",
+  "payment_intent": null,
+  "payment_link": null,
+  "expires_at": 1893456000,
+  "url": "https://checkout.stripe.com/c/pay/cs_test_a1B2c3"
+}

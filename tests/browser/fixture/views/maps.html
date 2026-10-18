@@ -1,0 +1,16 @@
+<rx-page layout="layout.html">
+  {#- The map blocks (#47): one picker per mode, a read-only map, and a form
+      that posts to /echo, which prints what it got. -#}
+  <h1>Maps</h1>
+  <form id="maps-form" method="post" action="/echo" novalidate>
+    {{ csrf_field() }}
+    <rx-map-picker name="spot" id="pick-point" label="Meeting point"/>
+    <rx-map-picker name="zone" mode="polygon" id="pick-polygon" label="Delivery zone"/>
+    <rx-map-picker name="typed" mode="polygon" id="pick-typed" label="Zone, typed"/>
+    <rx-map-picker name="area" mode="circle" id="pick-circle" label="Service circle"/>
+    <button type="submit" class="rx-button" id="send">Send</button>
+  </form>
+  <rx-map id="places" label="Places"
+    :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Workshop'}, {'lat': 40.4530, 'lng': -3.6883, 'label': 'Depot'}]"
+    :shapes="[{'type': 'Polygon', 'coordinates': [[[-3.75, 40.40], [-3.65, 40.40], [-3.65, 40.45], [-3.75, 40.40]]]}, {'center': {'lat': 40.4168, 'lng': -3.7038}, 'radius': 800}]"/>
+</rx-page>

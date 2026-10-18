@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use renox::axum::Extension;
 use renox::axum::extract::{FromRequest, Request};
+use renox::custom_fields::{CustomField, CustomValues, FieldKind as CustomKind};
 use renox::db::{Model, Query};
-use renox::grid::{Action, Grid, GridRequest, Selection};
+use renox::grid::{Action, Column, Grid, GridRequest, Selection};
 use renox::prelude::*;
 use renox::serde_json::{Map, Value};
 use renox::validation::Errors;
@@ -35,6 +36,7 @@ pub(crate) type Access = Arc<dyn Fn(&AuthUser) -> bool + Send + Sync>;
 pub(crate) struct Panel {
     pub(crate) path: String,
     pub(crate) title: String,
+    pub(crate) name: Option<String>,
     pub(crate) access: Option<Access>,
     pub(crate) resources: Vec<Arc<dyn Listed>>,
     pub(crate) settings: Vec<Arc<dyn SettingsPage>>,
@@ -145,6 +147,8 @@ pub(crate) trait Listed: Send + Sync {
     /// How many records the list starts with.
     fn count(&self, db: Db) -> BoxFuture<'static, Result<u64>>;
     fn routes(&self, panel: Arc<Panel>) -> Routes;
+    /// The model's table and name when it declares `custom_fields`.
+    fn custom_fields_model(&self) -> Option<(String, String)>;
 }
 
 /// A resource behind [`Listed`].
@@ -172,6 +176,11 @@ impl<R: AdminResource> Listed for Holder<R> {
         Box::pin(async move { query.count(&db).await })
     }
 
+    fn custom_fields_model(&self) -> Option<(String, String)> {
+        R::Model::CUSTOM_FIELDS
+            .map(|_| (R::Model::TABLE.to_owned(), self.0.plural_label().to_owned()))
+    }
+
     fn routes(&self, panel: Arc<Panel>) -> Routes {
         resource_routes(Ctx {
             panel,
@@ -180,8 +189,13 @@ impl<R: AdminResource> Listed for Holder<R> {
     }
 }
 
-/// The panel's routes, under its path, named `admin.*`.
+/// The panel's routes, under its path, named `admin.*` (`admin.<name>.*`
+/// for a named panel).
 pub(crate) fn routes(panel: Arc<Panel>) -> Routes {
+    let prefix = match &panel.name {
+        Some(name) => format!("admin.{name}."),
+        None => "admin.".to_owned(),
+    };
     let mut inner = Routes::new()
         .get("/", dashboard)
         .name("dashboard")
@@ -193,7 +207,7 @@ pub(crate) fn routes(panel: Arc<Panel>) -> Routes {
     for page in &panel.settings {
         inner = inner.merge(page.routes(panel.clone()));
     }
-    Routes::new().group(&panel.path, "admin.", inner)
+    Routes::new().group(&panel.path, &prefix, inner)
 }
 
 /// What a resource's handlers share.
@@ -487,7 +501,7 @@ impl<R: AdminResource> Ctx<R> {
                 .cloned()
                 .map(|mut field| {
                     field.translate(&|text| texts.label(slug, text));
-                    FieldView::new(field, None, true, decimals)
+                    FieldView::new(field, None, true, decimals, None)
                 })
                 .collect();
             let name = texts.label(slug, action.label());
@@ -513,6 +527,73 @@ impl<R: AdminResource> Ctx<R> {
         texts: &Texts,
     ) -> Result<Vec<FieldView>> {
         form_fields(&*self.resource, state, record, texts, &[]).await
+    }
+
+    /// The list's grid with the model's custom fields as columns (one per
+    /// active definition the resource doesn't already list), resolved so
+    /// their filters, sorts and exports work.
+    async fn grid_for(
+        &self,
+        state: &AppState,
+        user: &AuthUser,
+        trashed: bool,
+        texts: &Texts,
+        request: &GridRequest,
+    ) -> Result<Grid> {
+        let mut grid = self.grid(user, trashed, texts);
+        let Some(column) = R::Model::CUSTOM_FIELDS else {
+            return Ok(grid);
+        };
+        let declared: Vec<String> = self
+            .resource
+            .columns()
+            .iter()
+            .map(|c| c.key().to_owned())
+            .collect();
+        let fields = CustomField::for_model(&state.db, R::Model::TABLE).await?;
+        for field in fields.iter() {
+            let custom = Column::custom_field(column, &field.key);
+            if !declared.iter().any(|key| key == custom.key()) {
+                grid = grid.column(custom);
+            }
+        }
+        grid.with_custom_fields::<R::Model>(request).await
+    }
+
+    /// The custom fields of the model for the form and view pages: the
+    /// column, the active definitions in the request's locale and the
+    /// record's values. `Null` without any.
+    async fn custom(
+        &self,
+        state: &AppState,
+        user: &AuthUser,
+        texts: &Texts,
+        record: Option<&Value>,
+    ) -> Result<Value> {
+        let Some(column) = R::Model::CUSTOM_FIELDS else {
+            return Ok(Value::Null);
+        };
+        let fields =
+            CustomField::views_for(&state.db, R::Model::TABLE, texts.locale(), Some(user)).await?;
+        if fields.is_empty() {
+            return Ok(Value::Null);
+        }
+        let multipart = fields.iter().any(|f| f.kind == CustomKind::File);
+        // A masked sensitive value never reaches the template context; one the
+        // user may see is opened (and the form shows it empty anyway).
+        let values = match record.and_then(|r| r.get(column)) {
+            Some(stored) => match renox::serde_json::from_value::<CustomValues>(stored.clone()) {
+                Ok(stored) => to_json(&stored.shown(&state.db, &fields))?,
+                Err(_) => Value::Null,
+            },
+            None => Value::Null,
+        };
+        Ok(json!({
+            "column": column,
+            "fields": fields,
+            "values": values,
+            "multipart": multipart,
+        }))
     }
 
     /// The record's tabs: "Details", then each relation manager the user
@@ -545,7 +626,7 @@ impl<R: AdminResource> Ctx<R> {
     }
 
     /// The names of the form's money fields.
-    fn money_fields(&self) -> Vec<String> {
+    fn money_fields(&self) -> Vec<MoneyField> {
         money_fields(&*self.resource)
     }
 
@@ -664,14 +745,13 @@ pub(crate) fn record_title<R: AdminResource>(
     }
 }
 
-/// The names of `resource`'s money fields.
-pub(crate) fn money_fields<R: AdminResource>(resource: &R) -> Vec<String> {
-    resource
-        .fields()
-        .iter()
-        .filter(|field| field.kind() == FieldKind::Money)
-        .map(|field| field.name().to_owned())
-        .collect()
+/// A form's money field: its name and the field that holds its currency
+/// ([`Field::currency_from`]).
+pub(crate) type MoneyField = (String, Option<String>);
+
+/// `resource`'s money fields.
+pub(crate) fn money_fields<R: AdminResource>(resource: &R) -> Vec<MoneyField> {
+    money_names(&resource.fields())
 }
 
 /// `resource`'s form fields for a create page (`record` is `None`) or an
@@ -695,13 +775,25 @@ pub(crate) async fn form_fields<R: AdminResource>(
     .await
 }
 
-/// The names of the money fields among `fields`.
-pub(crate) fn money_names(fields: &[Field]) -> Vec<String> {
+/// The money fields among `fields`.
+pub(crate) fn money_names(fields: &[Field]) -> Vec<MoneyField> {
     fields
         .iter()
         .filter(|field| field.kind() == FieldKind::Money)
-        .map(|field| field.name().to_owned())
+        .map(|field| {
+            (
+                field.name().to_owned(),
+                field.currency_column().map(str::to_owned),
+            )
+        })
         .collect()
+}
+
+/// The decimals of a currency code (`jpy` → 0), if `code` looks like one.
+fn code_decimals(code: &str) -> Option<u32> {
+    let code = code.trim();
+    (code.len() == 3 && code.bytes().all(|b| b.is_ascii_alphabetic()))
+        .then(|| renox::currency_decimals(&code.to_ascii_uppercase()).min(6))
 }
 
 /// `fields` as a form draws them (see [`form_fields`]); `slug` scopes the
@@ -716,6 +808,12 @@ pub(crate) async fn fields_view(
 ) -> Result<Vec<FieldView>> {
     let (db, decimals) = (&state.db, money_decimals(state));
     let creating = record.is_none();
+    // The create page's currency of a `currency_from` field: the default of
+    // the field that holds it.
+    let defaults: BTreeMap<String, String> = fields
+        .iter()
+        .filter_map(|f| Some((f.name().to_owned(), f.default_text()?.to_owned())))
+        .collect();
     let mut views = Vec::new();
     for mut field in fields {
         if !field.shown(creating) || hidden.contains(&field.name()) {
@@ -730,8 +828,26 @@ pub(crate) async fn fields_view(
         {
             field = field.placeholder(&texts.get("select_placeholder", &[]));
         }
+        let currency = field.currency_column().and_then(|column| {
+            let code = match record {
+                Some(record) => record.get(column)?.as_str()?,
+                None => defaults.get(column)?,
+            };
+            code_decimals(code).map(|_| code.trim().to_ascii_uppercase())
+        });
+        // The unit of a `unit_from` field, the same way.
+        let unit = field.unit_column().and_then(|column| {
+            let code = match record {
+                Some(record) => record.get(column)?.as_str()?,
+                None => defaults.get(column)?,
+            }
+            .trim();
+            (!code.is_empty()).then(|| code.to_owned())
+        });
         field.translate(&|text| texts.label(slug, text));
-        views.push(FieldView::new(field, record, creating, decimals));
+        let mut view = FieldView::new(field, record, creating, decimals, currency.as_deref());
+        view.unit_code = unit;
+        views.push(view);
     }
     Ok(views)
 }
@@ -770,12 +886,26 @@ pub(crate) struct FieldView {
     attrs: BTreeMap<String, String>,
     /// Shown but not changeable (edit pages, `readonly_on_edit`).
     locked: bool,
+    /// The code shown before a money field with `currency_from`.
+    currency_code: Option<String>,
+    /// The unit shown after a quantity field with `unit_from`.
+    unit_code: Option<String>,
 }
 
 impl FieldView {
     /// `decimals`: `APP_CURRENCY`'s, for money fields, which show whole
     /// units (`12.99`) of an amount kept in the smallest unit (`1299`).
-    pub(crate) fn new(field: Field, record: Option<&Value>, creating: bool, decimals: u32) -> Self {
+    ///
+    /// `currency`: the code of a money field's own currency
+    /// ([`Field::currency_from`]), whose decimals replace `decimals`.
+    pub(crate) fn new(
+        field: Field,
+        record: Option<&Value>,
+        creating: bool,
+        decimals: u32,
+        currency: Option<&str>,
+    ) -> Self {
+        let decimals = currency.and_then(code_decimals).unwrap_or(decimals);
         let json = renox::serde_json::to_value(&field).unwrap_or(Value::Null);
         let read = |key: &str| json.get(key).cloned().unwrap_or(Value::Null);
         let mut value = match record {
@@ -822,6 +952,8 @@ impl FieldView {
             value,
             attrs,
             locked,
+            currency_code: currency.map(str::to_owned),
+            unit_code: None,
         }
     }
 }
@@ -964,7 +1096,7 @@ pub(crate) fn check_input(
 pub(crate) async fn read_form<F>(
     state: &AppState,
     req: Request,
-    money: &[String],
+    money: &[MoneyField],
     fixed: &[(String, String)],
 ) -> std::result::Result<F, Box<Response>>
 where
@@ -1036,14 +1168,19 @@ pub(crate) fn smallest_unit(text: &str, decimals: u32) -> Option<String> {
 async fn rewrite_body(
     state: &AppState,
     req: Request,
-    money: &[String],
+    money: &[MoneyField],
     fixed: &[(String, String)],
 ) -> std::result::Result<Request, Box<Response>> {
     use renox::axum::body::{Body, Bytes};
     use renox::axum::http::header::{CONTENT_LENGTH, CONTENT_TYPE};
 
     let decimals = money_decimals(state);
-    let money: &[String] = if decimals == 0 { &[] } else { money };
+    // A field with its own currency is read with that currency's decimals
+    // whatever `APP_CURRENCY` has.
+    let money: Vec<&MoneyField> = money
+        .iter()
+        .filter(|(_, own)| own.is_some() || decimals > 0)
+        .collect();
     if money.is_empty() && fixed.is_empty() {
         return Ok(req);
     }
@@ -1063,6 +1200,7 @@ async fn rewrite_body(
         .await
         .map_err(|rejection| Box::new(rejection.into_response()))?;
     let changed = if form {
+        let posted = parse_pairs(&bytes);
         let text = String::from_utf8_lossy(&bytes);
         let mut pairs: Vec<String> = text
             .split('&')
@@ -1072,7 +1210,16 @@ async fn rewrite_body(
             })
             .map(|pair| {
                 let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
-                if money.iter().any(|name| *name == url_decode(key))
+                let name = url_decode(key);
+                if let Some((_, own)) = money.iter().find(|(field, _)| *field == name)
+                    && let decimals = own
+                        .as_ref()
+                        .and_then(|column| {
+                            let (_, code) = posted.iter().rev().find(|(k, _)| k == column)?;
+                            code_decimals(code)
+                        })
+                        .unwrap_or(decimals)
+                    && decimals > 0
                     && let Some(amount) = smallest_unit(&url_decode(value), decimals)
                 {
                     format!("{key}={amount}")
@@ -1088,7 +1235,14 @@ async fn rewrite_body(
     } else {
         match renox::serde_json::from_slice::<Value>(&bytes) {
             Ok(Value::Object(mut object)) => {
-                for name in money {
+                for (name, own) in money {
+                    let decimals = own
+                        .as_ref()
+                        .and_then(|column| code_decimals(object.get(column)?.as_str()?))
+                        .unwrap_or(decimals);
+                    if decimals == 0 {
+                        continue;
+                    }
                     let amount = match object.get(name) {
                         Some(Value::String(text)) => smallest_unit(text, decimals),
                         Some(Value::Number(n)) => smallest_unit(&n.to_string(), decimals),
@@ -1197,7 +1351,9 @@ async fn index<R: AdminResource>(
     let slug = cx.resource.slug();
     let filter = request.param("filter").filter(|f| !f.is_empty());
     let trashed = filter == Some(TRASHED) && R::Model::SOFT_DELETES && cx.offers("restoreAny");
-    let grid = cx.grid(&user, trashed, &texts);
+    let grid = cx
+        .grid_for(&state, &user, trashed, &texts, &request)
+        .await?;
     let query = cx.scoped(filter);
     if let Some(file) = grid.export(query.clone(), &request).await? {
         return Ok(file);
@@ -1280,6 +1436,10 @@ async fn create<R: AdminResource>(
         Value::String(texts.get("create", &[("label", &label)])),
     );
     values.insert("record".into(), Value::Null);
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &user, &texts, None).await?,
+    );
     page(&cx, &state, &user, "renox-admin/form.html", values, &texts)
 }
 
@@ -1346,7 +1506,12 @@ async fn show<R: AdminResource>(
     let id = record.id().to_string();
     let label = cx.label(&texts);
     let mut values = Map::new();
-    values.insert("record".into(), to_json(&record)?);
+    let record_json = to_json(&record)?;
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &user, &texts, Some(&record_json)).await?,
+    );
+    values.insert("record".into(), record_json);
     values.insert("entries".into(), to_json(&entries)?);
     values.insert("allowed".into(), to_json(&can)?);
     values.insert("deleted".into(), Value::Bool(deleted));
@@ -1364,6 +1529,23 @@ async fn show<R: AdminResource>(
         "force_delete_url".into(),
         Value::String(format!("{base}/{id}/actions/force-delete")),
     );
+    if let Some(machine) = cx.resource.state_machine() {
+        let available = if !deleted && may("update") {
+            cx.resource
+                .available_transitions(&record, &user, &state.db)
+                .await?
+        } else {
+            Vec::new()
+        };
+        // A transition button is a row action: only those the resource offers.
+        let offered = cx.resource.actions();
+        let available: Vec<_> = available
+            .into_iter()
+            .filter(|a| offered.iter().any(|x| x.key() == a.name && x.on_row()))
+            .collect();
+        values.insert("machine".into(), to_json(&machine)?);
+        values.insert("transitions".into(), to_json(&available)?);
+    }
     values.insert("title".into(), Value::String(cx.title_of(&record, &texts)));
     values.insert("label_lower".into(), Value::String(lower(&label)));
     let tabs = cx.relation_tabs(&user, &texts, &id);
@@ -1399,6 +1581,10 @@ async fn edit<R: AdminResource>(
     values.insert(
         "submit_label".into(),
         Value::String(texts.get("save_changes", &[])),
+    );
+    values.insert(
+        "custom".into(),
+        cx.custom(&state, &user, &texts, Some(&json)).await?,
     );
     values.insert("record".into(), json);
     if cx.allows(&user, "delete", Some(&record)) {
@@ -1655,7 +1841,9 @@ async fn bulk<R: AdminResource>(
             _ => {}
         }
     }
-    let grid = cx.grid(&user, trashed, &texts);
+    let grid = cx
+        .grid_for(&state, &user, trashed, &texts, &request)
+        .await?;
     let records = grid
         .selected(cx.scoped(filter), &request, &selection)?
         .limit(MAX_SELECTED)

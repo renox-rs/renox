@@ -17,6 +17,7 @@ mod app;
 
 use renox::audit::Audit;
 use renox::auth::{Auth, Permissions};
+use renox::nav::NavLink;
 
 pub use app::roles;
 
@@ -49,6 +50,23 @@ pub fn app() -> renox::App {
             "users:admin",
             "Give the user with this email the admin role",
             app::roles::make_admin,
+        )
+        // The links of the Auth module's pages, in the sidebar menu the other
+        // modules add to (`<rx-sidebar menu="app"/>`, layouts/app.html).
+        .nav(
+            "app",
+            NavLink::route("notifications.index", "nav.notifications")
+                .icon("bell")
+                .order(1)
+                .when(|_| true),
+        )
+        .nav(
+            "app",
+            NavLink::route("account.show", "nav.account")
+                .icon("circle-user")
+                .group("nav.app")
+                .order(21)
+                .when(|_| true),
         )
         .seeder(app::seed::run)
         // The seeded people on the login page, in local only (src/app/demo.rs).

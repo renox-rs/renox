@@ -11,7 +11,7 @@ or "§6.4" (used in older issues and comments) are kept in those files.
 - Apps depend on Renox; framework code is never copied into apps. Upgrading is a version bump.
 - Renoxium is the main contributor and maintainer. Open source, `MIT OR Apache-2.0`.
   Repo https://github.com/renox-rs/renox (default branch `main`).
-- The framework is *Renox*; the CLI binary is **`rnx`** (crate `renox-cli`). All ten crates share one
+- The framework is *Renox*; the CLI binary is **`rnx`** (crate `renox-cli`). All eleven crates share one
   version and are released together (RELEASING.md).
 - Everything in the repo is English: code, comments, docs, example content, tests, commit
   messages and PRs. Renox ships English texts only; an example that needs a second language uses

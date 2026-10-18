@@ -115,6 +115,19 @@ pub(super) enum CondKind {
     Op(&'static str, &'static str, DbValue),
     Null(&'static str, bool),
     In(&'static str, Vec<DbValue>),
+    /// A key of a JSON column (`JsonPath`): column, key, operation, values.
+    Json(&'static str, String, JsonOp, Vec<DbValue>),
+}
+
+/// What a condition on a JSON key does.
+#[derive(Clone, Copy)]
+pub(super) enum JsonOp {
+    /// A comparison operator, or `like`.
+    Cmp(&'static str),
+    /// `IS NULL` (`true`) or `IS NOT NULL`.
+    Null(bool),
+    /// `IN (...)`.
+    In,
 }
 
 impl<M> fmt::Debug for Condition<M> {
@@ -124,6 +137,15 @@ impl<M> fmt::Debug for Condition<M> {
 }
 
 impl<M> Condition<M> {
+    pub(super) fn json(
+        column: &'static str,
+        key: String,
+        op: JsonOp,
+        values: Vec<DbValue>,
+    ) -> Self {
+        Self::new(CondKind::Json(column, key, op, values))
+    }
+
     fn new(kind: CondKind) -> Self {
         Self {
             kind,

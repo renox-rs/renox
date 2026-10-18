@@ -17,6 +17,9 @@ business ([llms.txt](llms.txt) maps its files).
 ```bash
 rnx new shop                         # or: --database postgres, --tailwind (Tailwind CSS, no Node)
 rnx new desk --starter               # the starter kit: verification, roles, dashboard, users, activity log
+rnx new acme --from ../tpl          # from your template: a directory or git+<url>#<tag or branch>; fills {{name}} {{title}}
+                                     # {{crate_name}} {{database_url}} {{renox_dependency}} {{app_key}} (only .env) and each
+                                     # [[ask]] of renox-template.toml (--set key=value in scripts); nothing is executed
 rnx key:generate                     # APP_KEY into .env (made from .env.example if missing); --show only prints it
 rnx doctor                           # checks Rust, linker, sccache, .env, APP_KEY, database, migrations
 rnx serve                            # run, rebuild and reload on changes
@@ -24,8 +27,12 @@ rnx make:module products             # routes + view, registered in src/lib.rs
 rnx make:module products --resource --fields "name:string price:money notes:text active:bool due_on:date"
                                      # model, migration, factory, form, 7 handlers, UI-kit views, tests
                                      # runs migrate (asks outside APP_ENV=local; --no-migrate), prints the URL; --open opens it
+rnx make:package invoicing           # a reusable crate (Module, migrations, views, texts, tests) in crates/invoicing,
+                                     # joined to the workspace and registered in the app; --path, --resource invoices
+                                     # --fields "..", --with assets,commands, --register <crate> (virtual workspace)
 rnx make:model Product --module products --migration   # --key ulid|uuid|string for other ids
 rnx make:migration add_sku_to_products
+rnx state:diagram Order             # a state machine as a Mermaid diagram (no name: lists the registered ones)
 rnx make:migration --auto add_sku     # SQL from what changed in the models (db:diff); --yes skips questions
 rnx make:policy Product --module products
 rnx make:job SendReceipt --module products
@@ -45,8 +52,10 @@ rnx queue:prune-failed --hours 168   # failed jobs older than that (the default)
 rnx ui:publish                       # the UI kit (components/ui.html + its CSS) into the app; --force replaces
 rnx schedule:work                    # tasks in their own process (SCHEDULER=false for serve)
 rnx webhook:failed                   # webhook:retry <id>
+rnx webhook:endpoints                # webhook:deliveries [--endpoint N] [--failed], webhook:redeliver <id>, webhook:prune-deliveries [--days 30]
 rnx down --secret s3cret --retry 60  # 503 for everyone but visitors of /s3cret; `rnx up` ends it
 rnx build                            # one release binary in dist/; rnx make:deploy
+rnx make:pwa                         # installable on phones: offline page, icons, .pwa(..) (--force replaces)
 rnx tailwind --watch                 # resources/css/app.css -> public/css/app.css (serve/build do it)
 rnx tailwind --minify                # one build; rnx tailwind:install downloads the pinned CLI
 ```
@@ -223,7 +232,7 @@ and so is `{{ flash.anything }}`.
 
 Every view also gets: `request.path`, `request.query`, `request.route` (the route's name),
 `request.htmx`, `request.boosted` (`hx-boost`), `app.name`, `app.env`,
-`app.debug`, `app.url`, `app.locale`, `app.currency` (`APP_CURRENCY`), `auth.check`, `auth.user`, `auth.roles`, `flash`, `errors`,
+`app.debug`, `app.url`, `app.locale`, `app.dir` (`ltr` or `rtl`), `app.currency` (`APP_CURRENCY`), `auth.check`, `auth.user`, `auth.roles`, `flash`, `errors`,
 `csrf_token` (the CSRF token as text, for a header or your own hidden field),
 and the functions `old()`, `has_old()`, `error(field)` (also `error(field, bag='login')`),
 `errors_in('login')` (every error of a named bag), `csrf_field()`,
@@ -330,6 +339,7 @@ and `rnx view:check` names a wrong one with its file and line.
 {# Icons (Lucide, docs/ui.md#icons): <rx-icon name="bike"/> <rx-icon name="truck" size="16"/>;
    hidden from screen readers unless <rx-icon name="lock" label="Private"/>; the same names in icon="…" on buttons and menus #}
 {# A dashboard app (the standard: docs/ui.md#the-dashboard-standard-rx-shell-fill): <body class="rx-page"><rx-shell fill>,
+   (modules' links: <rx-sidebar brand="{{ app.name }}" menu="staff"/>, <rx-nav-links menu="portal"/>; `nav('staff')` in custom markup),
    then <rx-sidebar brand="{{ app.name }}"><rx-sidebar-section title="Sales"/><rx-sidebar-link route="…" label="…"/></rx-sidebar>
    and <div class="rx-shell__main"><rx-navbar width="full" :skip="false"/><main class="rx-shell__content" id="main">…</main></div></rx-shell>.
    On a desktop the window never scrolls, each panel does, and the page's work fills the screen: <rx-grid> straight in the
@@ -426,7 +436,7 @@ and `rnx view:check` names a wrong one with its file and line.
    rx-menu / rx-menu-link / rx-menu-action / rx-menu-separator, rx-tabs / rx-tab, rx-empty.
    Macros with no tag: group, tab_panel. renox_ui(styles=false) loads only the script (styles published with ui:publish). #}
 
-{# The layout's plumbing as tags: <rx-head/> {{ renox_head() }}, <rx-ui/> {{ renox_ui() }} (<rx-ui :styles="false"/>),
+{# The layout's plumbing as tags: <rx-head/> {{ renox_head() }}, <rx-ui/> {{ renox_ui() }} (<rx-ui :styles="false"/>), <rx-theme/> {{ renox_theme() }} (the brand stylesheet, after rx-ui),
    <rx-toasts/> {{ toasts() }}, <rx-outlet stack="scripts"/> {{ stack('scripts') }}; <rx-outlet name="content"/> a layout block
    a page fills (children = its default; name or stack, not both); <rx-pagination :page="products"/> the page links. #}
 
@@ -573,6 +583,28 @@ The renox-blocks crate (`.module(Blocks::new())`, guide docs/blocks.md) adds tag
   slot-url="/bookings" slot-target="#week" id="week"/>                           {# a free slot POSTs resource, start, end (hx-post + static hx-vals); days, from, to, step #}
 ```
 
+and two that post files (the form needs `enctype="multipart/form-data"`):
+
+```html
+<rx-signature-pad name="signature" label="Customer" name-label="Or type the name" required/>  {# posts signature (signature.png) OR signature_name; width, height, hint #}
+<rx-camera-capture name="photos" :max="3" facing="environment" :max-width="2048"/>            {# posts photos: photo-N.jpg, a file input when there is no camera; quality, accept, required #}
+```
+
+and three that post plain values (docs/blocks.md "rating", "geolocate", "barcode_scan"):
+
+```html
+<rx-rating name="score" :max="5" label="Your rating" required/>                    {# posts score = the chosen number (nothing if none); radios, works without JS; readonly shows it and sends nothing #}
+<rx-geolocate name="location" :accuracy="50" label="Where is the bike?"/>          {# posts location[lat], location[lng], location[accuracy] (m), location[at] (RFC 3339) once the button got a fix; button-label, required #}
+<rx-barcode-scan name="sku" formats="ean_13,code_128" label="Part number" submit/>  {# one text field: typed, a wedge scanner (keys <50 ms apart + Enter = a scan, no submit unless `submit`) or the camera (BarcodeDetector, else vendored zxing) #}
+```
+
+Read them as `score: Option<u8>` (`.required().between(1, 5)`), `location: Option<Position>` with `lat`, `lng`, `accuracy: f64`
+(or `renox::geo::Point`) and `sku: String`. The camera and the position need
+`.permissions_policy(|p| { p.allow("geolocation", "self").allow("camera", "self"); })` (off by default).
+
+The two with files are read as `signature: Option<Upload>` (`.image().mimes(&["png"])`), `signature_name: Option<String>` (required when there is no
+signature) and `#[serde(default)] photos: Vec<Upload>` (`.max(3)`, then `v.each` with `.image().mimes(&["jpg", "jpeg"])`).
+
 ### Component events (details in docs/ui.md "Components and the page: three directions")
 
 ```html
@@ -672,9 +704,9 @@ impl Validate for ProductForm {
         v.each("photos", &self.photos, |photo| photo.image().max(2048));
         // Also: digits(n), digits_between(a, b), date(), before…, after_or_equal(d), one_of, same, different,
         // alpha, alpha_num, alpha_dash, lowercase, uppercase, starts_with(&["08"]), ends_with,
-        // uuid, ulid, ip, mac_address, json, timezone, hex_color, ascii, size(n), required_without(&other),
+        // uuid, ulid, ip, mac_address, json, timezone, hex_color, latitude, longitude, point (JSON/GeoJSON text), ascii, size(n), required_without(&other),
         // required_with_all(&[&a, &b]), prohibited(), prohibited_if(cond), prohibits("other", &other),
-        // declined(), numeric(), integer(), decimal(2, 2), multiple_of(500), min_digits(n), not_matches(re),
+        // declined(), numeric(), integer(), decimal(2, 2), currency(), money(&self.currency), multiple_of(500), min_digits(n), not_matches(re),
         // gt("min_price", &self.min_price) / gte / lt / lte (numbers, dates, lengths), mimes(&["pdf", "jpg"])
         // and dimensions(&validation::Dimensions::new().min_width(800)) for an Upload,
         // v.distinct("tags", &self.tags), v.nested("lines", &self.lines) for a Vec of structs,
@@ -1160,6 +1192,156 @@ struct ProductForm {
 }
 ```
 
+Money in a currency of its own: `Money` (`renox::money`) is the amount in the smallest unit plus its
+ISO 4217 `Currency`; `#[model(money)]` stores it as `<field>` (`BIGINT`) and `<field>_currency` (`TEXT`)
+(docs/types.md, docs/validation.md). A fixed currency stays an `i64`.
+
+```rust
+use renox::money::{Currency, Money, Rounding};
+use renox::prelude::*;
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "invoices", form)] // InvoiceForm: "12.50" + "usd" texts, checked together; fill() builds the Money
+struct Invoice {
+    id: i64,
+    #[model(money(currency = "currency"))] // subtotal, tax and total share the `currency` column
+    subtotal: Money,
+    #[model(money(currency = "currency"))]
+    tax: Money,
+    #[model(money)] // deposit + deposit_currency, both NULL for None
+    deposit: Option<Money>,
+}
+
+fn money() -> Result<(), renox::money::MoneyError> {
+    let total = Money::usd(1999).percent(500, Rounding::HalfUp)?; // always an explicit rounding: $1.00
+    let sum = total.checked_add(Money::usd(1))?;                  // Err(CurrencyMismatch) across currencies
+    let parts = Money::usd(100).allocate(3)?;                     // 34, 33, 33: no minor unit lost
+    let yen = sum.convert("150.25", Currency::JPY, Rounding::HalfEven)?; // an exact decimal rate, never f64
+    assert_eq!(Money::parse("12.50", Currency::USD)?.format("de"), "$12,50"); // too many decimals is an error
+    let _ = (parts, yen, Money::kwd(12_345).to_string()); // "KWD 12.345"; {"minor":12345,"currency":"KWD"} in JSON
+    Ok(())
+}
+```
+
+`{{ invoice.total | money }}` shows a `Money` in its own currency (an `i64` still uses `APP_CURRENCY`);
+`<rx-input name="deposit" type="money" currency="JPY"/>` steps by the currency's smallest unit;
+`Column::money("total", "Total").currency_from("total_currency")` (grid: per-row currency, one summary
+per currency, `?cur.total=JPY`) and `Field::money("total", "Total").currency_from("total_currency")` (admin).
+
+Exact decimals with units: `Quantity<SCALE>` (`renox::quantity`) is an `i64` of 10^-SCALE units (`Quantity<3>` is thousandths),
+one `BIGINT`; the unit is a `String` column beside it, never part of the type (docs/types.md, docs/validation.md).
+
+```rust
+use renox::money::Rounding;
+use renox::prelude::*;
+use renox::quantity::{Quantity, QuantityError, Units};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "bins", form)] // BinForm: "12.5" texts checked with quantity(3); fill() builds the Quantity
+struct Bin {
+    id: i64,
+    stock: Quantity<3>,         // BIGINT NOT NULL; the scale is the type's, not the schema's
+    stock_unit: String,         // "kg", "g", "t"
+    spare: Option<Quantity<3>>, // NULL when none
+}
+
+fn quantities() -> Result<(), QuantityError> {
+    let kg = Quantity::<3>::parse_exact("2.5")?;                       // Err(Inexact) when digits would be lost
+    let tie = Quantity::<3>::parse("0.0005", Rounding::HalfUp)?;       // always an explicit rounding: 0.001
+    let sum = kg.checked_add(Quantity::parse_exact("0.1")?)?;          // exact, Err(Overflow) at the limits
+    let units = Units::new().base("kg").unit("g", "kg", "0.001").build()?; // exact decimal factors, never f64
+    let grams = units.convert(sum, "kg", "g", Rounding::HalfEven)?;    // "2600.000"
+    let _ = (tie, grams, kg.mul_decimal("1.15", Rounding::HalfUp)?);
+    Ok(())
+}
+```
+
+`Bin::STOCK.lt(..)`, `order_by` and `sum` compare the scaled integer. `{{ bin.stock | quantity(unit=bin.stock_unit) }}` shows
+`2.500 kg`; `<rx-input name="stock" type="quantity" scale="3" unit="kg"/>` steps by the scale; rules `.quantity(3)`,
+`.quantity_min("0")`, `.quantity_max("100")`, `.unit(&units)`; `Column::quantity("stock", "Stock").unit_from("stock_unit")` (grid:
+one summary per unit) and `Field::quantity("stock", "Stock").unit_from("stock_unit")` (admin).
+
+Places (`renox::geo`, no dependency; docs/types.md): the API order is `(lat, lng)`, GeoJSON is `[lng, lat]`. A point on a
+circle's radius, a polygon's edge or vertex counts as inside; a hole is open; a polygon over 180 degrees of longitude is not supported.
+
+```rust
+use renox::geo::{Circle, GeoError, Point, Polygon};
+
+fn places() -> Result<(), GeoError> {
+    let here = Point::new(25.2048, 55.2708)?;                          // Err(Latitude/Longitude) out of range or NaN
+    let site = Circle::new(Point::new(25.2050, 55.2710)?, 150.0)?;     // metres; Err(Radius) when not positive and finite
+    let _ = (site.contains(here), here.distance_to(site.center()));    // haversine, metres
+    let area: Polygon = renox::serde_json::from_str(r#"{"type":"Polygon","coordinates":[[[55.0,25.0],[56.0,25.0],[56.0,26.0],[55.0,25.0]]]}"#).unwrap();
+    let _ = area.contains(here);                                       // ray casting, holes supported
+    Ok(())
+}
+```
+
+A `Point` reads from `{"lat","lng"}`, a GeoJSON Point and the form fields `lat`/`lng` (`spot: Option<Point>` from `spot[lat]`,
+`spot[lng]`); rules `.latitude()`, `.longitude()`, `.point()`. Store two `REAL` columns or JSON. Map blocks (renox-blocks, docs/blocks.md):
+
+```html
+<rx-map-picker name="spot" label="Meeting point"/>                             {# posts spot[lat], spot[lng] #}
+<rx-map-picker name="zone" mode="polygon" :value="zone"/>                     {# posts GeoJSON text in [lng, lat]; mode circle posts a Point with radius (m) #}
+<rx-map :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Workshop'}]" :shapes="[zone]" id="places"/>
+{# tiles: BLOCKS_MAP_TILES=https://…/{z}/{x}/{y}.png, BLOCKS_MAP_ATTRIBUTION; none set: an explanatory note, typed coordinates still work #}
+```
+
+Custom fields an administrator adds without a migration: definitions in the `custom_fields` table, values in one
+`Json<CustomValues>` column named by `custom_fields = "extra"` (docs/types.md).
+
+```rust
+use renox::custom_fields::{CustomField, CustomValues};
+use renox::prelude::*;
+
+#[derive(Model, serde::Serialize, Default)]
+#[model(table = "parties", form, custom_fields = "extra")] // the form takes extra[key]; Valid<T> checks them
+struct Party {
+    id: i64,
+    name: String,
+    extra: renox::db::Json<CustomValues>,
+}
+
+async fn custom_fields(db: &Db) -> Result {
+    CustomField::text("parties", "passport_no").label("Passport no.").label_in("es", "N.º de pasaporte").required().max(20).save(db).await?;
+    CustomField::choice("parties", "segment").options(&["retail", "corporate"]).save(db).await?; // keys are [a-z][a-z0-9_]* and never change
+    // number, date, bool, reference(model, key, "customers"), file(model, key, "local"); .meta(json), .position(n), .inactive()
+    let fields = CustomField::for_model(db, "parties").await?; // active, ordered, cached per model
+    let _ = fields;
+    let retail = Party::query()
+        .where_(Party::EXTRA.json("segment").eq("retail")) // json_extract / ->>, value bound
+        .order_by_json_desc(Party::EXTRA.json("segment"))
+        .with_custom_fields(db).await? // unknown key = error; typed casts on PostgreSQL
+        .get(db).await?;
+    let _ = retail;
+    Ok(())
+}
+```
+
+`CustomField::views(&db, "parties", locale)` feeds `<rx-custom-fields :fields="fields" name="extra" :values="party.extra"/>`
+(inputs; `mode="show"` for entries); `Column::custom_field("extra", "segment")` is a grid column (sort, filter, export;
+`grid.with_custom_fields::<Party>(&request)` before the sync `filter`); renox-admin adds all of it, and a "Custom fields"
+resource, for a model that declares `custom_fields`; `db::json_index(dialect, "parties", "extra", "segment")` gives the
+`CREATE INDEX` for a hot key.
+
+A sensitive field is sealed with `APP_KEY` inside the JSON (`rx-sealed:1:…`), masked as `••••••` unless the viewer holds
+the ability (the definition's `.reveal_with("name")`, else `custom_fields.reveal`; an undeclared gate denies), never
+filterable or sortable (typed error), and left out of exports without the ability:
+
+```rust
+use renox::custom_fields::CustomField;
+use renox::prelude::*;
+
+async fn sensitive(db: &Db, viewer: Option<AuthUser>) -> Result {
+    CustomField::text("parties", "tax_id").sensitive().reveal_with("see-tax-ids").save(db).await?; // not reference or file
+    let fields = CustomField::views_for(db, "parties", "en", viewer.as_ref()).await?; // masks by the viewer's ability
+    let _ = fields; // party.extra.shown(db, &fields) is what <rx-custom-fields :values> gets
+    Ok(())
+}
+```
+
+A blank submit keeps the stored seal; changing `APP_KEY` makes sealed values `unreadable` (re-save them first).
+
 ## Pagination
 
 Show a long list one page at a time. `Page` reads the page number from `?page=` in the URL.
@@ -1294,6 +1476,13 @@ with `impl AdminResource for ProductResource` (`type Model`, `type Form`, `colum
 above, `fields()` with `Field::text`/`select`/`money`/`belongs_to`…, `fill`), and the model's
 `Policy` asked for `viewAny`, `create`, `update`, `delete`… ([docs/admin.md](docs/admin.md),
 [the bike shop's panel](examples/bikeshop/src/app/staff/admin.rs)).
+A module adds a resource to the app's panel from `register`: `renox_admin::contribute(app, SupplierResource)`
+(or `app.contribute(AdminEntry::new(r).panel("staff"))` for a panel named with `Admin::named("staff")`;
+`Admin::only_own_resources()` ignores contributions; a slug clash or an unknown panel fails at boot).
+It rests on `Registry::contribute::<T>(value)` (any `Send + Sync + 'static` type, app first, then modules
+in order), read with `Contributions::all::<T>()` / `all_from::<T>()` (with the module's name) in
+`Module::routes_with(&self, &Contributions)`, or `state.contributions::<T>()` in a handler
+([docs/admin.md](docs/admin.md), [the bike shop's module](examples/bikeshop/src/app/purchasing/mod.rs)).
 
 ## Seeders and factories
 
@@ -1499,6 +1688,28 @@ async fn sign_in(State(state): State<AppState>, session: Session, Form(f): Form<
 // `app.second_factor("otp.challenge", |user, _state| async move { Ok(needs_code(&user)) });`
 // its challenge handler calls `renox::auth::pending_login(&session)`, checks the code,
 // then `renox::auth::complete_login(&state, &session, &pending, ip)` (docs/authorization.md).
+// A menu link from a module or the app: `app.nav("staff", NavLink::route("invoices.index", "Invoices").icon("receipt")
+// .group("Billing").order(10).permission("invoices.view").badge(|state: AppState, user: AuthUser| async move { Ok(Some("3".into())) }))`
+// (`use renox::nav::NavLink`; also `NavLink::url(url, label).key(k)`, `.gate(g)`, `.when(|user| …)`, `.active("invoices.*")`),
+// `app.nav_hide("staff", "invoices.index")`. `.permission` = held globally or in any scope: `user.has_permission_anywhere(p)`.
+// Drawn by `<rx-sidebar menu="staff"/>` / `<rx-nav-links menu="portal"/>` or `nav('staff')` (docs/ui.md, docs/authorization.md).
+
+// Brand themes (docs/ui.md "Brand themes"): accent tokens from one colour, light and dark, contrast-checked.
+// let theme = Theme::from_brand(&Brand::new("#1E3A5F").second("#B8532E").display_font("Poppins"))?; // Err(ContrastError { suggestion, .. }) for #FFF59D
+// App::new().theme(theme)  // or .theme_for(|req: ThemeRequest| async move { Ok(Some(theme)) }) per host/tenant/setting; Ok(None) = app theme
+// Layout: <rx-theme/> after <rx-ui/>; served at /_renox/theme/{hash}.css (immutable, CSP strict safe).
+// theme.tokens() / theme.dark_tokens() -> BTreeMap; Mail::theme(&theme) colours rx-mail-button/panel, also when queued.
+// Install on phones (docs/ui.md "Install on phones"): `rnx make:pwa [--force]` writes offline.html, placeholder icons, the .pwa(..) call.
+// App::new().pwa(Pwa::new("Bike Shop").short_name("Bikes").theme_color("#1E3A5F").icons("public/icons").offline_page("offline.html"))
+// (`use renox::pwa::{Pwa, PwaBrand, PwaRequest}`; icons dir: icon-192.png, icon-512.png, icon-maskable-512.png; a missing one is a boot error)
+// .pwa_for(|req: PwaRequest| async move { Ok(Some(PwaBrand::new("North Bikes").theme_color("#0F766E"))) }) per host (Vary: Host); Ok(None) = static Pwa
+// Layout: <rx-pwa/> after <rx-theme/>; serves /manifest.webmanifest, /sw.js (versioned), /_renox/offline; navigations are never cached.
+// Offline forms (docs/ui.md "Offline forms"): a failed post waits in an IndexedDB outbox (not encrypted, cleared on logout), replays in order.
+// Routes::new().post("/stops/{id}/complete", complete_stop).offline()  // needs Idempotency-Key (400); same key+body = stored reply; other body = 422
+// .offline_with(Skew::new().past(Duration::from_secs(72 * 3600)).future(Duration::from_secs(60)))  // default 24 h past, 5 min ahead
+// async fn complete_stop(offline: Offline) -> Result<String> { offline.recorded_at / .received_at / .client_id / .skew_exceeded }
+// <rx-form action="/stops/7/complete" offline="stops"> ... </rx-form>  // loads renox-offline.js; GET /_renox/csrf gives a fresh token
+// `rnx idempotency:prune [--days N]` (IDEMPOTENCY_RETENTION_DAYS, 7). No Background Sync: posts are sent while a page of the app is open.
 // A card on /account from a module: `app.account_section("pin/account.html", 10,
 // |user, _state| async move { Ok(json!({ "on": true })) })`, read as `section.data`.
 // Social login ready-made: the `renox-oauth` crate, `.module(OAuth::new().google().github())`
@@ -1885,6 +2096,63 @@ async fn cart_page(ctx: LiveContext) -> Result<View> {
 }
 
 // In tests: let mut c = app.live(Cart::default()); c.call_with("add", json!([3])).await;
+```
+
+## State machines (details in [docs/state-machines.md](docs/state-machines.md), example: [the bike shop's rentals](examples/bikeshop/src/app/rentals/machine.rs))
+
+A model with a status declares its states and transitions once; every change goes through
+`record.transition(name)`, which checks who, the `from` state and the guards, moves the status
+with an optimistic update and writes a history row, in one transaction.
+`#[model(state_machine)]` makes `save` refuse a changed status. Errors: 401, 403, 404 and 422
+(`TransitionError::into_error`). `.system()` transitions run with `by_system()` only.
+
+```rust
+use renox::prelude::*;
+use renox::state_machine::{self, Machine, Outcome, StateMachine, Transition, TransitionError};
+
+#[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum OrderStatus { Draft, Placed, Cancelled }
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "orders", state_machine)]
+struct Order { id: i64, status: String, lines: i64 }
+
+impl StateMachine for Order {
+    type State = OrderStatus;
+    const COLUMN: renox::db::Col<Self, OrderStatus> = renox::db::Col::new("status");
+
+    fn machine() -> Machine<Self> {
+        Machine::new()
+            .initial([OrderStatus::Draft])
+            .state(OrderStatus::Cancelled).tone("danger").terminal()
+            .transition(
+                Transition::new("place").label("Place order")
+                    .from([OrderStatus::Draft]).to(OrderStatus::Placed)
+                    .permission("orders.place") // or .permission_in(name, |o| scope) / .system()
+                    .guard("has_lines", |o: &Order, _ctx| Box::pin(async move {
+                        if o.lines > 0 { Ok(()) } else { Err("The order has no lines.".into()) }
+                    })),
+            )
+            .transition(
+                Transition::new("cancel")
+                    .from([OrderStatus::Draft, OrderStatus::Placed]).to(OrderStatus::Cancelled)
+                    .reason_required(),
+            )
+    }
+}
+
+// App::new().state_machine::<Order>()  (rnx state:diagram, the admin panel, db:check)
+async fn cancel(state: AppState, user: AuthUser, order: Order) -> Result<Vec<serde_json::Value>> {
+    order.transition("cancel").by(&user).reason("customer asked").run(&state).await
+        .map_err(TransitionError::into_error)?;   // run_in(&mut tx) does not commit: outcome.emit(&state) after
+    let actions = order.available(&user, &state.db).await?; // name, label, tone, needs_reason, requires_approval
+    let _ = actions; // <rx-transition-actions :actions="actions" action="/orders/1/transitions"/>
+    // Routes::new().group("/orders", "orders.", state_machine::routes::<Order>())
+    let rows = state_machine::history(&state.db, "orders", order.id).await?;
+    Ok(state_machine::timeline(&rows, Some(&state_machine::info_of::<Order>()))) // <rx-history :items=…/>
+}
+// Listen: app.listen(|e: Transitioned<Order>, state: AppState| async move { Ok(()) })
+// Approvals: state_machine::set_interceptor(impl TransitionInterceptor) → Decision::Defer → Outcome::Pending
 ```
 
 ## Raw SQL and transactions (SQLite and PostgreSQL)
@@ -2411,6 +2679,24 @@ and Laravel's ranges pick by count (`{n}` exactly, `[a,b]`, `*` for open):
 <p>{{ t('cart.count', count=cart_count) }} · {{ t('cart.hello', name=auth.user.name) }}</p>
 ```
 
+Right-to-left (details in docs/ui.md "Right-to-left"): `app.dir` is `rtl` for `ar`, `he`, `fa`, `ur`, `ps`, `yi`,
+`dv` and `ckb` (by base language: `ar-AE` too), `ltr` otherwise, also in mails (the mail's own locale). Every
+layout writes it; the kit mirrors by itself and loads Noto Sans Arabic only for Arabic text. Write your own CSS
+with logical properties (`margin-inline-start`, `inset-inline-end`, `text-align: start`), never `left`/`right`.
+
+```rust
+# use renox::prelude::*;
+use renox::i18n::{direction, Direction};
+assert_eq!(direction("ar-AE"), Direction::Rtl); // .as_str() is "rtl"; AppState::direction(locale) honours the override
+# let _ =
+App::new().rtl_locales(&["ar", "he", "sd"]) // replaces the default list
+# ;
+```
+
+```html
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
+```
+
 ## Signed URLs and private files
 
 A signed URL is a link with a secret stamp: if someone changes it, or it expires, it stops
@@ -2536,6 +2822,38 @@ impl Webhook for Xendit {
 // Module::register: app.webhook::<Xendit>();
 ```
 
+Outbound webhooks (your app tells others; Standard Webhooks headers `webhook-id`, `webhook-timestamp`,
+`webhook-signature`; retries 5 s … 10 h, 8 tries; `docs/operations.md` "Outbound webhooks"):
+
+```rust
+# use renox::prelude::*;
+# #[derive(Clone)] struct InvoicePaid { id: i64 }
+# impl Event for InvoicePaid {}
+# #[derive(serde::Deserialize)] struct Ping { note: String }
+# async fn demo(state: AppState, url: &str, body: serde_json::Value) -> Result {
+use renox::webhook::outbound::{emit_in, Endpoint, EndpointDisabled};
+
+// Module::register: name the event and its payload `data`.
+let _ = App::new().webhook_event::<InvoicePaid>("invoice.paid", |e| serde_json::json!({ "invoice": e.id }));
+
+// Subscribe a URL (https; empty events = all). The `whsec_…` secret is returned once, stored sealed.
+let (endpoint, secret) = Endpoint::create(&state, "https://example.com/hooks", "Billing", &["invoice.paid"]).await?;
+Endpoint::list(&state.db).await?;                 // find, enable, disable(&db, id, reason), set_events, delete
+
+state.emit(InvoicePaid { id: 7 });                  // queues a delivery per subscribed endpoint
+let mut tx = state.db.begin().await?;             // from a database change: sent only if it commits
+emit_in(&state, &mut tx, &InvoicePaid { id: 7 }).await?;
+tx.commit().await?;
+// 410 disables an endpoint at once; WEBHOOK_DISABLE_AFTER (20) failed deliveries in a row disable it
+// and emit EndpointDisabled { endpoint_id }.
+
+// Between your own apps: sender signs, receiver verifies (401 on bad key, signature, age, replay).
+state.http.post(url).json(&body).sign("billing", &secret).send().await?;  // after the body
+// App::signing_key("billing", "whsec_…"); handler: async fn(SignedRequest(ping): SignedRequest<Ping>)
+// WEBHOOK_TOLERANCE_SECS (300) is the timestamp window.
+# Ok(()) }
+```
+
 Subscriptions ready-made (Laravel's Cashier): the `renox-billing` crate,
 `.module(Billing::new().plan(Plan::new("pro", "Pro").price(1_900, "USD", Interval::Month).trial_days(14)).stripe().xendit())`
 with `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PRO`, `XENDIT_SECRET_KEY`,
@@ -2544,6 +2862,47 @@ gateways' webhooks (`/billing/webhooks/{gateway}`), `Billing::of(&state, &user)`
 `subscribed()`, `on_trial()`, `checkout(plan)`, `swap(plan)`, `cancel()`, `resume()`, `pause(None)`, `unpause()`, and the
 guards `.require_subscription()` / `.require_plan(&["pro"])` (`_named("garage")` variants for `.named(..)` subscriptions) (`use renox_billing::SubscriptionRoutes`)
 ([docs/billing.md](docs/billing.md), [the bike shop's plans](examples/bikeshop/src/app/plans/billing.rs)).
+
+One-off payments (same crate; Stripe, Xendit and `Billing::ngenius()` with `NGENIUS_API_KEY`, `NGENIUS_OUTLET_REF`,
+`NGENIUS_WEBHOOK_SECRET`), kept in `billing_payments` with your reference:
+
+```text
+// use renox::money::{Currency, Money}; use renox_billing::{Billing, Charge, PaymentLink, Refund, Unsupported};
+let usd = Currency::parse("USD").unwrap();
+let paid = Billing::of(&state, &user)                       // pending row; paid.url is the gateway's page
+    .charge(Charge::new(Money::new(4_500, usd)).reference("job", 42).description("Brake service")).await?;
+let link = Billing::payment_link(&state, PaymentLink::new(Money::new(900, usd)) // anyone can pay; owner optional
+    .via("xendit").account("acme-llc").expires_at(renox::db::now() + renox::chrono::Duration::days(7))).await?;
+let refund = Billing::refund(&state, paid.id, Refund::new(Money::new(1_500, usd)).reason("Part not fitted")).await?; // pending
+let state_now = Billing::payment_status(&state, paid.id).await?;   // asks the gateway, applies it like a webhook
+let expired = Billing::expire_links(&state).await?;                // = command/hourly task `billing:expire-links`
+// Err(e) if Unsupported::of(&e).is_some() → the gateway can't do it (no row left behind)
+// keys per installation (called on every use, never cached): Stripe::resolved(|state| async move { Ok(Some(key)) }),
+// Ngenius::resolved_accounts(|state, account: &str| ...); webhooks /billing/webhooks/{gateway}[/{account}]
+// events: PaymentSucceeded/PaymentFailed (carry reference_type/id), PaymentRefunded, RefundSucceeded, RefundFailed { reason },
+// DisputeOpened { evidence_due_by }, DisputeWon, DisputeLost, PaymentLinkExpired; a success after a failure still wins
+```
+(Compiled examples: [docs/billing.md](docs/billing.md).)
+
+PDF documents from Typst templates (the `renox-pdf` crate, no browser; `rnx make:pdf invoice` writes
+`resources/views/pdf/invoice.typ`):
+
+```text
+// use renox_pdf::{Pdf, PdfError}; use renox_pdf::testing::{PdfAssertions, text_of};
+App::new().module(Pdf::new())            // .font(bytes) adds a font, .lenient() logs missing glyphs,
+                                         // .templates(renox::embedded!()) for release builds
+let pdf: Vec<u8> = Pdf::document(&state, "invoice")?   // resources/views/pdf/invoice.typ
+    .locale("ar")                        // text language, and rtl direction for Arabic and the like
+    .data(&order)                        // any Serialize; the template reads the dictionary `data`
+    .asset("logo.png", logo_bytes)       // #image("logo.png"); flat names
+    .render(&state).await?;              // blocking thread; PDF_MAX_CONCURRENT (2), PDF_TIMEOUT (30 s)
+Ok(Download::bytes("INV-001.pdf", "application/pdf", pdf).inline())      // or Mail::attach("INV-001.pdf", "application/pdf", pdf)
+// Err(PdfError::MissingGlyphs(chars)) when no font has a character; Compile, Timeout, Setup, ...
+// template: #import "@renox/kit:0.1.0": *   → base, colors, money(cents), date("2026-10-01"), page-header(..), data-table(..)
+// tests: res.assert_pdf().assert_pdf_contains("INV-001").assert_pdf_pages(1); text_of(&bytes)
+//        (Arabic text is extracted as shaped pieces, not whole words)
+```
+([docs/pdf.md](docs/pdf.md).)
 
 With `CSP=strict`, an inline script needs `<script nonce="{{ csp_nonce() }}">`, and Alpine
 expressions must stay simple (move statements into `Alpine.data(...)`).

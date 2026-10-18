@@ -127,6 +127,8 @@ function onKey(event) {
   }
   if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
   event.preventDefault();
+  // The first column is on the right in right-to-left text, so "left" is the next one.
+  const side = getComputedStyle(list).direction === "rtl" ? -1 : 1;
 
   if (!holding) {
     // Not holding it: the arrows move the focus between cards.
@@ -134,7 +136,7 @@ function onKey(event) {
     if (event.key === "ArrowUp") target = siblings[at - 1];
     else if (event.key === "ArrowDown") target = siblings[at + 1];
     else {
-      const other = lists[column + (event.key === "ArrowLeft" ? -1 : 1)];
+      const other = lists[column + (event.key === "ArrowLeft" ? -side : side)];
       if (other) {
         const cards = cardsOf(other);
         target = cards[Math.min(at, cards.length - 1)];
@@ -154,7 +156,7 @@ function onKey(event) {
     list.insertBefore(card, siblings[at + 1].nextSibling);
     moved = true;
   } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-    const to = lists[column + (event.key === "ArrowLeft" ? -1 : 1)];
+    const to = lists[column + (event.key === "ArrowLeft" ? -side : side)];
     if (to) {
       const spot = cardsOf(to)[Math.min(at, cardsOf(to).length)];
       if (spot) to.insertBefore(card, spot);

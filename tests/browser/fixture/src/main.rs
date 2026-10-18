@@ -4,6 +4,11 @@
 //! renox-ui.js then do with it. The data grid's pages are in `grid.rs`.
 
 mod grid;
+mod maps;
+mod offline;
+mod parties;
+mod pwa;
+mod tickets;
 
 use renox::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -221,6 +226,8 @@ impl Module for Pages {
                 )
             })
             .get("/widgets", || async { view("widgets.html", context! {}) })
+            // The rating and barcode blocks (blocks-field.test.mjs, #54).
+            .get("/field", || async { view("field.html", context! {}) })
             .post("/order", |Valid(order): Valid<Order>| async move {
                 format!("{} lines", order.lines.len())
             })
@@ -259,6 +266,15 @@ impl Module for Pages {
             .name("tabs.home")
             .get("/tabs/orders", || async { view("tabs.html", context! {}) })
             .name("tabs.orders")
+            // A sidebar drawn from a menu (`<rx-sidebar menu="staff"/>`).
+            .get("/menu", || async { view("menu.html", context! {}) })
+            .name("overview.index")
+            .get("/menu/reports", || async { view("menu.html", context! {}) })
+            .name("reports.index")
+            .get("/menu/reports/{id}", |Path(_id): Path<i64>| async {
+                view("menu.html", context! {})
+            })
+            .name("reports.show")
             .post("/toast", || async {
                 Toast::warning("Stock is low.")
                     .link("Unsafe", "javascript:alert(1)")
@@ -320,6 +336,10 @@ impl Module for Pages {
             })
             .get("/nav", || async { view("nav.html", context! {}) })
             .get("/shell", || async { view("shell.html", context! {}) })
+            // Right-to-left (#28): a Latin page with a chevron, and one with
+            // Arabic text, for the font network check.
+            .get("/rtl", || async { view("rtl.html", context! {}) })
+            .get("/arabic", || async { view("arabic.html", context! {}) })
             // The dashboard standard, `<rx-shell fill>` (#24).
             .get("/shell-fill", || async {
                 view("shell_fill.html", context! { tall => false })
@@ -406,6 +426,49 @@ fn main() -> Result {
         .module(grid::Orders)
         .seeder(grid::seed)
         .module(Pages)
+        // An offline form and its `.offline()` route (offline-forms.test.mjs).
+        .module(offline::Visits)
+        // Installable pages (pwa.test.mjs).
+        .module(pwa::Installable)
+        .pwa(
+            renox::pwa::Pwa::new("Browser fixture")
+                .icons("pwa-icons")
+                .offline_page("offline.html"),
+        )
+        // The map blocks (maps.test.mjs): tiles from BLOCKS_MAP_TILES.
+        .module(renox_blocks::Blocks::new())
+        .module(maps::Maps)
+        // A ticket with a state machine (transition-actions.test.mjs).
+        .module(tickets::Tickets)
+        // Parties with custom fields (custom-fields.test.mjs).
+        .module(parties::Parties)
+        .gate("custom_fields.reveal", |user| {
+            user.email == "demo@example.com"
+        })
+        .state_machine::<tickets::Ticket>()
+        .nav(
+            "staff",
+            renox::nav::NavLink::route("overview.index", "Overview").order(1),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::route("reports.index", "Reports")
+                .group("Billing")
+                .order(10),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::url("/widgets", "Widgets")
+                .group("Billing")
+                .order(20),
+        )
+        .nav(
+            "staff",
+            renox::nav::NavLink::url("/secret", "Secret")
+                .group("Billing")
+                .order(30)
+                .gate("nobody"),
+        )
         .live_component::<Counter>()
         .job::<Touch>()
         .job::<Nap>()
@@ -438,6 +501,12 @@ fn main() -> Result {
             );
             Ok(())
         });
+    // The tile host of the map blocks may be a local http stub: allow it for images.
+    if let Some(origin) = maps::tiles_origin() {
+        app = app.csp(|csp| {
+            csp.allow("img-src", &origin);
+        });
+    }
     // A task that can never run (hourly, but only between 10:30 and 10:40),
     // only when asked: `schedule:list` shows "never" (tests/process).
     if std::env::var("FIXTURE_NEVER").is_ok() {

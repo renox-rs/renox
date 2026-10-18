@@ -32,7 +32,8 @@ Anything in this repository: the `renox`, `renox-core`, `renox-macros`, `renox-c
 (social login: `state`, PKCE, linking accounts by email), `renox-admin` (the admin panel:
 who may open it, the policy checks before every page and action) and `renox-billing`
 (subscriptions: the payment gateways' webhook signatures, who may change a subscription)
-crates, the
+and `renox-pdf` (PDFs from Typst templates: template paths stay inside the template root,
+no package is downloaded) crates, the
 templates and assets they ship, the files `rnx new` and `rnx make:*` write
 (Dockerfile, systemd unit, …), and the examples when they show a pattern apps would copy.
 

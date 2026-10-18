@@ -61,7 +61,7 @@ mod export;
 pub use export::{ExportFormat, MAX_EXPORT_ROWS, Workbook};
 
 use crate::auth::AuthUser;
-use crate::db::{Db, DbValue, Model, Paginated, Query, ToDbValue};
+use crate::db::{Db, DbValue, Dialect, Model, Paginated, Query, ToDbValue};
 use crate::{AppState, Error, Result, Session};
 
 /// The framework migration creating `grid_preferences` (every app gets it).
@@ -102,6 +102,11 @@ pub enum Kind {
     Image,
     /// A CSS color (`#0a7d5a`) shown as a swatch with its code.
     Color,
+    // Variants are only appended: the discriminants are part of the public API.
+    /// An exact quantity (`Quantity<S>`, a scaled integer in the database),
+    /// shown with its scale's digits and a unit per row; filtered like a
+    /// number. See [`Column::quantity`].
+    Quantity,
 }
 
 /// Which edge a frozen column sticks to while the grid scrolls sideways.
@@ -159,8 +164,22 @@ pub struct Column {
     link: Option<String>,
     copyable: bool,
     round: bool,
+    /// The model column holding each row's currency code (money columns).
+    currency: Option<String>,
+    /// The model column holding each row's unit code (quantity columns).
+    unit: Option<String>,
+    /// The decimals of a quantity column: its `Quantity<SCALE>`'s scale.
+    scale: u32,
+    /// A custom field: the model's JSON column and the field's key
+    /// ([`Column::custom_field`]), resolved against the definitions when the
+    /// grid runs.
+    custom: Option<(String, String)>,
     /// A value from another table: SQL with `{T}` for this model's table.
     expr: Option<String>,
+    /// A sensitive custom field: its cells are sealed text, shown masked
+    /// unless the viewer holds the ability (`reveal`, else the app-wide one).
+    sensitive: bool,
+    reveal: Option<String>,
 }
 
 impl Column {
@@ -192,8 +211,40 @@ impl Column {
             link: None,
             copyable: false,
             round: false,
+            currency: None,
+            unit: None,
+            scale: 0,
+            custom: None,
             expr: None,
+            sensitive: false,
+            reveal: None,
         }
+    }
+
+    /// A custom field stored in the JSON column `column` (a
+    /// `Json<CustomValues>`, see `custom_fields = "extra"` on the model) under
+    /// `key`: `Column::custom_field("extra", "segment")`. The grid's key for it
+    /// is `extra_segment`. When the grid runs ([`Grid::page`],
+    /// [`Grid::export`], [`Grid::with_custom_fields`]) the column takes the
+    /// definition's label (in the request's locale), kind (text, number, date,
+    /// a pick-list for choice and bool fields) and options, and is sorted,
+    /// filtered, searched and exported on the JSON value, bound by `?`. A key
+    /// with no active definition leaves the column out.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let segment = Column::custom_field("extra", "segment");
+    /// # let _ = segment;
+    /// ```
+    pub fn custom_field(column: &str, key: &str) -> Self {
+        let mut c = Self::new(&format!("{column}_{key}"), key, Kind::Text);
+        if plain_name(column) && crate::custom_fields::is_valid_key(key) {
+            c.custom = Some((column.to_owned(), key.to_owned()));
+        } else {
+            c.sortable = false;
+            c.filterable = false;
+        }
+        c
     }
 
     /// A value of the row this one belongs to: `table`'s `column` where its
@@ -362,6 +413,72 @@ impl Column {
         Self::new(key, label, Kind::Money)
     }
 
+    /// Shows each row of a money column in its own currency, read from the
+    /// model column `key` (an ISO 4217 code such as `total_currency`, the
+    /// `<field>_currency` column of a `#[model(money)]` field). The cell
+    /// uses that currency's symbol and decimals (`¥1,250`, `$12.50`);
+    /// summaries are one figure per currency, never summed across them;
+    /// `cur.<column>=USD` in the query string filters by currency, and its
+    /// decimals read the `min.`/`max.` amounts; exports keep the currency
+    /// (a code after the CSV amount, a per-row number format in XLSX, the
+    /// symbol on the print page). Without it the column uses
+    /// `APP_CURRENCY`, as before.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let total = Column::money("total", "Total").currency_from("total_currency");
+    /// # let _ = total;
+    /// ```
+    pub fn currency_from(mut self, key: &str) -> Self {
+        if self.kind == Kind::Money && plain_name(key) {
+            self.currency = Some(key.to_owned());
+        }
+        self
+    }
+
+    /// A column of exact quantities (`Quantity<S>`, stored as a scaled
+    /// integer): cells show the scale's digits (`2.500`), set with
+    /// [`scale`](Self::scale), and filters, sorts and summaries act on the
+    /// stored integer, so they are exact. Add
+    /// [`unit_from`](Self::unit_from) to show each row's unit.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let stock = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn quantity(key: &str, label: &str) -> Self {
+        Self::new(key, label, Kind::Quantity)
+    }
+
+    /// The scale of a quantity column, `3` for a `Quantity<3>` field (at
+    /// most 9; the default is 0). Other columns ignore it.
+    pub fn scale(mut self, scale: u32) -> Self {
+        if self.kind == Kind::Quantity {
+            self.scale = scale.min(9);
+        }
+        self
+    }
+
+    /// Shows each row of a quantity column with its own unit, read from the
+    /// model column `key` (`stock_unit`, a `String` such as `kg`). Summaries
+    /// are one figure per unit, never summed across units;
+    /// `unit.<column>=kg` in the query string filters by unit; exports keep
+    /// the unit (after the CSV value, in the XLSX number format, on the
+    /// print page). Without it the column has no unit and a single total.
+    ///
+    /// ```
+    /// use renox::grid::Column;
+    /// let stock = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+    /// # let _ = stock;
+    /// ```
+    pub fn unit_from(mut self, key: &str) -> Self {
+        if self.kind == Kind::Quantity && plain_name(key) {
+            self.unit = Some(key.to_owned());
+        }
+        self
+    }
+
     /// A date column.
     pub fn date(key: &str, label: &str) -> Self {
         Self::new(key, label, Kind::Date)
@@ -506,7 +623,7 @@ impl Column {
     /// (`.summary(Summary::Sum).summary(Summary::Average)`). Sum, average
     /// and range are for number and money columns; count for any.
     pub fn summary(mut self, summary: Summary) -> Self {
-        let numeric = matches!(self.kind, Kind::Number | Kind::Money);
+        let numeric = matches!(self.kind, Kind::Number | Kind::Money | Kind::Quantity);
         if (numeric || summary == Summary::Count) && !self.summaries.contains(&summary) {
             self.summaries.push(summary);
         }
@@ -521,6 +638,24 @@ impl Column {
     /// The column's kind.
     pub fn kind(&self) -> Kind {
         self.kind
+    }
+
+    /// The model column a money column reads each row's currency from
+    /// ([`currency_from`](Self::currency_from)), if it has one.
+    pub fn currency_column(&self) -> Option<&str> {
+        self.currency.as_deref()
+    }
+
+    /// The decimals of a quantity column ([`scale`](Self::scale)), 0 for
+    /// other kinds.
+    pub fn quantity_scale(&self) -> u32 {
+        self.scale
+    }
+
+    /// The model column a quantity column reads each row's unit from
+    /// ([`unit_from`](Self::unit_from)), if it has one.
+    pub fn unit_column(&self) -> Option<&str> {
+        self.unit.as_deref()
     }
 
     /// The column's heading.
@@ -768,7 +903,10 @@ impl Grid {
             name,
             "page" | "per_page" | "sort" | "search" | "export" | "group" | "match" | "state"
         ) || name.split_once('.').is_some_and(|(part, _)| {
-            matches!(part, "q" | "m" | "min" | "max" | "from" | "to" | "in" | "r")
+            matches!(
+                part,
+                "q" | "m" | "min" | "max" | "from" | "to" | "in" | "cur" | "unit" | "r"
+            )
         });
         known.then_some(name)
     }
@@ -885,6 +1023,118 @@ impl Grid {
         query: Query<M>,
         request: &GridRequest,
     ) -> Result<GridPage<M>> {
+        self.resolved::<M>(request)
+            .await?
+            .page_resolved(query, request)
+            .await
+    }
+
+    /// The grid with its [`Column::custom_field`] columns resolved against
+    /// the model's active definitions (label in the request's locale, kind,
+    /// options, SQL), as [`page`](Self::page) and the exports do. Call it
+    /// before [`filter`](Self::filter) or [`selected`](Self::selected), which
+    /// are not async, so those act on the custom columns too. A grid without
+    /// custom columns is returned as it is.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::grid::{Column, Grid, GridRequest};
+    /// # #[derive(Model, serde::Serialize, Default)] struct Party { id: i64, extra: renox::db::Json<renox::custom_fields::CustomValues> }
+    /// # async fn demo(request: GridRequest) -> Result<()> {
+    /// let grid = Grid::new("parties").column(Column::custom_field("extra", "segment"));
+    /// let grid = grid.with_custom_fields::<Party>(&request).await?;
+    /// let query = grid.filter(Party::query(), &request);
+    /// # let _ = query;
+    /// # Ok(()) }
+    /// ```
+    pub async fn with_custom_fields<M: Model>(&self, request: &GridRequest) -> Result<Grid> {
+        Ok(self.resolved::<M>(request).await?.into_owned())
+    }
+
+    async fn resolved<M: Model>(
+        &self,
+        request: &GridRequest,
+    ) -> Result<std::borrow::Cow<'_, Grid>> {
+        use crate::custom_fields::{CustomField, DEFAULT_LABEL_LOCALE, FieldKind};
+        if self.columns.iter().all(|c| c.custom.is_none()) {
+            return Ok(std::borrow::Cow::Borrowed(self));
+        }
+        let fields = CustomField::for_model(&request.db, M::TABLE).await?;
+        let locale = request.lang.as_ref().map_or("en", |l| l.locale.as_str());
+        let dialect = request.db.dialect();
+        let mut grid = self.clone();
+        let mut sealed: Option<String> = None;
+        grid.columns.retain_mut(|c| {
+            let Some((column, key)) = c.custom.clone() else {
+                return true;
+            };
+            let Some(field) = fields.iter().find(|f| f.key == key) else {
+                return false;
+            };
+            if field.rules.sensitive {
+                // Sealed values cannot be compared, ordered or searched.
+                c.sortable = false;
+                c.filterable = false;
+                c.searchable = false;
+                c.sensitive = true;
+                c.reveal = field.rules.reveal.clone();
+                if names_column(&request.params, &c.key) {
+                    sealed.get_or_insert(key.clone());
+                }
+            }
+            c.label = field.label_for(locale, DEFAULT_LABEL_LOCALE);
+            let text = match dialect {
+                Dialect::Sqlite => format!("json_extract({{T}}.\"{column}\", '$.{key}')"),
+                Dialect::Postgres => format!("({{T}}.\"{column}\"::jsonb ->> '{key}')"),
+            };
+            c.kind = match field.kind {
+                // The cells are sealed text, whatever the field holds.
+                _ if field.rules.sensitive => Kind::Text,
+                FieldKind::Number => Kind::Number,
+                FieldKind::Date => Kind::Date,
+                FieldKind::Bool => Kind::Select,
+                FieldKind::Choice => Kind::Select,
+                _ => Kind::Text,
+            };
+            c.options = match field.kind {
+                _ if field.rules.sensitive => Vec::new(),
+                FieldKind::Bool => {
+                    vec![("true".into(), "Yes".into()), ("false".into(), "No".into())]
+                }
+                FieldKind::Choice => field
+                    .rules
+                    .options
+                    .iter()
+                    .map(|o| {
+                        let label = o.label.resolve(locale, DEFAULT_LABEL_LOCALE);
+                        (o.value.clone(), label.unwrap_or(&o.value).to_owned())
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            c.expr = Some(match (field.kind, dialect) {
+                _ if field.rules.sensitive => text,
+                // Booleans are compared and shown as `true` / `false`.
+                (FieldKind::Bool, Dialect::Sqlite) => {
+                    format!("CASE {text} WHEN 1 THEN 'true' WHEN 0 THEN 'false' END")
+                }
+                (FieldKind::Number, Dialect::Postgres) => format!("CAST({text} AS NUMERIC)"),
+                (FieldKind::Date, Dialect::Postgres) => format!("CAST({text} AS DATE)"),
+                _ => text,
+            });
+            true
+        });
+        if let Some(key) = sealed {
+            return Err(crate::db::DbError::sealed_custom_field(&key).into());
+        }
+        Ok(std::borrow::Cow::Owned(grid))
+    }
+
+    async fn page_resolved<M: Model + Serialize>(
+        &self,
+        query: Query<M>,
+        request: &GridRequest,
+    ) -> Result<GridPage<M>> {
         if !valid_key(&self.id) {
             return Err(Error::Internal(anyhow::anyhow!(
                 "grid id `{}` may only have letters, digits, `_` and `-`",
@@ -899,7 +1149,8 @@ impl Grid {
         let rows = query
             .paginate(&request.db, state.page, state.per_page)
             .await?;
-        let related = self.related_values(&request.db, &rows.items).await?;
+        let mut related = self.related_values(&request.db, &rows.items).await?;
+        self.unseal_custom(request, &mut related);
         let summaries = self.summarize(&unsorted, &request.db, None).await?;
         let group_summaries = match &state.group {
             Some(group) if self.find(group).is_some() => {
@@ -974,7 +1225,7 @@ impl Grid {
                 continue;
             };
             let key = &column.key;
-            let numeric = matches!(column.kind, Kind::Number | Kind::Money);
+            let numeric = matches!(column.kind, Kind::Number | Kind::Money | Kind::Quantity);
             let figures = if numeric {
                 format!(
                     "CAST(SUM({sql}) AS DOUBLE PRECISION), CAST(AVG({sql}) AS DOUBLE PRECISION), \
@@ -984,6 +1235,54 @@ impl Grid {
                 format!("NULL, NULL, NULL, NULL, COUNT({sql})")
             };
             type Figures = (Option<f64>, Option<f64>, Option<f64>, Option<f64>, i64);
+            // A column with a currency of its own: one set of figures per
+            // currency (and per group), never a sum across currencies.
+            // A quantity column with `unit_from` does the same per unit.
+            if let Some((cur, per)) = column
+                .currency
+                .as_deref()
+                .map(|c| (c, "currencies"))
+                .or_else(|| column.unit.as_deref().map(|u| (u, "units")))
+                .filter(|(c, _)| M::COLUMNS.contains(c))
+            {
+                let cur_expr = format!("\"{cur}\"");
+                let mut grouped = query.clone();
+                if let Some(group) = &group_expr {
+                    grouped = grouped.group_by_raw(group);
+                }
+                let first = group_sql.as_deref().unwrap_or("CAST('' AS TEXT)");
+                let found = grouped
+                    .group_by_raw(&cur_expr)
+                    .select_as::<(
+                        Option<String>,
+                        Option<String>,
+                        Option<f64>,
+                        Option<f64>,
+                        Option<f64>,
+                        Option<f64>,
+                        i64,
+                    ), _>(
+                        db, &format!("{first}, CAST({cur_expr} AS TEXT), {figures}")
+                    )
+                    .await?;
+                let mut by_group: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+                for (value, code, sum, average, min, max, count) in found {
+                    by_group
+                        .entry(value.unwrap_or_default())
+                        .or_default()
+                        .push(json!({
+                            "currency": code.clone(), "unit": code, "sum": sum, "average": average,
+                            "min": min, "max": max, "count": count,
+                        }));
+                }
+                for (value, mut currencies) in by_group {
+                    currencies.sort_by_key(|f| f["currency"].as_str().map(str::to_owned));
+                    out.entry(value)
+                        .or_default()
+                        .insert(key.clone(), json!({ (per): currencies }));
+                }
+                continue;
+            }
             let rows: Vec<(String, Figures)> = match (&group_sql, &group_expr) {
                 (Some(group_sql), Some(group)) => query
                     .clone()
@@ -1049,7 +1348,7 @@ impl Grid {
             let Target::Expr(expr) = column.target::<M>() else {
                 continue;
             };
-            let numeric = matches!(column.kind, Kind::Number | Kind::Money);
+            let numeric = matches!(column.kind, Kind::Number | Kind::Money | Kind::Quantity);
             let values: BTreeMap<String, Value> = if numeric {
                 M::unscoped()
                     .where_in("id", keys.clone())
@@ -1090,6 +1389,39 @@ impl Grid {
         Ok(out)
     }
 
+    /// Whether the request's viewer may see the values of `column`: always for
+    /// a column that is not a sensitive custom field.
+    pub(super) fn may_see(&self, column: &Column, request: &GridRequest) -> bool {
+        !column.sensitive || request.can_reveal(column.reveal.as_deref())
+    }
+
+    /// Replaces the sealed cells of the sensitive custom columns: the plain
+    /// value for a viewer with the ability (`unreadable` when `APP_KEY`
+    /// changed), the mask for everyone else.
+    pub(super) fn unseal_custom(&self, request: &GridRequest, rows: &mut [Map<String, Value>]) {
+        use crate::custom_fields::{MASK, Opened, open_stored};
+        for column in self.columns.iter().filter(|c| c.sensitive) {
+            let allowed = self.may_see(column, request);
+            for row in rows.iter_mut() {
+                let Some(cell) = row.get_mut(&column.key) else {
+                    continue;
+                };
+                if cell.is_null() {
+                    continue;
+                }
+                *cell = if !allowed {
+                    Value::from(MASK)
+                } else {
+                    match open_stored(&request.db, cell) {
+                        Opened::Unreadable => Value::from("unreadable"),
+                        Opened::Value(Value::String(text)) => Value::from(text),
+                        Opened::Value(other) => Value::from(other.to_string()),
+                    }
+                };
+            }
+        }
+    }
+
     /// `query` with the request's filters applied (also used by `page`):
     /// for exports or totals over every filtered row.
     pub fn filter<M: Model>(&self, query: Query<M>, request: &GridRequest) -> Query<M> {
@@ -1126,7 +1458,11 @@ impl Grid {
                     }
                     Target::Column(_) => continue,
                 };
-                if let Some((sql, values)) = rule.sql(&target, column.kind, zone, money) {
+                let scale = match column.kind {
+                    Kind::Quantity => 10f64.powi(column.scale as i32),
+                    _ => money,
+                };
+                if let Some((sql, values)) = rule.sql(&target, column.kind, zone, scale) {
                     parts.push(format!("({sql})"));
                     binds.extend(values);
                 }
@@ -1364,6 +1700,10 @@ struct Filter {
     from: Option<NaiveDate>,
     to: Option<NaiveDate>,
     any_of: Vec<String>,
+    /// An ISO 4217 code (money columns with `currency_from`).
+    currency: Option<String>,
+    /// A unit code (quantity columns with `unit_from`).
+    unit: Option<String>,
 }
 
 impl Filter {
@@ -1393,21 +1733,40 @@ impl Filter {
         mut query: Query<M>,
         column: &Column,
         zone: &crate::timezone::Zone,
-        money: f64,
+        mut money: f64,
     ) -> Query<M> {
         let key = column.key.as_str();
         let target = column.target::<M>();
+        if let (Some(code), Some(col)) = (&self.currency, &column.currency) {
+            if M::COLUMNS.contains(&col.as_str()) {
+                query = query.where_eq(col, code.as_str());
+            }
+            money = 10f64.powi(crate::view_filters::currency_decimals(code) as i32);
+        }
+        if let Some((unit, col)) = self
+            .unit
+            .as_ref()
+            .zip(column.unit.as_ref())
+            .filter(|(_, col)| M::COLUMNS.contains(&col.as_str()))
+        {
+            query = query.where_eq(col, unit.as_str());
+        }
+        if column.kind == Kind::Quantity {
+            // Typed in whole units, stored as the scaled integer.
+            money = 10f64.powi(column.scale as i32);
+        }
         match column.kind {
             Kind::Text | Kind::Color => {
                 if let Some(pattern) = self.pattern() {
                     query = target.like(query, pattern);
                 }
             }
-            Kind::Number | Kind::Money => {
+            Kind::Number | Kind::Money | Kind::Quantity => {
                 for (value, op) in [(self.min, ">="), (self.max, "<=")] {
                     let Some(value) = value else { continue };
-                    // Money is typed in whole units and stored in the smallest.
-                    let value = if column.kind == Kind::Money {
+                    // Money is typed in whole units and stored in the smallest,
+                    // a quantity in whole units and stored scaled.
+                    let value = if matches!(column.kind, Kind::Money | Kind::Quantity) {
                         smallest_unit(value, money)
                     } else {
                         value
@@ -1511,6 +1870,8 @@ impl Filter {
             "from": self.from.map(|d| d.to_string()),
             "to": self.to.map(|d| d.to_string()),
             "any_of": self.any_of,
+            "currency": self.currency,
+            "unit": self.unit,
         })
     }
 }
@@ -1533,6 +1894,19 @@ struct State_ {
     defaulted: bool,
     page: u32,
     per_page: u32,
+}
+
+/// Whether the request's grid parameters sort or filter on the column `key`
+/// (`sort=key`, `q.key`, `r.0.c=key`, ...).
+fn names_column(params: &[(String, String)], key: &str) -> bool {
+    params.iter().any(|(name, value)| match name.as_str() {
+        "sort" => value.trim().trim_start_matches('-') == key,
+        "group" => value.trim() == key,
+        _ if name.starts_with("r.") && name.ends_with(".c") => value.trim() == key,
+        _ => name
+            .split_once('.')
+            .is_some_and(|(part, k)| k == key && !part.is_empty() && !value.trim().is_empty()),
+    })
 }
 
 impl State_ {
@@ -1610,6 +1984,15 @@ impl State_ {
                         "max" => filter.max = value.parse().ok().filter(|v: &f64| v.is_finite()),
                         "from" => filter.from = value.parse().ok(),
                         "to" => filter.to = value.parse().ok(),
+                        "cur" if column.currency.is_some() => {
+                            filter.currency = crate::money::Currency::parse(value)
+                                .ok()
+                                .map(|c| c.code().to_owned());
+                        }
+                        "unit" if column.unit.is_some() => {
+                            filter.unit = Some(value.trim().chars().take(32).collect::<String>())
+                                .filter(|u| !u.is_empty());
+                        }
                         "in" if filter.any_of.len() < 100 => filter.any_of.push(value.to_owned()),
                         _ => {}
                     }
@@ -1691,6 +2074,12 @@ impl State_ {
             for v in &f.any_of {
                 out.push((format!("in.{key}"), v.clone()));
             }
+            if let Some(code) = &f.currency {
+                out.push((format!("cur.{key}"), code.clone()));
+            }
+            if let Some(unit) = &f.unit {
+                out.push((format!("unit.{key}"), unit.clone()));
+            }
         }
         if let Some((key, desc)) = self.sort.as_ref().filter(|_| !self.defaulted) {
             out.push((
@@ -1742,7 +2131,9 @@ fn ops_for(kind: Kind) -> &'static [&'static str] {
             "empty",
             "not_empty",
         ],
-        Kind::Number | Kind::Money => &["eq", "ne", "gt", "gte", "lt", "lte", "empty", "not_empty"],
+        Kind::Number | Kind::Money | Kind::Quantity => {
+            &["eq", "ne", "gt", "gte", "lt", "lte", "empty", "not_empty"]
+        }
         Kind::Date | Kind::DateTime => &["on", "before", "after", "empty", "not_empty"],
         Kind::Bool => &["is_true", "is_false"],
         Kind::Select => &["is", "is_not", "empty", "not_empty"],
@@ -1805,7 +2196,7 @@ impl Rule {
                     .parse()
                     .ok()
                     .filter(|n: &f64| n.is_finite())?;
-                let n = if kind == Kind::Money {
+                let n = if matches!(kind, Kind::Money | Kind::Quantity) {
                     smallest_unit(n, money)
                 } else {
                     n
@@ -1946,6 +2337,8 @@ pub struct GridRequest {
     db: Db,
     session: Option<Session>,
     user_id: Option<i64>,
+    /// The logged-in user, for the ability that reveals sensitive custom fields.
+    viewer: Option<AuthUser>,
     lang: Option<crate::Lang>,
     zone: crate::timezone::Zone,
     /// `APP_CURRENCY`'s usual decimals: money is stored in its smallest unit.
@@ -1965,12 +2358,28 @@ impl GridRequest {
             db: db.clone(),
             session: None,
             user_id: None,
+            viewer: None,
             lang: None,
             zone: crate::timezone::Zone::UTC,
             money_decimals: crate::view_filters::currency_decimals(
                 &crate::Config::default().currency,
             ),
         }
+    }
+
+    /// The same request for `viewer`, whose abilities decide whether a
+    /// sensitive custom field shows its values (for tests and commands; the
+    /// extractor takes the logged-in user).
+    pub fn viewed_by(mut self, viewer: AuthUser) -> Self {
+        self.user_id = Some(viewer.id);
+        self.viewer = Some(viewer);
+        self
+    }
+
+    /// Whether the viewer holds `ability`, else the app-wide reveal ability.
+    fn can_reveal(&self, ability: Option<&str>) -> bool {
+        let ability = ability.unwrap_or(crate::custom_fields::REVEAL_ABILITY);
+        self.viewer.as_ref().is_some_and(|v| v.allows(ability))
     }
 
     /// The query string's value for `name`, if any.
@@ -2020,7 +2429,8 @@ impl<S: Send + Sync> FromRequestParts<S> for GridRequest {
             path,
             db: app.db.clone(),
             session,
-            user_id: user.map(|u| u.id),
+            user_id: user.as_ref().map(|u| u.id),
+            viewer: user,
             lang,
             zone: app.config.timezone,
             money_decimals: crate::view_filters::currency_decimals(&app.config.currency),
@@ -2108,16 +2518,18 @@ impl<M: Serialize> GridPage<M> {
                     "sortable": c.sortable,
                     "filterable": c.filterable,
                     "decimals": match c.kind {
+                        Kind::Quantity => Some(c.scale),
                         Kind::Money => Some(c.decimals.map_or(self.money_decimals, u32::from)),
                         _ => c.decimals.map(u32::from),
                     },
                     // Money cells are divided by this: stored in the smallest unit.
                     "scale": match c.kind {
                         Kind::Money => 10u64.pow(self.money_decimals),
+                        Kind::Quantity => 10u64.pow(c.scale),
                         _ => 1,
                     },
                     "width": c.width,
-                    "numeric": matches!(c.kind, Kind::Number | Kind::Money),
+                    "numeric": matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity),
                     "options": c.options.iter().map(|(v, l)| json!({"value": v, "label": l})).collect::<Vec<_>>(),
                     "labels": c.options.iter().map(|(v, l)| (v.clone(), Value::from(l.clone()))).collect::<Map<_, _>>(),
                     "filter": filter.map(Filter::to_value).unwrap_or_else(|| Filter::default().to_value()),
@@ -2140,6 +2552,10 @@ impl<M: Serialize> GridPage<M> {
                     "link": c.link,
                     "copyable": c.copyable,
                     "round": c.round,
+                    "currency": c.currency,
+                    "unit": c.unit,
+                    // `.decimals(n)` only: a row's currency sets the rest.
+                    "fixed_decimals": c.decimals.map(u32::from),
                 })
             })
             .collect();

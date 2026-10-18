@@ -1,0 +1,14 @@
+{
+  "event": "refund.failed",
+  "business_id": "5f27a14a9bf05c73dd040bc8",
+  "created": "2026-10-17T13:00:00.000Z",
+  "data": {
+    "id": "rfd_8d3f1a",
+    "invoice_id": "579c8d61f23fa4ca35e52da4",
+    "payment_id": "py_77b1",
+    "amount": 10,
+    "currency": "USD",
+    "status": "FAILED",
+    "failure_code": "INSUFFICIENT_BALANCE"
+  }
+}

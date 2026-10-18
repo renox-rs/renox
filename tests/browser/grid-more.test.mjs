@@ -126,6 +126,28 @@ describe('as a guest', () => {
       assert.deepEqual(edges, { scrolled: true, left: true, right: true }, 'the edges get their shadows');
     }));
 
+  test('in a right-to-left page the frozen columns swap sides', () =>
+    onGrid(async (page) => {
+      await page.eval(() => {
+        document.documentElement.dir = 'rtl';
+      });
+      await sleep(100);
+      const sides = await page.eval(() => {
+        const mid = (el) => {
+          const r = el.getBoundingClientRect();
+          return r.left + r.width / 2;
+        };
+        const scroll = document.querySelector('.rx-grid__scroll');
+        return {
+          number: mid(document.querySelector('tbody tr[data-id] td[data-col="number"]')),
+          actions: mid(document.querySelector('tbody tr[data-id] td[data-col="actions"]')),
+          centre: mid(scroll),
+        };
+      });
+      assert.ok(sides.number > sides.centre, `the first frozen column is on the right: ${JSON.stringify(sides)}`);
+      assert.ok(sides.actions < sides.centre, `the last frozen column is on the left: ${JSON.stringify(sides)}`);
+    }));
+
   test('the menu pins a column to the right edge, and reset unpins it', () =>
     onGrid(async (page) => {
       await page.click('[popovertarget="grid-orders-columns"]');
@@ -138,7 +160,7 @@ describe('as a guest', () => {
       );
       const pinned = await page.eval(() => ({
         pin: document.querySelector('thead th[data-col="city"]').dataset.pin,
-        offset: document.querySelector('tbody tr[data-id] td[data-col="city"]').style.right,
+        offset: document.querySelector('tbody tr[data-id] td[data-col="city"]').style.insetInlineEnd,
       }));
       assert.equal(pinned.pin, 'right');
       assert.match(pinned.offset, /px$/);
@@ -153,7 +175,7 @@ describe('as a guest', () => {
       );
       const left = await page.eval(() => ({
         pin: document.querySelector('thead th[data-col="customer"]').dataset.pin,
-        offset: document.querySelector('tbody tr[data-id] td[data-col="customer"]').style.left,
+        offset: document.querySelector('tbody tr[data-id] td[data-col="customer"]').style.insetInlineStart,
       }));
       assert.equal(left.pin, 'left');
       assert.match(left.offset, /px$/);

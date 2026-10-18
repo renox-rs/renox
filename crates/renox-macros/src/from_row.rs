@@ -29,6 +29,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         let field_ident = field.ident.clone().expect("named fields have identifiers");
         let mut column = field_ident.to_string().trim_start_matches("r#").to_owned();
         let mut skip = false;
+        let mut money = None;
         for attr in field.attrs.iter().filter(|a| a.path().is_ident("row")) {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("skip") {
@@ -37,13 +38,21 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 } else if meta.path.is_ident("rename") {
                     column = meta.value()?.parse::<LitStr>()?.value();
                     Ok(())
+                } else if meta.path.is_ident("money") {
+                    money = Some(parse_money(&meta)?);
+                    Ok(())
                 } else {
-                    Err(meta.error("expected `skip` or `rename = \"column\"`"))
+                    Err(meta.error(
+                        "expected `skip`, `rename = \"column\"`, `money` or `money(currency = \"column\")`",
+                    ))
                 }
             })?;
         }
         fields.push(if skip {
             quote! { #field_ident: ::core::default::Default::default() }
+        } else if let Some(currency) = money {
+            let currency = currency.unwrap_or_else(|| format!("{column}_currency"));
+            read_money(&field_ident, &column, &currency, &field.ty)
         } else {
             quote! { #field_ident: row.try_get(#column)? }
         });
@@ -61,4 +70,34 @@ pub fn from_row_impl(ident: &syn::Ident, fields: TokenStream) -> TokenStream {
             }
         }
     }
+}
+
+/// Parses `money` or `money(currency = "column")`; the inner value is the
+/// shared currency column, `None` for the default `<column>_currency`.
+pub fn parse_money(meta: &syn::meta::ParseNestedMeta) -> Result<Option<String>> {
+    let mut currency = None;
+    if meta.input.peek(syn::token::Paren) {
+        meta.parse_nested_meta(|inner| {
+            if inner.path.is_ident("currency") {
+                currency = Some(inner.value()?.parse::<LitStr>()?.value());
+                Ok(())
+            } else {
+                Err(inner.error("expected `currency = \"column\"`"))
+            }
+        })?;
+    }
+    Ok(currency)
+}
+
+/// `field: row.try_get_money(amount, currency)?` (or the `_opt` form for an `Option`).
+pub fn read_money(ident: &syn::Ident, amount: &str, currency: &str, ty: &syn::Type) -> TokenStream {
+    if is_option(ty) {
+        quote! { #ident: row.try_get_money_opt(#amount, #currency)? }
+    } else {
+        quote! { #ident: row.try_get_money(#amount, #currency)? }
+    }
+}
+
+pub fn is_option(ty: &syn::Type) -> bool {
+    matches!(ty, syn::Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "Option"))
 }

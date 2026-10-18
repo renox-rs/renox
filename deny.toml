@@ -6,7 +6,33 @@ all-features = true
 
 [advisories]
 # RustSec advisories fail the build; ignore one only with a reason.
-ignore = []
+#
+# The Typst compiler (renox-pdf, #30) brings these. None is reachable from a
+# render: the "unmaintained" ones are parsers and codecs Typst uses for
+# bibliographies, syntax highlighting and its own font shaping, which a
+# Renox template never feeds untrusted input; the two quick-xml ones are in
+# citationberg, which reads CSL citation styles (Typst's `bibliography`),
+# and citationberg pins quick-xml 0.38. Typst's `bibliography`, `cite` and
+# `raw` are not part of the documents Renox makes (invoices, receipts), and
+# the kit only passes the app's own templates and data to the compiler.
+# Drop an entry when a Typst release moves off the crate.
+ignore = [
+    { id = "RUSTSEC-2026-0194", reason = "quick-xml 0.38 in citationberg (Typst bibliographies); no untrusted CSL" },
+    { id = "RUSTSEC-2026-0195", reason = "quick-xml 0.38 in citationberg (Typst bibliographies); no untrusted CSL" },
+    { id = "RUSTSEC-2025-0141", reason = "bincode in syntect (Typst syntax highlighting); only reads its own bundled data" },
+    { id = "RUSTSEC-2024-0436", reason = "paste in hayagriva (Typst bibliographies); a compile-time macro" },
+    { id = "RUSTSEC-2026-0206", reason = "rustybuzz, Typst's text shaper; no maintained replacement in Typst yet" },
+    { id = "RUSTSEC-2026-0192", reason = "ttf-parser, Typst's font parser; fonts are the app's own" },
+    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml via serde_yaml in hayagriva (Typst bibliographies)" },
+    { id = "RUSTSEC-2024-0320", reason = "yaml-rust in syntect (Typst syntax highlighting)" },
+    # Published after the lock file was last updated (October 2026); the lock
+    # still has ammonia 4.2.3, zip 8.6.0 and zip 9.0.1. None of the paths is
+    # reachable here: bump the crates when a compatible release is wanted.
+    { id = "RUSTSEC-2026-0373", reason = "ammonia: only reached when inline styles are allowed; renox-editors allows `href` and `title` on `a` and no `style` attribute" },
+    { id = "RUSTSEC-2026-0367", reason = "zip: ZipArchive::extract; calamine (xlsx import) reads workbooks in memory with open_workbook_from_rs and never extracts to disk" },
+    { id = "RUSTSEC-2026-0368", reason = "zip: ZipArchive::extract symlinks; same as 0367 (zip 9 is a dev-dependency of the tests)" },
+    { id = "RUSTSEC-2026-0369", reason = "zip: extract() permissions through symlinks; same as 0367" },
+]
 
 [licenses]
 allow = [

@@ -2,7 +2,7 @@
 
 Subscriptions for [Renox](https://github.com/renox-rs/renox) apps (Laravel's Cashier): plans
 declared in code, free trials, upgrades and downgrades, cancellations with a grace period, with
-Stripe and Xendit.
+Stripe and Xendit, plus one-off payments and payment links (Stripe, Xendit, N-Genius).
 
 ```rust
 use renox::prelude::*;
@@ -34,7 +34,17 @@ What it adds:
 - the events `SubscriptionCreated`, `SubscriptionUpdated`, `SubscriptionCanceled`,
   `PaymentSucceeded` and `PaymentFailed`, recorded in the activity log when the app has the
   `Audit` module;
-- Stripe and Xendit; another provider is one impl of the `Gateway` trait.
+- one-off payments: `Billing::of(&state, &user).charge(Charge::new(money).reference("job", 42))`
+  and `Billing::payment_link(&state, PaymentLink::new(money))` store a `billing_payments` row
+  with your reference; `Billing::refund` (pending until the gateway confirms, partial refunds
+  add up), `Billing::payment_status`, disputes, and a scheduled `billing:expire-links` sweep for
+  links that ran out; a success that arrives after a failure is still applied;
+- keys looked up per installation (`Stripe::resolved(..)`) and several accounts per gateway
+  (`.account("acme-llc")`, webhook `/billing/webhooks/{gateway}/{account}`);
+- events `PaymentRefunded`, `RefundSucceeded`, `RefundFailed`, `DisputeOpened`, `DisputeWon`,
+  `DisputeLost` and `PaymentLinkExpired`;
+- Stripe, Xendit and N-Genius (`.ngenius()`); another provider is one impl of the `Gateway` trait.
 
 The guide is [docs/billing.md](https://github.com/renox-rs/renox/blob/main/docs/billing.md);
-examples/bikeshop uses it for its service plans (Stripe, Xendit and a demo gateway). Versioned with `renox`: use the same version for both.
+examples/bikeshop uses it for its service plans (Stripe, Xendit and a demo gateway) and to let staff send a work order's payment link
+([examples/bikeshop/src/app/workshop/order.rs](../../examples/bikeshop/src/app/workshop/order.rs), `pay_link`). Versioned with `renox`: use the same version for both.

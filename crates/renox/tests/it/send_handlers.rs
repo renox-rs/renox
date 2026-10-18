@@ -173,6 +173,84 @@ async fn numbering(State(db): State<Db>) -> Result<String> {
     Ok(format!("{n} {peeked} {loose} {last} {} {text}", rows.len()))
 }
 
+/// Custom field definitions: every `CustomField` call, inside a routed handler.
+async fn custom_field_defs(State(db): State<Db>, viewer: Option<AuthUser>) -> Result<String> {
+    use renox::custom_fields::{CustomField, CustomValues};
+    let saved = CustomField::text("parties", "passport_no")
+        .label("Passport no.")
+        .save(&db)
+        .await?;
+    let found = CustomField::find(&db, saved.id).await?.is_some();
+    let active = CustomField::for_model(&db, "parties").await?.len();
+    CustomField::deactivate(&db, saved.id).await?;
+    CustomField::activate(&db, saved.id).await?;
+    let all = CustomField::all_for_model(&db, "parties").await?.len();
+    let views = CustomField::views_for(&db, "parties", "en", viewer.as_ref()).await?;
+    let shown = CustomValues::default().shown(&db, &views).is_empty();
+    CustomField::delete(&db, saved.id).await?;
+    // A sensitive field: saved, masked for this viewer, opened from the values.
+    let secret = CustomField::text("parties", "tax_id")
+        .sensitive()
+        .reveal_with("see-tax-ids")
+        .save(&db)
+        .await?;
+    let may = secret.can_reveal(viewer.as_ref());
+    let sealed = CustomValues::default().open(&db, "tax_id").is_none();
+    CustomField::delete(&db, secret.id).await?;
+    Ok(format!("{found} {active} {all} {shown} {may} {sealed}"))
+}
+
+/// Custom field values: `CustomValues::validate`, inside a routed handler.
+async fn custom_field_values(State(state): State<AppState>) -> Result<String> {
+    use renox::custom_fields::CustomValues;
+    let input = serde_json::Map::new();
+    let outcome = CustomValues::validate(
+        &state,
+        "parties",
+        "extra",
+        &input,
+        &Default::default(),
+        "en",
+    )
+    .await?;
+    Ok(format!("{}", outcome.is_ok()))
+}
+
+/// Typed JSON paths and the definition check, inside a routed handler.
+async fn json_paths(State(db): State<Db>) -> Result<String> {
+    use renox::custom_fields::CustomValues;
+    use renox::db::{Col, Json};
+    struct Doc;
+    const EXTRA: Col<Doc, Json<CustomValues>> = Col::new("extra");
+    let _ = EXTRA.json("segment").eq("retail");
+    let checked = Note::query().with_custom_fields(&db).await.is_ok();
+    Ok(format!("{checked}"))
+}
+
+/// Idempotency storage: every `idempotency` call, inside a routed handler.
+async fn idempotency_store(State(db): State<Db>) -> Result<String> {
+    use renox::idempotency::{self, Claim};
+    let hash = idempotency::body_hash(b"x");
+    let claimed = idempotency::claim(&db, "u", "/r", "k", &hash).await? == Claim::Claimed;
+    idempotency::complete(&db, "u", "/r", "k", 200, &[], b"ok").await?;
+    let replay = matches!(
+        idempotency::claim(&db, "u", "/r", "k", &hash).await?,
+        Claim::Replay(_)
+    );
+    idempotency::release(&db, "u", "/r", "k").await?;
+    let pruned = idempotency::prune(&db, renox::db::now()).await?;
+    Ok(format!("{claimed} {replay} {pruned}"))
+}
+
+/// The `Offline` extractor in a routed handler.
+async fn offline_extractor(offline: Offline) -> String {
+    format!(
+        "{} {}",
+        offline.skew_exceeded,
+        offline.client_id.unwrap_or_default()
+    )
+}
+
 /// Typed columns in a routed handler.
 async fn typed(State(db): State<Db>) -> Result<String> {
     let notes = Note::query()
@@ -211,6 +289,17 @@ async fn more(State(state): State<AppState>, user: Option<AuthUser>) -> Result<S
     let pairs: Vec<(i64, String)> = renox::db::sql("SELECT id, body FROM notes")
         .fetch_as(db)
         .await?;
+    // #69: a `Quantity` bound and read back through the same APIs.
+    let stock: Vec<(
+        renox::quantity::Quantity<3>,
+        Option<renox::quantity::Quantity<3>>,
+    )> = renox::db::sql("SELECT id, NULL FROM notes WHERE id > ?")
+        .bind(renox::quantity::Quantity::<3>::from_raw(0))
+        .fetch_as(db)
+        .await?;
+    let _ = stock;
+    let stock_total: renox::quantity::Quantity<3> = Note::query().sum(db, "id").await?;
+    let _ = stock_total;
     if let Some(user) = user {
         user.notifications(db, 5).await?;
         user.notifications_before(db, 10, 5).await?;
@@ -401,6 +490,54 @@ async fn models(State(state): State<AppState>) -> Result<String> {
         parents.len(),
         renox::context::app().is_some()
     ))
+}
+
+/// Outbound webhook endpoints, routed (not called: a compile-time `Send` check).
+async fn endpoints(State(state): State<AppState>) -> Result<String> {
+    use renox::webhook::outbound::{Delivery, Endpoint};
+    let (endpoint, secret) =
+        Endpoint::create(&state, "https://example.com/h", "d", &["a.b"]).await?;
+    let listed = Endpoint::list(&state.db).await?;
+    let subscribed = Endpoint::subscribed_to(&state.db, "a.b").await?;
+    Endpoint::set_events(&state.db, endpoint.id, &[]).await?;
+    Endpoint::disable(&state.db, endpoint.id, "x").await?;
+    Endpoint::enable(&state.db, endpoint.id).await?;
+    let found = Endpoint::find(&state.db, endpoint.id).await?;
+    Endpoint::delete(&state.db, endpoint.id).await?;
+    let mut tx = state.db.begin().await?;
+    let queued = renox::webhook::outbound::emit_in(&state, &mut tx, &Ping).await?;
+    tx.commit().await?;
+    let deliveries = Delivery::list(&state.db, Some(endpoint.id), true, 10).await?;
+    let redelivered = Delivery::redeliver(&state, 1).await?;
+    let pruned = Delivery::prune(&state.db, Duration::from_secs(86_400)).await?;
+    Ok(format!(
+        "{} {} {pruned} {redelivered} {} {} {} {queued}",
+        deliveries.len(),
+        secret.len() + endpoint.secret(&state)?.len(),
+        listed.len(),
+        subscribed.len(),
+        found.is_some()
+    ))
+}
+
+#[derive(serde::Deserialize)]
+struct SignedPing {
+    note: String,
+}
+
+/// A handler that takes a `SignedRequest` and sends a signed call.
+async fn signed(
+    State(state): State<AppState>,
+    SignedRequest(ping): SignedRequest<SignedPing>,
+) -> Result<String> {
+    let response = state
+        .http
+        .post("https://example.com/h")
+        .json(&serde_json::json!({ "note": ping.note }))
+        .sign("billing", "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw")
+        .send()
+        .await?;
+    Ok(response.status().to_string())
 }
 
 /// M20a's cache APIs, routed and called.
@@ -830,6 +967,28 @@ async fn one_time(State(state): State<AppState>) -> Result<String> {
     ))
 }
 
+/// #36: brand themes: the theme and the themed mail inside a handler, and the
+/// per-request chooser registered on the app (its future has to be `Send`).
+/// `AppState::contributions` inside a handler (#31).
+async fn contributed(State(state): State<AppState>) -> Result<String> {
+    Ok(state.contributions::<&'static str>().join(","))
+}
+
+async fn branded(State(state): State<AppState>) -> Result<String> {
+    use renox::theme::{Brand, Theme};
+    let theme = Theme::from_brand(&Brand::new("#1E3A5F").second("#9A3412"))
+        .map_err(|e| renox::Error::BadRequest(e.to_string()))?;
+    let mail = renox::mail::Mail::new("a@b.test", "Hi", "Hi")
+        .html("<a style=\"background:#1c1917;color:#ffffff;\">Go</a>")
+        .theme(&theme);
+    state.queue_mail(mail).await?;
+    Ok(format!(
+        "{} {}",
+        theme.tokens().len(),
+        theme.dark_tokens().len()
+    ))
+}
+
 struct Handlers;
 
 /// M27a: a data grid's page and its filtered query.
@@ -877,6 +1036,69 @@ async fn uploaded(State(state): State<AppState>) -> Result<String> {
     ))
 }
 
+#[derive(renox::DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+enum JobStatus {
+    Queued,
+    Done,
+}
+
+#[derive(Model, serde::Serialize, Default, Clone)]
+#[model(table = "sm_jobs")]
+struct SmJob {
+    id: i64,
+    status: String,
+}
+
+impl renox::state_machine::StateMachine for SmJob {
+    type State = JobStatus;
+    const COLUMN: renox::db::Col<Self, JobStatus> = renox::db::Col::new("status");
+
+    fn machine() -> renox::state_machine::Machine<Self> {
+        renox::state_machine::Machine::new().transition(
+            renox::state_machine::Transition::new("finish")
+                .from([JobStatus::Queued])
+                .to(JobStatus::Done),
+        )
+    }
+}
+
+/// `transition(..).run` and `.run_in` in a routed handler.
+async fn transitions(State(state): State<AppState>, user: AuthUser) -> Result<String> {
+    use renox::state_machine::StateMachine;
+    let job = SmJob {
+        id: 1,
+        status: "queued".into(),
+    };
+    let done = job
+        .transition("finish")
+        .by(&user)
+        .reason("done")
+        .input(&1)
+        .meta(serde_json::json!({}))
+        .run(&state)
+        .await;
+    let mut tx = state.db.begin().await?;
+    let moved = job.transition("finish").by_system().run_in(&mut tx).await;
+    tx.commit().await?;
+    let available = job.available(&user, &state.db).await?;
+    let mut born = SmJob {
+        id: 2,
+        status: "done".into(),
+    };
+    let mut tx = state.db.begin().await?;
+    let inserted = born
+        .insert_in_state(&mut tx, JobStatus::Done, "import")
+        .await;
+    tx.commit().await?;
+    Ok(format!(
+        "{} {} {} {}",
+        done.is_ok(),
+        moved.is_ok(),
+        available.len(),
+        inserted.is_ok()
+    ))
+}
+
 impl Module for Handlers {
     fn name(&self) -> &'static str {
         "handlers"
@@ -886,14 +1108,22 @@ impl Module for Handlers {
         Routes::new()
             .get("/relations", relations)
             .get("/queries", queries)
+            .get("/json-paths", json_paths)
             .get("/typed", typed)
             .get("/numbering", numbering)
+            .get("/custom-field-defs", custom_field_defs)
+            .get("/idempotency-store", idempotency_store)
+            .get("/offline-extractor", offline_extractor)
+            .get("/custom-field-values", custom_field_values)
             .get("/more", more)
             .get("/access", access)
+            .get("/transitions", transitions)
             .get("/trends", trends)
             .get("/builder", builder)
             .get("/models", models)
             .get("/cache", cache)
+            .get("/endpoints", endpoints)
+            .post("/signed", signed)
             .get("/settings", settings)
             .get("/background", background)
             .get("/polish", polish)
@@ -907,17 +1137,44 @@ impl Module for Handlers {
             .get("/live", live)
             .get("/uploaded", uploaded)
             .get("/one-time", one_time)
+            .get("/branded", branded)
+            .get("/contributed", contributed)
     }
 }
 
 #[renox::test]
 async fn data_apis_work_in_routed_handlers() {
+    let icons = tempfile::tempdir().unwrap();
+    for file in ["icon-192.png", "icon-512.png", "icon-maskable-512.png"] {
+        std::fs::write(icons.path().join(file), b"\x89PNG\r\n\x1a\nx").unwrap();
+    }
     let app = TestApp::new(
         App::new()
             .module(Auth::new())
             .module(Handlers)
+            // A badge with a closure and a query: the page middleware that
+            // builds the menu has to stay `Send`.
+            .nav(
+                "send",
+                renox::nav::NavLink::url("/notes", "Notes").badge(
+                    |state: AppState, _user: AuthUser| async move {
+                        let n: i64 = renox::db::sql("SELECT COUNT(*) FROM notes")
+                            .scalar(&state.db)
+                            .await?;
+                        Ok(Some(n.to_string()))
+                    },
+                ),
+            )
             .module(renox::settings::Settings)
             .settings::<Prefs>()
+            .theme_for(|req: renox::theme::ThemeRequest| async move {
+                let _ = &req.host;
+                Ok(None)
+            })
+            .pwa(renox::pwa::Pwa::new("Send").icons(icons.path()))
+            .pwa_for(|req: renox::pwa::PwaRequest| async move {
+                Ok((req.host() == "other.test").then(|| renox::pwa::PwaBrand::new("Other")))
+            })
             .migrations(&[
                 ARTICLES,
                 renox::db::search::migration::<Article>("20300101000001_search_articles"),
@@ -944,6 +1201,7 @@ async fn data_apis_work_in_routed_handlers() {
         renox::db::sql(statement).execute(app.db()).await.unwrap();
     }
     app.get("/live").await.assert_ok();
+    app.get("/manifest.webmanifest").await.assert_ok();
     app.get("/relations")
         .await
         .assert_ok()
@@ -954,6 +1212,22 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("1 12 12 12 1 X-0001");
+    app.get("/custom-field-defs")
+        .await
+        .assert_ok()
+        .assert_see("true 1 1 true false true");
+    app.get("/idempotency-store")
+        .await
+        .assert_ok()
+        .assert_see("true true 1");
+    app.get("/offline-extractor")
+        .await
+        .assert_ok()
+        .assert_see("false");
+    app.get("/custom-field-values")
+        .await
+        .assert_ok()
+        .assert_see("true");
     app.get("/more")
         .await
         .assert_ok()
@@ -997,4 +1271,7 @@ async fn data_apis_work_in_routed_handlers() {
         .await
         .assert_ok()
         .assert_see("true true 8 0 true");
+    app.get("/json-paths").await.assert_ok().assert_see("true");
+    app.get("/branded").await.assert_ok();
+    app.get("/contributed").await.assert_ok();
 }

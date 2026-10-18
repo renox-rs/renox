@@ -5,7 +5,7 @@
 pub(crate) mod auto_migration;
 mod column;
 mod conn;
-mod encrypted;
+pub(crate) mod encrypted;
 mod error;
 mod factory;
 mod from_row;
@@ -43,7 +43,7 @@ pub use encrypted::{Encrypted, Unsealed};
 pub use error::DbError;
 pub use factory::{Factory, FactoryBuilder};
 pub use from_row::FromRow;
-pub use json::Json;
+pub use json::{Json, JsonPath, json_index};
 pub use key::{InvalidUlid, ModelKey, Ulid};
 pub use migrate::{Migration, MigrationStatus};
 pub(crate) use migrate::{Migrator, framework_migration};

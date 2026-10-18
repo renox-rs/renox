@@ -7,9 +7,13 @@ mod format;
 mod generate;
 mod make;
 mod new;
+mod package;
+mod pdf;
+mod pwa;
 mod scaffold;
 mod serve;
 mod tailwind;
+mod template;
 mod tools;
 
 use std::path::{Path, PathBuf};
@@ -44,16 +48,25 @@ enum Command {
         #[arg(long, value_enum, default_value_t = Database::Sqlite)]
         database: Database,
         /// Style pages with Tailwind CSS (its standalone CLI, no Node) next to the UI kit.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         tailwind: bool,
         /// The starter kit: email verification, roles, a dashboard, the users
         /// page and the activity log in a sidebar layout.
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         starter: bool,
         /// The notification bell in the navigation bar: in-app
         /// notifications, live (the starter kit always has it).
-        #[arg(long)]
+        #[arg(long, conflicts_with = "from")]
         notifications: bool,
+        /// Start from a template: a directory, or `git+<url>#<tag or branch>`.
+        /// Its `{{name}}`, `{{title}}`, `{{crate_name}}`, `{{database_url}}`,
+        /// `{{app_key}}` ... are filled in.
+        #[arg(long, value_name = "PATH|git+URL#REF")]
+        from: Option<String>,
+        /// With --from: answer a prompt of `renox-template.toml`, e.g.
+        /// `--set company=Acme` (repeatable).
+        #[arg(long = "set", value_name = "KEY=VALUE", requires = "from")]
+        set: Vec<String>,
     },
     /// Check this machine and app, and say how to fix what's missing.
     Doctor {
@@ -106,6 +119,31 @@ enum Command {
         /// With --resource: open the new page in the browser.
         #[arg(long)]
         open: bool,
+    },
+    /// Create a reusable package: a crate with a `Module`, joined to the workspace.
+    #[command(name = "make:package")]
+    MakePackage {
+        /// e.g. `invoicing` (snake or kebab case).
+        name: String,
+        /// Where the crate goes (default: `crates/<name>`).
+        #[arg(long)]
+        path: Option<PathBuf>,
+        /// Extras, comma separated: `assets`, `commands` (`admin` needs a newer Renox).
+        #[arg(long = "with", value_delimiter = ',')]
+        with: Vec<String>,
+        /// In a virtual workspace: the crate of the app that should use the package.
+        #[arg(long)]
+        register: Option<PathBuf>,
+        /// A whole resource inside the package, like `make:module --resource`
+        /// (e.g. `invoices`): model, migration, factory, form, handlers, views, tests.
+        #[arg(long)]
+        resource: Option<String>,
+        /// With --resource: the fields, e.g. "number:string total:money".
+        #[arg(long, requires = "resource")]
+        fields: Option<String>,
+        /// With --resource: the model's name (default: the resource's, singular).
+        #[arg(long, requires = "resource")]
+        model: Option<String>,
     },
     /// Fake records for a model (`impl Factory`).
     #[command(name = "make:factory")]
@@ -230,6 +268,12 @@ enum Command {
     /// Compare the registered models with the tables the migrations build.
     #[command(name = "db:check")]
     DbCheck,
+    /// Print a registered state machine as a Mermaid diagram (no name: list them).
+    #[command(name = "state:diagram")]
+    StateDiagram {
+        /// The model, e.g. Order (or its table).
+        name: Option<String>,
+    },
     /// Run the app's seeders.
     #[command(name = "db:seed")]
     DbSeed,
@@ -250,6 +294,16 @@ enum Command {
     /// Create a Dockerfile, a systemd unit, a Litestream config and a deploy guide.
     #[command(name = "make:deploy")]
     MakeDeploy,
+    /// Make the app installable: an offline page, placeholder icons and `.pwa(..)`.
+    #[command(name = "make:pwa")]
+    MakePwa {
+        /// Overwrite the offline page and icons if they exist.
+        #[arg(long)]
+        force: bool,
+    },
+    /// A PDF template (Typst, with the Renox kit) in resources/views/pdf, and the `Pdf` module.
+    #[command(name = "make:pdf")]
+    MakePdf { name: String },
     /// Generate an APP_KEY and write it to `.env`.
     #[command(name = "key:generate")]
     KeyGenerate {
@@ -280,16 +334,27 @@ fn run(command: Command) -> Result<()> {
             tailwind,
             starter,
             notifications,
-        } => new::run(
-            &name,
-            renox_path.as_deref(),
-            new::Options {
+            from,
+            set,
+        } => match from {
+            Some(from) => new::run_from(
+                &name,
+                renox_path.as_deref(),
                 database,
-                tailwind,
-                starter,
-                notifications,
-            },
-        ),
+                &template::Source::parse(&from)?,
+                &set,
+            ),
+            None => new::run(
+                &name,
+                renox_path.as_deref(),
+                new::Options {
+                    database,
+                    tailwind,
+                    starter,
+                    notifications,
+                },
+            ),
+        },
         Command::Tailwind { watch, minify } => tailwind::run(&app_root()?, watch, minify),
         Command::TailwindInstall => {
             println!("{}", tailwind::binary()?.display());
@@ -300,6 +365,8 @@ fn run(command: Command) -> Result<()> {
         Command::KeyGenerate { show } => key_generate(show),
         Command::Build => deploy::build(&app_root()?),
         Command::MakeDeploy => deploy::make_deploy(&app_root()?),
+        Command::MakePdf { name } => pdf::make_pdf(&app_root()?, &name),
+        Command::MakePwa { force } => pwa::make_pwa(&app_root()?, force),
         Command::MakeMigration {
             name,
             path,
@@ -328,6 +395,29 @@ fn run(command: Command) -> Result<()> {
             finish::after_resource(&root, &path, !no_migrate, open)
         }
         Command::MakeModule { name, .. } => generate::module(&app_root()?, &name),
+        Command::MakePackage {
+            name,
+            path,
+            with,
+            register,
+            resource,
+            fields,
+            model,
+        } => {
+            let resource = resource.map(|name| package::Resource {
+                name,
+                model,
+                fields,
+            });
+            package::run(
+                &std::env::current_dir()?,
+                &name,
+                path,
+                &with,
+                register,
+                resource.as_ref(),
+            )
+        }
         Command::MakeFactory { model, module } => generate::factory(&app_root()?, &model, &module),
         Command::MakeSeeder { name } => generate::seeder(&app_root()?, &name),
         Command::MakeTest { name } => generate::test(&app_root()?, &name),
@@ -368,6 +458,9 @@ fn run(command: Command) -> Result<()> {
         Command::MigrateFresh { args } => app_command("migrate:fresh", &args),
         Command::MigrateStatus => app_command("migrate:status", &[]),
         Command::DbCheck => app_command("db:check", &[]),
+        Command::StateDiagram { name } => {
+            app_command("state:diagram", &name.into_iter().collect::<Vec<_>>())
+        }
         Command::DbSeed => app_command("db:seed", &[]),
         Command::App(args) => match args.split_first() {
             Some((command, rest)) => app_command(command, rest),
@@ -626,8 +719,24 @@ mod tests {
     fn commands_parse_with_their_options() {
         assert!(matches!(
             parse(&["new", "shop", "--database", "postgres", "--tailwind"]),
-            Command::New { name, database: Database::Postgres, tailwind: true, renox_path: None, starter: false, notifications: false } if name == "shop"
+            Command::New { name, database: Database::Postgres, tailwind: true, renox_path: None, starter: false, notifications: false, from: None, .. } if name == "shop"
         ));
+        match parse(&[
+            "new", "shop", "--from", "../tpl", "--set", "a=b", "--set", "c=d",
+        ]) {
+            Command::New { from, set, .. } => {
+                assert_eq!(from.as_deref(), Some("../tpl"));
+                assert_eq!(set, ["a=b", "c=d"]);
+            }
+            _ => panic!("not `new`"),
+        }
+        for clash in ["--starter", "--notifications", "--tailwind"] {
+            assert!(
+                Cli::try_parse_from(["rnx", "new", "shop", "--from", "x", clash]).is_err(),
+                "--from and {clash} must clash"
+            );
+        }
+        assert!(Cli::try_parse_from(["rnx", "new", "shop", "--set", "a=b"]).is_err());
         assert!(matches!(
             parse(&["new", "shop", "--starter"]),
             Command::New {
@@ -663,6 +772,19 @@ mod tests {
         assert!(matches!(
             parse(&["make:module", "products", "--resource", "--fields", "name price:money"]),
             Command::MakeModule { resource: true, fields: Some(f), model: None, .. } if f == "name price:money"
+        ));
+        assert!(matches!(
+            parse(&["make:package", "invoicing", "--resource", "invoices", "--fields", "number:string total:money", "--model", "Invoice"]),
+            Command::MakePackage { resource: Some(r), fields: Some(f), model: Some(m), .. }
+                if r == "invoices" && f == "number:string total:money" && m == "Invoice"
+        ));
+        // --fields and --model mean nothing without --resource.
+        assert!(Cli::try_parse_from(["rnx", "make:package", "x", "--fields", "a"]).is_err());
+        assert!(Cli::try_parse_from(["rnx", "make:package", "x", "--model", "A"]).is_err());
+        assert!(matches!(
+            parse(&["make:package", "invoicing", "--with", "assets,commands"]),
+            Command::MakePackage { name, path: None, with, register: None, resource: None, .. }
+                if name == "invoicing" && with == ["assets", "commands"]
         ));
         assert!(matches!(
             parse(&["doctor", "--no-build"]),

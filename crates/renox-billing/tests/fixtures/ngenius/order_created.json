@@ -1,0 +1,19 @@
+{
+  "_id": "urn:order:6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "type": "SINGLE",
+  "action": "SALE",
+  "amount": { "currencyCode": "USD", "value": 4500 },
+  "language": "en",
+  "merchantOrderReference": "job-42-1",
+  "reference": "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "outletId": "outlet-ref-fake",
+  "createDateTime": "2026-10-17T11:00:00.000Z",
+  "_links": {
+    "self": {
+      "href": "https://api-gateway.ngenius-payments.com/transactions/outlets/outlet-ref-fake/orders/6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c"
+    },
+    "payment": {
+      "href": "https://paypage.ngenius-payments.com/?code=fake-code"
+    }
+  }
+}

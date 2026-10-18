@@ -10,6 +10,8 @@ struct Field {
     skip: bool,
     default: Option<LitStr>,
     references: Option<LitStr>,
+    /// `#[model(money)]`: the currency column (`<name>_currency` unless shared).
+    money: Option<String>,
     vis: syn::Visibility,
     form: FormField,
 }
@@ -43,6 +45,8 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
     let mut search_normalize: Option<LitStr> = None;
     let mut index_specs: Vec<(bool, Vec<syn::Ident>)> = Vec::new();
     let mut form = false;
+    let mut custom_fields: Option<LitStr> = None;
+    let mut state_machine = false;
     for attr in input.attrs.iter().filter(|a| a.path().is_ident("model")) {
         attr.parse_nested_meta(|meta| {
             if meta.path.is_ident("table") {
@@ -56,6 +60,12 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else if meta.path.is_ident("form") {
                 form = true;
+                Ok(())
+            } else if meta.path.is_ident("custom_fields") {
+                custom_fields = Some(meta.value()?.parse::<LitStr>()?);
+                Ok(())
+            } else if meta.path.is_ident("state_machine") {
+                state_machine = true;
                 Ok(())
             } else if meta.path.is_ident("hooks") {
                 hooks = true;
@@ -88,7 +98,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 Ok(())
             } else {
                 Err(meta.error(
-                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `index(col, …)` or `unique(col, …)`",
+                    "expected `table = \"...\"`, `soft_deletes`, `hooks`, `state_machine`, `no_typed_columns`, `default_scope = \"path::to::fn\"`, `search = \"col, col\"`, `search_language = \"...\"` or `normalize = \"arabic\"`, `form`, `custom_fields = \"column\"`, `index(col, …)` or `unique(col, …)`",
                 ))
             }
         })?;
@@ -112,6 +122,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         let mut skip = false;
         let mut default = None;
         let mut references = None;
+        let mut money: Option<Option<String>> = None;
         for attr in field.attrs.iter().filter(|a| a.path().is_ident("model")) {
             attr.parse_nested_meta(|meta| {
                 if meta.path.is_ident("skip") {
@@ -123,9 +134,13 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
                 } else if meta.path.is_ident("references") {
                     references = Some(meta.value()?.parse::<LitStr>()?);
                     Ok(())
+                } else if meta.path.is_ident("money") {
+                    money = Some(crate::from_row::parse_money(&meta)?);
+                    Ok(())
                 } else {
-                    Err(meta
-                        .error("expected `skip`, `default = \"…\"` or `references = \"table\"`"))
+                    Err(meta.error(
+                        "expected `skip`, `default = \"…\"`, `references = \"table\"`, `money` or `money(currency = \"column\")`",
+                    ))
                 }
             })?;
         }
@@ -162,8 +177,11 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             ));
         }
         let field_ident = field.ident.clone().expect("named fields have identifiers");
+        let name = field_ident.to_string().trim_start_matches("r#").to_owned();
+        let money = money.map(|shared| shared.unwrap_or_else(|| format!("{name}_currency")));
         fields.push(Field {
-            name: field_ident.to_string().trim_start_matches("r#").to_owned(),
+            name,
+            money,
             ident: field_ident,
             ty: field.ty.clone(),
             skip,
@@ -190,11 +208,31 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         ));
     }
 
-    let columns: Vec<&str> = fields
-        .iter()
-        .filter(|f| !f.skip)
-        .map(|f| f.name.as_str())
-        .collect();
+    let custom_column = match &custom_fields {
+        Some(lit) => {
+            let name = lit.value();
+            let Some(field) = column(&name) else {
+                return Err(Error::new_spanned(
+                    lit,
+                    format!("`custom_fields`: `{name}` isn't a column of this model"),
+                ));
+            };
+            if !is_custom_values(&field.ty) {
+                return Err(Error::new_spanned(
+                    &field.ty,
+                    "`custom_fields` names a `Json<CustomValues>` column",
+                ));
+            }
+            Some(name)
+        }
+        None => None,
+    };
+    let custom_const = custom_column.as_ref().map(|name| {
+        quote! { const CUSTOM_FIELDS: ::core::option::Option<&'static str> = ::core::option::Option::Some(#name); }
+    });
+
+    let phys = physical_columns(&fields)?;
+    let columns: Vec<&str> = phys.iter().map(|p| p.name.as_str()).collect();
 
     let mut index_items = Vec::new();
     for (unique, cols) in &index_specs {
@@ -298,18 +336,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         let (ident, name) = (&f.ident, &f.name);
         if f.skip {
             quote! { #ident: ::core::default::Default::default() }
+        } else if let Some(currency) = &f.money {
+            crate::from_row::read_money(ident, name, currency, &f.ty)
         } else {
             quote! { #ident: row.try_get(#name)? }
         }
     });
 
-    let values = fields
-        .iter()
-        .filter(|f| !f.skip && f.name != "id")
-        .map(|f| {
-            let ident = &f.ident;
-            quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident) }
-        });
+    let values = phys.iter().filter(|p| p.name != "id").map(|p| &p.value);
 
     let created = column("created_at").map(|f| {
         let ident = &f.ident;
@@ -328,19 +362,14 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         }
     });
     // `replicate()`: a copy gets new timestamps when it is saved.
-    let column_infos = fields.iter().filter(|f| !f.skip).map(|f| {
-        let (name, ty) = (&f.name, &f.ty);
-        let rust_type = quote!(#ty).to_string();
-        let nullable = is_option(ty);
-        let default = f.default.as_ref().map(|l| quote! { .default_sql(#l) });
-        let references = f.references.as_ref().map(|l| quote! { .references(#l) });
+    let column_infos = phys.iter().map(|p| {
+        let (name, rust_type, nullable) = (&p.name, &p.rust_type, p.nullable);
+        let kind = &p.kind;
+        let default = p.default.as_ref().map(|l| quote! { .default_sql(#l) });
+        let references = p.references.as_ref().map(|l| quote! { .references(#l) });
         quote! {
-            ::renox::db::ModelColumn::new(
-                #name,
-                #rust_type,
-                (&::renox::db::schema::ColumnProbe::<#ty>::new()).kind(),
-                #nullable,
-            ) #default #references
+            ::renox::db::ModelColumn::new(#name, #rust_type, #kind, #nullable)
+                #default #references
         }
     });
     let forget_timestamps = ["created_at", "updated_at"].map(|name| {
@@ -366,6 +395,19 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
         }
     });
 
+    let state_machine_fns = state_machine.then(|| {
+        quote! {
+            fn guarded_column() -> ::core::option::Option<&'static str> {
+                ::core::option::Option::Some(
+                    <Self as ::renox::state_machine::StateMachine>::COLUMN.name(),
+                )
+            }
+            fn check_insert(&self) -> ::renox::Result {
+                ::renox::state_machine::check_insert(self)
+            }
+        }
+    });
+
     let hooks_fns = hooks.then(|| {
         quote! {
             fn saving(&mut self, creating: bool) -> ::renox::Result {
@@ -385,15 +427,15 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
 
     let from_row_impl = crate::from_row::from_row_impl(ident, quote! { #(#from_row),* });
     let typed_consts = typed_columns.then(|| {
-        let consts = fields.iter().filter(|f| !f.skip).map(|f| {
-            let konst = format_ident!("{}", f.name.to_shouty_snake_case());
-            let (ty, name) = (&f.ty, &f.name);
+        let consts = phys.iter().map(|p| {
+            let konst = format_ident!("{}", p.name.to_shouty_snake_case());
+            let (ty, name) = (&p.col_type, &p.name);
             let doc = format!("The `{name}` column.");
             quote! { #[doc = #doc] pub const #konst: ::renox::db::Col<#ident, #ty> = ::renox::db::Col::new(#name); }
         });
         quote! { impl #ident { #(#consts)* } }
     });
-    let form_struct = form.then(|| form_tokens(&input, &fields));
+    let form_struct = form.then(|| form_tokens(&input, &fields, custom_column.as_deref()));
     Ok(quote! {
         #from_row_impl
         #typed_consts
@@ -403,6 +445,7 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             const TABLE: &'static str = #table;
             const COLUMNS: &'static [&'static str] = &[#(#columns),*];
             const SOFT_DELETES: bool = #soft_deletes;
+            #custom_const
             #search_const
             #language_const
             #normalize_const
@@ -444,8 +487,29 @@ pub fn expand(input: DeriveInput) -> Result<TokenStream> {
             #default_scope_fn
 
             #hooks_fns
+
+            #state_machine_fns
         }
     })
+}
+
+/// `Json<CustomValues>` (by the last path segments).
+fn is_custom_values(ty: &Type) -> bool {
+    let Type::Path(p) = ty else { return false };
+    let Some(seg) = p.path.segments.last() else {
+        return false;
+    };
+    if seg.ident != "Json" {
+        return false;
+    }
+    let syn::PathArguments::AngleBracketed(a) = &seg.arguments else {
+        return false;
+    };
+    matches!(
+        a.args.first(),
+        Some(syn::GenericArgument::Type(Type::Path(inner)))
+            if inner.path.segments.last().is_some_and(|s| s.ident == "CustomValues")
+    )
 }
 
 /// `String` or `Option<String>` (by the last path segment).
@@ -470,12 +534,135 @@ fn is_string_or_option_string(ty: &Type) -> bool {
     }
 }
 
+/// One database column of the model. A `#[model(money)]` field makes two:
+/// the amount and, once per name, the currency.
+struct Physical {
+    name: String,
+    /// The type of the typed column constant.
+    col_type: TokenStream,
+    rust_type: String,
+    /// An expression for the `ColumnKind`.
+    kind: TokenStream,
+    nullable: bool,
+    value: TokenStream,
+    default: Option<LitStr>,
+    references: Option<LitStr>,
+}
+
+fn physical_columns(fields: &[Field]) -> Result<Vec<Physical>> {
+    let mut out: Vec<Physical> = Vec::new();
+    for f in fields.iter().filter(|f| !f.skip) {
+        let (ident, ty) = (&f.ident, &f.ty);
+        let Some(currency) = &f.money else {
+            out.push(Physical {
+                name: f.name.clone(),
+                col_type: quote!(#ty),
+                rust_type: quote!(#ty).to_string(),
+                kind: quote! { (&::renox::db::schema::ColumnProbe::<#ty>::new()).kind() },
+                nullable: is_option(ty),
+                value: quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident) },
+                default: f.default.clone(),
+                references: f.references.clone(),
+            });
+            continue;
+        };
+        let optional = is_option(ty);
+        if f.name == "id" {
+            return Err(Error::new_spanned(ty, "the `id` can't be a `Money`"));
+        }
+        let (amount_ty, amount_value) = if optional {
+            (
+                quote!(::core::option::Option<i64>),
+                quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident.as_ref().map(|m| m.minor)) },
+            )
+        } else {
+            (
+                quote!(i64),
+                quote! { ::renox::db::ToDbValue::to_db_value(&self.#ident.minor) },
+            )
+        };
+        out.push(Physical {
+            name: f.name.clone(),
+            rust_type: amount_ty.to_string(),
+            col_type: amount_ty,
+            kind: quote!(::renox::db::ColumnKind::BigInt),
+            nullable: optional,
+            value: amount_value,
+            default: f.default.clone(),
+            references: f.references.clone(),
+        });
+        if out.iter().any(|p| &p.name == currency) {
+            continue;
+        }
+        if fields
+            .iter()
+            .any(|o| !o.skip && o.money.is_none() && &o.name == currency)
+        {
+            return Err(Error::new_spanned(
+                ty,
+                format!("the currency column `{currency}` is also a field of this model"),
+            ));
+        }
+        // Fields sharing the column write it from the first one that is not an
+        // `Option` (or the first); the column is nullable only if all are.
+        let sharing: Vec<&Field> = fields
+            .iter()
+            .filter(|o| !o.skip && o.money.as_ref() == Some(currency))
+            .collect();
+        let writer = sharing
+            .iter()
+            .find(|o| !is_option(&o.ty))
+            .unwrap_or(&sharing[0]);
+        let w = &writer.ident;
+        let value = if is_option(&writer.ty) {
+            quote! { ::renox::db::ToDbValue::to_db_value(&self.#w.as_ref().map(|m| m.currency)) }
+        } else {
+            quote! { ::renox::db::ToDbValue::to_db_value(&self.#w.currency) }
+        };
+        let nullable = sharing.iter().all(|o| is_option(&o.ty));
+        out.push(Physical {
+            name: currency.clone(),
+            col_type: quote!(::std::string::String),
+            rust_type: "Currency".to_owned(),
+            kind: quote!(::renox::db::ColumnKind::Text),
+            nullable,
+            value,
+            default: None,
+            references: None,
+        });
+    }
+    Ok(out)
+}
+
+/// The scale tokens of a `Quantity<S>` or `Option<Quantity<S>>` field type.
+fn quantity_scale(ty: &Type) -> Option<TokenStream> {
+    let last = |ty: &Type| match ty {
+        Type::Path(p) => p.path.segments.last().cloned(),
+        _ => None,
+    };
+    let args = |segment: &syn::PathSegment| match &segment.arguments {
+        syn::PathArguments::AngleBracketed(a) => a.args.first().cloned(),
+        _ => None,
+    };
+    let mut segment = last(ty)?;
+    if segment.ident == "Option" {
+        let Some(syn::GenericArgument::Type(inner)) = args(&segment) else {
+            return None;
+        };
+        segment = last(&inner)?;
+    }
+    if segment.ident != "Quantity" {
+        return None;
+    }
+    args(&segment).map(|scale| quote!(#scale))
+}
+
 fn is_option(ty: &Type) -> bool {
     matches!(ty, Type::Path(path) if path.path.segments.last().is_some_and(|s| s.ident == "Option"))
 }
 
 /// `<Model>Form` and its `fill`, for `#[model(form)]`.
-fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
+fn form_tokens(input: &DeriveInput, fields: &[Field], custom: Option<&str>) -> TokenStream {
     let ident = &input.ident;
     let vis = &input.vis;
     let form_ident = format_ident!("{}Form", ident);
@@ -484,14 +671,56 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
         .filter(|f| {
             !f.skip
                 && !f.form.skip
+                && custom != Some(f.name.as_str())
                 && !matches!(
                     f.name.as_str(),
                     "id" | "created_at" | "updated_at" | "deleted_at"
                 )
         })
         .collect();
+    // A `Money` field is typed as text (the amount in whole units) plus a text
+    // currency field, once per currency column, checked against each other.
+    let mut currency_members: Vec<(syn::Ident, bool)> = Vec::new();
+    for f in included.iter().filter(|f| f.money.is_some()) {
+        let ident = format_ident!("{}", f.money.as_deref().unwrap_or_default());
+        let optional = is_option(&f.ty);
+        match currency_members.iter_mut().find(|(i, _)| *i == ident) {
+            Some((_, all_optional)) => *all_optional &= optional,
+            None => currency_members.push((ident, optional)),
+        }
+    }
+    let currency_fields = currency_members.iter().map(|(ident, optional)| {
+        let required = (!optional).then(|| quote! { required, });
+        quote! {
+            #[validate(#required currency)]
+            #[serde(default)]
+            #vis #ident: ::std::string::String
+        }
+    });
     let members = included.iter().map(|f| {
         let (field_vis, name, ty) = (&f.vis, &f.ident, &f.ty);
+        if let Some(currency) = &f.money {
+            let currency = format_ident!("{}", currency);
+            let required = (!is_option(ty)).then(|| quote! { required, });
+            let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
+            return quote! {
+                #[validate(#required money(&self.#currency))]
+                #(#rules)*
+                #[serde(default)]
+                #field_vis #name: ::std::string::String
+            };
+        }
+        if let Some(scale) = quantity_scale(ty) {
+            // A `Quantity` is typed as text with at most `scale` decimals.
+            let required = (!is_option(ty)).then(|| quote! { required, });
+            let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
+            return quote! {
+                #[validate(#required quantity(#scale))]
+                #(#rules)*
+                #[serde(default)]
+                #field_vis #name: ::std::string::String
+            };
+        }
         if f.form.upload {
             let rules = f.form.rules.iter().map(|r| quote! { #[validate(#r)] });
             return quote! {
@@ -507,21 +736,139 @@ fn form_tokens(input: &DeriveInput, fields: &[Field]) -> TokenStream {
     });
     let assigns = included.iter().filter(|f| !f.form.upload).map(|f| {
         let name = &f.ident;
+        if let Some(currency) = &f.money {
+            let currency = format_ident!("{}", currency);
+            // Validation has passed by now; a value that still doesn't read
+            // leaves the record's field as it was.
+            return if is_option(&f.ty) {
+                quote! {
+                    if self.#name.trim().is_empty() {
+                        record.#name = ::core::option::Option::None;
+                    } else if let ::core::result::Result::Ok(code) = ::renox::money::Currency::parse(self.#currency.trim())
+                        && let ::core::result::Result::Ok(amount) = ::renox::money::Money::parse(&self.#name, code)
+                    {
+                        record.#name = ::core::option::Option::Some(amount);
+                    }
+                }
+            } else {
+                quote! {
+                    if let ::core::result::Result::Ok(code) = ::renox::money::Currency::parse(self.#currency.trim())
+                        && let ::core::result::Result::Ok(amount) = ::renox::money::Money::parse(&self.#name, code)
+                    {
+                        record.#name = amount;
+                    }
+                }
+            };
+        }
+        if let Some(scale) = quantity_scale(&f.ty) {
+            // Validation has passed by now; a value that still doesn't read
+            // leaves the record's field as it was.
+            return if is_option(&f.ty) {
+                quote! {
+                    if self.#name.trim().is_empty() {
+                        record.#name = ::core::option::Option::None;
+                    } else if let ::core::result::Result::Ok(q) = ::renox::quantity::Quantity::<#scale>::parse_exact(&self.#name) {
+                        record.#name = ::core::option::Option::Some(q);
+                    }
+                }
+            } else {
+                quote! {
+                    if let ::core::result::Result::Ok(q) = ::renox::quantity::Quantity::<#scale>::parse_exact(&self.#name) {
+                        record.#name = q;
+                    }
+                }
+            };
+        }
         quote! { record.#name = self.#name; }
+    });
+    // The custom fields column: the submitted `column[key]` values, checked
+    // against the definitions in `after` (they need the database) and kept
+    // cleaned for `fill`.
+    let custom_member = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            #[serde(default)]
+            #vis #column: ::renox::custom_fields::CustomValues,
+            #[serde(skip)]
+            __custom_cleaned: ::std::sync::Mutex<::core::option::Option<::renox::custom_fields::CustomValues>>,
+        }
+    });
+    let custom_fill = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            let cleaned = self.__custom_cleaned.lock().unwrap_or_else(|e| e.into_inner()).take();
+            if let ::core::option::Option::Some(cleaned) = cleaned {
+                for key in self.#column.0.keys() {
+                    // A blank sensitive field keeps its stored sealed value.
+                    let kept = !cleaned.0.contains_key(key)
+                        && record.#column.get(key).is_some_and(::renox::custom_fields::is_sealed);
+                    if !kept {
+                        record.#column.remove(key);
+                    }
+                }
+                for (key, value) in cleaned.0 {
+                    record.#column.set(key, value);
+                }
+            }
+        }
+    });
+    let custom_hooks_attr = custom.map(|_| quote! { #[validate(hooks)] });
+    let custom_hooks = custom.map(|name| {
+        let column = format_ident!("{}", name);
+        quote! {
+            impl ::renox::validation::ValidateHooks for #form_ident {
+                async fn after(
+                    &self,
+                    form: &::renox::validation::FormContext<'_>,
+                    errors: &mut ::renox::Errors,
+                ) -> ::renox::Result {
+                    let input = self.#column.0.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+                    let outcome = ::renox::custom_fields::CustomValues::validate(
+                        form.state,
+                        <#ident as ::renox::db::Model>::TABLE,
+                        #name,
+                        &input,
+                        &::std::collections::BTreeMap::new(),
+                        form.locale,
+                    )
+                    .await?;
+                    match outcome {
+                        ::core::result::Result::Ok(cleaned) => {
+                            *self.__custom_cleaned.lock().unwrap_or_else(|e| e.into_inner()) =
+                                ::core::option::Option::Some(cleaned);
+                        }
+                        ::core::result::Result::Err(found) => {
+                            for (field, messages) in found.iter() {
+                                for message in messages {
+                                    errors.add(field, message.clone());
+                                }
+                            }
+                        }
+                    }
+                    ::core::result::Result::Ok(())
+                }
+            }
+        }
     });
     let doc = format!("The form for [`{ident}`], made by `#[model(form)]`.");
     quote! {
         #[doc = #doc]
         #[derive(::renox::serde::Deserialize, ::renox::serde::Serialize, ::renox::Validate)]
         #[serde(crate = "::renox::serde")]
+        #custom_hooks_attr
         #vis struct #form_ident {
             #(#members,)*
+            #(#currency_fields,)*
+            #custom_member
         }
+
+        #custom_hooks
 
         impl #form_ident {
             /// Copies the form's values onto `record`.
             pub fn fill(self, record: &mut #ident) {
                 #(#assigns)*
+                #custom_fill
             }
         }
     }

@@ -44,6 +44,47 @@ pub fn pattern() -> String {
     format!("{{store}}.{}", domain())
 }
 
+/// Each store's brand colour (#36): its page uses it for buttons, links and
+/// focus rings. [`themes`] builds a theme from each through the kit's
+/// contrast guard.
+pub const BRANDS: [(&str, &str); 3] = [
+    ("north", "#1E3A5F"),
+    ("south", "#9A3412"),
+    ("west", "#6D28D9"),
+];
+
+/// The brand themes of the stores, keyed by slug, built once at start.
+/// A colour that cannot reach readable contrast is skipped (that store keeps
+/// the shop's look) rather than stopping the app.
+pub fn themes() -> std::collections::HashMap<&'static str, renox::theme::Theme> {
+    BRANDS
+        .iter()
+        .filter_map(|(slug, color)| {
+            renox::theme::Theme::from_brand(&renox::theme::Brand::new(*color))
+                .ok()
+                .map(|theme| (*slug, theme))
+        })
+        .collect()
+}
+
+/// The theme of the store whose host this is (`north.localhost` gives North's
+/// brand); the shop's own host gets none.
+///
+/// ```
+/// use bikeshop::app::home::stores::{theme_for_host, themes};
+/// let themes = themes();
+/// assert_eq!(themes.len(), 3, "every store brand passes the contrast guard");
+/// assert!(theme_for_host(&themes, "north.localhost").is_some());
+/// assert!(theme_for_host(&themes, "localhost").is_none());
+/// ```
+pub fn theme_for_host(
+    themes: &std::collections::HashMap<&'static str, renox::theme::Theme>,
+    host: &str,
+) -> Option<renox::theme::Theme> {
+    let slug = host.strip_suffix(&format!(".{}", domain()))?;
+    themes.get(slug).cloned()
+}
+
 /// The routes on a store's host.
 // [explain:stores.routes]
 pub fn routes() -> Routes {

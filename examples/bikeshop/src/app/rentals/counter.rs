@@ -24,6 +24,7 @@ use renox::chrono::{Duration, NaiveDateTime};
 use renox::db::Json as DbJson;
 use renox::prelude::*;
 use renox::select::{OptionQuery, SelectOption};
+use renox::state_machine::{StateMachine, TransitionError};
 use renox::validation::FormContext;
 use serde::{Deserialize, Serialize};
 
@@ -381,7 +382,6 @@ pub async fn hand_over(
     let now = renox::db::now();
     let deposit_due = rental.deposit_status == DepositStatus::Unpaid;
     let mut tx = db.begin().await?;
-    rental.status = RentalStatus::Active;
     rental.picked_up_at = Some(now);
     rental.served_by = staff.or(rental.served_by);
     rental.pickup_checklist = Some(DbJson(form.checklist.clone()));
@@ -389,11 +389,21 @@ pub async fn hand_over(
         rental.deposit_status = DepositStatus::Held;
     }
     rental.save(&mut tx).await?;
+    // The status moves through the machine (`machine.rs`), in this transaction.
+    let moved = rental
+        .transition("pickup")
+        .by_system()
+        .meta(json!({ "staff": staff }))
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    rental.status = RentalStatus::Active;
     RentalBike::query()
         .where_(RentalBike::ID.eq(rental.rental_bike_id))
         .update(&mut tx, &[("status", &BikeStatus::Rented)])
         .await?;
     tx.commit().await?;
+    moved.emit(state).await?;
     // [/explain:rentals.desk.handover]
     let charge = |amount: i64| Charge {
         payable: Payable::Rental(rental.id),
@@ -534,7 +544,6 @@ pub async fn take_back(
 
     // [explain:rentals.desk.return]
     let mut tx = db.begin().await?;
-    rental.status = RentalStatus::Returned;
     rental.returned_at = Some(now);
     rental.returned_by = staff;
     rental.return_store_id = (store != rental.operating_store_id).then_some(store);
@@ -546,6 +555,14 @@ pub async fn take_back(
         rental.deposit_refunded = settlement.refund;
     }
     rental.save(&mut tx).await?;
+    let moved = rental
+        .transition("return")
+        .by_system()
+        .meta(json!({ "staff": staff, "store": store }))
+        .run_in(&mut tx)
+        .await
+        .map_err(TransitionError::into_error)?;
+    rental.status = RentalStatus::Returned;
     // [/explain:rentals.desk.return]
     bike.location_store_id = store;
     bike.ridden_hours += pricing::ridden_hours(minutes);
@@ -575,6 +592,7 @@ pub async fn take_back(
     // [explain:rentals.desk.return]
     tx.commit().await?;
     // [/explain:rentals.desk.return]
+    moved.emit(state).await?;
 
     if settlement.due > 0 {
         payments::record_counter(
@@ -610,30 +628,45 @@ pub async fn take_back(
         .await?;
     // [/explain:rentals.desk.return]
     if let Some(customer) = Customer::find(db, rental.customer_id).await? {
+        // The receipt as a PDF, in the customer's language, attached to the
+        // mail. The bike is back and the money settled: a receipt that
+        // can't be made is logged, and the mail goes without it.
+        let receipt = match super::receipt_pdf::render(state, rental).await {
+            Ok(receipt) => receipt,
+            Err(error) => {
+                tracing::warn!(rental = rental.id, %error, "the receipt PDF could not be made");
+                None
+            }
+        };
+        let notice = Notice::new(
+            "rental-returned",
+            "rentals.mail.returned.title",
+            "rentals.mail.returned.body",
+        );
+        let notice = match receipt {
+            Some(receipt) => notice.pdf(receipt.filename, receipt.bytes),
+            None => notice,
+        };
         notify::customer(
             state,
             &customer,
             Kind::Rental,
-            &Notice::new(
-                "rental-returned",
-                "rentals.mail.returned.title",
-                "rentals.mail.returned.body",
-            )
-            .param("code", &rental.reservation_code)
-            .row("rentals.fields.price", money(state, rental.price))
-            .row("rentals.fields.late_fee", money(state, rental.late_fee))
-            .row("rentals.fields.damage_fee", money(state, rental.damage_fee))
-            .row(
-                "rentals.fields.refund",
-                money(state, rental.deposit_refunded),
-            )
-            .row("rentals.fields.paid_now", money(state, settlement.due))
-            .tone(Tone::Success)
-            .url(super::link(
-                state,
-                "rentals.show",
-                Some(&rental.reservation_code),
-            )?),
+            &notice
+                .param("code", &rental.reservation_code)
+                .row("rentals.fields.price", money(state, rental.price))
+                .row("rentals.fields.late_fee", money(state, rental.late_fee))
+                .row("rentals.fields.damage_fee", money(state, rental.damage_fee))
+                .row(
+                    "rentals.fields.refund",
+                    money(state, rental.deposit_refunded),
+                )
+                .row("rentals.fields.paid_now", money(state, settlement.due))
+                .tone(Tone::Success)
+                .url(super::link(
+                    state,
+                    "rentals.show",
+                    Some(&rental.reservation_code),
+                )?),
         )
         .await?;
     }

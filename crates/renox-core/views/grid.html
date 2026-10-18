@@ -39,9 +39,11 @@
 {%- endmacro -%}
 
 {#- A cell's value by the column's kind. -#}
-{%- macro _value(column, value) -%}
+{%- macro _value(column, value, row=none) -%}
 {%- if value is not defined or value is none or value == "" -%}<span class="rx-grid__none" aria-label="—"></span>
 {%- elif column.kind == "number" -%}{{ value | number(column.decimals or 0) }}
+{%- elif column.kind == "money" and column.currency and row and row[column.currency] -%}{{ value | money(currency=row[column.currency], decimals=column.fixed_decimals) }}
+{%- elif column.kind == "quantity" -%}{{ (value if value is string else value / column.scale) | quantity(decimals=column.decimals, unit=(row[column.unit] if row and column.unit else none)) }}
 {%- elif column.kind == "money" -%}{{ (value / column.scale) | number(column.decimals) }}
 {%- elif column.kind == "date" -%}{{ value | date }}
 {%- elif column.kind == "date_time" -%}{{ value | date("%Y-%m-%d %H:%M") }}
@@ -67,7 +69,7 @@
 {#- A cell: its value, with the column's link, description and copy button. -#}
 {%- macro _cell(column, row) -%}
 {%- set value = row[column.key] if row[column.key] is defined else none -%}
-{%- if column.link and value is not none %}<a class="rx-grid__cell-link" href="{{ column.link | replace('{id}', row._rx.id) }}">{{ _value(column, value) }}</a>{% else %}{{ _value(column, value) }}{% endif -%}
+{%- if column.link and value is not none %}<a class="rx-grid__cell-link" href="{{ column.link | replace('{id}', row._rx.id) }}">{{ _value(column, value, row) }}</a>{% else %}{{ _value(column, value, row) }}{% endif -%}
 {%- if column.copyable and value is not none %}<button type="button" class="rx-grid__copy" data-grid-copy="{{ value }}" aria-label="{{ t('ui.grid.copy') }}" title="{{ t('ui.grid.copy') }}">{{ _icon("copy") }}</button>{% endif -%}
 {%- if column.description and row[column.description] is defined and row[column.description] %}<span class="rx-grid__desc">{{ row[column.description] }}</span>{% endif -%}
 {%- endmacro -%}
@@ -89,6 +91,16 @@
   </div>
   <p class="rx-grid__hint">{{ t('ui.grid.pattern_hint') }}</p>
   {%- elif column.numeric %}
+  {%- if column.unit %}
+  <div class="rx-grid__row">
+    <label class="rx-grid__field">{{ t('ui.grid.unit') }}<input class="rx-grid__control" type="text" maxlength="32" size="6" name="{{ grid.p }}unit.{{ column.key }}" value="{{ f.unit or '' }}"></label>
+  </div>
+  {%- endif %}
+  {%- if column.currency %}
+  <div class="rx-grid__row">
+    <label class="rx-grid__field">{{ t('ui.grid.currency') }}<input class="rx-grid__control" type="text" maxlength="3" size="4" autocapitalize="characters" name="{{ grid.p }}cur.{{ column.key }}" value="{{ f.currency or '' }}"></label>
+  </div>
+  {%- endif %}
   <div class="rx-grid__row">
     <label class="rx-grid__field">{{ t('ui.grid.min') }}<input class="rx-grid__control" type="number" step="any" inputmode="decimal" name="{{ grid.p }}min.{{ column.key }}" value="{{ f.min if f.min is not none else '' }}"></label>
     <label class="rx-grid__field">{{ t('ui.grid.max') }}<input class="rx-grid__control" type="number" step="any" inputmode="decimal" name="{{ grid.p }}max.{{ column.key }}" value="{{ f.max if f.max is not none else '' }}"></label>
@@ -126,7 +138,29 @@
 
 {#- A column's summaries (`Column::summary`) from their figures. -#}
 {%- macro _figures(column, figures) -%}
-{%- if figures and column.summaries %}
+{%- if figures and column.summaries and column.currency %}
+{#- One figure per currency: amounts of different currencies aren't added. #}
+{%- for kind in column.summaries %}
+<span class="rx-grid__figure"><span class="rx-grid__figure-label">{{ t('ui.grid.' ~ kind) }}</span>
+{%- for c in figures.currencies %}{% if not loop.first %} · {% endif %}
+{%- if kind == "sum" %}{{ c.sum | money(currency=c.currency, decimals=column.fixed_decimals) if c.sum is not none else "—" }}
+{%- elif kind == "average" %}{{ c.average | money(currency=c.currency, decimals=column.fixed_decimals) if c.average is not none else "—" }}
+{%- elif kind == "range" %}{% if c.min is not none %}{{ c.min | money(currency=c.currency, decimals=column.fixed_decimals) }} – {{ c.max | money(currency=c.currency, decimals=column.fixed_decimals) }}{% else %}—{% endif %}
+{%- else %}{{ c.count | number }}{% endif %}
+{%- endfor %}</span>
+{%- endfor %}
+{%- elif figures and column.summaries and column.unit %}
+{#- One figure per unit: quantities in different units aren't added. #}
+{%- for kind in column.summaries %}
+<span class="rx-grid__figure"><span class="rx-grid__figure-label">{{ t('ui.grid.' ~ kind) }}</span>
+{%- for c in figures.units %}{% if not loop.first %} · {% endif %}
+{%- if kind == "sum" %}{{ (c.sum / column.scale) | quantity(decimals=column.decimals, unit=c.unit) if c.sum is not none else "—" }}
+{%- elif kind == "average" %}{{ (c.average / column.scale) | quantity(decimals=column.decimals or 1, unit=c.unit) if c.average is not none else "—" }}
+{%- elif kind == "range" %}{% if c.min is not none %}{{ (c.min / column.scale) | quantity(decimals=column.decimals) }} – {{ (c.max / column.scale) | quantity(decimals=column.decimals, unit=c.unit) }}{% else %}—{% endif %}
+{%- else %}{{ c.count | number }}{% endif %}
+{%- endfor %}</span>
+{%- endfor %}
+{%- elif figures and column.summaries %}
 {%- set d = column.decimals or 0 %}
 {#- Money is stored in the smallest unit and shown in whole units. #}
 {%- set s = column.scale or 1 %}
@@ -299,7 +333,7 @@
     {%- set f = column.filter %}
     <span class="rx-grid__chip">{{ column.label }}:
       {%- if column.kind in ["text", "color"] %} {{ t('ui.grid.' ~ f.mode) | lower }} “{{ f.text }}”
-      {%- elif column.numeric %} {% if f.min is not none and f.max is not none %}{{ f.min | number(column.decimals or 0) }} – {{ f.max | number(column.decimals or 0) }}{% elif f.min is not none %}≥ {{ f.min | number(column.decimals or 0) }}{% else %}≤ {{ f.max | number(column.decimals or 0) }}{% endif %}
+      {%- elif column.numeric %} {% if f.currency %}{{ f.currency }} {% endif %}{% if f.unit %}{{ f.unit }} {% endif %}{% if f.min is not none and f.max is not none %}{{ f.min | number(column.decimals or 0) }} – {{ f.max | number(column.decimals or 0) }}{% elif f.min is not none %}≥ {{ f.min | number(column.decimals or 0) }}{% elif f.max is not none %}≤ {{ f.max | number(column.decimals or 0) }}{% endif %}
       {%- elif column.kind in ["date", "date_time"] %} {{ f.from or "…" }} – {{ f.to or "…" }}
       {%- elif column.kind == "bool" %} {% for v in f.any_of %}{{ t('ui.grid.yes') if v in ["true", "1"] else t('ui.grid.no') }}{% if not loop.last %}, {% endif %}{% endfor %}
       {%- else %} {% for v in f.any_of %}{{ column.labels[v] or v }}{% if not loop.last %}, {% endif %}{% endfor %}

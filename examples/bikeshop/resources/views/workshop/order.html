@@ -49,6 +49,14 @@
             <rx-button variant="secondary" icon="plus">{{ t('workshop.notes.add') }}</rx-button>
           </form>
         </rx-card>
+        <rx-card rx-if="can_update and order.status in ['in_progress', 'ready']" title="{{ t('workshop.signoff.title') }}">
+          <form method="post" action="{{ route('workshop.order.signoff', order.id) }}" enctype="multipart/form-data" id="signoff-form" novalidate>
+            {{ csrf_field() }}
+            <rx-signature-pad name="signature" label="{{ t('workshop.signoff.signature') }}" name-label="{{ t('workshop.signoff.name') }}" required/>
+            <rx-camera-capture name="photos" label="{{ t('workshop.signoff.photos') }}" :max="3"/>
+            <rx-button variant="secondary" icon="check">{{ t('workshop.signoff.save') }}</rx-button>
+          </form>
+        </rx-card>
       </div>
 
       <div class="bs-order__side">
@@ -74,6 +82,16 @@
             <rx-toggle-buttons name="method" label="{{ t('rentals.desk.method') }}" :options="[['card', t('rentals.methods.card')], ['cash', t('rentals.methods.cash')]]" :selected="'card'"/>
             <rx-button icon="check" block>{{ t('workshop.order.pay', amount=(order.total | money)) }}</rx-button>
           </form>
+          <div rx-if="payable and can_take_payment" id="pay-link">
+            <p rx-if="pay_link and pay_link.pending" id="pay-link-waiting">{{ t('workshop.order.link.waiting') }}</p>
+            <p rx-if="pay_link and pay_link.failed" id="pay-link-failed">{{ t('workshop.order.link.failed') }}</p>
+            <p rx-if="pay_link and pay_link.pending"><rx-link-button :href="pay_link.url" label="{{ t('workshop.order.link.open') }}" variant="plain" size="small" id="pay-link-open"/></p>
+            <form method="post" action="{{ route('workshop.order.pay.link', order.id) }}" id="pay-link-form">
+              {{ csrf_field() }}
+              <rx-button variant="secondary" icon="link" block>{{ t('workshop.order.link.send') }}</rx-button>
+            </form>
+          </div>
+          <p rx-if="not payable and order.paid_at and pay_link and not pay_link.pending and not pay_link.failed" id="pay-link-paid">{{ t('workshop.order.link.paid') }}</p>
         </rx-card>
         <rx-action-sheet rx-if="can_update and customer and order.status in ['checked_in', 'in_progress', 'waiting_parts']" id="extra-work" label="{{ t('workshop.extra.propose') }}" :action="route('workshop.order.extra', order.id)" title="{{ t('workshop.extra.propose') }}" description="{{ t('workshop.extra.lead') }}" slide-over icon="plus">
           <rx-textarea name="description" label="{{ t('workshop.extra.description') }}" rows="3" required id="extra-description"/>

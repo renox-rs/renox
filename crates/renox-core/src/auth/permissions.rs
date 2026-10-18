@@ -828,6 +828,15 @@ impl Grants {
             .any(|granted| self.grants(granted, permission))
     }
 
+    /// Whether any role in effect now, global or in any scope, grants
+    /// `permission`.
+    pub(crate) fn has_permission_anywhere(&self, permission: &str) -> bool {
+        let at = now();
+        self.assignments
+            .iter()
+            .any(|granted| granted.active_at(at) && self.grants(granted, permission))
+    }
+
     fn permissions_in(&self, scope: Option<&Scope>) -> HashSet<&str> {
         self.in_effect(scope)
             .filter_map(|granted| self.permissions.get(&granted.role))

@@ -27,8 +27,51 @@
   {% call infolist(columns=2) %}
     {%- for e in entries %}
     {%- set value = record[e.key] if record[e.key] is defined else none %}
-    {{ entry(e.label, value, format=e.format, badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span) }}
+    {%- if e.format == "quantity" and value is not none %}
+    {%- set value = value | quantity(decimals=e.scale, unit=(record[e.unit_from] if e.unit_from and record[e.unit_from] is defined else none)) %}
+    {%- endif %}
+    {{ entry(e.label, value, format=(none if e.format == "quantity" else e.format), badge=(true if e.badge else none), labels=(e.labels if e.labels else none), copyable=e.copyable, span=e.span, currency=(record[e.currency_from] if e.currency_from and record[e.currency_from] is defined else none)) }}
     {%- endfor %}
+    {%- if custom %}
+    {%- for f in custom.fields %}
+    {%- set stored = custom["values"][f.key] if custom["values"] and custom["values"][f.key] is defined else none %}
+    {%- if f.sensitive and f.masked %}
+    {{ entry(f.label, "••••••") }}
+    {%- elif stored is mapping and stored.unreadable %}
+    {{ entry(f.label, "unreadable") }}
+    {%- else %}
+    {{ entry(f.label, (stored if stored is not none else false) if f.kind == "bool" else stored, format=("bool" if f.kind == "bool" else none), labels=(f.labels if f.kind == "choice" else none)) }}
+    {%- endif %}
+    {%- endfor %}
+    {%- endif %}
   {% endcall %}
 {% endcall %}
+{%- if machine %}
+{% call card() %}
+  <h2 class="text-base font-semibold">{{ admin.text.state_machine }}</h2>
+  {%- if transitions %}
+  <div class="mt-3 flex flex-wrap items-start gap-3">
+    {%- for t in transitions %}
+    <form method="post" action="{{ url }}/actions/{{ t.name }}" class="flex items-center gap-2">
+      {{ csrf_field() }}
+      {%- if t.needs_reason %}<input type="text" name="reason" required placeholder="{{ admin.text.reason }}" class="rounded border px-2 py-1 text-sm">{% endif %}
+      {{ button(t.label, variant=("danger" if t.tone == "danger" else "secondary")) }}
+      {%- if t.requires_approval %}<span class="text-xs">{{ admin.text.needs_approval }}</span>{% endif %}
+    </form>
+    {%- endfor %}
+  </div>
+  {%- endif %}
+  <table class="mt-4 w-full text-sm">
+    <thead><tr><th class="text-left">{{ admin.text.transition }}</th><th class="text-left">{{ admin.text.from }}</th><th class="text-left">{{ admin.text.to }}</th></tr></thead>
+    <tbody>
+    {%- for t in machine.transitions %}
+    {%- if not t.system %}
+    <tr><td>{{ t.label }}</td><td>{{ t.from | join(", ") }}</td><td>{{ t.to }}</td></tr>
+    {%- endif %}
+    {%- endfor %}
+    </tbody>
+  </table>
+  <details class="mt-4"><summary class="text-sm">{{ admin.text.diagram_source }}</summary><pre class="overflow-x-auto text-xs">{{ machine.mermaid }}</pre></details>
+{% endcall %}
+{%- endif %}
 {% endblock %}

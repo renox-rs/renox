@@ -1,0 +1,15 @@
+{
+  "eventId": "evt-0001",
+  "eventName": "PURCHASED",
+  "order": {
+    "_id": "urn:order:6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+    "reference": "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+    "merchantOrderReference": "job-42-1",
+    "amount": { "currencyCode": "USD", "value": 4500 },
+    "_embedded": {
+      "payment": [
+        { "_id": "urn:payment:fake-payment-1", "state": "PURCHASED" }
+      ]
+    }
+  }
+}

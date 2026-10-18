@@ -67,6 +67,16 @@ async fn me(user: AuthUser) -> String {
     )
 }
 
+async fn anywhere(user: AuthUser) -> String {
+    format!(
+        "refund={} view={} clerk_perm={} unknown={}",
+        user.has_permission_anywhere("orders.refund"),
+        user.has_permission_anywhere("transfers.view"),
+        user.has_permission_anywhere("orders.view"),
+        user.has_permission_anywhere("nope"),
+    )
+}
+
 async fn transfers(State(db): State<Db>) -> Result<String> {
     let notes: Vec<String> = Transfer::query().order_by("id").pluck(&db, "note").await?;
     Ok(notes.join(","))
@@ -82,6 +92,7 @@ impl Module for Shops {
     fn routes(&self) -> Routes {
         let open = Routes::new()
             .get("/me", me)
+            .get("/anywhere", anywhere)
             .get("/transfers", transfers)
             .get("/page", || async { view("page.html", ()) })
             .require_auth();
@@ -207,6 +218,47 @@ async fn scoped_roles_count_only_in_their_scope() {
         bo.permissions(db).await.unwrap(),
         ["orders.refund", "transfers.view"]
     );
+}
+
+#[renox::test]
+async fn has_permission_anywhere_counts_global_and_scoped_roles() {
+    let (app, _views) = boot().await;
+    let db = app.db();
+    let in_store = |id: &'static str| app.request().header("x-store", id);
+
+    // No role at all: nothing.
+    let none = user(&app, "none@example.com").await;
+    app.acting_as(&none);
+    app.get("/anywhere")
+        .await
+        .assert_see("refund=false view=false clerk_perm=false unknown=false");
+
+    // Only a scoped role: held anywhere, whatever scope the request picked.
+    let ana = user(&app, "ana@example.com").await;
+    ana.assign_role_in(db, "manager", &store(1)).await.unwrap();
+    app.acting_as(&ana);
+    let expected = "refund=true view=true clerk_perm=false unknown=false";
+    app.get("/anywhere").await.assert_see(expected);
+    in_store("2").get("/anywhere").await.assert_see(expected);
+    // `has_permission` stays tied to the request's scope.
+    app.get("/me").await.assert_see("refund=false");
+
+    // A global role.
+    let bo = user(&app, "bo@example.com").await;
+    bo.assign_role(db, "clerk").await.unwrap();
+    app.acting_as(&bo);
+    app.get("/anywhere")
+        .await
+        .assert_see("refund=false view=false clerk_perm=true unknown=false");
+
+    // An assignment that has not started yet does not count.
+    let cy = user(&app, "cy@example.com").await;
+    cy.assign_role_in(db, "clerk", &store(2))
+        .from(renox::db::now() + renox::chrono::Duration::days(1))
+        .await
+        .unwrap();
+    app.acting_as(&cy);
+    app.get("/anywhere").await.assert_see("clerk_perm=false");
 }
 
 #[renox::test]

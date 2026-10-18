@@ -4,10 +4,15 @@
 use renox::prelude::*;
 
 use crate::events::{
-    PaymentFailed, PaymentSucceeded, SubscriptionCanceled, SubscriptionCreated, SubscriptionPaused,
-    SubscriptionUnpaused, SubscriptionUpdated,
+    DisputeLost, DisputeOpened, DisputeWon, PaymentFailed, PaymentLinkExpired, PaymentRefunded,
+    PaymentSucceeded, RefundFailed, RefundSucceeded, SubscriptionCanceled, SubscriptionCreated,
+    SubscriptionPaused, SubscriptionUnpaused, SubscriptionUpdated,
 };
 use crate::model::{BillingCustomer, Subscription, SubscriptionStatus};
+use crate::payment::{
+    BillingPayment, BillingRefund, DisputeState, DisputeUpdate, PaymentKind, PaymentState,
+    PaymentStatus, PaymentUpdate, RefundStatus, RefundUpdate,
+};
 use crate::{Owner, Payment, Remote, Setup};
 
 /// Applies `remote` (from `gateway`) to its row, making the row when the
@@ -221,6 +226,8 @@ pub(crate) async fn payment(state: &AppState, gateway: &str, payment: Payment) -
                 currency: payment.currency,
                 owner,
                 subscription,
+                reference_type: None,
+                reference_id: None,
             })
             .await
     } else {
@@ -232,7 +239,285 @@ pub(crate) async fn payment(state: &AppState, gateway: &str, payment: Payment) -
                 currency: payment.currency,
                 owner,
                 subscription,
+                reference_type: None,
+                reference_id: None,
             })
             .await
+    }
+}
+
+/// Applies a one-off payment notice from a webhook to its row (see
+/// [`apply_status`]). A payment the module doesn't know is ignored.
+pub(crate) async fn one_off(state: &AppState, gateway: &str, update: PaymentUpdate) -> Result {
+    let Some(row) = BillingPayment::find_at(&state.db, gateway, &update.gateway_id).await? else {
+        tracing::warn!(
+            gateway,
+            payment = update.gateway_id,
+            "a notice for an unknown payment; ignored"
+        );
+        return Ok(());
+    };
+    let row = remember_intent(state, row, update.intent.as_deref()).await?;
+    apply_status(state, row, update.status, update.at).await?;
+    Ok(())
+}
+
+/// Stores the payment's second id (Stripe's PaymentIntent) on its row when
+/// the gateway names one, so notices that carry only that id find the row.
+pub(crate) async fn remember_intent(
+    state: &AppState,
+    mut row: BillingPayment,
+    intent: Option<&str>,
+) -> Result<BillingPayment> {
+    if let Some(intent) = intent
+        && row.gateway_intent.as_deref() != Some(intent)
+    {
+        row.gateway_intent = Some(intent.to_owned());
+        row.save(&state.db).await?;
+    }
+    Ok(row)
+}
+
+/// Moves a payment to `status` and announces it, by the late-success rule:
+/// a success always moves a pending, failed or expired payment to
+/// succeeded; a failure or expiry never undoes a success (or anything after
+/// it); between failed and expired the newest gateway time wins. Applying
+/// what the row already says changes nothing and announces nothing.
+pub(crate) async fn apply_status(
+    state: &AppState,
+    mut row: BillingPayment,
+    status: PaymentStatus,
+    at: Option<i64>,
+) -> Result<BillingPayment> {
+    use PaymentStatus::{Expired, Failed, Pending, Succeeded};
+    let apply = match (row.status, status) {
+        (Pending | Failed | Expired, Succeeded) | (Pending, Failed | Expired) => true,
+        (Failed, Expired) | (Expired, Failed) => match (at, row.synced_at) {
+            (Some(at), Some(synced)) => at >= synced,
+            _ => true,
+        },
+        _ => false,
+    };
+    if !apply {
+        return Ok(row);
+    }
+    row.status = status;
+    if let Some(at) = at {
+        row.synced_at = Some(row.synced_at.map_or(at, |synced| synced.max(at)));
+    }
+    row.save(&state.db).await?;
+    let (gateway, owner) = (row.gateway.clone(), row.owner());
+    let currency = row.amount.currency.code().to_owned();
+    let gateway_id = row.gateway_id.clone().unwrap_or_default();
+    let (reference_type, reference_id) = (row.reference_type.clone(), row.reference_id.clone());
+    match status {
+        Succeeded => {
+            state
+                .emit(PaymentSucceeded {
+                    gateway,
+                    payment_id: gateway_id,
+                    amount: row.amount.minor,
+                    currency,
+                    owner,
+                    subscription: None,
+                    reference_type,
+                    reference_id,
+                })
+                .await?
+        }
+        Expired if row.kind == PaymentKind::Link => {
+            state
+                .emit(PaymentLinkExpired {
+                    payment: row.clone(),
+                })
+                .await?
+        }
+        _ => {
+            state
+                .emit(PaymentFailed {
+                    gateway,
+                    payment_id: gateway_id,
+                    amount: row.amount.minor,
+                    currency,
+                    owner,
+                    subscription: None,
+                    reference_type,
+                    reference_id,
+                })
+                .await?
+        }
+    }
+    Ok(row)
+}
+
+/// Applies what a gateway says about a payment when asked: its status, then
+/// its refunds, the way webhooks would.
+pub(crate) async fn apply_state(
+    state: &AppState,
+    row: BillingPayment,
+    reported: &PaymentState,
+) -> Result {
+    let gateway = row.gateway.clone();
+    let id = row.gateway_id.clone();
+    let row = remember_intent(state, row, reported.intent.as_deref()).await?;
+    apply_status(state, row, reported.status, reported.at).await?;
+    for refund in &reported.refunds {
+        let mut refund = refund.clone();
+        if refund.payment_gateway_id.is_none() {
+            refund.payment_gateway_id = id.clone();
+        }
+        refund_update(state, &gateway, refund).await?;
+    }
+    Ok(())
+}
+
+/// Counts a succeeded refund of `amount` on `payment`: the payment becomes
+/// refunded or partially refunded, and `RefundSucceeded` and
+/// `PaymentRefunded` are announced.
+pub(crate) async fn refund_done(
+    state: &AppState,
+    payment: &mut BillingPayment,
+    amount: i64,
+) -> Result {
+    payment.refunded_amount += amount;
+    payment.status = if payment.refunded_amount >= payment.amount.minor {
+        PaymentStatus::Refunded
+    } else {
+        PaymentStatus::PartiallyRefunded
+    };
+    payment.save(&state.db).await?;
+    state
+        .emit(RefundSucceeded {
+            payment: payment.clone(),
+            amount,
+        })
+        .await?;
+    state
+        .emit(PaymentRefunded {
+            payment: payment.clone(),
+        })
+        .await
+}
+
+/// Applies a refund notice. A pending refund becomes succeeded or failed
+/// (a failed one may still turn out succeeded, a succeeded one never
+/// changes); a refund the app didn't ask for (made at the gateway's
+/// dashboard) is stored when the notice names its payment and amount.
+pub(crate) async fn refund_update(state: &AppState, gateway: &str, update: RefundUpdate) -> Result {
+    let db = &state.db;
+    let mut payment = match &update.payment_gateway_id {
+        Some(id) => BillingPayment::find_named(db, gateway, id).await?,
+        None => None,
+    };
+    let existing = BillingRefund::where_eq("gateway_id", update.gateway_id.as_str())
+        .first(db)
+        .await?;
+    let mut row = match existing {
+        Some(row) => {
+            if payment.as_ref().is_none_or(|p| p.id != row.payment_id) {
+                payment = BillingPayment::find(db, row.payment_id)
+                    .await?
+                    .filter(|p| p.gateway == gateway);
+            }
+            row
+        }
+        None => {
+            let (Some(found), Some(amount)) = (&payment, update.amount) else {
+                tracing::warn!(
+                    gateway,
+                    refund = update.gateway_id,
+                    "a notice for an unknown refund; ignored"
+                );
+                return Ok(());
+            };
+            BillingRefund::create(
+                db,
+                BillingRefund {
+                    payment_id: found.id,
+                    gateway_id: Some(update.gateway_id.clone()),
+                    amount,
+                    reason: update.reason.clone(),
+                    ..Default::default()
+                },
+            )
+            .await?
+        }
+    };
+    let Some(mut payment) = payment else {
+        return Ok(());
+    };
+    match (row.status, update.status) {
+        (RefundStatus::Pending | RefundStatus::Failed, RefundStatus::Succeeded) => {
+            if row.amount == 0 {
+                row.amount = update.amount.unwrap_or(0);
+            }
+            row.status = RefundStatus::Succeeded;
+            row.save(db).await?;
+            refund_done(state, &mut payment, row.amount).await
+        }
+        (RefundStatus::Pending, RefundStatus::Failed) => {
+            row.status = RefundStatus::Failed;
+            if update.reason.is_some() {
+                row.reason = update.reason.clone();
+            }
+            row.save(db).await?;
+            state
+                .emit(RefundFailed {
+                    payment,
+                    amount: row.amount,
+                    reason: update.reason,
+                })
+                .await
+        }
+        _ => Ok(()),
+    }
+}
+
+/// Applies a dispute notice to the disputed payment: opened (paid payments
+/// only) marks it disputed with the evidence deadline; won puts it back to
+/// what it was; lost counts the payment as given back. A notice that
+/// repeats the state, or doesn't fit it, changes nothing.
+pub(crate) async fn dispute(state: &AppState, gateway: &str, update: DisputeUpdate) -> Result {
+    use PaymentStatus::{Disputed, PartiallyRefunded, Refunded, Succeeded};
+    let db = &state.db;
+    let Some(mut row) = BillingPayment::find_named(db, gateway, &update.payment_gateway_id).await?
+    else {
+        tracing::warn!(
+            gateway,
+            payment = update.payment_gateway_id,
+            "a dispute for an unknown payment; ignored"
+        );
+        return Ok(());
+    };
+    match update.state {
+        DisputeState::Opened if matches!(row.status, Succeeded | PartiallyRefunded | Refunded) => {
+            row.status = Disputed;
+            row.evidence_due_by = update.evidence_due_by;
+            row.save(db).await?;
+            state
+                .emit(DisputeOpened {
+                    evidence_due_by: row.evidence_due_by,
+                    payment: row,
+                })
+                .await
+        }
+        DisputeState::Won if row.status == Disputed => {
+            row.status = match row.refunded_amount {
+                0 => Succeeded,
+                n if n >= row.amount.minor => Refunded,
+                _ => PartiallyRefunded,
+            };
+            row.evidence_due_by = None;
+            row.save(db).await?;
+            state.emit(DisputeWon { payment: row }).await
+        }
+        DisputeState::Lost if row.status == Disputed => {
+            row.status = Refunded;
+            row.refunded_amount = row.amount.minor;
+            row.evidence_due_by = None;
+            row.save(db).await?;
+            state.emit(DisputeLost { payment: row }).await
+        }
+        _ => Ok(()),
     }
 }

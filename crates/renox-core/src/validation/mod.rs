@@ -232,6 +232,8 @@ pub struct FormContext<'a> {
     pub method: &'a axum::http::Method,
     /// The request's path, without the query string.
     pub path: &'a str,
+    /// The request's locale (`APP_LOCALE` when none was negotiated).
+    pub locale: &'a str,
 }
 
 struct Pending {
@@ -1179,6 +1181,118 @@ impl Field<'_> {
         self
     }
 
+    /// An ISO 4217 currency code such as `USD` or `aed` (see
+    /// [`Currency`](crate::money::Currency)); the table is the one `Money` uses.
+    pub fn currency(mut self) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && crate::money::Currency::parse(text.trim()).is_err()
+        {
+            self.fail("currency", &[]);
+        }
+        self
+    }
+
+    /// An amount in whole units of `currency` (a code such as `"USD"`, often
+    /// another field: `.money(&self.currency)`), typed as `12.50`: digits with
+    /// at most the currency's decimals (JPY 0, USD 2, KWD 3), never rounded.
+    /// An unknown `currency` leaves the rule out; check that field with
+    /// [`currency`](Self::currency).
+    pub fn money(mut self, currency: &str) -> Self {
+        let Ok(currency) = crate::money::Currency::parse(currency.trim()) else {
+            return self;
+        };
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && crate::money::Money::parse(text, currency).is_err()
+        {
+            let decimals = currency.decimals().to_string();
+            self.fail("money", &[("decimals", decimals)]);
+        }
+        self
+    }
+
+    /// A decimal quantity typed as `12.5`, with at most `scale` decimals
+    /// (`Quantity<3>` is `.quantity(3)`), never rounded: `12.500` passes,
+    /// `12.5001` fails. For limits use [`quantity_min`](Self::quantity_min) and
+    /// [`quantity_max`](Self::quantity_max): `min` and `max` count characters in text.
+    pub fn quantity(mut self, scale: u32) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && !crate::quantity::fits_scale(text, scale)
+        {
+            self.fail("quantity", &[("decimals", scale.to_string())]);
+        }
+        self
+    }
+
+    /// A quantity of at least `min` (a decimal such as `"0"` or `"0.5"`),
+    /// compared as a number, not as text. Text that is not a decimal passes
+    /// here; [`quantity`](Self::quantity) reports it.
+    pub fn quantity_min(mut self, min: &str) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let (Some(value), Some(limit)) =
+                (crate::quantity::nano(text), crate::quantity::nano(min))
+            && value < limit
+        {
+            self.fail("quantity_min", &[("min", min.trim().to_owned())]);
+        }
+        self
+    }
+
+    /// A quantity of at most `max`, compared as a number; see
+    /// [`quantity_min`](Self::quantity_min).
+    pub fn quantity_max(mut self, max: &str) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let (Some(value), Some(limit)) =
+                (crate::quantity::nano(text), crate::quantity::nano(max))
+            && value > limit
+        {
+            self.fail("quantity_max", &[("max", max.trim().to_owned())]);
+        }
+        self
+    }
+
+    /// A latitude: a number, or text such as `25.2048`, from -90 to 90.
+    pub fn latitude(mut self) -> Self {
+        if self.present()
+            && !numeric_value(&self.value).is_some_and(|n| (-90.0..=90.0).contains(&n))
+        {
+            self.fail("latitude", &[]);
+        }
+        self
+    }
+
+    /// A longitude: a number, or text such as `55.2708`, from -180 to 180.
+    pub fn longitude(mut self) -> Self {
+        if self.present()
+            && !numeric_value(&self.value).is_some_and(|n| (-180.0..=180.0).contains(&n))
+        {
+            self.fail("longitude", &[]);
+        }
+        self
+    }
+
+    /// A point as JSON text: `{"lat": 25.2, "lng": 55.3}` or a GeoJSON
+    /// `Point` (`[lng, lat]`). An out-of-range coordinate gets the
+    /// `latitude` or `longitude` message, anything else the `point` one.
+    pub fn point(mut self) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && let Err(e) = crate::geo::parse_point(text)
+        {
+            self.fail(e.rule_key(), &[]);
+        }
+        self
+    }
+
+    /// A unit code that `units` knows, e.g. `.unit(&units)` with a
+    /// [`UnitTable`](crate::quantity::UnitTable) from `Units::build`.
+    pub fn unit(mut self, units: &crate::quantity::UnitTable) -> Self {
+        if let (true, Inspected::Text(text)) = (self.present(), &self.value)
+            && !units.contains(text.trim())
+        {
+            self.fail("unit", &[]);
+        }
+        self
+    }
+
     /// An uploaded image within `limits`, e.g.
     /// `.dimensions(&Dimensions::new().min_width(400).ratio(16, 9))`; see
     /// [`Dimensions`]. A file that isn't an image fails.
@@ -2112,6 +2226,54 @@ mod tests {
         v.field("photo", &file(1.0, Some((2000, 10))))
             .dimensions(&Dimensions::new().max_width(100));
         assert!(v.errors.has("photo"));
+    }
+
+    #[test]
+    fn geo_rules_check_ranges_and_point_shapes() {
+        let mut v = Validator::default();
+        v.field("lat", &"25.2048").latitude();
+        v.field("lat_n", &-90.0).latitude();
+        v.field("lng", &" -180 ").longitude();
+        v.field("here", &r#"{"lat": 25.2, "lng": 55.3}"#).point();
+        v.field("geo", &r#"{"type":"Point","coordinates":[55.3,25.2]}"#)
+            .point();
+        v.field("empty", &"").point();
+        assert!(v.errors.is_empty(), "{:?}", v.errors);
+
+        let mut v = Validator::default();
+        v.field("lat", &"91").latitude();
+        v.field("lat_text", &"north").latitude();
+        v.field("lng", &181.5).longitude();
+        v.field("nan", &f64::NAN).longitude();
+        v.field("p_lat", &r#"{"lat": 95, "lng": 0}"#).point();
+        v.field("p_lng", &r#"{"type":"Point","coordinates":[200,0]}"#)
+            .point();
+        v.field("p_junk", &"25.2, 55.3").point();
+        v.field("p_half", &r#"{"lat": 1}"#).point();
+        assert_eq!(
+            v.errors.first("lat"),
+            Some("The lat must be a latitude between -90 and 90.")
+        );
+        assert!(v.errors.has("lat_text"));
+        assert_eq!(
+            v.errors.first("lng"),
+            Some("The lng must be a longitude between -180 and 180.")
+        );
+        assert!(v.errors.has("nan"));
+        assert_eq!(
+            v.errors.first("p_lat"),
+            Some("The p lat must be a latitude between -90 and 90.")
+        );
+        assert_eq!(
+            v.errors.first("p_lng"),
+            Some("The p lng must be a longitude between -180 and 180.")
+        );
+        for field in ["p_junk", "p_half"] {
+            assert!(
+                v.errors.first(field).unwrap().contains("valid point"),
+                "{field}"
+            );
+        }
     }
 
     #[test]

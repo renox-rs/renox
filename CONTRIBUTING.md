@@ -115,7 +115,7 @@ the top of `crates/renox/tests/it/s3.rs`, and `cargo test -p bikeshop --features
   ```bash
   rustup component add llvm-tools-preview && cargo install --locked cargo-llvm-cov
   cargo llvm-cov --no-report -p renox -p renox-core -p renox-cli -p renox-macros \
-      -p renox-2fa -p renox-oauth -p renox-admin -p renox-billing -p renox-editors -p renox-blocks --features renox/xlsx
+      -p renox-2fa -p renox-oauth -p renox-admin -p renox-billing -p renox-editors -p renox-blocks -p renox-pdf --features renox/xlsx
   TEST_DATABASE_URL=postgres://postgres:postgres@localhost:55432/renox_test cargo llvm-cov --no-report \
       -p renox -p renox-core -p renox-cli -p renox-2fa -p renox-oauth -p renox-admin \
       -p renox-billing -p renox-editors --features renox/postgres

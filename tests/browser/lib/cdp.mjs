@@ -22,7 +22,11 @@ const CHROME = process.env.CHROME_BIN || 'google-chrome';
 const TIMEOUT = Number(process.env.BROWSER_TIMEOUT_MS || 10_000);
 
 export class Browser {
-  static async launch() {
+  /**
+   * `args` adds Chrome flags, e.g. the fake camera of the capture tests:
+   * `['--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream']`.
+   */
+  static async launch({ args: extra = [] } = {}) {
     const profile = mkdtempSync(join(tmpdir(), 'renox-chrome-'));
     const args = [
       '--headless=new',
@@ -36,6 +40,7 @@ export class Browser {
       '--blink-settings=primaryHoverType=2,availableHoverTypes=2,primaryPointerType=4,availablePointerTypes=4',
       '--remote-debugging-port=0',
       `--user-data-dir=${profile}`,
+      ...extra,
       'about:blank',
     ];
     const proc = spawn(CHROME, args, { stdio: ['ignore', 'ignore', 'pipe'] });
@@ -52,13 +57,47 @@ export class Browser {
       });
       proc.on('exit', (code) => reject(new Error(`Chrome exited (${code}): ${output}`)));
     });
-    return new Browser(proc, profile, new URL(url).port);
+    return new Browser(proc, profile, new URL(url).port, url);
   }
 
-  constructor(proc, profile, port) {
+  constructor(proc, profile, port, url) {
     this.proc = proc;
     this.profile = profile;
     this.port = port;
+    this.url = url;
+  }
+
+  /**
+   * A browser-level command, on a connection kept open for the browser's life
+   * (permissions are the browser's, not a page's, and Chrome takes them back
+   * when the connection that set them closes): `send('Browser.grantPermissions',
+   * { permissions: ['geolocation'], origin })`.
+   */
+  async send(method, params = {}) {
+    this.control ??= (async () => {
+      const socket = new WebSocket(this.url);
+      await new Promise((resolve, reject) => {
+        socket.addEventListener('open', resolve, { once: true });
+        socket.addEventListener('error', reject, { once: true });
+      });
+      this.answers = new Map();
+      socket.addEventListener('message', (event) => {
+        const message = JSON.parse(event.data);
+        const answer = this.answers.get(message.id);
+        if (!answer) return;
+        this.answers.delete(message.id);
+        if (message.error) answer.reject(new Error(`${message.error.message} (${message.error.data || ''})`));
+        else answer.resolve(message.result);
+      });
+      return socket;
+    })();
+    const socket = await this.control;
+    this.nextId = (this.nextId || 0) + 1;
+    const id = this.nextId;
+    return new Promise((resolve, reject) => {
+      this.answers.set(id, { resolve, reject });
+      socket.send(JSON.stringify({ id, method, params }));
+    });
   }
 
   /**
@@ -102,6 +141,9 @@ export class Browser {
   }
 
   async close() {
+    try {
+      (await this.control)?.close();
+    } catch {}
     this.proc.kill('SIGTERM');
     await new Promise((resolve) => {
       if (this.proc.exitCode !== null) return resolve();

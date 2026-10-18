@@ -20,7 +20,8 @@ crates/renox/              facade crate apps depend on: re-exports renox-core, t
                            ReadMe, CheatSheet, TypesGuide, RelationsGuide, AuthorizationGuide,
                            QueueGuide, UiGuide, GridGuide, ValidationGuide, RoutingGuide,
                            MailGuide, SchedulingGuide, TestingGuide, OperationsGuide,
-                           TutorialGuide, LaravelGuide, LiveGuide, MacroCompileErrors
+                           TutorialGuide, LaravelGuide, LiveGuide, StateMachinesGuide,
+                           MacroCompileErrors
   tests/it/                ONE integration-test binary (main.rs + a module per area); add new areas
                            as `mod x;` in main.rs. Notable modules: send_handlers.rs (every data
                            API in a routed handler), web_security.rs, data_resilience.rs,
@@ -33,10 +34,14 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/app.rs               App builder, boot(), Kernel, router assembly, app-binary commands;
                            serve takes systemd's socket (listenfd, LISTEN_FDS) before binding
   src/config.rs            Config from env/.env (see §5)
+  src/geo.rs               `renox::geo` (#47): Point, Circle, Polygon (haversine, ray casting, GeoJSON
+                           [lng, lat] and lat/lng form (de)serialization); the `latitude`, `longitude`
+                           and `point` rules are in validation/mod.rs; tests/it/geo_forms.rs
   src/state.rs             AppState (Clone): config, routes, views, db, mailer, queue, cache,
                            storage, translator, listeners, key, gates/async gates, shares,
                            channels, provided values, throttle, security, webhooks, live
-  src/module.rs            Module trait: name, routes, migrations, register
+  src/module.rs            Module trait: name, routes, routes_with, migrations, register
+  src/contributions.rs     Contributions: typed, ordered lists modules add with `Registry::contribute` (#31)
   src/registry.rs          Registry: jobs, listeners, schedule, commands, channels, shares, templates,
                            assets (`Registry::asset`: files served before the session),
                            provide (a module's values for `state.provided`, under the app's),
@@ -205,7 +210,10 @@ crates/renox-core/         ALL runtime code (see §3 for why one crate)
   src/seo.rs               seo() tags, head tags (noindex / verification / GA4 / GTM), robots.txt, Sitemap
   src/analytics.rs         analytics::event, GaClientId, ServerEvent job (`server-events` feature,
                            sent through `state.http`)
-  src/webhook.rs           Webhook trait, receive route, webhook_calls store/retry, ProcessWebhook job
+  src/webhook/             mod.rs re-exports the public paths; inbound.rs: Webhook trait, receive route,
+                           webhook_calls store/retry, ProcessWebhook job, HMAC helpers; outbound.rs:
+                           Endpoint, EndpointDisabled, emit_in, DeliverWebhook job, Delivery log;
+                           signing.rs: Standard Webhooks sign/verify, whsec_ secrets, SignedRequest
   src/security.rs          security headers + CSP (+ nonce), csrf-exempt and webhook route sets,
                            TRUSTED_HOSTS (400 for other hosts), ETags for Routes::etag (hashed
                            here, after the view layer rendered the page)
@@ -255,15 +263,27 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            slots, times through the `date` filter), assets.rs (hashed files
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
-                           datetime_range, gallery, history, compare_plans, status_stepper,
+                           datetime_range, signature_pad, camera_capture, rating, geolocate,
+                           barcode_scan, gallery, history,
+                           compare_plans, status_stepper,
                            month_calendar, availability, week_calendar, kanban + kanban_card,
-                           receipt; `rx-` classes,
+                           receipt, map_picker, map; `rx-` classes,
                            `data-rx-<block>-*` attributes: the kit owns data-rx-key/-step),
                            assets/blocks.css, assets/blocks.js (the loader: imports
                            assets/parts/<block>.js only when a page has that block; Web
-                           Animations, no library); its own tests/; guide docs/blocks.md
+                           Animations, no library); map.rs (BLOCKS_MAP_TILES and
+                           BLOCKS_MAP_ATTRIBUTION), assets/vendor/leaflet/ (Leaflet 1.9.4,
+                           LICENSE, NOTICE) added by assets/parts/map.js only on a page with
+                           a map block; assets/vendor/zxing/ (@zxing/library 0.23.0, LICENSE) and
+                           assets/vendor/NOTICE (source and sha256), added by assets/parts/barcode.js
+                           only when the camera opens without BarcodeDetector; its own tests/; guide docs/blocks.md
                            (doctested from lib.rs `Guide`); browser tests
                            tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks
+                           (the signature pad and camera capture: blocks-capture.test.mjs,
+                           with Chrome's fake camera through `Browser.launch({ args })`),
+                           tests/browser/blocks-field.test.mjs (rating, geolocate and barcode_scan on the
+                           fixture's /field and the bikeshop's /about/blocks),
+                           tests/browser/maps.test.mjs on the fixture's /maps (local tile stub)
 crates/renox-oauth/        the social login plugin (#147): OAuth module (lib.rs: providers,
                            `oauth_providers` shared with every view for the buttons, the
                            account section, events to the audit log when `audit_logs`
@@ -309,13 +329,25 @@ crates/renox-billing/      the subscriptions plugin (#155, Laravel's Cashier): B
                            model.rs (Subscription, BillingCustomer, SubscriptionStatus;
                            tables `subscriptions` + `billing_customers`, prefix
                            00010101000900), sync.rs (apply a Remote: metadata or customer →
-                           owner, `synced_at` orders webhooks, events), webhook.rs (one
+                           owner, `synced_at` orders webhooks, events), webhook/inbound.rs (one
                            Webhook `billing` at /billing/webhooks/{gateway}; a route layer
                            names the gateway and the event id in headers, the event id stored
                            as `{gateway}:{id}`), handlers.rs (billing.* pages), guard.rs
                            (SubscriptionRoutes); its own tests/ on FakeHttp + signed
                            webhooks; guide docs/billing.md (doctested from lib.rs `Guide`)
-crates/renox-cli/          `rnx`: main.rs (key:generate, forwarding), new.rs, serve.rs, make.rs +
+crates/renox-pdf/          the PDF plugin (#30), Typst compiled in the process: Pdf module (module.rs;
+                           `Pdf::document(&state, "invoice")`, `Pdf::templates(embedded!())`),
+                           document.rs (Document: data, locale, assets, fonts, lenient; render),
+                           world.rs + source.rs (the `typst::World`: confined template root or
+                           embedded map, in-memory assets, packages refused, `today()` through
+                           the clock), fonts.rs (font book, missing-glyph check), pool.rs
+                           (blocking threads, `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), kit.rs +
+                           kit/kit.typ (`@renox/kit:0.1.0`), testing.rs (`text_of`,
+                           `PdfAssertions`), fonts/ (Inter, Noto Sans Arabic, OFL texts); its own
+                           tests/; guide docs/pdf.md (doctested from lib.rs `Guide`)
+crates/renox-cli/          `rnx`: main.rs (key:generate, forwarding), new.rs, template.rs (`new --from`:
+                           renox-template.toml, the `Source` enum (path / git+url#ref), the copy
+                           walker, `--set` answers), serve.rs, make.rs +
                            generate.rs (make:*), scaffold.rs (make:module --resource --fields),
                            deploy.rs (build, make:deploy), tailwind.rs (the pinned
                            standalone CLI: download via curl + SHA-256 check, build/watch; used by
@@ -342,7 +374,8 @@ examples/                  two workspace members (#351 removed the other fifteen
                            factories.rs, explain.rs: an entry per GET route, tests/about.rs
                            fails without one): about, access (permission catalogue, active
                            store, ABAC policy: owner/location/operating store), accounts, api,
-                           catalog, home, multistore, plans, rentals, reports, sales, staff,
+                           catalog, home, multistore, plans, purchasing (contributes the suppliers
+                           admin resource, #31), rentals, reports, sales, staff,
                            stock, workshop; src/seed/ (`db:seed`, `demo:seed --size large`,
                            test fixtures); the blocks from renox-blocks (#347; /about/blocks
                            shows them; public/blocks/blocks.css styles that page);
@@ -440,6 +473,8 @@ docs/ui.md                 components (as rx-* tags first), the UI kit, toasts, 
                            headers, live validation, stacks, view:check, typed views, editor
                            autocomplete, Tailwind (doctest `UiGuide`)
 docs/live.md               live components (doctest `LiveGuide`)
+docs/state-machines.md     state machines for models: Machine, transitions, guards, the guarded status
+                           column, history, interceptor, diagrams (doctest `StateMachinesGuide`)
 docs/grid.md               the data grid (renox::grid): columns, filters, actions, summaries,
                            exports (doctest `GridGuide`)
 docs/routing.md            routes, groups, domains, extractors, middleware, guards, sessions,
@@ -464,6 +499,7 @@ docs/oauth.md              social login with renox-oauth (doctest: renox-oauth's
 docs/blocks.md             blocks beyond the kit with renox-blocks (doctest: its `Guide`)
 docs/admin.md              the admin panel with renox-admin (doctest: renox-admin's `Guide`)
 docs/billing.md            subscriptions with renox-billing (doctest: renox-billing's `Guide`)
+docs/pdf.md                PDF documents with renox-pdf (doctest: its `Guide`)
 docs/settings.md           typed settings in the database (doctest: renox-admin's `SettingsGuide`,
                            since it shows the admin page)
 docs/queue.md              jobs, retries, priority, unique, middleware, chains, batches (doctest

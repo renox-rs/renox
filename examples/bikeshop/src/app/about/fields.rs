@@ -25,7 +25,9 @@
 use renox::Download;
 use renox::chrono::{NaiveDate, NaiveDateTime, NaiveTime};
 use renox::db::Json as DbJson;
+use renox::money::{Currency, Money};
 use renox::prelude::*;
+use renox::quantity::{Quantity, UnitTable, Units};
 use renox::uuid::Uuid;
 use renox::validation::Dimensions;
 use renox_editors::RichText;
@@ -41,6 +43,24 @@ pub enum FrameSize {
     #[default]
     Medium,
     Large,
+}
+
+/// The currencies a deposit can be in: two decimals, none and three, so the
+/// form shows what changes from one currency to the next.
+pub const DEPOSIT_CURRENCIES: &[&str] = &["USD", "JPY", "KWD"];
+
+/// The units a load limit can be in. Every one converts to kilograms, the base.
+pub const LOAD_UNITS: &[&str] = &["kg", "g", "t"];
+
+/// The table behind [`LOAD_UNITS`]: grams and tonnes as exact decimal factors
+/// of the kilogram (no float anywhere).
+pub fn load_units() -> UnitTable {
+    Units::new()
+        .base("kg")
+        .unit("g", "kg", "0.001")
+        .unit("t", "kg", "1000")
+        .build()
+        .expect("the load units are a valid table")
 }
 
 /// The colours a sample can come in: CSS colour names, so the read-only
@@ -61,6 +81,16 @@ pub struct FieldSample {
     pub weight_kg: f64,
     /// Money in the smallest unit (cents with USD), never a float.
     pub price: i64,
+    /// A deposit in its own currency: two columns, `deposit` (the amount in
+    /// the currency's smallest unit) and `deposit_currency` (its ISO 4217
+    /// code), both NULL when there is none.
+    #[model(money)]
+    pub deposit: Option<Money>,
+    /// A load limit: thousandths in one `BIGINT` (the scale is the type's,
+    /// not the schema's), NULL when there is none. Its unit is `load_unit`.
+    pub load: Option<Quantity<3>>,
+    /// The unit of `load`, one of [`LOAD_UNITS`].
+    pub load_unit: String,
     pub available: bool,
     pub size: FrameSize,
     pub colors: DbJson<Vec<String>>,
@@ -179,6 +209,22 @@ pub const REFERENCE: &[TypeRow] = &[
         "i64 (cents)",
         "INTEGER",
         "BIGINT",
+    ),
+    row(
+        "deposit",
+        "input(type=\"money\", currency=…) + select",
+        "Option<String> + String (code)",
+        "Option<Money>",
+        "INTEGER + TEXT (deposit_currency)",
+        "BIGINT + TEXT (deposit_currency)",
+    ),
+    row(
+        "load",
+        "input(type=\"quantity\", scale=3, unit=…) + select",
+        "Option<String> + String (unit)",
+        "Option<Quantity<3>> + String",
+        "INTEGER (thousandths) + TEXT (load_unit)",
+        "BIGINT (thousandths) + TEXT (load_unit)",
     ),
     row(
         "available",
@@ -326,6 +372,12 @@ pub struct SampleForm {
     stock: i64,                  // <input type="number">
     weight_kg: f64,              // <input type="number" step="0.01">
     price: f64,                  // <input type="number" step="0.01">: dollars, stored as cents
+    deposit: Option<String>,     // <rx-input type="money">: whole units, the currency's decimals
+    #[serde(default = "usd")]
+    deposit_currency: String, // the select beside it: an ISO 4217 code
+    load: Option<String>,        // <rx-input type="quantity">: up to 3 decimals, exact
+    #[serde(default = "kg")]
+    load_unit: String, // the select beside it: one of LOAD_UNITS
     #[serde(default)]
     available: bool, // <input type="checkbox">: "on", or nothing → false
     size: FrameSize,             // the kit's radio group: one value of the enum
@@ -349,6 +401,33 @@ pub struct SampleForm {
     manual: Option<Upload>, // <input type="file" accept="application/pdf">
 }
 
+fn usd() -> String {
+    "USD".into()
+}
+
+fn kg() -> String {
+    "kg".into()
+}
+
+/// A deposit as the form takes it: whole units with the currency's decimals
+/// (`12.50` USD, `1250` JPY, `1.250` KWD), from the minor amount without a float.
+fn whole_units(deposit: Money) -> String {
+    let places = deposit.currency.decimals();
+    let scale = 10_i64.pow(places);
+    let abs = deposit.minor.unsigned_abs();
+    let sign = if deposit.minor < 0 { "-" } else { "" };
+    if places == 0 {
+        return format!("{sign}{abs}");
+    }
+    let scale = scale as u64;
+    format!(
+        "{sign}{}.{:0width$}",
+        abs / scale,
+        abs % scale,
+        width = places as usize
+    )
+}
+
 /// The name of the thumbnail the upload pipeline derives from a photo (src/lib.rs).
 const THUMB: &str = "thumb";
 
@@ -364,6 +443,8 @@ impl Validate for SampleForm {
             .min(0)
             .max(100_000)
             .decimal(0, 2);
+        // The deposit and the load: an amount checked with its currency or unit.
+        self.amount_rules(v);
         // Rules for each item of a list: errors are keyed `colors.0`,
         // `colors.1`…, and `error('colors')` shows the first.
         v.each("colors", &self.colors, |colour| colour.one_of(COLOURS));
@@ -389,6 +470,21 @@ impl Validate for SampleForm {
 // [/explain:fields.rules]
 
 impl SampleForm {
+    /// The rules of the two exact amounts: the deposit follows its currency's
+    /// decimals (`10.5` JPY is refused); the load is exact to the thousandth
+    /// (`2.5004` is refused, not rounded), not negative, in a unit the table knows.
+    fn amount_rules(&self, v: &mut Validator) {
+        v.field("deposit_currency", &self.deposit_currency)
+            .one_of(DEPOSIT_CURRENCIES);
+        v.field("deposit", &self.deposit)
+            .money(&self.deposit_currency);
+        v.field("load", &self.load)
+            .quantity(3)
+            .quantity_min("0")
+            .quantity_max("100000");
+        v.field("load_unit", &self.load_unit).unit(&load_units());
+    }
+
     /// Copies the form into the sample, storing the files: the photo on
     /// the public part of the disk (`/storage/…`, or the bucket's address
     /// on S3), the manual privately. Returns the keys of files it replaced,
@@ -403,6 +499,23 @@ impl SampleForm {
         sample.stock = self.stock;
         sample.weight_kg = self.weight_kg;
         sample.price = crate::money::from_whole(self.price, &state.config.currency);
+        // The rules checked the amount against the code; an empty amount
+        // clears both columns together.
+        sample.deposit = match (
+            self.deposit.as_deref().map(str::trim),
+            Currency::parse(&self.deposit_currency),
+        ) {
+            (Some(text), Ok(currency)) if !text.is_empty() => Money::parse(text, currency).ok(),
+            _ => None,
+        };
+        // The rules checked the text, so it parses; an empty load is None.
+        sample.load = self
+            .load
+            .as_deref()
+            .map(str::trim)
+            .filter(|text| !text.is_empty())
+            .and_then(|text| Quantity::<3>::parse_exact(text).ok());
+        sample.load_unit = self.load_unit;
         sample.available = self.available;
         sample.size = self.size;
         sample.colors = DbJson(self.colors);
@@ -450,8 +563,17 @@ async fn form_context(
         .map(|b| b.name)
         .collect();
     let scale = crate::money::scale(&state.config.currency) as f64;
+    let stored = sample.and_then(|s| s.deposit);
     Ok(context! {
         sample,
+        // The deposit in whole units, and its currency (USD for a new one).
+        deposit => stored.map(whole_units),
+        deposit_currency => stored.map(|m| m.currency.code()).unwrap_or("USD"),
+        deposit_currencies => DEPOSIT_CURRENCIES,
+        // The load as typed (all three decimals) and its unit (kg for a new one).
+        load => sample.and_then(|s| s.load).map(|q| q.to_string()),
+        load_unit => sample.map(|s| s.load_unit.as_str()).unwrap_or("kg"),
+        load_units => LOAD_UNITS,
         // The price in dollars, as the form takes it.
         price => sample.map(|s| format!("{:.2}", s.price as f64 / scale)),
         colours => COLOURS,

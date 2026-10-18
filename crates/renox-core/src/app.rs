@@ -56,16 +56,25 @@ Commands:
                             Delete batches finished more than N hours ago (default 24)
   webhook:failed            List webhook calls whose processing failed
   webhook:retry <id>        Process a stored webhook call again
+  webhook:endpoints         List the outbound webhook endpoints
+  webhook:deliveries [--endpoint N] [--failed]
+                            List outbound webhook deliveries, newest first
+  webhook:redeliver <id>    Send a stored outbound delivery again
+  webhook:prune-deliveries [--days N]
+                            Delete deliveries older than N days (default 30)
   ui:publish [--force]      Copy the UI kit (renox/ui.html and its CSS) into the app to change it
   sequence:list             List the numbering series (`Sequence`) and their last numbers
   cache:prune               Delete expired rows of the database cache store
   session:prune             Delete expired sessions (SESSION_DRIVER=database)
+  idempotency:prune [--days N]
+                            Delete offline-form keys older than N days (default 7)
   import:prune [--days N]   Delete the records of imports whose undo window ended N days ago (default 0)
   schedule:list             List scheduled tasks and when they run next
   schedule:run <task>       Run one scheduled task now
   schedule:work             Run scheduled tasks (when SCHEDULER=false for serve)
   route:list                List every route with its name, module and guards
   view:check                Compile every template; check route names and typed views
+  state:diagram [Model]    Print a state machine as a Mermaid diagram (no name: list them)
   view:data [--out P]       Write .vscode/renox-components.json for editor autocomplete
   db:shell                  Run SQL against the database (`.tables`, `.quit`)
   down [--secret S] [--retry N]
@@ -112,12 +121,17 @@ pub struct App {
     layers: Vec<AppLayer>,
     limiters: HashMap<String, crate::rate_limit::LimitRule>,
     detect_locale: bool,
+    rtl_locales: Option<Vec<String>>,
     disks: Vec<(String, DiskSettings)>,
     uploads: crate::upload::Pipeline,
     mailers: Vec<(String, MailerSettings)>,
     mailer_limits: HashMap<String, crate::queue::Limit>,
     xsrf_cookie: bool,
     settings_seed: Option<std::path::PathBuf>,
+    theme: Option<crate::theme::Theme>,
+    theme_chooser: Option<crate::theme::ThemeFn>,
+    pwa: Option<crate::pwa::Pwa>,
+    pwa_chooser: Option<crate::pwa::PwaFn>,
 }
 
 /// How `App::mailer` gets a mailer's settings once the configuration is loaded.
@@ -148,12 +162,17 @@ impl App {
             layers: Vec::new(),
             limiters: HashMap::new(),
             detect_locale: false,
+            rtl_locales: None,
             disks: Vec::new(),
             uploads: crate::upload::Pipeline::new(),
             mailers: Vec::new(),
             mailer_limits: HashMap::new(),
             xsrf_cookie: false,
             settings_seed: None,
+            theme: None,
+            theme_chooser: None,
+            pwa: None,
+            pwa_chooser: None,
         }
     }
 
@@ -172,6 +191,22 @@ impl App {
     /// ```
     pub fn detect_locale(mut self) -> Self {
         self.detect_locale = true;
+        self
+    }
+
+    /// Replaces the languages written right to left (by default Arabic,
+    /// Hebrew, Persian, Urdu, Pashto, Yiddish, Divehi and Central Kurdish)
+    /// with `locales`, matched by base language (`ar` covers `ar-AE`).
+    /// `AppState::direction` then answers from this list.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// # let _ =
+    /// App::new().rtl_locales(&["ar", "he"])
+    /// # ;
+    /// ```
+    pub fn rtl_locales(mut self, locales: &[&str]) -> Self {
+        self.rtl_locales = Some(locales.iter().map(|l| (*l).to_owned()).collect());
         self
     }
 
@@ -392,6 +427,14 @@ impl App {
         self
     }
 
+    /// Registers `M`'s state machine by name, so `rnx state:diagram Order` and
+    /// the admin panel can find it, and the model for `db:check`.
+    pub fn state_machine<M: crate::state_machine::StateMachine>(mut self) -> Self {
+        self.registry.model::<M>();
+        crate::state_machine::register::<M>();
+        self
+    }
+
     /// Registers a page struct for `view:check`, which then reports the variables its
     /// template uses that the struct lacks; see [`crate::ViewData`]. Registering it twice
     /// keeps one.
@@ -418,6 +461,17 @@ impl App {
     /// Lets queue workers run jobs of type `J`.
     pub fn job<J: Job>(mut self) -> Self {
         self.registry.job::<J>();
+        self
+    }
+
+    /// Makes `E` a webhook event named `name`; see
+    /// [`Registry::webhook_event`].
+    pub fn webhook_event<E: Event>(
+        mut self,
+        name: &str,
+        map: impl Fn(&E) -> serde_json::Value + Send + Sync + 'static,
+    ) -> Self {
+        self.registry.webhook_event(name, map);
         self
     }
 
@@ -646,6 +700,98 @@ impl App {
         self
     }
 
+    /// Gives the app one brand: its accent tokens are served as a hashed,
+    /// cacheable stylesheet that `<rx-theme/>` links after `<rx-ui/>`.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::theme::{Brand, Theme};
+    /// let theme = Theme::from_brand(&Brand::new("#0F766E")).unwrap();
+    /// # let _ =
+    /// App::new().theme(theme)
+    /// # ;
+    /// ```
+    pub fn theme(mut self, theme: crate::theme::Theme) -> Self {
+        self.theme = Some(theme);
+        self
+    }
+
+    /// Makes the app installable on phones: serves `/manifest.webmanifest`,
+    /// the service worker `/sw.js`, the offline page `/_renox/offline` and
+    /// the icons, all outside sessions (no cookie is set). A
+    /// `public/manifest.webmanifest` or `public/sw.js` replaces the
+    /// generated one. Booting fails when an icon file is missing or the
+    /// offline view doesn't render.
+    ///
+    /// ```
+    /// use renox::prelude::*;
+    /// use renox::pwa::Pwa;
+    /// # let _ =
+    /// App::new().pwa(Pwa::new("Bikeshop").icons("public/icons"))
+    /// # ;
+    /// ```
+    pub fn pwa(mut self, pwa: crate::pwa::Pwa) -> Self {
+        self.pwa = Some(pwa);
+        self
+    }
+
+    /// Picks the brand per request, e.g. by host. Return `Ok(None)` to use
+    /// the app's [`theme`](App::theme) (or the kit's look when there is none);
+    /// an `Err` is logged and falls back the same way. It runs for every
+    /// rendered page, so build each `Theme` once and hand out clones rather
+    /// than calling `Theme::from_brand` per request.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::theme::{Brand, Theme, ThemeRequest};
+    /// let north = Theme::from_brand(&Brand::new("#0F766E")).unwrap();
+    /// # let _ =
+    /// App::new().theme_for(move |req: ThemeRequest| {
+    ///     let north = north.clone();
+    ///     async move { Ok((req.host == "north.example.com").then_some(north)) }
+    /// })
+    /// # ;
+    /// ```
+    pub fn theme_for<F, Fut>(mut self, choose: F) -> Self
+    where
+        F: Fn(crate::theme::ThemeRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<crate::theme::Theme>>> + Send + 'static,
+    {
+        self.theme_chooser = Some(crate::theme::theme_fn(choose));
+        self
+    }
+
+    /// Brands the installable app per request, e.g. by host: the manifest
+    /// (name, short name, theme colour, icons), the offline page and the
+    /// service worker (whose version includes the brand) follow the
+    /// [`PwaBrand`](crate::pwa::PwaBrand) the closure returns, and the
+    /// responses send `Vary: Host`. Return `Ok(None)` to use the static
+    /// [`Pwa`](crate::pwa::Pwa); an `Err` is logged and falls back the same
+    /// way. Needs [`App::pwa`] (booting fails without it). Brand icons are
+    /// read and checked on first use; invalid ones are logged and the static
+    /// icons stay. The closure runs for every manifest, worker and offline
+    /// request, so keep it cheap.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// use renox::pwa::{Pwa, PwaBrand, PwaRequest};
+    /// # let _ =
+    /// App::new()
+    ///     .pwa(Pwa::new("Bikeshop").icons("public/icons"))
+    ///     .pwa_for(|req: PwaRequest| async move {
+    ///         Ok((req.host() == "north.example.com").then(|| PwaBrand::new("North Bikes")))
+    ///     })
+    /// # ;
+    /// ```
+    pub fn pwa_for<F, Fut>(mut self, resolve: F) -> Self
+    where
+        F: Fn(crate::pwa::PwaRequest) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<crate::pwa::PwaBrand>>> + Send + 'static,
+    {
+        self.pwa_chooser = Some(crate::pwa::pwa_fn(resolve));
+        self
+    }
+
     /// Gives every view a value computed per request; see [`Registry::share`].
     pub fn share<F, Fut, T>(mut self, key: &str, compute: F) -> Self
     where
@@ -654,6 +800,24 @@ impl App {
         T: serde::Serialize,
     {
         self.registry.share(key, compute);
+        self
+    }
+
+    /// Adds `link` to the navigation menu `menu`; see [`Registry::nav`].
+    pub fn nav(mut self, menu: &str, link: crate::nav::NavLink) -> Self {
+        self.registry.nav(menu, link);
+        self
+    }
+
+    /// Registers a key for signed requests; see [`Registry::signing_key`].
+    pub fn signing_key(mut self, key_id: &str, secret: &str) -> Self {
+        self.registry.signing_key(key_id, secret);
+        self
+    }
+
+    /// Hides the link with `key` from the menu `menu`; see [`Registry::nav_hide`].
+    pub fn nav_hide(mut self, menu: &str, key: &str) -> Self {
+        self.registry.nav_hide(menu, key);
         self
     }
 
@@ -686,6 +850,8 @@ impl App {
         self.registry
             .job::<crate::auth::passwordless::SendLoginSecret>();
         self.registry.job::<crate::webhook::ProcessWebhook>();
+        self.registry
+            .job::<crate::webhook::outbound::DeliverWebhook>();
         #[cfg(feature = "server-events")]
         self.registry.job::<crate::analytics::ServerEvent>();
         let mut migrations = crate::queue::MIGRATIONS.to_vec();
@@ -695,17 +861,22 @@ impl App {
         migrations.push(crate::import::MIGRATION);
         migrations.extend(crate::webhook::MIGRATIONS);
         migrations.push(crate::db::SEQUENCE_MIGRATION);
+        migrations.push(crate::state_machine::MIGRATION);
+        migrations.push(crate::custom_fields::MIGRATION);
+        migrations.push(crate::idempotency::MIGRATION);
         migrations.extend(self.migrations);
         for module in &self.modules {
             migrations.extend_from_slice(module.migrations());
+            self.registry.contributions.set_module(module.name());
             module.register(&mut self.registry);
         }
         let Registry {
             jobs,
             listeners,
-            schedule,
+            mut schedule,
             duplicate_job,
             webhooks,
+            webhook_events,
             live_components,
             duplicate_live,
             commands,
@@ -727,6 +898,10 @@ impl App {
             view_data,
             settings_groups,
             settings_module,
+            nav_links,
+            nav_hidden,
+            signing_keys,
+            contributions,
         } = self.registry;
         if !settings_groups.is_empty() && !settings_module {
             return Err(anyhow!(
@@ -768,6 +943,7 @@ impl App {
                 anyhow!("two modules set a second login step (`Registry::second_factor`)").into(),
             );
         }
+        let nav = crate::nav::Nav::build(nav_links, nav_hidden)?;
         check_commands(&commands)?;
         schedule.check()?;
         let zone: Zone = config.timezone;
@@ -790,9 +966,11 @@ impl App {
         )> = Vec::new();
         let mut routes = RouteTable::default();
         let mut listing: Vec<RouteInfo> = Vec::new();
+        // Complete before any `routes_with` runs: every `register` is done.
+        let contributions = Arc::new(contributions);
         for module in &self.modules {
             tracing::debug!(module = module.name(), "registering module");
-            let parts = module.routes().into_parts();
+            let parts = module.routes_with(&contributions).into_parts();
             check_clashes(&listing, &parts.listing, None, module.name())?;
             router = merge_routes(router, parts.router, module.name())?;
             for (name, path) in parts.names {
@@ -866,8 +1044,25 @@ impl App {
                 *domain_router = layer(std::mem::take(domain_router));
             }
         }
-        listing.extend(framework_routes(&config));
+        listing.extend(framework_routes(
+            &config,
+            self.pwa.is_some(),
+            self.pwa_chooser.is_some(),
+        ));
         listing.sort_by(|a, b| (&a.path, &a.method).cmp(&(&b.path, &b.method)));
+        // Keys of `.offline()` routes expire by themselves: prune them daily
+        // wherever the scheduler runs (unless the app scheduled it itself).
+        if config.scheduler
+            && listing
+                .iter()
+                .any(|info| info.middleware.iter().any(|m| m == "offline"))
+            && !schedule.has("idempotency:prune")
+        {
+            schedule.daily_at("03:30", "idempotency:prune", |state| async move {
+                crate::idempotency::prune_retained(&state, None).await?;
+                Ok(())
+            });
+        }
         // The current route's name follows the request's method (#299).
         for info in &listing {
             if let Some(name) = &info.name {
@@ -988,9 +1183,15 @@ impl App {
         let state = AppState::new(crate::state::AppStateInner {
             security,
             webhooks: Arc::new(webhooks),
+            webhook_events: Arc::new(webhook_events),
             live_components: Arc::new(live_components),
             mailer,
             mailers: Arc::new(mailers),
+            themes: crate::theme::ThemeRegistry::new(
+                self.theme.as_ref(),
+                self.theme_chooser.clone(),
+            ),
+            pwa: self.pwa.clone().map(Arc::new),
             channel_limits: Arc::new(channel_limits),
             mailer_limits: Arc::new(self.mailer_limits),
             queue: Queue::new(db.clone(), key.clone()),
@@ -1035,6 +1236,9 @@ impl App {
             channels: Arc::new(channels),
             reporters: Arc::new(reporters),
             second_factor: second_factor.map(Arc::new),
+            nav: Arc::new(nav),
+            signing_keys: Arc::new(signing_keys),
+            contributions,
             account_sections: {
                 account_sections.sort_by_key(|section| section.order);
                 Arc::new(account_sections)
@@ -1049,6 +1253,7 @@ impl App {
             provided: Arc::new(module_provided),
             throttle: Arc::new(LoginThrottle::new(shared_counters.clone())),
             detect_locale: self.detect_locale,
+            rtl_locales: self.rtl_locales.map(Arc::new),
         });
         if let Some(second) = &state.second_factor
             && state.url(&second.challenge, &[]).is_err()
@@ -1061,7 +1266,30 @@ impl App {
         }
 
         let public = embedded.map(|e| e.public);
-        let default = build_router(router, state.clone(), public, fallback, &static_assets);
+        let pwa = match self.pwa.take() {
+            Some(pwa) => {
+                let precache = assets::precache_urls();
+                let assets = pwa
+                    .assets_with(
+                        |view| state.views.render(view, serde_json::json!({})),
+                        &precache,
+                        "",
+                        public,
+                    )
+                    .map_err(|e| anyhow!("{e:#}"))?;
+                let resolver = self
+                    .pwa_chooser
+                    .take()
+                    .map(|choose| Arc::new(crate::pwa::PwaResolver::new(choose, precache)));
+                Some((Arc::new(pwa), Arc::new(assets), resolver))
+            }
+            None if self.pwa_chooser.is_some() => {
+                return Err(anyhow!("App::pwa_for needs App::pwa").into());
+            }
+            None => None,
+        };
+        let pwa = pwa.as_ref();
+        let default = build_router(router, state.clone(), public, fallback, &static_assets, pwa);
         let router = if domains.is_empty() {
             default
         } else {
@@ -1070,7 +1298,7 @@ impl App {
                 .map(|(pattern, router, fallback)| {
                     (
                         pattern,
-                        build_router(router, state.clone(), public, fallback, &static_assets),
+                        build_router(router, state.clone(), public, fallback, &static_assets, pwa),
                     )
                 })
                 .collect();
@@ -1117,12 +1345,15 @@ impl App {
     /// ```
     pub async fn run_args(self, args: impl IntoIterator<Item = impl Into<String>>) -> Result {
         let args: Vec<String> = args.into_iter().map(Into::into).collect();
-        self.run_command(&args).await
+        // The command future is large (one arm per command), and a debug build
+        // copies it: on the heap it cannot overflow a test's or a small thread's
+        // stack (Windows, 1 MiB main stack).
+        Box::pin(self.run_command(&args)).await
     }
 
     /// Starts the server on the current Tokio runtime.
     pub async fn serve(self) -> Result {
-        self.run_command(&[]).await
+        Box::pin(self.run_command(&[])).await
     }
 
     async fn run_command(self, args: &[String]) -> Result {
@@ -1188,6 +1419,25 @@ impl App {
                 println!("Checked {checked} templates: {} problems.", problems.len());
                 if !problems.is_empty() {
                     return Err(anyhow!("{} template problem(s)", problems.len()).into());
+                }
+            }
+            "state:diagram" if !kernel.commands.iter().any(|c| c.name == "state:diagram") => {
+                match args.get(1) {
+                    Some(name) => match crate::state_machine::machine_info(name) {
+                        Some(info) => println!("{}", info.mermaid.trim_end()),
+                        None => {
+                            return Err(anyhow!(
+                                "no state machine called `{name}` (register it with App::state_machine); known: {}",
+                                crate::state_machine::machine_names().join(", ")
+                            )
+                            .into());
+                        }
+                    },
+                    None => {
+                        for name in crate::state_machine::machine_names() {
+                            println!("{name}");
+                        }
+                    }
                 }
             }
             "view:data" if !kernel.commands.iter().any(|c| c.name == "view:data") => {
@@ -1268,6 +1518,72 @@ impl App {
                     return Err(anyhow!("there is no webhook call #{id}").into());
                 }
             }
+            "webhook:endpoints" => {
+                let endpoints = crate::webhook::outbound::Endpoint::list(&kernel.state.db).await?;
+                if endpoints.is_empty() {
+                    println!("No webhook endpoints.");
+                }
+                for e in endpoints {
+                    let state = if e.enabled {
+                        "enabled".to_owned()
+                    } else {
+                        format!("disabled: {}", e.disabled_reason.unwrap_or_default())
+                    };
+                    let events = if e.events.is_empty() {
+                        "all events".to_owned()
+                    } else {
+                        e.events.join(",")
+                    };
+                    println!(
+                        "  #{} {} ({state}) {events} failures={}",
+                        e.id, e.url, e.consecutive_failures
+                    );
+                }
+            }
+            "webhook:deliveries" => {
+                let endpoint = flag_value(args, "--endpoint")?.map(i64::from);
+                let failed = args.iter().any(|a| a == "--failed");
+                let deliveries = crate::webhook::outbound::Delivery::list(
+                    &kernel.state.db,
+                    endpoint,
+                    failed,
+                    100,
+                )
+                .await?;
+                if deliveries.is_empty() {
+                    println!("No webhook deliveries.");
+                }
+                for d in deliveries {
+                    let code = d
+                        .response_status
+                        .map(|c| format!(" {c}"))
+                        .unwrap_or_default();
+                    let error = d.error.map(|e| format!(": {e}")).unwrap_or_default();
+                    println!(
+                        "  #{} endpoint #{} {} {} attempt {}{code}{error}",
+                        d.id, d.endpoint_id, d.event_type, d.status, d.attempt
+                    );
+                }
+            }
+            "webhook:redeliver" => {
+                let id: i64 = args
+                    .get(1)
+                    .and_then(|id| id.parse().ok())
+                    .ok_or_else(|| anyhow!("usage: webhook:redeliver <id>"))?;
+                if crate::webhook::outbound::Delivery::redeliver(&kernel.state, id).await? {
+                    println!("Webhook delivery #{id} queued again.");
+                } else {
+                    return Err(anyhow!("there is no webhook delivery #{id}").into());
+                }
+            }
+            "webhook:prune-deliveries" => {
+                let days = flag_value(args, "--days")?.unwrap_or(30);
+                let age = Duration::from_secs(u64::from(days) * 86_400);
+                println!(
+                    "Deleted {} webhook delivery record(s) older than {days} day(s).",
+                    crate::webhook::outbound::Delivery::prune(&kernel.state.db, age).await?
+                );
+            }
             "queue:failed" => {
                 let failed = kernel.state.queue.failed().await?;
                 if failed.is_empty() {
@@ -1347,6 +1663,13 @@ impl App {
                 "Deleted {} expired cache row(s).",
                 kernel.state.cache.prune().await?
             ),
+            "idempotency:prune" => {
+                let days = flag_value(args, "--days")?;
+                println!(
+                    "Deleted {} idempotency key(s) past retention.",
+                    crate::idempotency::prune_retained(&kernel.state, days).await?
+                );
+            }
             "import:prune" => {
                 let days = flag_value(args, "--days")?.unwrap_or(0);
                 let age = Duration::from_secs(u64::from(days) * 86_400);
@@ -1467,9 +1790,14 @@ const BUILT_IN_COMMANDS: &[&str] = &[
     "queue:prune-batches",
     "webhook:failed",
     "webhook:retry",
+    "webhook:endpoints",
+    "webhook:deliveries",
+    "webhook:redeliver",
+    "webhook:prune-deliveries",
     "sequence:list",
     "cache:prune",
     "session:prune",
+    "idempotency:prune",
     "import:prune",
     "ui:publish",
     "schedule:list",
@@ -1715,7 +2043,7 @@ impl Kernel {
 }
 
 /// Routes Renox adds itself.
-fn framework_routes(config: &Config) -> Vec<RouteInfo> {
+fn framework_routes(config: &Config, pwa: bool, pwa_for: bool) -> Vec<RouteInfo> {
     let route = |method: &str, path: &str| RouteInfo {
         method: method.to_owned(),
         path: path.to_owned(),
@@ -1729,12 +2057,23 @@ fn framework_routes(config: &Config) -> Vec<RouteInfo> {
         route("GET", "/robots.txt"),
         route("GET", "/favicon.ico"),
         route("GET", "/_renox/{asset}"),
+        route("GET", "/_renox/theme/{hash}.css"),
         route("GET", "/_renox/files/{*key}"),
         route("POST", "/_renox/grid/{grid}/prefs"),
         route("DELETE", "/_renox/grid/{grid}/prefs"),
         route("POST", "/_renox/live/{component}/{action}"),
+        route("GET", "/_renox/csrf"),
         route("GET", "/storage/{*path}"),
     ];
+    if pwa {
+        routes.push(route("GET", "/manifest.webmanifest"));
+        routes.push(route("GET", "/sw.js"));
+        routes.push(route("GET", crate::pwa::OFFLINE_ROUTE));
+        routes.push(route("GET", "/_renox/pwa/icons/{file}"));
+        if pwa_for {
+            routes.push(route("GET", "/_renox/pwa/icons/{hash}/{file}"));
+        }
+    }
     if config.debug {
         routes.push(route("GET", "/_renox/mail"));
         routes.push(route("GET", "/_renox/mail/{id}"));
@@ -1967,6 +2306,7 @@ fn build_router(
     embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
     fallback: Option<axum::routing::MethodRouter<AppState>>,
     static_assets: &[crate::registry::StaticAsset],
+    pwa: Option<&crate::pwa::PwaParts>,
 ) -> Router {
     // No route and no public file: the app's fallback (`Routes::fallback`), else a 404.
     let fallback = fallback.map(|handler| handler.with_state(state.clone()));
@@ -1985,6 +2325,7 @@ fn build_router(
     let router = router
         .merge(crate::storage::router())
         .merge(crate::grid::router())
+        .merge(csrf::router())
         .merge(crate::live_component::route::router());
     let router = if state.config.debug {
         router
@@ -2082,6 +2423,7 @@ fn build_router(
         .merge(assets::module_router(static_assets))
         .merge(crate::health::router())
         .merge(robots(&state, embedded_public))
+        .merge(pwa_routes(&state, embedded_public, pwa))
         .merge(favicon(&state, embedded_public))
         .merge(crate::live::router())
         .merge(public_files(&state))
@@ -2143,6 +2485,33 @@ fn robots(
     } else {
         crate::seo::robots_router(state)
     }
+}
+
+/// The PWA routes, outside sessions. An app's own `public/manifest.webmanifest`
+/// or `public/sw.js` replaces the generated one.
+fn pwa_routes(
+    state: &AppState,
+    embedded_public: Option<&'static [(&'static str, &'static [u8])]>,
+    pwa: Option<&crate::pwa::PwaParts>,
+) -> Router<AppState> {
+    let Some((pwa, assets, resolver)) = pwa else {
+        return Router::new();
+    };
+    if let Some(resolver) = resolver {
+        return resolver.clone().router(
+            pwa.clone(),
+            assets.clone(),
+            !has_public_file(state, embedded_public, "manifest.webmanifest"),
+            !has_public_file(state, embedded_public, "sw.js"),
+        );
+    }
+    let mut router = assets
+        .clone()
+        .router(!has_public_file(state, embedded_public, "sw.js"));
+    if !has_public_file(state, embedded_public, "manifest.webmanifest") {
+        router = router.merge(pwa.clone().manifest_router());
+    }
+    router
 }
 
 /// `/favicon.ico` answers 204 (no icon, cached for a day) unless the app

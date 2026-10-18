@@ -1,0 +1,7 @@
+{
+  "id": "dp_1Abc",
+  "object": "dispute",
+  "status": "won",
+  "payment_intent": "pi_3Abc",
+  "charge": "ch_3Abc"
+}

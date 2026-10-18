@@ -460,12 +460,18 @@
     if (!list) return;
     closeMenus(list);
     list.hidden = false;
-    // Hangs from the button's right edge; on a narrow screen, never past
-    // the left one.
-    list.style.right = "";
+    // Hangs from the button's end edge (right, or left when reading right to
+    // left); on a narrow screen, never past the screen's other side.
+    list.style.insetInlineEnd = "";
     // (measured from the menu's box: the list's own grows in as it opens)
-    var left = list.parentElement.getBoundingClientRect().right - list.offsetWidth;
-    if (left < 8) list.style.right = (left - 8) + "px";
+    var box = list.parentElement.getBoundingClientRect();
+    if (getComputedStyle(list).direction === "rtl") {
+      var over = box.left + list.offsetWidth - (window.innerWidth - 8);
+      if (over > 0) list.style.insetInlineEnd = (-over) + "px";
+    } else {
+      var left = box.right - list.offsetWidth;
+      if (left < 8) list.style.insetInlineEnd = (left - 8) + "px";
+    }
     button.setAttribute("aria-expanded", "true");
     var items = menuItems(list);
     var target = focusLast ? items[items.length - 1] : items[0];
@@ -614,8 +620,10 @@
       var tabs = Array.prototype.slice.call(target.closest('[role="tablist"]').querySelectorAll('[role="tab"]'));
       var j = tabs.indexOf(target);
       var next = null;
-      if (event.key === "ArrowRight") next = tabs[(j + 1) % tabs.length];
-      else if (event.key === "ArrowLeft") next = tabs[(j - 1 + tabs.length) % tabs.length];
+      // The arrow that points along the reading direction is the next tab.
+      var rtl = getComputedStyle(target.closest('[role="tablist"]')).direction === "rtl";
+      if (event.key === (rtl ? "ArrowLeft" : "ArrowRight")) next = tabs[(j + 1) % tabs.length];
+      else if (event.key === (rtl ? "ArrowRight" : "ArrowLeft")) next = tabs[(j - 1 + tabs.length) % tabs.length];
       else if (event.key === "Home") next = tabs[0];
       else if (event.key === "End") next = tabs[tabs.length - 1];
       if (next) { event.preventDefault(); selectTab(next, true); }
@@ -1031,7 +1039,8 @@
     var height = pop.offsetHeight, width = pop.offsetWidth;
     var top = box.bottom + 6;
     if (top + height > window.innerHeight - 8 && box.top - height - 6 > 8) top = box.top - height - 6;
-    var left = Math.min(box.right - width, window.innerWidth - width - 8);
+    // Under the field's end edge: right-aligned, or left-aligned when reading right to left.
+    var left = Math.min(getComputedStyle(input).direction === "rtl" ? box.left : box.right - width, window.innerWidth - width - 8);
     pop.style.top = Math.max(8, top) + "px";
     pop.style.left = Math.max(8, left) + "px";
     requestAnimationFrame(function () { if (cal.focus) cal.focus(); });

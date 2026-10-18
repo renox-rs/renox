@@ -1,0 +1,15 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1 id="heading">Field visits</h1>
+{#- An offline form: a post that cannot reach the server waits on the device. -#}
+<rx-form id="visit" action="/offline/visits" enctype="multipart/form-data" offline="visits">
+  <label>Note <input id="note" name="note"></label>
+  <p data-error-for="note"></p>
+  <label>Photo <input id="photo" type="file" name="photo"></label>
+  <button id="save" class="rx-button" type="submit">Save visit</button>
+</rx-form>
+<form id="logout" method="post" action="/logout">
+  {{ csrf_field() }}
+  <button type="submit">Log out</button>
+</form>
+{% endblock %}

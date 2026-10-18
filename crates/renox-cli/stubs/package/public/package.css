@@ -1,0 +1,5 @@
+/* The package's styles, served at /___lib__/__lib__-0.1.0.css (src/assets.rs).
+   Link it from a page: <link rel="stylesheet" href="/___lib__/__lib__-0.1.0.css"> */
+.__lib__-entry {
+  padding: 0.5rem 0;
+}

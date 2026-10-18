@@ -19,6 +19,11 @@ const PARTS = [
   ["history", "[data-rx-history]"],
   ["receipt", "[data-rx-receipt]"],
   ["week", "[data-rx-week]"],
+  ["signature", "[data-rx-signature]"],
+  ["camera", "[data-rx-camera]"],
+  ["map", "[data-rx-map], [data-rx-map-picker]"],
+  ["geolocate", "[data-rx-geolocate]"],
+  ["barcode", "[data-rx-barcode]"],
 ];
 
 const reduce = window.matchMedia("(prefers-reduced-motion: reduce)");

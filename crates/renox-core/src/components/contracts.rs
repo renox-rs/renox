@@ -260,6 +260,8 @@ const INPUT_TYPES: &[&str] = &[
     "search",
     "color",
     "range",
+    "money",
+    "quantity",
 ];
 
 const FORM_METHODS: &[&str] = &["GET", "POST", "PUT", "PATCH", "DELETE"];
@@ -558,6 +560,28 @@ pub(crate) static BUILTIN: &[Contract] = &[
             "styles",
             "Set to false to leave out the stylesheet (an app that builds its own).",
         )],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
+        tag: "rx-theme",
+        doc: "The request's brand stylesheet link, after `<rx-ui/>` (`renox_theme()`); nothing without a theme.",
+        render: Render::Function("renox_theme"),
+        props: &[],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
+        tag: "rx-pwa",
+        doc: "The installable-app head tags: manifest link, theme colour, touch icon and the service worker registration (`renox_pwa()`); nothing without `App::pwa`.",
+        render: Render::Function("renox_pwa"),
+        props: &[],
         slots: &[],
         events: &[],
         route_prop: None,
@@ -1077,6 +1101,85 @@ pub(crate) static BUILTIN: &[Contract] = &[
         parent: None,
     },
     Contract {
+        tag: "rx-custom-fields",
+        doc: "The custom fields of a record: inputs in a form, entries on a page.",
+        render: Render::Macro {
+            module: Module::Custom {
+                path: "renox/custom_fields.html",
+                alias: "__rx_custom_fields",
+            },
+            name: "custom_fields",
+        },
+        props: &[
+            data(
+                "fields",
+                true,
+                "The list from `CustomField::views_for(&db, \"parties\", locale, auth.as_ref())` (`views` without a viewer masks sensitive fields).",
+            ),
+            text(
+                "name",
+                false,
+                "The model's `Json<CustomValues>` column (`extra`); inputs are named `extra[key]`.",
+            ),
+            data(
+                "values",
+                false,
+                "The record's custom values (`party.extra.shown(&db, &fields)` so masked values stay out of the context).",
+            ),
+            choice(
+                "mode",
+                &["form", "show"],
+                "`form` (default) draws inputs, `show` draws entries.",
+            ),
+            text("id", false, "The element's id."),
+        ],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
+        tag: "rx-transition-actions",
+        doc: "A button for each state machine transition the user may run now.",
+        render: Render::Macro {
+            module: Module::Custom {
+                path: "renox/transition_actions.html",
+                alias: "__rx_transitions",
+            },
+            name: "transition_actions",
+        },
+        props: &[
+            data(
+                "actions",
+                true,
+                "The list from `record.available(&user, &db)`.",
+            ),
+            text(
+                "action",
+                true,
+                "The address transitions post to (`/orders/1/transitions`); each button adds `/name`.",
+            ),
+            text("label", false, "The group's accessible name."),
+            text(
+                "reason-label",
+                false,
+                "The placeholder of the reason field.",
+            ),
+            text(
+                "approval-label",
+                false,
+                "The note under a button that waits for approval.",
+            ),
+            text("id", false, "The element's id."),
+        ],
+        slots: &[],
+        events: &[],
+        route_prop: None,
+        attrs: false,
+        parent: None,
+    },
+    Contract {
         tag: "rx-form",
         doc: "A form: the CSRF field and the method field are written for you.",
         render: Render::Special(Special::Form),
@@ -1090,6 +1193,11 @@ pub(crate) static BUILTIN: &[Contract] = &[
             flag(
                 "live",
                 "Checks the fields with the server as people leave them.",
+            ),
+            text(
+                "offline",
+                false,
+                "The name of an outbox: a post that fails for lack of network is kept and sent later. The route must be `.offline()`; the page loads the outbox script.",
             ),
         ],
         slots: &[DEFAULT_SLOT],
@@ -1139,6 +1247,21 @@ pub(crate) static BUILTIN: &[Contract] = &[
             text("min", false, "The smallest value (number and date types)."),
             text("max", false, "The largest value (number and date types)."),
             text("step", false, "The step between values (number types)."),
+            text(
+                "currency",
+                false,
+                "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
+            ),
+            text(
+                "scale",
+                false,
+                "For type quantity: the decimals of the quantity (0 to 9); sets the step.",
+            ),
+            text(
+                "unit",
+                false,
+                "For type quantity: the unit shown as the suffix (kg, m, ...).",
+            ),
         ],
         slots: &[],
         events: &[],
@@ -2232,8 +2355,16 @@ pub(crate) static BUILTIN: &[Contract] = &[
             module: Module::Ui,
             name: "nav_links",
         },
-        props: &[],
-        slots: &[DEFAULT_SLOT],
+        props: &[text(
+            "menu",
+            false,
+            "A menu's name: the links modules and the app added with `App::nav`, for this user.",
+        )],
+        slots: &[Slot {
+            optional: true,
+            doc: "Links written by hand, after the menu's.",
+            ..DEFAULT_SLOT
+        }],
         events: &[],
         route_prop: None,
         attrs: false,
@@ -2298,8 +2429,17 @@ pub(crate) static BUILTIN: &[Contract] = &[
                 "skip",
                 "Whether the skip link shows (`:skip=\"false\"` hides it).",
             ),
+            text(
+                "menu",
+                false,
+                "A menu's name: the links modules and the app added with `App::nav`, grouped, for this user.",
+            ),
         ],
-        slots: &[DEFAULT_SLOT],
+        slots: &[Slot {
+            optional: true,
+            doc: "Links written by hand, after the menu's.",
+            ..DEFAULT_SLOT
+        }],
         events: &[],
         route_prop: None,
         attrs: false,

@@ -1,0 +1,1698 @@
+//! State machines for models: declare a model's states and transitions
+//! once, and keep the history of every status change.
+//!
+//! A model implements [`StateMachine`] and describes its [`Machine`]: the
+//! states (with a tone and a terminal flag), and the [`Transition`]s between
+//! them with who may run each (a permission, a permission in the record's
+//! scope, or the system), the guards that must hold and the effects that run
+//! with it. The machine is plain data: [`Machine::mermaid`] draws it, and
+//! the engine and `available` read it.
+//!
+//! ```
+//! use renox::prelude::*;
+//! use renox::state_machine::{Machine, StateMachine, Transition};
+//!
+//! #[derive(DbEnum, Clone, Copy, PartialEq, Eq, Debug)]
+//! enum OrderStatus { Draft, Placed, Cancelled }
+//!
+//! #[derive(Model, serde::Serialize, Default, Clone)]
+//! struct Order { id: i64, status: String, lines: i64 }
+//!
+//! impl StateMachine for Order {
+//!     type State = OrderStatus;
+//!     const COLUMN: renox::db::Col<Self, OrderStatus> = renox::db::Col::new("status");
+//!
+//!     fn machine() -> Machine<Self> {
+//!         Machine::new()
+//!             .initial([OrderStatus::Draft])
+//!             .state(OrderStatus::Draft).tone("neutral")
+//!             .state(OrderStatus::Cancelled).tone("danger").terminal()
+//!             .transition(
+//!                 Transition::new("place")
+//!                     .from([OrderStatus::Draft])
+//!                     .to(OrderStatus::Placed)
+//!                     .permission("orders.place")
+//!                     .guard("has_lines", |order: &Order, _ctx| {
+//!                         Box::pin(async move {
+//!                             if order.lines > 0 { Ok(()) } else { Err("The order has no lines.".into()) }
+//!                         })
+//!                     }),
+//!             )
+//!             .transition(
+//!                 Transition::new("cancel")
+//!                     .from([OrderStatus::Draft, OrderStatus::Placed])
+//!                     .to(OrderStatus::Cancelled)
+//!                     .reason_required(),
+//!             )
+//!     }
+//! }
+//!
+//! assert!(Order::machine().mermaid().starts_with("stateDiagram-v2"));
+//! ```
+//!
+//! The storage every machine writes to is the `state_transitions` table (an
+//! every-app framework migration): one [`StateTransition`] row per change,
+//! written with [`TransitionRecord`] and read back with [`history`], oldest
+//! first, for an `<rx-history>` block.
+//!
+//! ```
+//! use renox::state_machine::{TransitionRecord, history};
+//! # async fn demo(db: renox::db::Db) -> renox::Result {
+//! TransitionRecord::new("orders", 42, "placed", "place")
+//!     .from("draft")
+//!     .actor(7)
+//!     .reason("customer paid by phone")
+//!     .record(&db)
+//!     .await?;
+//! let log = history(&db, "orders", 42).await?;
+//! assert_eq!(log[0].to_state, "placed");
+//! # Ok(()) }
+//! ```
+
+use std::collections::BTreeMap;
+use std::fmt;
+use std::future::Future;
+use std::marker::PhantomData;
+use std::sync::{Arc, PoisonError, RwLock};
+
+use futures_util::future::BoxFuture;
+use serde::Serialize;
+use serde_json::Value;
+
+use crate::auth::AuthUser;
+use crate::auth::permissions::Scope;
+use crate::db::{
+    Col, DateTime, Db, DbError, Executor, Json, Migration, Model, Row, Transaction, now, sql,
+};
+use crate::events::Event;
+use crate::{AppState, Result};
+
+pub(crate) const MIGRATION: Migration = crate::db::framework_migration!(
+    "state_machine",
+    "00010101000410_create_state_transitions_table"
+);
+
+/// One row of the `state_transitions` table: a status change of one record.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[non_exhaustive]
+pub struct StateTransition {
+    /// The row id.
+    pub id: i64,
+    /// The model's table, e.g. `orders`.
+    pub model: String,
+    /// The record's key as text.
+    pub record_key: String,
+    /// The state it left; `None` for an insert (`insert_in_state`).
+    pub from_state: Option<String>,
+    /// The state it entered.
+    pub to_state: String,
+    /// The transition's name, e.g. `place`.
+    pub transition: String,
+    /// The user who ran it; `None` for a system transition.
+    pub actor_id: Option<i64>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// Extra data kept with the change (`null` when none).
+    pub metadata: Value,
+    /// When it happened.
+    pub at: DateTime,
+}
+
+impl StateTransition {
+    fn from_row(row: &Row) -> std::result::Result<Self, DbError> {
+        let metadata: Json<Value> = row.try_get("metadata")?;
+        Ok(StateTransition {
+            id: row.try_get("id")?,
+            model: row.try_get("model")?,
+            record_key: row.try_get("record_key")?,
+            from_state: row.try_get("from_state")?,
+            to_state: row.try_get("to_state")?,
+            transition: row.try_get("transition")?,
+            actor_id: row.try_get("actor_id")?,
+            reason: row.try_get("reason")?,
+            metadata: metadata.0,
+            at: row.try_get("at")?,
+        })
+    }
+}
+
+/// A history row to write: build it, then [`record`](TransitionRecord::record)
+/// it on a `&Db` or inside the transition's transaction.
+#[derive(Debug, Clone, PartialEq)]
+#[must_use = "a transition record is only stored when you call `record`"]
+pub struct TransitionRecord {
+    model: String,
+    record_key: String,
+    from_state: Option<String>,
+    to_state: String,
+    transition: String,
+    actor_id: Option<i64>,
+    reason: Option<String>,
+    metadata: Value,
+}
+
+impl TransitionRecord {
+    /// A change of record `key` of `model` (its table) into `to_state`,
+    /// by the transition named `transition`.
+    pub fn new(
+        model: impl Into<String>,
+        key: impl ToString,
+        to_state: impl Into<String>,
+        transition: impl Into<String>,
+    ) -> Self {
+        TransitionRecord {
+            model: model.into(),
+            record_key: key.to_string(),
+            from_state: None,
+            to_state: to_state.into(),
+            transition: transition.into(),
+            actor_id: None,
+            reason: None,
+            metadata: Value::Null,
+        }
+    }
+
+    /// The state the record left (leave it out for an insert).
+    pub fn from(mut self, state: impl Into<String>) -> Self {
+        self.from_state = Some(state.into());
+        self
+    }
+
+    /// The user who ran it (leave it out for a system transition).
+    pub fn actor(mut self, user_id: i64) -> Self {
+        self.actor_id = Some(user_id);
+        self
+    }
+
+    /// Why it was done.
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+
+    /// Extra data to keep with the change.
+    pub fn metadata(mut self, metadata: Value) -> Self {
+        self.metadata = metadata;
+        self
+    }
+
+    /// Writes the row and returns it as stored.
+    pub async fn record<'c>(self, db: impl Executor<'c>) -> Result<StateTransition> {
+        let at = now();
+        let id: i64 = sql("INSERT INTO state_transitions \
+             (model, record_key, from_state, to_state, transition, actor_id, reason, metadata, at) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id")
+        .bind(self.model.as_str())
+        .bind(self.record_key.as_str())
+        .bind(self.from_state.as_deref())
+        .bind(self.to_state.as_str())
+        .bind(self.transition.as_str())
+        .bind(self.actor_id)
+        .bind(self.reason.as_deref())
+        .bind(Json(self.metadata.clone()))
+        .bind(at)
+        .scalar(db)
+        .await?;
+        Ok(StateTransition {
+            id,
+            model: self.model,
+            record_key: self.record_key,
+            from_state: self.from_state,
+            to_state: self.to_state,
+            transition: self.transition,
+            actor_id: self.actor_id,
+            reason: self.reason,
+            metadata: self.metadata,
+            at,
+        })
+    }
+}
+
+/// Every change of record `key` of `model` (its table), oldest first.
+pub async fn history<'c>(
+    db: impl Executor<'c>,
+    model: &str,
+    key: impl ToString,
+) -> Result<Vec<StateTransition>> {
+    let rows = sql(
+        "SELECT id, model, record_key, from_state, to_state, transition, actor_id, reason, \
+         metadata, at FROM state_transitions WHERE model = ? AND record_key = ? ORDER BY id",
+    )
+    .bind(model)
+    .bind(key.to_string())
+    .fetch_all(db)
+    .await?;
+    rows.iter()
+        .map(StateTransition::from_row)
+        .collect::<std::result::Result<_, _>>()
+        .map_err(Into::into)
+}
+
+/// A model whose status column moves through a [`Machine`].
+///
+/// `State` is usually a `#[derive(DbEnum)]` enum: its text (`Display`) is the
+/// name of a state in the machine, in the history and in diagrams.
+pub trait StateMachine: Model {
+    /// The status type, e.g. an enum deriving `DbEnum`.
+    type State: Copy + PartialEq + fmt::Display + Send + Sync + 'static;
+
+    /// The status column.
+    const COLUMN: Col<Self, Self::State>;
+
+    /// The states and transitions. Built on each call; cheap, so call it
+    /// where you need it or keep the result.
+    fn machine() -> Machine<Self>;
+
+    /// The transitions `user` may run on this record now, for buttons and
+    /// menus: the user's permission (in the record's scope for
+    /// `permission_in`), the record's state and the guards all hold. System
+    /// transitions are left out. Nothing is written: the guards run (so they
+    /// must be side-effect free) and the interceptor is only asked to
+    /// [`preview`], which sets `requires_approval`.
+    fn available<'a>(
+        &'a self,
+        user: &'a AuthUser,
+        db: &'a Db,
+    ) -> impl Future<Output = Result<Vec<Available>>> + Send + 'a
+    where
+        Self: Sized,
+    {
+        available_for(self, user, db)
+    }
+
+    /// Inserts this record in `state` even though the machine's `initial`
+    /// states don't include it (an import, a fixture, a record born
+    /// mid-way), and writes a history row with no `from` state and `reason`.
+    /// Runs in `tx` and doesn't commit.
+    ///
+    /// The record's status must already be `state` (set the field first):
+    /// the argument is the explicit statement of the exception. A plain
+    /// `insert`/`save` of a record in a non-initial state is refused when the
+    /// machine declares `initial`.
+    fn insert_in_state<'a>(
+        &'a mut self,
+        tx: &'a mut Transaction,
+        state: Self::State,
+        reason: &'a str,
+    ) -> impl Future<Output = Result> + Send + 'a
+    where
+        Self: Sized,
+    {
+        insert_in_state_for(self, tx, state, reason)
+    }
+
+    /// Starts running the transition called `name` on this record; chain
+    /// `by` (or `by_system`), optionally `reason`, `input` and `meta`, and end
+    /// with `run` or `run_in`.
+    fn transition(&self, name: &str) -> TransitionBuilder<'_, Self>
+    where
+        Self: Sized,
+    {
+        TransitionBuilder {
+            record: self,
+            name: name.to_owned(),
+            actor: Actor::Unset,
+            reason: None,
+            input: Ok(Value::Null),
+            meta: Value::Null,
+        }
+    }
+}
+
+/// Why a transition did not run.
+#[derive(Debug)]
+#[non_exhaustive]
+pub enum TransitionError {
+    /// Nobody is logged in and the transition is not a system one.
+    Unauthenticated,
+    /// The user may not run this transition (or it is a system transition
+    /// and a user tried).
+    Forbidden,
+    /// The record is not in a state the transition leaves; holds the state
+    /// it is in.
+    NotFrom(String),
+    /// A guard said no; holds its message, safe to show.
+    Guard(String),
+    /// The record changed under the transition (another one ran first).
+    Conflict,
+    /// The machine has no transition of this name.
+    Unknown(String),
+    /// A `reason_required` transition ran without a reason.
+    ReasonRequired,
+    /// Anything else (the database, an effect).
+    Failed(crate::Error),
+}
+
+impl fmt::Display for TransitionError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TransitionError::Unauthenticated => f.write_str("log in to do this"),
+            TransitionError::Forbidden => f.write_str("you may not do this"),
+            TransitionError::NotFrom(state) => {
+                write!(f, "this can't be done from the state `{state}`")
+            }
+            TransitionError::Guard(message) => f.write_str(message),
+            TransitionError::Conflict => {
+                f.write_str("the record was changed by someone else; reload and try again")
+            }
+            TransitionError::Unknown(name) => write!(f, "there is no transition `{name}`"),
+            TransitionError::ReasonRequired => f.write_str("a reason is required"),
+            TransitionError::Failed(error) => write!(f, "the transition failed: {error:?}"),
+        }
+    }
+}
+
+impl std::error::Error for TransitionError {}
+
+impl From<crate::Error> for TransitionError {
+    fn from(error: crate::Error) -> Self {
+        TransitionError::Failed(error)
+    }
+}
+
+impl From<DbError> for TransitionError {
+    fn from(error: DbError) -> Self {
+        TransitionError::Failed(error.into())
+    }
+}
+
+/// What a guard or an effect sees of the run: who, why, and the input and
+/// metadata given with it.
+#[derive(Clone, Default)]
+pub struct TransitionCtx {
+    actor: Option<AuthUser>,
+    reason: Option<String>,
+    input: Value,
+    meta: Value,
+}
+
+impl TransitionCtx {
+    /// A context for `actor` (`None` for a system run), with no reason, no
+    /// input and no metadata.
+    pub fn new(actor: Option<AuthUser>) -> Self {
+        TransitionCtx {
+            actor,
+            ..Default::default()
+        }
+    }
+
+    /// Sets the reason.
+    pub fn with_reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+
+    /// Sets the input guards and effects read with [`TransitionCtx::input`].
+    pub fn with_input(mut self, input: Value) -> Self {
+        self.input = input;
+        self
+    }
+
+    /// Sets the metadata stored with the history row.
+    pub fn with_meta(mut self, meta: Value) -> Self {
+        self.meta = meta;
+        self
+    }
+
+    /// The user running the transition; `None` for a system run.
+    pub fn actor(&self) -> Option<&AuthUser> {
+        self.actor.as_ref()
+    }
+
+    /// The reason given, if any.
+    pub fn reason(&self) -> Option<&str> {
+        self.reason.as_deref()
+    }
+
+    /// The input given with the run, as JSON (`null` when none).
+    pub fn input(&self) -> &Value {
+        &self.input
+    }
+
+    /// The input, read as `T`.
+    pub fn input_as<T: serde::de::DeserializeOwned>(&self) -> std::result::Result<T, String> {
+        serde_json::from_value(self.input.clone()).map_err(|e| e.to_string())
+    }
+
+    /// The metadata stored with the history row (`null` when none).
+    pub fn meta(&self) -> &Value {
+        &self.meta
+    }
+}
+
+type GuardFn<M> = Arc<
+    dyn for<'a> Fn(&'a M, &'a TransitionCtx) -> BoxFuture<'a, std::result::Result<(), String>>
+        + Send
+        + Sync,
+>;
+type EffectFn<M> = Arc<
+    dyn for<'a> Fn(&'a M, &'a TransitionCtx, &'a mut Transaction) -> BoxFuture<'a, Result>
+        + Send
+        + Sync,
+>;
+type ScopeFn<M> = Arc<dyn Fn(&M) -> Scope + Send + Sync>;
+
+/// Who may run a transition.
+enum Access<M> {
+    /// Any logged-in user.
+    Authenticated,
+    /// A user holding the permission.
+    Permission(String),
+    /// A user holding the permission in the scope the function gives.
+    PermissionIn(String, ScopeFn<M>),
+    /// Only the system (`by_system`): scheduled tasks, listeners.
+    System,
+}
+
+/// One state of a [`Machine`]: its name, tone and whether it is terminal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct StateDef {
+    /// The state's text, as stored.
+    pub name: String,
+    /// A tone for badges and steppers (`neutral`, `danger`, ...), if set.
+    pub tone: Option<String>,
+    /// No transition leaves a terminal state.
+    pub terminal: bool,
+}
+
+/// A change between states, built with [`Transition::new`].
+pub struct Transition<M: StateMachine> {
+    name: String,
+    label: Option<String>,
+    tone: Option<String>,
+    from: Vec<String>,
+    to: Option<String>,
+    reason_required: bool,
+    access: Access<M>,
+    guards: Vec<(String, GuardFn<M>)>,
+    effects: Vec<EffectFn<M>>,
+}
+
+impl<M: StateMachine> Transition<M> {
+    /// A transition called `name` (e.g. `place`), open to any logged-in user
+    /// until you restrict it with `permission`, `permission_in` or `system`.
+    pub fn new(name: impl Into<String>) -> Self {
+        Transition {
+            name: name.into(),
+            label: None,
+            tone: None,
+            from: Vec::new(),
+            to: None,
+            reason_required: false,
+            access: Access::Authenticated,
+            guards: Vec::new(),
+            effects: Vec::new(),
+        }
+    }
+
+    /// The states it may start from.
+    pub fn from<S: fmt::Display>(mut self, states: impl IntoIterator<Item = S>) -> Self {
+        self.from = states.into_iter().map(|s| s.to_string()).collect();
+        self
+    }
+
+    /// The state it ends in.
+    pub fn to(mut self, state: impl fmt::Display) -> Self {
+        self.to = Some(state.to_string());
+        self
+    }
+
+    /// The button text (default: the name with spaces, capitalised: `Mark paid`).
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+
+    /// A tone for its button (`primary`, `danger`, ...).
+    pub fn tone(mut self, tone: impl Into<String>) -> Self {
+        self.tone = Some(tone.into());
+        self
+    }
+
+    /// The run must give a reason (the button asks for one).
+    pub fn reason_required(mut self) -> Self {
+        self.reason_required = true;
+        self
+    }
+
+    /// Only users holding `permission` (the `Permissions` module).
+    pub fn permission(mut self, permission: impl Into<String>) -> Self {
+        self.access = Access::Permission(permission.into());
+        self
+    }
+
+    /// Only users holding `permission` in the scope `scope` gives for the
+    /// record (e.g. its store), or globally.
+    pub fn permission_in(
+        mut self,
+        permission: impl Into<String>,
+        scope: impl Fn(&M) -> Scope + Send + Sync + 'static,
+    ) -> Self {
+        self.access = Access::PermissionIn(permission.into(), Arc::new(scope));
+        self
+    }
+
+    /// Only the system may run it (`by_system`), e.g. a scheduled task.
+    pub fn system(mut self) -> Self {
+        self.access = Access::System;
+        self
+    }
+
+    /// A condition that must hold: the closure returns `Ok(())` or
+    /// `Err(message)`. Guards run in the order added, also when asking which
+    /// actions are available, so they must not write anything. Name the
+    /// record's type on the closure's first parameter
+    /// (`|order: &Order, ctx| Box::pin(async move { .. })`), as the compiler
+    /// can't tell it from the chain.
+    pub fn guard<F>(mut self, name: impl Into<String>, guard: F) -> Self
+    where
+        F: for<'a> Fn(&'a M, &'a TransitionCtx) -> BoxFuture<'a, std::result::Result<(), String>>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.guards.push((name.into(), Arc::new(guard)));
+        self
+    }
+
+    /// Work that runs with the transition, in its transaction: if it fails,
+    /// the status change and the history row are rolled back. Effects run in
+    /// the order added.
+    pub fn effect<F>(mut self, effect: F) -> Self
+    where
+        F: for<'a> Fn(&'a M, &'a TransitionCtx, &'a mut Transaction) -> BoxFuture<'a, Result>
+            + Send
+            + Sync
+            + 'static,
+    {
+        self.effects.push(Arc::new(effect));
+        self
+    }
+
+    /// The transition's name.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The button text.
+    pub fn label_text(&self) -> String {
+        self.label.clone().unwrap_or_else(|| humanize(&self.name))
+    }
+
+    /// The button's tone, if set.
+    pub fn tone_name(&self) -> Option<&str> {
+        self.tone.as_deref()
+    }
+
+    /// The states it may start from.
+    pub fn from_states(&self) -> &[String] {
+        &self.from
+    }
+
+    /// The state it ends in.
+    pub fn to_state(&self) -> Option<&str> {
+        self.to.as_deref()
+    }
+
+    /// Whether a reason must be given.
+    pub fn needs_reason(&self) -> bool {
+        self.reason_required
+    }
+
+    /// Whether only the system may run it.
+    pub fn is_system(&self) -> bool {
+        matches!(self.access, Access::System)
+    }
+
+    /// The names of its guards, in order.
+    pub fn guard_names(&self) -> Vec<&str> {
+        self.guards.iter().map(|(n, _)| n.as_str()).collect()
+    }
+
+    /// Checks who is running it: authentication, then permission (in the
+    /// record's scope for `permission_in`). `actor` is `None` for a system
+    /// run, which only `system` transitions accept; a user may not run one.
+    pub fn check_access(
+        &self,
+        record: &M,
+        actor: Option<&AuthUser>,
+    ) -> std::result::Result<(), TransitionError> {
+        let Some(user) = actor else {
+            return if self.is_system() {
+                Ok(())
+            } else {
+                Err(TransitionError::Unauthenticated)
+            };
+        };
+        let allowed = match &self.access {
+            Access::Authenticated => true,
+            Access::Permission(p) => user.has_permission(p),
+            Access::PermissionIn(p, scope) => user.has_permission_in(p, &scope(record)),
+            Access::System => false,
+        };
+        if allowed {
+            Ok(())
+        } else {
+            Err(TransitionError::Forbidden)
+        }
+    }
+
+    /// Checks the record's current state is one the transition leaves.
+    pub fn check_from(
+        &self,
+        current: impl fmt::Display,
+    ) -> std::result::Result<(), TransitionError> {
+        let current = current.to_string();
+        if self.from.contains(&current) {
+            Ok(())
+        } else {
+            Err(TransitionError::NotFrom(current))
+        }
+    }
+
+    /// Runs the guards in order and stops at the first that says no.
+    pub async fn check_guards(
+        &self,
+        record: &M,
+        ctx: &TransitionCtx,
+    ) -> std::result::Result<(), TransitionError> {
+        for (_, guard) in &self.guards {
+            guard(record, ctx).await.map_err(TransitionError::Guard)?;
+        }
+        Ok(())
+    }
+
+    /// Runs the effects in order inside `tx`, stopping at the first failure.
+    pub async fn run_effects(
+        &self,
+        record: &M,
+        ctx: &TransitionCtx,
+        tx: &mut Transaction,
+    ) -> Result {
+        for effect in &self.effects {
+            effect(record, ctx, tx).await?;
+        }
+        Ok(())
+    }
+}
+
+/// `mark_paid` becomes `Mark paid`.
+fn humanize(name: &str) -> String {
+    let text = name.replace(['_', '-'], " ");
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
+}
+
+/// The states and transitions of a [`StateMachine`] model.
+pub struct Machine<M: StateMachine> {
+    states: Vec<StateDef>,
+    initial: Vec<String>,
+    transitions: Vec<Transition<M>>,
+    /// The state `tone` and `terminal` apply to.
+    last: Option<usize>,
+}
+
+impl<M: StateMachine> Default for Machine<M> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<M: StateMachine> Machine<M> {
+    /// An empty machine.
+    pub fn new() -> Self {
+        Machine {
+            states: Vec::new(),
+            initial: Vec::new(),
+            transitions: Vec::new(),
+            last: None,
+        }
+    }
+
+    fn index_of(&mut self, name: &str) -> usize {
+        if let Some(i) = self.states.iter().position(|s| s.name == name) {
+            return i;
+        }
+        self.states.push(StateDef {
+            name: name.to_owned(),
+            tone: None,
+            terminal: false,
+        });
+        self.states.len() - 1
+    }
+
+    /// Declares a state, to describe with `tone` and `terminal`. States that
+    /// only transitions mention are declared implicitly.
+    pub fn state(mut self, state: impl fmt::Display) -> Self {
+        let i = self.index_of(&state.to_string());
+        self.last = Some(i);
+        self
+    }
+
+    /// Sets the tone (`neutral`, `danger`, ...) of the state just declared.
+    ///
+    /// # Panics
+    ///
+    /// When no `state` came before it.
+    pub fn tone(mut self, tone: impl Into<String>) -> Self {
+        let i = self.last.expect("`tone` follows `state`");
+        self.states[i].tone = Some(tone.into());
+        self
+    }
+
+    /// Marks the state just declared as terminal: no transition may leave it.
+    ///
+    /// # Panics
+    ///
+    /// When no `state` came before it.
+    pub fn terminal(mut self) -> Self {
+        let i = self.last.expect("`terminal` follows `state`");
+        self.states[i].terminal = true;
+        self
+    }
+
+    /// The states a new record may be inserted in. With none declared,
+    /// inserts are unrestricted.
+    pub fn initial<S: fmt::Display>(mut self, states: impl IntoIterator<Item = S>) -> Self {
+        let names: Vec<String> = states.into_iter().map(|s| s.to_string()).collect();
+        for name in &names {
+            self.index_of(name);
+        }
+        self.initial = names;
+        self
+    }
+
+    /// Adds a transition. Its states are declared if they were not.
+    ///
+    /// # Panics
+    ///
+    /// When it has no `to` state, no `from` state, leaves a terminal state,
+    /// or its name is already taken: a machine is code, so these are
+    /// mistakes found the first time it is built.
+    pub fn transition(mut self, transition: Transition<M>) -> Self {
+        let to = transition
+            .to
+            .clone()
+            .unwrap_or_else(|| panic!("transition `{}` has no `to` state", transition.name));
+        assert!(
+            !transition.from.is_empty(),
+            "transition `{}` has no `from` state",
+            transition.name
+        );
+        assert!(
+            self.transitions.iter().all(|t| t.name != transition.name),
+            "transition `{}` is defined twice",
+            transition.name
+        );
+        for name in transition.from.clone().iter().chain([&to]) {
+            self.index_of(name);
+        }
+        for from in &transition.from {
+            let terminal = self.states.iter().any(|s| &s.name == from && s.terminal);
+            assert!(
+                !terminal,
+                "transition `{}` leaves the terminal state `{from}`",
+                transition.name
+            );
+        }
+        self.last = None;
+        self.transitions.push(transition);
+        self
+    }
+
+    /// Every state, in the order declared.
+    pub fn states(&self) -> &[StateDef] {
+        &self.states
+    }
+
+    /// The states inserts are limited to; empty when unrestricted.
+    pub fn initial_states(&self) -> &[String] {
+        &self.initial
+    }
+
+    /// Every transition, in the order added.
+    pub fn transitions(&self) -> &[Transition<M>] {
+        &self.transitions
+    }
+
+    /// The transition called `name`.
+    pub fn find(&self, name: &str) -> std::result::Result<&Transition<M>, TransitionError> {
+        self.transitions
+            .iter()
+            .find(|t| t.name == name)
+            .ok_or_else(|| TransitionError::Unknown(name.to_owned()))
+    }
+
+    /// The transitions that leave `state`, in the order added.
+    pub fn from_state<'a>(
+        &'a self,
+        state: &'a str,
+    ) -> impl Iterator<Item = &'a Transition<M>> + 'a {
+        self.transitions
+            .iter()
+            .filter(move |t| t.from.iter().any(|f| f == state))
+    }
+
+    /// A Mermaid `stateDiagram-v2`: initial states are entered from `[*]`,
+    /// terminal states lead to `[*]`, and each arrow carries the
+    /// transition's name. Paste it in a Markdown page or the Mermaid editor.
+    pub fn mermaid(&self) -> String {
+        let mut out = String::from("stateDiagram-v2\n");
+        for name in &self.initial {
+            out.push_str(&format!("    [*] --> {}\n", mermaid_id(name)));
+        }
+        for t in &self.transitions {
+            let to = t.to.as_deref().unwrap_or_default();
+            for from in &t.from {
+                out.push_str(&format!(
+                    "    {} --> {}: {}\n",
+                    mermaid_id(from),
+                    mermaid_id(to),
+                    t.name
+                ));
+            }
+        }
+        for state in self.states.iter().filter(|s| s.terminal) {
+            out.push_str(&format!("    {} --> [*]\n", mermaid_id(&state.name)));
+        }
+        out
+    }
+}
+
+/// A state name as a Mermaid id (letters, digits and `_`).
+fn mermaid_id(name: &str) -> String {
+    name.chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '_' })
+        .collect()
+}
+
+/// Who runs a transition.
+enum Actor {
+    /// Neither `by` nor `by_system` was called: refused as unauthenticated.
+    Unset,
+    User(Box<AuthUser>),
+    System,
+}
+
+/// A transition being set up, from [`StateMachine::transition`].
+#[must_use = "a transition only runs when you call `run` or `run_in`"]
+pub struct TransitionBuilder<'a, M: StateMachine> {
+    record: &'a M,
+    name: String,
+    actor: Actor,
+    reason: Option<String>,
+    input: std::result::Result<Value, String>,
+    meta: Value,
+}
+
+impl<M: StateMachine> TransitionBuilder<'_, M> {
+    /// The user running it.
+    pub fn by(mut self, user: &AuthUser) -> Self {
+        self.actor = Actor::User(Box::new(user.clone()));
+        self
+    }
+
+    /// Runs it as the system (a scheduled task, a listener): no user, no
+    /// actor in the history. Only `system` transitions accept this.
+    pub fn by_system(mut self) -> Self {
+        self.actor = Actor::System;
+        self
+    }
+
+    /// Why it is done (stored in the history).
+    pub fn reason(mut self, reason: impl Into<String>) -> Self {
+        self.reason = Some(reason.into());
+        self
+    }
+
+    /// Data for guards and effects, read with [`TransitionCtx::input`]. One
+    /// that can't be turned into JSON fails the run.
+    pub fn input<T: Serialize>(mut self, input: &T) -> Self {
+        self.input = serde_json::to_value(input).map_err(|e| e.to_string());
+        self
+    }
+
+    /// Extra data stored in the history row's `metadata` and carried on
+    /// [`Transitioned`].
+    pub fn meta(mut self, meta: Value) -> Self {
+        self.meta = meta;
+        self
+    }
+
+    /// Runs it in its own transaction, commits, then emits [`Transitioned`]
+    /// to the app's listeners. If a listener fails the status has changed
+    /// already: the error is returned but nothing is rolled back.
+    pub async fn run(self, state: &AppState) -> std::result::Result<Outcome<M>, TransitionError> {
+        let mut tx = state.db.begin().await?;
+        let outcome = self.run_in(&mut tx).await?;
+        tx.commit().await?;
+        if let Outcome::Done(done) = &outcome {
+            state.emit(done.clone()).await?;
+        }
+        Ok(outcome)
+    }
+
+    /// Runs it inside `tx` and does not commit. Emit the returned
+    /// [`Outcome`] with [`Outcome::emit`] once the transaction has committed.
+    ///
+    /// Checks, in order: who runs it (authentication, permission), the
+    /// record's state, the guards, the reason; then moves the status with
+    /// `UPDATE .. WHERE status = <the record's loaded status>` (no row
+    /// updated means someone else moved it first: `Conflict`), writes the
+    /// history row and runs the effects.
+    ///
+    /// When an interceptor is registered ([`set_interceptor`]) it runs after
+    /// the guards and the reason check. If it defers, nothing moves and no
+    /// effect runs: its own writes in `tx` stay, and the result is
+    /// [`Outcome::Pending`].
+    pub async fn run_in(
+        self,
+        tx: &mut Transaction,
+    ) -> std::result::Result<Outcome<M>, TransitionError> {
+        let machine = M::machine();
+        let transition = machine.find(&self.name)?;
+        let record = self.record;
+        let actor = match &self.actor {
+            Actor::Unset => return Err(TransitionError::Unauthenticated),
+            Actor::User(user) => Some(user.as_ref()),
+            Actor::System => None,
+        };
+        transition.check_access(record, actor)?;
+        let current = current_state(record)?;
+        transition.check_from(&current)?;
+        let input = self.input.map_err(|e| {
+            TransitionError::Failed(crate::Error::Internal(anyhow::anyhow!(
+                "the transition's input is not JSON: {e}"
+            )))
+        })?;
+        let mut ctx = TransitionCtx::new(actor.cloned())
+            .with_input(input)
+            .with_meta(self.meta.clone());
+        if let Some(reason) = &self.reason {
+            ctx = ctx.with_reason(reason.clone());
+        }
+        transition.check_guards(record, &ctx).await?;
+        if transition.needs_reason() && self.reason.as_deref().is_none_or(|r| r.trim().is_empty()) {
+            return Err(TransitionError::ReasonRequired);
+        }
+        let to = transition
+            .to_state()
+            .expect("a built machine has a `to` state")
+            .to_owned();
+
+        if let Some(interceptor) = interceptor() {
+            let request = TransitionRequest {
+                model: M::TABLE,
+                key: record.id().to_string(),
+                transition: transition.name().to_owned(),
+                from: current.clone(),
+                to: to.clone(),
+                actor: actor.cloned(),
+                reason: self.reason.clone(),
+                input: ctx.input().clone(),
+                meta: self.meta.clone(),
+            };
+            if let Decision::Defer(data) = interceptor.intercept(&request, &mut *tx).await? {
+                return Ok(Outcome::Pending(Pending {
+                    key: record.id(),
+                    from: current,
+                    to,
+                    transition: transition.name().to_owned(),
+                    actor_id: actor.map(|u| u.id),
+                    reason: self.reason,
+                    meta: self.meta,
+                    data,
+                }));
+            }
+        }
+
+        let column = M::COLUMN.name();
+        let moved = sql(format!(
+            "UPDATE {} SET {column} = ? WHERE id = ? AND {column} = ?",
+            M::TABLE
+        ))
+        .bind(to.as_str())
+        .bind(record.id())
+        .bind(current.as_str())
+        .execute(&mut *tx)
+        .await?;
+        if moved == 0 {
+            return Err(TransitionError::Conflict);
+        }
+
+        let mut row = TransitionRecord::new(M::TABLE, record.id(), to.as_str(), transition.name())
+            .from(current.as_str())
+            .metadata(self.meta.clone());
+        if let Some(user) = actor {
+            row = row.actor(user.id);
+        }
+        if let Some(reason) = &self.reason {
+            row = row.reason(reason.clone());
+        }
+        row.record(&mut *tx).await?;
+        transition.run_effects(record, &ctx, tx).await?;
+
+        Ok(Outcome::Done(Transitioned {
+            key: record.id(),
+            from: current,
+            to,
+            transition: transition.name().to_owned(),
+            actor_id: actor.map(|u| u.id),
+            reason: self.reason,
+            meta: self.meta,
+            _model: PhantomData,
+        }))
+    }
+}
+
+tokio::task_local! {
+    /// Set while `insert_in_state` inserts: the `initial` rule is skipped.
+    static INSERT_ANY_STATE: ();
+}
+
+/// The insert rule of a `#[model(state_machine)]` model, called by the
+/// derive's `check_insert`: when the machine declares `initial` states, a new
+/// record must be in one of them.
+#[doc(hidden)]
+pub fn check_insert<M: StateMachine>(record: &M) -> Result {
+    if INSERT_ANY_STATE.try_with(|_| ()).is_ok() {
+        return Ok(());
+    }
+    let machine = M::machine();
+    let initial = machine.initial_states();
+    if initial.is_empty() {
+        return Ok(());
+    }
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    if initial.contains(&current) {
+        return Ok(());
+    }
+    Err(crate::Error::Status(
+        axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+        format!(
+            "a new {} can't start in the state `{current}` (it starts in {}); \
+             use `insert_in_state` for an exception",
+            M::TABLE,
+            initial
+                .iter()
+                .map(|s| format!("`{s}`"))
+                .collect::<Vec<_>>()
+                .join(" or "),
+        ),
+    ))
+}
+
+async fn insert_in_state_for<M: StateMachine>(
+    record: &mut M,
+    tx: &mut Transaction,
+    state: M::State,
+    reason: &str,
+) -> Result {
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    let wanted = state.to_string();
+    if current != wanted {
+        return Err(anyhow::anyhow!(
+            "insert_in_state: the record's status is `{current}`, not `{wanted}`; set it first"
+        )
+        .into());
+    }
+    INSERT_ANY_STATE.scope((), record.insert(&mut *tx)).await?;
+    TransitionRecord::new(M::TABLE, record.id(), wanted, "insert")
+        .reason(reason)
+        .record(&mut *tx)
+        .await?;
+    Ok(())
+}
+
+/// The record's loaded status, as the text the machine uses.
+fn current_state<M: StateMachine>(record: &M) -> std::result::Result<String, TransitionError> {
+    let column = M::COLUMN.name();
+    let at = M::COLUMNS
+        .iter()
+        .filter(|c| **c != "id")
+        .position(|c| *c == column);
+    match at.and_then(|i| record.values().into_iter().nth(i)) {
+        Some(crate::db::DbValue::Text(state)) => Ok(state),
+        _ => Err(TransitionError::Failed(crate::Error::Internal(
+            anyhow::anyhow!("the status column `{column}` is not a text column of the model"),
+        ))),
+    }
+}
+
+/// A transition that happened. Listen for it with `App::listen`; it is
+/// emitted by `run` after the commit, or by you with [`Transitioned::emit`]
+/// after `run_in`'s transaction commits (it is not emitted on a rollback).
+#[must_use = "emit it after the transaction commits"]
+pub struct Transitioned<M: StateMachine> {
+    /// The record's key.
+    pub key: M::Key,
+    /// The state it left.
+    pub from: String,
+    /// The state it entered.
+    pub to: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The user who ran it; `None` for a system run.
+    pub actor_id: Option<i64>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The metadata stored with the history row (`null` when none).
+    pub meta: Value,
+    _model: PhantomData<fn() -> M>,
+}
+
+impl<M: StateMachine> Clone for Transitioned<M> {
+    fn clone(&self) -> Self {
+        Transitioned {
+            key: self.key.clone(),
+            from: self.from.clone(),
+            to: self.to.clone(),
+            transition: self.transition.clone(),
+            actor_id: self.actor_id,
+            reason: self.reason.clone(),
+            meta: self.meta.clone(),
+            _model: PhantomData,
+        }
+    }
+}
+
+impl<M: StateMachine> fmt::Debug for Transitioned<M> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Transitioned")
+            .field("model", &M::TABLE)
+            .field("key", &self.key)
+            .field("from", &self.from)
+            .field("to", &self.to)
+            .field("transition", &self.transition)
+            .finish()
+    }
+}
+
+impl<M: StateMachine> Event for Transitioned<M> {}
+
+impl<M: StateMachine> Transitioned<M> {
+    /// Emits it to the app's listeners (after the commit).
+    pub async fn emit(self, state: &AppState) -> Result {
+        state.emit(self).await
+    }
+}
+
+/// What a transition run came to: it moved, or an interceptor deferred it.
+#[must_use = "emit a `Done` outcome after the transaction commits"]
+pub enum Outcome<M: StateMachine> {
+    /// The status moved; the history row and effects are in the transaction.
+    Done(Transitioned<M>),
+    /// An interceptor deferred it: the status did not move.
+    Pending(Pending<M>),
+}
+
+impl<M: StateMachine> Clone for Outcome<M> {
+    fn clone(&self) -> Self {
+        match self {
+            Outcome::Done(done) => Outcome::Done(done.clone()),
+            Outcome::Pending(pending) => Outcome::Pending(pending.clone()),
+        }
+    }
+}
+
+impl<M: StateMachine> Outcome<M> {
+    /// The [`Transitioned`] if the status moved.
+    pub fn into_done(self) -> Option<Transitioned<M>> {
+        match self {
+            Outcome::Done(done) => Some(done),
+            Outcome::Pending(_) => None,
+        }
+    }
+
+    /// Whether an interceptor deferred the run.
+    pub fn is_pending(&self) -> bool {
+        matches!(self, Outcome::Pending(_))
+    }
+
+    /// Emits [`Transitioned`] to the app's listeners (after the commit) if
+    /// the status moved; does nothing for a pending run.
+    pub async fn emit(self, state: &AppState) -> Result {
+        match self {
+            Outcome::Done(done) => done.emit(state).await,
+            Outcome::Pending(_) => Ok(()),
+        }
+    }
+}
+
+/// A transition an interceptor deferred (for example until someone approves
+/// it). The status has not moved.
+#[non_exhaustive]
+pub struct Pending<M: StateMachine> {
+    /// The record's key.
+    pub key: M::Key,
+    /// The state it is still in.
+    pub from: String,
+    /// The state the transition would have entered.
+    pub to: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The user who asked for it; `None` for a system run.
+    pub actor_id: Option<i64>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The metadata given with the run (`null` when none).
+    pub meta: Value,
+    /// What the interceptor returned with [`Decision::Defer`], e.g. the id of
+    /// the request it stored.
+    pub data: Value,
+}
+
+impl<M: StateMachine> Clone for Pending<M> {
+    fn clone(&self) -> Self {
+        Pending {
+            key: self.key.clone(),
+            from: self.from.clone(),
+            to: self.to.clone(),
+            transition: self.transition.clone(),
+            actor_id: self.actor_id,
+            reason: self.reason.clone(),
+            meta: self.meta.clone(),
+            data: self.data.clone(),
+        }
+    }
+}
+
+/// A transition about to run, as an interceptor sees it. It is the same for
+/// every machine, so the model is its table name and the key is text.
+#[derive(Clone)]
+#[non_exhaustive]
+pub struct TransitionRequest {
+    /// The model's table.
+    pub model: &'static str,
+    /// The record's key, as text.
+    pub key: String,
+    /// The transition's name.
+    pub transition: String,
+    /// The state the record is in.
+    pub from: String,
+    /// The state the transition leads to.
+    pub to: String,
+    /// The user running it; `None` for a system run.
+    pub actor: Option<AuthUser>,
+    /// The reason given, if any.
+    pub reason: Option<String>,
+    /// The input given with the run (`null` when none).
+    pub input: Value,
+    /// The metadata given with the run (`null` when none).
+    pub meta: Value,
+}
+
+impl TransitionRequest {
+    /// A request for `transition` on record `key` of `model`, moving `from`
+    /// one state `to` another, with no actor, reason, input or metadata. For
+    /// calling [`preview`] by hand.
+    pub fn new(
+        model: &'static str,
+        key: impl ToString,
+        transition: impl Into<String>,
+        from: impl Into<String>,
+        to: impl Into<String>,
+    ) -> Self {
+        TransitionRequest {
+            model,
+            key: key.to_string(),
+            transition: transition.into(),
+            from: from.into(),
+            to: to.into(),
+            actor: None,
+            reason: None,
+            input: Value::Null,
+            meta: Value::Null,
+        }
+    }
+
+    /// Sets the input.
+    pub fn with_input(mut self, input: Value) -> Self {
+        self.input = input;
+        self
+    }
+}
+
+/// What an interceptor decides for a run.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Decision {
+    /// Carry on: move the status and run the effects.
+    Proceed,
+    /// Do not move; the run ends as [`Outcome::Pending`] carrying this data.
+    Defer(Value),
+}
+
+/// What an interceptor says a run would do, without doing it (see
+/// [`preview`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preview {
+    /// It would go through.
+    Proceed,
+    /// It would be deferred: the action needs approval.
+    RequiresApproval,
+    /// A deferred run for this record and transition is already waiting.
+    Pending,
+}
+
+/// Hooks every transition of every machine, for things a guard can't do
+/// because it may only say no, such as approvals.
+///
+/// Register one with [`set_interceptor`]. It runs after permission, `from`
+/// and the guards, in the transition's transaction.
+pub trait TransitionInterceptor: Send + Sync + 'static {
+    /// Decides a run. Writes made through `tx` are kept whichever way it
+    /// decides (and roll back with the transaction if the run later fails).
+    fn intercept<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        tx: &'a mut Transaction,
+    ) -> BoxFuture<'a, Result<Decision>>;
+
+    /// What [`TransitionInterceptor::intercept`] would decide, with no side
+    /// effects: `available` calls it to mark actions. The default is
+    /// [`Preview::Proceed`].
+    fn preview<'a>(
+        &'a self,
+        request: &'a TransitionRequest,
+        db: &'a Db,
+    ) -> BoxFuture<'a, Result<Preview>> {
+        let _ = (request, db);
+        Box::pin(async { Ok(Preview::Proceed) })
+    }
+}
+
+static INTERCEPTOR: RwLock<Option<Arc<dyn TransitionInterceptor>>> = RwLock::new(None);
+
+/// Registers the interceptor for all machines, replacing any earlier one.
+/// Call it once at startup.
+pub fn set_interceptor(interceptor: impl TransitionInterceptor) {
+    *INTERCEPTOR.write().unwrap_or_else(PoisonError::into_inner) = Some(Arc::new(interceptor));
+}
+
+/// Removes the registered interceptor.
+pub fn clear_interceptor() {
+    *INTERCEPTOR.write().unwrap_or_else(PoisonError::into_inner) = None;
+}
+
+fn interceptor() -> Option<Arc<dyn TransitionInterceptor>> {
+    INTERCEPTOR
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .clone()
+}
+
+/// Asks the registered interceptor what `request` would do, with no side
+/// effects; [`Preview::Proceed`] when none is registered.
+pub async fn preview(request: &TransitionRequest, db: &Db) -> Result<Preview> {
+    match interceptor() {
+        Some(interceptor) => interceptor.preview(request, db).await,
+        None => Ok(Preview::Proceed),
+    }
+}
+
+/// A transition the user may run now (see [`StateMachine::available`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct Available {
+    /// The transition's name, as `transition(name)` takes it.
+    pub name: String,
+    /// The text for its button.
+    pub label: String,
+    /// A tone for the button (`danger`, ...), if set.
+    pub tone: Option<String>,
+    /// The run must come with a reason; ask for one first.
+    pub needs_reason: bool,
+    /// The interceptor would defer it for approval (or a deferred run is
+    /// already waiting).
+    pub requires_approval: bool,
+}
+
+async fn available_for<M: StateMachine>(
+    record: &M,
+    user: &AuthUser,
+    db: &Db,
+) -> Result<Vec<Available>> {
+    let machine = M::machine();
+    let current = current_state(record).map_err(TransitionError::into_error)?;
+    let ctx = TransitionCtx::new(Some(user.clone()));
+    let mut out = Vec::new();
+    for transition in machine.from_state(&current) {
+        if transition.is_system()
+            || transition.check_access(record, Some(user)).is_err()
+            || transition.check_guards(record, &ctx).await.is_err()
+        {
+            continue;
+        }
+        let to = transition.to_state().unwrap_or_default().to_owned();
+        let mut request = TransitionRequest::new(
+            M::TABLE,
+            record.id(),
+            transition.name(),
+            current.as_str(),
+            to,
+        );
+        request.actor = Some(user.clone());
+        let requires_approval = preview(&request, db).await? != Preview::Proceed;
+        out.push(Available {
+            name: transition.name().to_owned(),
+            label: transition.label_text(),
+            tone: transition.tone_name().map(str::to_owned),
+            needs_reason: transition.needs_reason(),
+            requires_approval,
+        });
+    }
+    Ok(out)
+}
+
+impl TransitionError {
+    /// The [`crate::Error`] it answers as: 401 for `Unauthenticated`, 403
+    /// for `Forbidden`, 404 for `Unknown`, 422 (with the message) for
+    /// `NotFrom`, `Guard`, `Conflict` and `ReasonRequired`; a `Failed` error
+    /// is passed through. (No `From`, which the blanket `From<E: Into<anyhow::Error>>`
+    /// impl of `Error` rules out.)
+    pub fn into_error(self) -> crate::Error {
+        match self {
+            TransitionError::Unauthenticated => crate::Error::Unauthorized,
+            TransitionError::Forbidden => crate::Error::Forbidden,
+            TransitionError::Unknown(_) => crate::Error::NotFound,
+            TransitionError::Failed(error) => error,
+            other => crate::Error::Status(
+                axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+                other.to_string(),
+            ),
+        }
+    }
+}
+
+impl axum::response::IntoResponse for TransitionError {
+    /// Answers as [`TransitionError::into_error`], so a handler can return
+    /// `Result<_, TransitionError>`.
+    fn into_response(self) -> axum::response::Response {
+        axum::response::IntoResponse::into_response(self.into_error())
+    }
+}
+
+/// One transition of a registered machine, as plain data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct TransitionInfo {
+    /// The transition's name.
+    pub name: String,
+    /// The text for its button.
+    pub label: String,
+    /// Its tone, if set.
+    pub tone: Option<String>,
+    /// The states it leaves.
+    pub from: Vec<String>,
+    /// The state it leads to.
+    pub to: String,
+    /// It needs a reason.
+    pub needs_reason: bool,
+    /// Only the system may run it.
+    pub system: bool,
+    /// The names of its guards, in order.
+    pub guards: Vec<String>,
+}
+
+/// A registered machine without its model type, for tools that look it up by
+/// name (`rnx state:diagram`, the admin).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub struct MachineInfo {
+    /// The model's type name, e.g. `Order`.
+    pub model: String,
+    /// The model's table.
+    pub table: String,
+    /// The states.
+    pub states: Vec<StateDef>,
+    /// The states a new record may start in (empty when unrestricted).
+    pub initial: Vec<String>,
+    /// The transitions.
+    pub transitions: Vec<TransitionInfo>,
+    /// The Mermaid diagram ([`Machine::mermaid`]).
+    pub mermaid: String,
+}
+
+static REGISTRY: RwLock<BTreeMap<String, MachineInfo>> = RwLock::new(BTreeMap::new());
+
+/// Makes `M`'s machine findable by name with [`machine_info`]. Call it at
+/// startup for each machine; registering again replaces the entry.
+pub fn register<M: StateMachine>() {
+    let info = info_of::<M>();
+    REGISTRY
+        .write()
+        .unwrap_or_else(PoisonError::into_inner)
+        .insert(info.model.clone(), info);
+}
+
+/// `M`'s machine as plain data, without registering it.
+pub fn info_of<M: StateMachine>() -> MachineInfo {
+    let machine = M::machine();
+    let model = std::any::type_name::<M>()
+        .rsplit("::")
+        .next()
+        .unwrap_or_default()
+        .to_owned();
+    MachineInfo {
+        model,
+        table: M::TABLE.to_owned(),
+        states: machine.states().to_vec(),
+        initial: machine.initial_states().to_vec(),
+        transitions: machine
+            .transitions()
+            .iter()
+            .map(|t| TransitionInfo {
+                name: t.name().to_owned(),
+                label: t.label_text(),
+                tone: t.tone_name().map(str::to_owned),
+                from: t.from_states().to_vec(),
+                to: t.to_state().unwrap_or_default().to_owned(),
+                needs_reason: t.needs_reason(),
+                system: t.is_system(),
+                guards: t.guard_names().into_iter().map(str::to_owned).collect(),
+            })
+            .collect(),
+        mermaid: machine.mermaid(),
+    }
+}
+
+/// The registered machine whose model is called `name` (`Order`; the table
+/// name `orders` works too, ignoring case), if any.
+pub fn machine_info(name: &str) -> Option<MachineInfo> {
+    let registry = REGISTRY.read().unwrap_or_else(PoisonError::into_inner);
+    registry
+        .values()
+        .find(|m| m.model.eq_ignore_ascii_case(name) || m.table.eq_ignore_ascii_case(name))
+        .cloned()
+}
+
+/// The model names of all registered machines, sorted.
+pub fn machine_names() -> Vec<String> {
+    REGISTRY
+        .read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .keys()
+        .cloned()
+        .collect()
+}
+
+/// The routes `<rx-transition-actions>` posts to: `POST
+/// /{id}/transitions/{name}` runs the transition `name` on record `id` of
+/// `M` as the logged-in user, with the form's optional `reason`, then goes
+/// back to the page the form was on. Mount it under the model's path:
+///
+/// ```
+/// use renox::prelude::*;
+/// use renox::state_machine::{self, StateMachine};
+///
+/// fn orders<M: StateMachine + Send + Sync + 'static>() -> Routes {
+///     // POST /orders/{id}/transitions/{name}
+///     Routes::new().group("/orders", "orders.", state_machine::routes::<M>())
+/// }
+/// ```
+///
+/// A refusal answers like [`TransitionError::into_error`]: 401 when nobody is
+/// logged in, 403 when the user may not run it (a system transition can't
+/// be run from here), 404 for an unknown record or transition, 422 for a
+/// state or guard that says no.
+pub fn routes<M: StateMachine + Send + Sync + 'static>() -> crate::routing::Routes {
+    crate::routing::Routes::new().post("/{id}/transitions/{name}", run_transition::<M>)
+}
+
+#[derive(serde::Deserialize)]
+struct ReasonForm {
+    reason: Option<String>,
+}
+
+async fn run_transition<M: StateMachine + Send + Sync + 'static>(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    user: AuthUser,
+    axum::extract::Path((id, name)): axum::extract::Path<(String, String)>,
+    back: crate::Back,
+    axum::extract::Form(form): axum::extract::Form<ReasonForm>,
+) -> Result<crate::Back> {
+    let key = id.parse::<M::Key>().map_err(|_| crate::Error::NotFound)?;
+    let record = M::find(&state.db, key)
+        .await?
+        .ok_or(crate::Error::NotFound)?;
+    let mut run = record.transition(&name).by(&user);
+    let reason = form.reason.unwrap_or_default();
+    let reason = reason.trim();
+    if !reason.is_empty() {
+        run = run.reason(reason);
+    }
+    // `run` emitted `Transitioned`; a deferred run (`Pending`) has nothing
+    // more to do here, the page shows the state it is still in.
+    let _outcome = run.run(&state).await.map_err(TransitionError::into_error)?;
+    Ok(back)
+}
+
+/// A record's history rows ([`history`]) as the items `<rx-history>` shows
+/// (`time`, `title`, `body`, `kind`): the title is the transition and the
+/// states it moved between, the body the reason, and the kind follows the
+/// tone of the state entered (`danger` is `error`; `success` and `warning`
+/// stay; anything else is `info`).
+///
+/// ```
+/// # async fn demo(db: renox::db::Db) -> renox::Result {
+/// let log = renox::state_machine::history(&db, "orders", 42).await?;
+/// let items = renox::state_machine::timeline(&log, None);
+/// // <rx-history :items="items"/>
+/// # let _ = items; Ok(()) }
+/// ```
+///
+/// Pass the model's [`MachineInfo`] (`info_of::<M>()`) to take the kind from
+/// the states' tones and the title from the transitions' labels; without it
+/// every item is `info` and titled with the transition's name.
+pub fn timeline(rows: &[StateTransition], machine: Option<&MachineInfo>) -> Vec<Value> {
+    rows.iter()
+        .map(|row| {
+            let label = machine
+                .and_then(|m| m.transitions.iter().find(|t| t.name == row.transition))
+                .map_or_else(|| row.transition.clone(), |t| t.label.clone());
+            let kind = machine
+                .and_then(|m| m.states.iter().find(|s| s.name == row.to_state))
+                .and_then(|s| s.tone.as_deref())
+                .map_or("info", |tone| match tone {
+                    "danger" | "error" => "error",
+                    "success" => "success",
+                    "warning" => "warning",
+                    _ => "info",
+                });
+            let title = match &row.from_state {
+                Some(from) => format!("{label}: {from} \u{2192} {}", row.to_state),
+                None => format!("{label}: {}", row.to_state),
+            };
+            serde_json::json!({
+                "time": row.at.to_rfc3339(),
+                "title": title,
+                "body": row.reason,
+                "kind": kind,
+            })
+        })
+        .collect()
+}

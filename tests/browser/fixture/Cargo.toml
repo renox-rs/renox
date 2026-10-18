@@ -8,4 +8,6 @@ description = "The pages tests/browser drives in headless Chrome; not an example
 [dependencies]
 # `xlsx`: the grid pages export Excel files (grid-more.test.mjs).
 renox = { workspace = true, features = ["xlsx"] }
+# The map blocks (maps.test.mjs).
+renox-blocks.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }

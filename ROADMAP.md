@@ -1581,6 +1581,14 @@ Notes from M34:
 - [x] renox-admin: `Admin::settings::<T>(label)` and `AdminSettings` (fields, a policy, read-only
   fields, sealed groups never printed)
 - [ ] Settings pages contributed by a module through `Registry::contribute` (after #31)
+### Contributions and admin resources from modules (#31)
+- [x] `Registry::contribute`, `Contributions` (`all`, `all_from`), `Module::routes_with`, `AppState::contributions`
+- [x] renox-admin: `AdminEntry`, `renox_admin::contribute`, `Admin::named`, `Admin::only_own_resources`; slug clash and
+  unknown panel fail at boot
+- [x] Bikeshop `Purchasing` module contributes the suppliers resource
+- [x] Docs (admin.md "Resources from modules"), CHEATSHEET.md, llms.txt
+- [ ] Settings pages and dashboard widgets from modules, module auto-discovery (out of scope)
+
 ### Gapless sequences (#40)
 - [x] `renox::db::Sequence` (series, scope, period): `next(&mut tx)` takes the number in the
       caller's transaction, `peek`, `last`, `set_start`, `list`, `next_allowing_gaps(&db)`;
@@ -1921,8 +1929,234 @@ Notes:
 - Derived files (thumbnails) are stored at `Upload::derived_key(key, name)` (the name before the
   extension); the app deletes them with the original.
 
+### Packages (#34)
+- [x] `rnx make:package <name> [--path] [--resource --fields --model] [--with assets,commands]
+  [--register]`: a crate with a `Module`, timestamped migrations named after the package, views
+  the app can override, English texts, tests and a doctested README; joins the workspace
+  (single package, existing, or virtual) and registers itself in the app
+- [x] Docs (development.md "Packages"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
+- [ ] `--with admin` (an `AdminResource` contributed through `Registry::contribute`, after #31)
+
+### Start from your own template (#35)
+- [x] `rnx new <name> --from <dir | git+url#ref> [--set key=value]`: the template's text files get
+  the known placeholders filled (other `{{ }}` untouched), `renox-template.toml` (`replace`, `drop`,
+  `[[ask]]`), a new `APP_KEY` in `.env`, no `.git`, nothing executed
+- [x] Docs (development.md "Start from your own template"), CHEATSHEET.md, llms.txt
+- [ ] Updating an app from a newer template version, templates from crates.io (out of scope)
+
+### Navigation menus (#37)
+- [x] `NavLink`, `App::nav`/`Registry::nav`/`App::nav_hide`; `AuthUser::has_permission_anywhere`;
+  `nav("menu")` and the `menu` prop on `rx-sidebar` and `rx-nav-links`; starter and bikeshop use it
+- [x] Docs (ui.md, authorization.md), CHEATSHEET.md, llms.txt
+- [ ] Links stored through `Registry::contribute` (after #31); breadcrumbs, menus edited at run
+  time and a renox-admin listing are out of scope
+
+### Outbound webhooks (#38)
+- [x] `renox::webhook::outbound`: `Endpoint` (secret shown once, sealed with `APP_KEY`),
+  `App::webhook_event`, `emit_in` (transactional outbox), `DeliverWebhook` (Standard Webhooks
+  schedule, 410 and `WEBHOOK_DISABLE_AFTER` disabling, `EndpointDisabled`), the `webhook_deliveries`
+  log; `webhook:endpoints|deliveries|redeliver|prune-deliveries`
+- [x] `Request::sign`, `App::signing_key`, `SignedRequest<T>` (`WEBHOOK_TOLERANCE_SECS`, replay check)
+- [x] Docs (operations.md "Outbound webhooks" with the spec test vector), CHEATSHEET.md, llms.txt
+- [ ] An admin screen for endpoints, OAuth2 client credentials, per-endpoint payload transforms and
+  private-address blocking are out of scope
+
+### Install on phones (#33)
+- [x] `renox::pwa`: `Pwa`, `PwaBrand`, `PwaRequest`; `App::pwa`, `App::pwa_for`; `/manifest.webmanifest`, versioned
+  `/sw.js`, `/_renox/offline`, icons; `<rx-pwa/>` / `renox_pwa()`; `rnx make:pwa`
+- [x] Docs (ui.md "Install on phones"), CHEATSHEET.md, llms.txt, AGENTS.md.stub
+- [x] Browser test (`tests/browser/pwa.test.mjs`), `tests/cli/run.sh` make:pwa step, acceptance tests
+  (`crates/renox/tests/it/pwa.rs`: manifest members and locale, worker version, boot errors, `pwa_for`, `<rx-pwa/>`, `route:list`)
+- [ ] Push notifications and several manifests per app are out of scope here (offline forms: #52, below)
+
+### Offline forms (#52)
+- [x] Server: migration `…000440` (`idempotency_keys`), `renox::idempotency`, `Routes::offline()` / `offline_with(Skew)`,
+  the `Offline` extractor, `GET /_renox/csrf`, `idempotency:prune` and `IDEMPOTENCY_RETENTION_DAYS`
+- [x] Client: `<rx-form offline="name">`, `renox-offline.js` (IndexedDB outbox, ordered replay, needs attention, logout clearing)
+- [x] Docs (ui.md "Offline forms", routing.md, operations.md), CHEATSHEET.md, llms.txt, AGENTS.md.stub, env.stub
+- [x] Acceptance tests: `tests/it/idempotency.rs` (AC1-AC6, PostgreSQL in `postgres.rs`), `tests/browser/offline-forms.test.mjs`
+  (AC7-AC11: offline emulation, ordered and interrupted replay, file, needs attention, logout, strict CSP) on the fixture's `/offline-form`
+- [ ] Background Sync, reading pages offline and merging edits from two devices are out of scope
+
+### Brand themes (#36)
+- [x] `renox::theme`: `Brand`, `Theme::from_brand` (OKLCH, WCAG-checked, `ContrastError` with a passing
+  suggestion), `tokens()`/`dark_tokens()`, `css()`; hashed `/_renox/theme/{hash}.css`; `App::theme`,
+  `App::theme_for` + `ThemeRequest`; `<rx-theme/>` / `renox_theme()`; `Mail::theme`; bikeshop per-store brands
+- [x] Docs (ui.md "Brand themes"), CHEATSHEET.md, llms.txt
+- [ ] Loading the display font, a theme editor in renox-admin and non-accent tokens (status colours,
+  radii) are out of scope
+
+### Right-to-left (#28)
+- [x] `renox::i18n::{direction, Direction}`, `App::rtl_locales`, `AppState::direction`; the `app.dir` global in
+  views and mails (the mail's own locale); `dir` on every built-in, stub and example layout
+- [x] Noto Sans Arabic (`unicode-range`, fetched only for Arabic text); `rx-icon--directional` chevrons and arrows;
+  logical CSS in the kit, grid, blocks and editors, with a lint test (`css_logical.rs`); JS parts read the
+  direction when used (tabs, calendar, week, gallery, kanban, grid)
+- [x] Tests: layout grep (`layout_dir.rs`), `tests/browser/rtl.test.mjs` (kit, grid, blocks, admin, font network check)
+- [x] Docs (ui.md "Right-to-left"), CHEATSHEET.md, llms.txt, the new apps' AGENTS.md
+- [ ] Arabic translations of the kit's texts, Arabic-Indic digits and the Hijri calendar are out of scope
+
+### State machines (#39)
+- [x] `renox::state_machine`: `StateMachine`, `Machine`, `Transition` (`permission`, `permission_in`,
+  `system`, guards, effects, `reason_required`), `record.transition(..).by/by_system/reason/input/meta`
+  `.run/.run_in`, `Outcome`/`Transitioned`, `TransitionError` as 401/403/404/422, optimistic update
+  (`Conflict`), the `state_transitions` history (migration 000410), `history` and `timeline`
+- [x] `available` (name, label, tone, needs_reason, requires_approval), the global interceptor
+  (`Proceed`/`Defer`, `Outcome::Pending`, side-effect-free `preview`), `#[model(state_machine)]`
+  guarding the status column, `Machine::initial`, `insert_in_state`
+- [x] `Machine::mermaid`, `rnx state:diagram`, admin opt-in (`AdminAction::transitions`),
+  `<rx-transition-actions>` and `state_machine::routes::<M>()`
+- [x] Bikeshop rentals moved onto the machine (`rentals/machine.rs`)
+- [x] Docs (docs/state-machines.md, site page), CHEATSHEET.md, llms.txt, the new-app AGENTS.md stub
+- [ ] Approval workflows themselves, `.approved(ref)` replay, run-time targets (`to_one_of`) and a
+  by-name `run(model, key, transition)` registry are follow-up issues; work orders stay as they are
+
+### Money in several currencies (#45)
+- [x] `renox::money::{Money, Currency, Rounding}`: one ISO 4217 table (also behind `currency_decimals`/`format_money`),
+  `checked_add`/`checked_sub`, `allocate`/`allocate_by`, `mul_ratio`/`percent`/`convert` with an explicit
+  `Rounding` and exact decimal rates, display and parsing with the currency's decimals and the locale's separators, serde
+- [x] The `money` filter takes a `Money`; storage as `<field>` BIGINT + `<field>_currency` TEXT (`#[model(money)]`,
+  `money(currency = "…")` to share one column, `Option<Money>`), `try_get_money`; `make:migration --auto`, `rnx db:check` and
+  `assert_models_match_schema` know the pair
+- [x] Validation `.currency()` / `.money(&self.currency)`, `Money` in `#[model(form)]`, `<rx-input type="money">`
+- [x] Grid `Column::money(..).currency_from(..)` (per-row formatting, one summary per currency, `cur.<col>` filter, CSV/XLSX/print),
+  renox-admin `Field::money(..).currency_from(..)` for list, form and infolist
+- [x] Tests per acceptance criterion (core, model, grid, forms, admin; PostgreSQL storage in `postgres.rs`), bikeshop
+  `/about/fields` deposit in USD, JPY or KWD (`tests/fields.rs`, `bikeshop-fields.test.mjs`)
+- [x] Docs (types.md "Money", ui.md, validation.md, grid.md, admin.md, postgresql.md), CHEATSHEET.md, llms.txt
+- [x] Quantities and units went to #69 (below); exchange-rate tables and a `rust_decimal` conversion are not planned
+
+### Decimal quantities with units (#69)
+- [x] `renox::quantity::{Quantity<SCALE>, QuantityError, Units, UnitTable}`: an exact decimal as an `i64` in units of 10^-SCALE
+  (SCALE 0 to 9), `parse` with an explicit `Rounding` / `parse_exact`, `checked_add`/`checked_sub`/`checked_neg`, `mul_ratio`,
+  `mul_decimal`, `rescale`, decimal-string serde; `Units` with exact decimal factors and `convert` with an explicit `Rounding`
+- [x] The `quantity` template filter (decimals, unit, locale separators); `Quantity<S>` as one `BIGINT` column (typed
+  `lt`/`gt`/`between`/`order_by`/`sum`), `make:migration --auto`, `rnx db:check` and `assert_models_match_schema`
+- [x] Validation `.quantity(scale)`, `.quantity_min(..)` / `.quantity_max(..)`, `.unit(&table)`; `Quantity` in `#[model(form)]`;
+  `<rx-input type="quantity" scale unit>`
+- [x] Grid `Column::quantity(..).scale(..).unit_from(..)` (per-row unit, one summary per unit, `unit.<col>` filter, CSV/XLSX/print),
+  renox-admin `Field::quantity(..).scale(..).unit_from(..)`
+- [x] Tests per acceptance criterion (`quantity.rs`, `quantity_model.rs`, `forms.rs`, `grid.rs`, `auto_migrations.rs`,
+  `postgres.rs`, `renox-admin/tests/quantity.rs`), bikeshop `/about/fields` load limit in kg, g or t (`tests/fields.rs`,
+  `bikeshop-fields.test.mjs`)
+- [x] Docs (types.md "Quantities and units", ui.md, validation.md, grid.md, admin.md), CHEATSHEET.md, llms.txt
+
+### One-off payments in renox-billing (#44)
+- [x] `billing_payments` / `billing_refunds` tables (SQLite, PostgreSQL, down), `BillingPayment`, `BillingRefund`, status enums, the
+  typed `Unsupported` error
+- [x] `Billing::of(..).charge`, `Billing::payment_link`, `refund`, `payment_status`, `expire_links` with `Charge`, `PaymentLink`, `Refund`
+- [x] Keys per installation (`resolved`, `resolved_accounts`) and several accounts per gateway with `/billing/webhooks/{gateway}/{account}`
+- [x] Webhooks applied to payments, refunds and disputes idempotently, with the late-success rule; events `PaymentRefunded`,
+  `RefundSucceeded`, `RefundFailed`, `DisputeOpened`/`Won`/`Lost`, `PaymentLinkExpired`
+- [x] Stripe, Xendit and the new N-Genius gateway (`Billing::ngenius()`), fixtures from their docs; the `billing:expire-links` sweep
+- [x] Config docs and new-app stubs; docs/billing.md, CHEATSHEET.md, llms.txt, the crate README
+- [x] Stripe PaymentIntent matching for disputes and dashboard refunds; acceptance tests for status checks, expiry and per-account keys
+- [x] The bikeshop "pay by link" example (`POST /staff/workshop/{order}/pay-link`, the demo gateway's `payment_link`/`payment_status`, a
+  `PaymentSucceeded` listener marking the work order paid) with its tests and browser test; acceptance criteria AC1-AC14 are met
+
+### Custom fields (#41)
+- [x] `renox::custom_fields::{CustomField, FieldKind, LocaleMap, FieldRules, CustomValues}`: definitions in the `custom_fields` table
+  (migration 430, SQLite and PostgreSQL), kinds text/number/date/bool/choice/reference/file, labels and choice labels per locale with
+  fallback, free `meta` JSON, stable keys, per-model cache with invalidation
+- [x] `CustomValues::validate` (required, max, number, date, choice, reference exists, file) with `extra[key]` errors;
+  `#[model(custom_fields = "extra")]` merged into `#[model(form)]` and `Valid<T>`
+- [x] Typed JSON paths `Col<M, Json<T>>::json(key)`, `order_by_json[_desc]`, `Query::with_custom_fields`, `db::json_index`
+- [x] `<rx-custom-fields>` kit tag (form and show modes), `CustomField::views`; grid `Column::custom_field` (sort, filter, search,
+  CSV/xlsx/print)
+- [x] renox-admin: custom fields in forms, entries, columns and filters, and a "Custom fields" definitions resource
+- [x] Docs (types.md "Custom fields"), CHEATSHEET.md, llms.txt, `send_handlers.rs`
+- [x] Acceptance tests (AC1-AC12 audited; a PostgreSQL test) and a browser test (`tests/browser/custom-fields.test.mjs`, on the fixture's
+  `/parties`); the sensitive flag that seals values with `APP_KEY` was built in the follow-up #71 (below)
+
+### Sensitive custom fields (#71)
+- [x] `FieldRules.sensitive` / `reveal` (no migration: they live in the `rules` JSON), `CustomField::sensitive()` / `reveal_with(..)`;
+  `save` refuses a sensitive reference or file field
+- [x] Sealed storage: `rx-sealed:1:<token>` (the `Encrypted<T>` AES-256-GCM under `APP_KEY`) after validation on the plain value,
+  `CustomValues::open` / `Opened`, `is_sealed`, `SEALED_PREFIX`; a blank submit keeps the stored seal
+- [x] `DbError::SealedCustomField` for conditions, `order_by_json[_desc]`, grid filter, sort and search; the grid column is not
+  sortable or filterable
+- [x] Masking: `FieldView.sensitive`/`masked`, `CustomField::views_for` / `can_reveal`, `CustomValues::shown`, the `custom_fields`
+  built-in, grid cells; exports omit the column without the ability (`GridRequest::viewed_by`)
+- [x] renox-admin: "Sensitive" and "Reveal ability" on the definitions form; masked forms, entries and lists
+- [x] Docs (types.md "Sensitive fields", operations.md key rotation), CHEATSHEET.md, llms.txt, `send_handlers.rs`
+- [x] Acceptance tests (AC1-AC10 audited; a PostgreSQL test that skips without `TEST_DATABASE_URL`) and a browser test
+  (`tests/browser/custom-fields.test.mjs`: fill, mask, reveal on the fixture's `/parties`)
+
+### PDF documents (#30)
+- [x] `crates/renox-pdf` (eleventh crate, same version, not in `renox`'s features): Typst compiled in the process with our own
+  `typst::World` (template root confinement, no network, `clock` for `today()`, in-memory assets)
+- [x] Fonts: Inter and Noto Sans Arabic bundled, `Pdf::font`, missing glyphs reported as `PdfError::MissingGlyphs` (`lenient()` logs)
+- [x] `Pdf::document(..).data(..).locale(..).asset(..).render(..)`; blocking-thread pool with `PDF_MAX_CONCURRENT` and `PDF_TIMEOUT`
+- [x] Templates from disk in debug, `renox::embedded!()` in release; the kit `@renox/kit:0.1.0` (tokens, `money()`, `date()`,
+  `page-header`, `data-table`)
+- [x] `renox_pdf::testing::{text_of, PdfAssertions}`, `rnx make:pdf`
+- [x] Docs (pdf.md, doctested through `Guide`; site page), CHEATSHEET.md, llms.txt, mail.md and routing.md cross-links
+- [x] Release plumbing for the eleventh crate (RELEASING.md, layout.md, CLAUDE.md, docs.rs list; the `release.yml` comment is the owner's)
+- [x] Bikeshop: a returned rental's receipt as a PDF (`/staff/rentals/{rental}/receipt.pdf`, the receipt page's permission and store
+  scope), attached to the return mail in the customer's language, with tests and `tests/browser/bikeshop-receipt-pdf.test.mjs`
+- [x] Acceptance tests (AC1-AC12 audited; `crates/renox-pdf/tests/acceptance.rs` adds Arabic/RTL, missing glyphs and lenient mode,
+  the limits' configuration and a responsive runtime through the public API); `cargo deny check` and the C-crypto check pass
+- [ ] App-vendored packages (`Pdf::package`), HTML-to-PDF, PAdES, PDF/A and form filling are out of scope
+
+### Maps and geographic checks (#47)
+- [x] `renox::geo::{Point, Circle, Polygon, GeoError}` (no dependency): validated `(lat, lng)`, haversine `distance_to` in metres,
+  `Circle::contains`, `Polygon::contains` (ray casting, holes, antimeridian), GeoJSON `[lng, lat]` and lat/lng form (de)serialization
+- [x] Validation `.latitude()`, `.longitude()`, `.point()` with English messages
+- [x] `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION` (and `Blocks::map_tiles` / `map_attribution`); no default tile service, an
+  explanatory empty state without tiles (config.md, `env.stub`)
+- [x] `map_picker` (point, circle, polygon; typed coordinates as the keyboard way) and `map` (markers, shapes) blocks with the
+  `<rx-map-picker>` / `<rx-map>` tags; vendored Leaflet 1.9.4 (licence, NOTICE) and `map.js`, fetched only on a page with a map block
+- [x] Tests per acceptance criterion (`geo.rs` unit tests, `validation/mod.rs`, `tests/it/geo_forms.rs`, `renox-blocks/tests/blocks.rs`
+  and `assets.rs`, bikeshop `tests/blocks.rs`), `tests/browser/maps.test.mjs` with a local tile stub under `CSP=strict`
+- [x] Docs (blocks.md "Maps", types.md "Places", validation.md, config.md), CHEATSHEET.md, llms.txt, the blocks crate README,
+  bikeshop `/about/blocks` (English and Spanish)
+- [ ] Geocoding, routing, spatial indexes (PostGIS) and live tracking are out of scope
+
+### Field blocks: rating, geolocation and barcode (#54, part 2 of #32)
+- [x] `rating` (a radio group in stars, no JavaScript needed, `readonly` display, "N of MAX" names), with `<rx-rating>`
+- [x] `geolocate` (a button that asks for the position, posts `name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`; denied,
+  unavailable and timeout states with a retry), with `<rx-geolocate>`
+- [x] `barcode_scan` (one text field filled by typing, a keyboard-wedge scanner or the camera; `BarcodeDetector`, else a vendored
+  `@zxing/library` 0.23.0 loaded only when the camera opens), with `<rx-barcode-scan>`
+- [x] Contracts, `blocks.rating.*` / `blocks.geolocate.*` / `blocks.barcode.*` texts, the parts `geolocate.js` and `barcode.js`,
+  the `data-zxing` file in the loader tag, `assets/vendor/zxing/` (LICENSE) and `assets/vendor/NOTICE`
+- [x] Bikeshop `/about/blocks` shows all three (`POST /about/blocks/field`), allows `geolocation` and `camera` for self in its
+  Permissions-Policy, English and Spanish texts
+- [x] Tests per acceptance criterion (`renox-blocks/tests/blocks.rs` and `assets.rs`, bikeshop `tests/blocks.rs`) and
+  `tests/browser/blocks-field.test.mjs` (arrow keys, no script, right-to-left, granted and denied permission, timeout, keyboard
+  wedge, `BarcodeDetector` stub, zxing fallback), `blocks.test.mjs` and `a11y.test.mjs` for the page
+- [x] Docs (blocks.md "rating", "geolocate", "barcode_scan"), CHEATSHEET.md, llms.txt, the blocks crate README, layout.md,
+  the bikeshop README
+- [ ] A decoder for the camera other than `BarcodeDetector` and zxing, continuous tracking (`watchPosition`) and reverse
+  geocoding are out of scope
+
 ## Decisions
 
+- **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
+  (a queued mail from its own locale), the CSS is logical rather than a second stylesheet, and the font is a
+  separate face with a `unicode-range` so Latin pages never pay for it. The error and debug pages stay `dir="ltr"`.
+
+- **The service worker never stores pages** (#33): navigations go to the network and fall back to one offline page
+  rendered at boot with no user, so a signed-in page cannot be served from a cache. `pwa_for` brands the manifest,
+  icons, offline page and worker version per host (`Vary: Host`); several manifests per app are deferred.
+
+- **Offline forms keep posts, not pages, and replay only while the app is open** (#52): the outbox is an unencrypted
+  IndexedDB database cleared on logout, never stores passwords or the CSRF token (a fresh one comes from `GET /_renox/csrf`
+  before each replay), and replays in recorded order with an `Idempotency-Key`. Outside the skew limits the handler still
+  gets the device time with `skew_exceeded`, so the app decides. Background Sync is not used: it is Chromium-only and a
+  replay needs a page for the session and the token.
+
+- **Brand themes are hashed stylesheets only** (#36): no inline `<style>` and no `Vary: Host`, so a theme works
+  under `CSP=strict` without a nonce and caches for a year. Every theme the app serves is kept in memory by hash.
+  A colour that cannot be made readable by moving its text variants in lightness is refused with the nearest
+  passing colour, not silently changed. The settings integration (#29) is documented, not coupled in code.
+- **`--from` is a new option, not a value for `--starter`** (#35), which stays a boolean; it
+  conflicts with `--starter`, `--notifications` and `--tailwind`. Templates fill only exact
+  `{{key}}` names (no spaces), so a template's own `{{ app.locale }}` survives, and a ref is a tag or
+  branch (`git clone --branch` takes no SHA).
+- **Packages use timestamped migration names with the package name** (#34), never the `0001…`
+  prefix, which is reserved for the framework; `--with admin` errors until `Registry::contribute`
+  exists, rather than writing code that doesn't build.
 - **Rate limits for queued channel and mail sends are separate methods** (#46):
   `App::channel_rate_limit(name, …)` and `App::mailer_rate_limit(name, …)`, not a builder
   returned by `channel`/`mailer` (their return types stay, for semver). The limit travels in
@@ -2128,6 +2362,13 @@ Notes:
   A seed file (`App::settings_from`) fills a group the first time it is read and has no row.
   Admin pages use the default scope; per-field abilities and module-contributed pages are not done.
 
+- **Contributions are a typed list, not an event bus** (#31): `Registry::contribute::<T>` keeps values per type in
+  order (the app's first, then modules in the order listed) with the contributing module's name, so a clash can name
+  both sides. `Module::routes_with` runs after every `register`, so a consumer sees contributions from modules listed
+  after it; the default calls `routes`, so existing modules are unchanged. An `Admin` takes unnamed `AdminEntry`s;
+  `Admin::named` opts into entries for a name, an unknown name or a slug clash is a boot error. Navigation links (#37)
+  and settings pages still use their own `Registry` fields; moving them over is not done.
+
 - **Imports beyond CSV** (#50, 2026-10): Excel is read with `calamine` under the existing `xlsx`
   feature (MIT, pure Rust; it reuses the `zip` and `quick-xml` already built for exports), as
   text, so one row struct and its rules check CSV and Excel alike (dates as `YYYY-MM-DD`, `12`
@@ -2166,7 +2407,16 @@ Notes:
   `auto` height (`size: 80mm auto` is not valid CSS and Chrome drops the rule), so the receipt
   uses named pages of `80mm 297mm` / `58mm 297mm` and a roll printer cuts after the content;
   where named pages aren't supported (Safari) the receipt keeps its width on the browser's page.
-  A PDF receipt (#30) and ESC/POS printing stay out.
+  A PDF receipt (#30, `renox-pdf`) and ESC/POS printing stay out.
+- **Outbound webhooks** (#38, accepted as written 2026-10-16): the Standard Webhooks format
+  (`webhook-id`, `webhook-timestamp`, `webhook-signature: v1,<base64>`, secrets `whsec_<base64>`),
+  not the proposal's own headers, so receivers can use existing libraries. No generic after-commit
+  hook: `emit_in` queues the delivery jobs inside the caller's transaction (`Queue::dispatch_in`), and
+  a plain `state.emit` of an event registered with `App::webhook_event` queues them at once. The job
+  payload holds only ids and is encrypted; the body is stored once in `webhook_deliveries`, so a
+  redelivery sends the identical payload with a fresh timestamp. Out of scope and said so in the
+  docs: blocking private addresses (SSRF), an admin UI, OAuth2 client credentials, payload
+  transforms.
 - **Passwordless login** (#42, Renoxium's notes of 2026-10-16): `Auth::new().magic_link()` and
   `.login_codes(LoginCodes::new()..)` are Auth's own login flow (renox-core `auth/passwordless.rs`),
   not a plugin crate: no new dependency, delivery goes through the existing mail and
@@ -2181,6 +2431,104 @@ Notes:
   same. `LoggedIn` has a `via` field. Deviations from the issue: the delivery hook is
   `.deliver(|state, LoginCodeDelivery| ..)` (one struct instead of five arguments); no
   `.json()` paths (the example uses a `phone` column and raw SQL, as the notes said).
+
+- **State machines** (#39, owner's decisions and plan assumptions A1-A13): the call shape is
+  `record.transition("place").by(&user).reason(..).input(&x).meta(json).run(&state)`; `run_in(&mut tx)`
+  does not commit and returns an `Outcome` for the caller to emit after the commit. Checks run in
+  the order authentication, permission (`permission_in` uses `has_permission_in`), `from`, guards,
+  reason, interceptor, optimistic `UPDATE .. WHERE status = <loaded>`, history row, effects. One
+  interceptor is registered globally and may `Defer` (the status stays, its own writes are kept,
+  `Outcome::Pending`); approval workflows are not built. `#[model(state_machine)]` makes `save`
+  match the row on the loaded status instead of writing it; bulk `update` bypasses the guard
+  (documented like hooks); inserts are unrestricted unless the machine declares `initial`.
+  Bikeshop rentals use `.system()` transitions because every caller (store-scoped counter,
+  kiosk token, the customer's own reservation, the scheduler) is authorised by its area first;
+  the staff member goes into the history `metadata`. Work orders were not moved.
+
+- **Money in several currencies** (#45, assumptions A1-A13): `Money { minor: i64, currency }` is two columns, never one;
+  a shop with one currency keeps `i64`. No operators and no `Sum`: `checked_add`/`checked_sub` return `MoneyError`
+  (`CurrencyMismatch`, `Overflow`). `percent`, `mul_ratio` and `convert` have no default rounding; rates are exact
+  decimals (`&str` or a fraction), never `f64`, and there is no decimal crate in the public API. `allocate` gives the
+  remainder to the first parts (100 in three: 34, 33, 33). Amounts typed in a form are parsed with the currency's
+  decimals and refused, not rounded (`10.5` JPY). A grid never sums across currencies: one figure per currency.
+  The currency of a form is an ordinary field beside the amount (bikeshop: a select), so the input's step follows
+  the stored currency and changes on the next render, not as the select changes. Bikeshop keeps the deposit as an
+  `Option<Money>` added by a new migration, not by editing the released one.
+
+- **Decimal quantities with units** (#69, assumptions A1-A16): `Quantity<const SCALE>` is a `Copy` `i64` of 10^-SCALE units, so the
+  scale is in the type and not in the schema (`db:check` sees a `BIGINT`; the docs advise a comment on the column). Like `Money` there
+  is no default rounding (`parse`, `mul_ratio`, `mul_decimal`, `rescale`, `convert` all take a `Rounding`), no operators and no
+  float or decimal crate in the API; JSON carries a decimal string. A quantity has no unit: the unit is a `String` column of the
+  record, and a `UnitTable` (one level, through the base unit) converts with exact factors. Limits on a typed text use
+  `quantity_min`/`quantity_max`, because `min`/`max` count characters of text. A grid never sums across units: one figure per
+  unit. Bikeshop keeps the load limit as an `Option<Quantity<3>>` plus `load_unit`, added by a new migration.
+
+- **One-off payments in `renox-billing`** (#44, assumptions A1-A15): a payment is a `billing_payments` row (kind charge or link,
+  the app's reference, the account) with `billing_refunds` beside it; money is `Money`. Keys belong to the installation, never to a
+  `Billable` owner: `Stripe::resolved` / `resolved_accounts` (and Xendit, N-Genius) call the closure on every use and cache nothing,
+  and a key never reaches `Debug` or an error. An account is named per charge (`.account(..)`), stored on the payment and has its own
+  webhook `/billing/webhooks/{gateway}/{account}` with its own secret and no fallback to the default account; the old URL is the
+  default account. New `Gateway` methods default to a typed, downcastable `Unsupported`, so custom gateways keep compiling. The row
+  is written before the gateway call and removed when it fails. Refunds are pending until the gateway says otherwise, and
+  over-refunding is refused before any call. Late-success rule: a success always wins over failed or expired, a failure or expiry
+  after a success is ignored, otherwise the newest gateway time decides. Expiry comes from the gateway's webhook or the hourly
+  `billing:expire-links` sweep, which asks `payment_status` first. N-Genius is one-off only (no subscriptions, no disputes); saved-card
+  tokens were not accepted. Fixtures for all three gateways are written from their public docs, not recorded. Known gap: Stripe
+  disputes and dashboard-made refunds name only the PaymentIntent, which the row now stores as `gateway_intent` (migration `…000920`), so they are matched by it (13/14).
+- **Custom fields** (#41, assumptions A1-A12): definitions live in their own table, not in settings, and a key is stable
+  (`[a-z][a-z0-9_]*`) because stored values are keyed by it; only label, rules, meta, position and active change, and deactivating
+  keeps the values. Values are one `Json<CustomValues>` column, so no migration per field. Labels are a locale map that falls back
+  to the `en` entry, then the key. A JSON key is shape-checked and never interpolated; the check against the definitions is the
+  explicit `Query::with_custom_fields(&db)` (and `Grid::with_custom_fields`) because `where_` is sync, and it also picks the cast on
+  PostgreSQL. `Column::custom_field` is the grid constructor because `Column::custom` already draws a template. Indexes are a
+  helper (`db::json_index`) the migration calls, not automatic. The sealed (sensitive) flag came with #71 (below). The tag's
+  error lookup also tries the raw name, because custom-field errors are keyed `extra[key]`, not `extra.key`.
+- **Sensitive custom fields** (#71, assumptions A1-A12): the flag lives in the definition's `rules` JSON, so there is no migration
+  and old rows load as not sensitive. A value is validated as plain text, then sealed once (`rx-sealed:1:` + the `Encrypted<T>`
+  token); whether a stored value is sealed is decided by its prefix, not by the flag now, so toggling the flag changes new writes
+  only. Masking is by an ability (`reveal_with` name, else `custom_fields.reveal`, checked with `Auth::allows`; unknown names deny)
+  and the plain value never reaches a template context for a viewer without it. Filtering, sorting and searching a sealed key is a
+  typed error and exports omit (not mask) the column, so a spreadsheet never holds a fake value. Rotation follows `Encrypted<T>`:
+  re-save before changing `APP_KEY`; there is no automatic re-seal, and a key change shows `unreadable`/the mask, never an error.
+- **PDFs are Typst templates compiled in the process** (#30): no headless browser and no service, so Arabic is shaped by the
+  compiler itself. The `typst::World` is ours, not `typst-kit`: a render reads only the template root and the document's own
+  assets and never touches the network, so the only package is the virtual `@renox/kit:0.1.0` (`Pdf::package` is deferred). A
+  glyph no font has fails the render by default (`MissingGlyphs`) because a silent empty box in an invoice is worse than an
+  error. Text extraction for tests reads the produced PDF (no PDF reader dependency), so a shaped Arabic word comes back as
+  several pieces; the guide says so. The brand tokens in the kit are constants and do not follow `Theme` yet.
+- **Maps: tiles are configuration, edges are decided once** (#47, assumptions A1-A13): the API is `(lat, lng)` and GeoJSON is
+  `[lng, lat]`, converted in one place and tested both ways. A point on a circle's radius, a polygon's edge or a vertex is inside
+  (with a tiny tolerance for float error), and a hole is open; a polygon crosses the antimeridian by shifting longitudes relative to
+  its first vertex, so one wider than 180 degrees is not supported. There is no default tile server: `BLOCKS_MAP_TILES` is read per
+  use and must be `http(s)`, and without it the blocks say so while the picker still works from its typed coordinates (so entering a
+  place never depends on a third party). Leaflet 1.9.4 is vendored and served by the app (`'self'`, no inline script, so
+  `CSP=strict` works); the default `img-src` already allows `https:`, an `http` tile host needs `App::csp`. Leaflet.draw is not
+  vendored: `map.js` draws points, circles and polygons itself. A point posts `name[lat]` and `name[lng]` (read as `Point` through the
+  nested names), a circle or polygon one GeoJSON string; a circle is a GeoJSON `Point` with a `radius`. `map.js` is fetched on a
+  page with a map block, Leaflet only when there are tiles to show. The browser test runs on the browser fixture, not the bikeshop,
+  because only the fixture can allow the local stub's `http` origin in `img-src` from the test's environment.
+- **Files from the browser are real files, set through `DataTransfer`** (#53): the signature pad and the camera
+  capture put a PNG or JPEGs on a file input, not a data URL in a text field, so a handler reads `Upload`s and the
+  existing `image()` / `mimes()` / `max()` rules (and `Upload::store`) apply with no new extractor. The pad's two
+  ways (drawing, typing) never post both, because the last one used clears the other; `required` is met by either,
+  so the file input itself is never `required` and the typed field is only while the pad is empty. The camera's
+  fallback is the same file input made visible (and visible by default without JavaScript), not a second input,
+  so what a phone's camera app or a file picker returns is downsized by the same code. A photo from the stream is
+  cut to `max_width` on a canvas in the browser; processing on the server (#43) is not wired into the block.
+  The browser tests fake the camera with Chrome's flags and stub `getUserMedia` for the denied and missing cases.
+- **Field blocks send plain values and need nothing from the framework** (#54): `rating` posts one integer, `geolocate` four
+  fields under one name (`name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`, the shape `renox::geo::Point` reads from #47) and
+  `barcode_scan` one string, so there is no new extractor and `Valid<T>` applies as it is. `rating` is radios and CSS with no
+  part, so it works without JavaScript and a page with only a rating downloads no block code. `geolocate`'s inputs are disabled
+  until there is a fix, so a form never posts a stale or half position; the permission is asked for in the click handler only.
+  A fix worse than the wanted `accuracy` is kept and flagged: the server, which sees the posted `accuracy`, decides. The
+  `Permissions-Policy` switches `camera` and `geolocation` off and the blocks cannot change that, so the guide says what to allow
+  (and the bike shop does) instead of the framework's default changing. The barcode camera uses `BarcodeDetector` where the
+  browser has it and otherwise a vendored `@zxing/library` 0.23.0 (Apache-2.0, 362 KB, added by `barcode.js` as a classic script
+  from the loader tag's `data-zxing`, only when the camera opens, so a page without the block or a browser with
+  `BarcodeDetector` never fetches it). Keys less than 50 ms apart ending in Enter are one scan and do not submit the form unless
+  the block has `submit`. The zxing browser test fakes the camera in the page (a canvas stream of an EAN-13 drawn by the test,
+  decoded by the real part and decoder), not with Chrome's fake device file, so the frame is known and no video fixture is checked in.
 
 ## Not planned
 

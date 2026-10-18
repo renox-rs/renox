@@ -918,3 +918,997 @@ impl Module for Bad {
         Routes::new().get("/bad", || async { view("bad.html", context! {}) })
     }
 }
+
+const PNG: &[u8] = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDRsmall-but-valid-enough-for-sniffing";
+
+const SIGN_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import signature_pad %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/sign" enctype="multipart/form-data">
+{{ csrf_field() }}
+{{ signature_pad("signature", required=true, width=320, height=120, hint="Sign for the repair.") }}
+</form></body></html>"##;
+
+const SIGN_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/sign" enctype="multipart/form-data">
+<rx-signature-pad name="sig" label="Customer" name-label="Print your name"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct SignOff {
+    signature: Option<Upload>,
+    signature_name: Option<String>,
+}
+
+impl Validate for SignOff {
+    fn rules(&self, v: &mut Validator) {
+        v.field("signature", &self.signature)
+            .image()
+            .mimes(&["png"])
+            .max(100);
+        if self.signature.is_none() {
+            v.field("signature_name", &self.signature_name).required();
+        }
+    }
+}
+
+struct Signing;
+
+impl Module for Signing {
+    fn name(&self) -> &'static str {
+        "signing"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/sign", || async { view("sign.html", ()) })
+            .get("/sign-tag", || async { view("sign-tag.html", ()) })
+            .post("/sign", |Valid(form): Valid<SignOff>| async move {
+                Json(json!({
+                    "file": form.signature.as_ref().map(|f| f.file_name().to_owned()),
+                    "size": form.signature.as_ref().map(|f| f.bytes().len()),
+                    "name": form.signature_name,
+                }))
+            })
+    }
+}
+
+async fn signing_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Signing)
+            .templates(|env| {
+                env.add_template("sign.html", SIGN_MACRO).unwrap();
+                renox::view::add_template(env, "sign-tag.html", SIGN_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The signature pad (#53): the macro and the tag print the canvas, its
+/// tools, a typed-name field named `{name}_name` linked to the help text, a
+/// hidden PNG file input and the part's file, only on that page.
+#[renox::test]
+async fn the_signature_pad_renders_as_a_macro_and_a_tag() {
+    let app = signing_app().await;
+    let html = app.get("/sign").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-signature data-rx-signature-width="320" data-rx-signature-height="120""#);
+    has(r#"aria-describedby="rx-signature-help rx-signature-hint rx-signature-error""#);
+    has(
+        r#"<canvas class="rx-signature__canvas" tabindex="0" role="img" aria-label="Signature area""#,
+    );
+    has("data-rx-signature-undo>Undo</button>");
+    has("data-rx-signature-clear>Clear</button>");
+    has(r#"<input type="file" hidden name="signature" accept="image/png" data-rx-signature-file>"#);
+    has(
+        r#"id="rx-signature-name" name="signature_name" value="" autocomplete="off" required data-rx-signature-required"#,
+    );
+    has(r#"<p class="rx-hint" id="rx-signature-help">Draw your signature"#);
+    has("Sign for the repair.");
+    has(r#"data-signature="/_renox/blocks/signature-"#);
+    // No handlers or style attributes: the size goes through the script (CSP=strict).
+    assert!(!html.contains("onclick") && !html.contains(r#" style="--rx-signature"#));
+
+    let html = app.get("/sign-tag").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"id="rx-sig-name" name="sig_name""#);
+    has(r#"name="sig" accept="image/png""#);
+    has(">Print your name</label>");
+    has("Customer");
+    has(r#"<span class="rx-required">(optional)</span>"#);
+    assert!(!html.contains("data-rx-signature-required"), "{html}");
+}
+
+/// A drawn signature arrives as an `Upload` that passes `image()` and
+/// `mimes(&["png"])`; a typed name arrives alone; neither, or a file that
+/// isn't an image, fails with the rule's message.
+#[renox::test]
+async fn a_drawn_or_typed_signature_arrives_through_valid() {
+    let app = signing_app().await;
+    app.get("/sign").await;
+
+    app.post_multipart("/sign", &[], &[("signature", "signature.png", PNG)])
+        .await
+        .assert_ok()
+        .assert_json_path("file", "signature.png")
+        .assert_json_path("size", PNG.len());
+
+    // The typed way: the name, and no file.
+    app.post_multipart("/sign", &[("signature_name", "Marta Ruiz")], &[])
+        .await
+        .assert_ok()
+        .assert_json_path("name", "Marta Ruiz");
+
+    app.request()
+        .json()
+        .post_multipart(
+            "/sign",
+            &[],
+            &[("signature", "signature.png", b"MZ not an image")],
+        )
+        .await
+        .assert_status(422)
+        .assert_invalid("signature")
+        .assert_see("must be an image");
+    app.request()
+        .json()
+        .post_multipart("/sign", &[], &[])
+        .await
+        .assert_status(422)
+        .assert_invalid("signature_name");
+}
+
+const JPEG: &[u8] = b"\xff\xd8\xff\xe0\0\x10JFIF\0small-but-valid-enough-for-sniffing";
+
+const CAMERA_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import camera_capture %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/photos" enctype="multipart/form-data">
+{{ csrf_field() }}
+{{ camera_capture("photo", facing="environment", max=3, max_width=1024, required=true, hint="Show the repair.") }}
+</form></body></html>"##;
+
+const CAMERA_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/photos" enctype="multipart/form-data">
+<rx-camera-capture name="pic" label="Bike" facing="user" :max="1"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct Photos {
+    #[serde(default)]
+    photo: Vec<Upload>,
+}
+
+impl Validate for Photos {
+    fn rules(&self, v: &mut Validator) {
+        v.field("photo", &self.photo).required().max(3);
+        v.each("photo", &self.photo, |photo| {
+            photo.image().mimes(&["jpg", "jpeg"]).max(100)
+        });
+    }
+}
+
+struct Photographing;
+
+impl Module for Photographing {
+    fn name(&self) -> &'static str {
+        "photographing"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/photos", || async { view("photos.html", ()) })
+            .get("/photos-tag", || async { view("photos-tag.html", ()) })
+            .post("/photos", |Valid(form): Valid<Photos>| async move {
+                Json(json!({
+                    "files": form.photo.iter().map(|f| f.file_name().to_owned()).collect::<Vec<_>>(),
+                }))
+            })
+    }
+}
+
+async fn camera_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Photographing)
+            .templates(|env| {
+                env.add_template("photos.html", CAMERA_MACRO).unwrap();
+                renox::view::add_template(env, "photos-tag.html", CAMERA_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The camera capture (#53): the macro and the tag print a live area (hidden
+/// until the camera starts), the list of photos, a file input that is the
+/// fallback (visible without the script, `capture` set), and the part's file,
+/// only on that page.
+#[renox::test]
+async fn the_camera_capture_renders_as_a_macro_and_a_tag() {
+    let app = camera_app().await;
+    let html = app.get("/photos").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"data-rx-camera data-rx-camera-max="3" data-rx-camera-width="1024" data-rx-camera-quality="0.85" data-rx-camera-facing="environment""#,
+    );
+    has(r#"<div class="rx-camera__live" data-rx-camera-live hidden>"#);
+    has("data-rx-camera-shutter>Take photo</button>");
+    has(
+        r#"name="photo" accept="image/*" capture="environment" multiple required data-rx-camera-required"#,
+    );
+    has(r#"id="rx-photo-help" role="status" data-rx-camera-status>Take a photo with the camera"#);
+    has("Show the repair.");
+    has("Camera access was denied.");
+    has(r#"data-camera="/_renox/blocks/camera-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/photos-tag").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"name="pic" accept="image/*" capture="user""#);
+    has("Bike");
+    has(r#"<span class="rx-required">(optional)</span>"#);
+    assert!(
+        !html.contains(" multiple") && !html.contains("data-rx-camera-required"),
+        "{html}"
+    );
+}
+
+/// One to three JPEGs arrive as `Vec<Upload>` and pass `image()` and
+/// `mimes`; more than the limit, a non-image or none at all fail.
+#[renox::test]
+async fn camera_photos_arrive_through_valid() {
+    let app = camera_app().await;
+    app.get("/photos").await;
+
+    app.post_multipart("/photos", &[], &[("photo", "photo-1.jpg", JPEG)])
+        .await
+        .assert_ok()
+        .assert_json_path("files.0", "photo-1.jpg");
+
+    let three = [
+        ("photo", "photo-1.jpg", JPEG),
+        ("photo", "photo-2.jpg", JPEG),
+        ("photo", "photo-3.jpg", JPEG),
+    ];
+    app.post_multipart("/photos", &[], &three)
+        .await
+        .assert_ok()
+        .assert_json_path("files.2", "photo-3.jpg");
+
+    let four = [
+        ("photo", "photo-1.jpg", JPEG),
+        ("photo", "photo-2.jpg", JPEG),
+        ("photo", "photo-3.jpg", JPEG),
+        ("photo", "photo-4.jpg", JPEG),
+    ];
+    app.request()
+        .json()
+        .post_multipart("/photos", &[], &four)
+        .await
+        .assert_status(422)
+        .assert_invalid("photo");
+
+    app.request()
+        .json()
+        .post_multipart(
+            "/photos",
+            &[],
+            &[("photo", "photo-1.jpg", b"MZ not an image")],
+        )
+        .await
+        .assert_status(422)
+        .assert_invalid("photo.0");
+    app.request()
+        .json()
+        .post_multipart("/photos", &[], &[])
+        .await
+        .assert_status(422)
+        .assert_invalid("photo");
+}
+
+const MAP_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import map_picker, map %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/place">
+{{ csrf_field() }}
+{{ map_picker("pickup", value={"lat": 40.4168, "lng": -3.7038}, hint="Where we meet.") }}
+{{ map_picker("zone", mode="polygon", value={"type": "Polygon", "coordinates": [[[-3.7, 40.4], [-3.6, 40.4], [-3.6, 40.5], [-3.7, 40.4]]]}) }}
+{{ map_picker("area", mode="circle", value={"center": {"lat": 40.4, "lng": -3.7}, "radius": 500}) }}
+</form>
+{{ map(markers=[{"lat": 40.4168, "lng": -3.7038, "label": "Workshop <Main>"}], shapes=[{"center": {"lat": 40.4, "lng": -3.7}, "radius": 500}]) }}
+</body></html>"##;
+
+const MAP_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/place">
+<rx-map-picker name="spot" label="Spot"/>
+<rx-map :markers="[{'lat': 1.5, 'lng': 2.5}]" id="places"/>
+</form></body></html>"##;
+
+struct Maps;
+
+impl Module for Maps {
+    fn name(&self) -> &'static str {
+        "maps"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/map", || async { view("map.html", ()) })
+            .get("/map-tag", || async { view("map-tag.html", ()) })
+    }
+}
+
+async fn maps_app(blocks: Blocks) -> TestApp {
+    TestApp::new(App::new().module(blocks).module(Maps).templates(|env| {
+        env.add_template("map.html", MAP_MACRO).unwrap();
+        renox::view::add_template(env, "map-tag.html", MAP_TAG).unwrap();
+    }))
+    .await
+}
+
+/// The map blocks (#47) without tiles: an explanatory note naming the
+/// variable, the picker's typed fields and the markers as text.
+#[renox::test]
+async fn the_map_blocks_explain_themselves_without_tiles() {
+    let app = maps_app(Blocks::new()).await;
+    let html = app.get("/map").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"<p class="rx-map__empty" role="note">The map is not shown: no map tiles are configured. Set BLOCKS_MAP_TILES"#,
+    );
+    assert!(!html.contains("data-rx-map-canvas"), "{html}");
+    assert!(!html.contains("data-rx-map-tiles"), "{html}");
+    // The point picker is two plain number fields in `name[lat]`, `name[lng]`.
+    has(r#"id="rx-pickup-lat" name="pickup[lat]" value="40.4168" min="-90" max="90" step="any""#);
+    has(r#"id="rx-pickup-lng" name="pickup[lng]" value="-3.7038" min="-180" max="180" step="any""#);
+    has("Where we meet.");
+    has(r#"data-rx-map-picker data-rx-map-mode="point""#);
+    // A polygon: typed `lat, lng` lines (closing vertex dropped) and a GeoJSON value in [lng, lat].
+    has("40.4, -3.7\n40.4, -3.6\n40.5, -3.6");
+    has(r#"name="zone" data-rx-map-value value='{"coordinates":[[[-3.7,40.4],"#);
+    // A circle: one typed line and a GeoJSON Point with a radius.
+    has("40.4, -3.7, 500");
+    has(
+        r#"name="area" data-rx-map-value value='{"coordinates":[-3.7,40.4],"radius":500,"type":"Point"}'"#,
+    );
+    // The read-only map lists its markers as text, escaped.
+    has("<li>Workshop &lt;Main&gt; (40.4168, -3.7038)</li>");
+    has(r#"data-rx-map-markers='[{"label":"Workshop "#);
+    assert!(!html.contains("Workshop <Main>"), "{html}");
+}
+
+/// With tiles (from the module's setting), the canvas and the tile data
+/// attributes appear, an unusable URL counts as unset, and the markers
+/// stay as a list for screen readers.
+#[renox::test]
+async fn the_map_blocks_carry_the_tiles_and_attribution() {
+    let tiles = "https://tiles.example.com/{z}/{x}/{y}.png";
+    let app = maps_app(
+        Blocks::new()
+            .map_tiles(tiles)
+            .map_attribution("Map data \"Example\""),
+    )
+    .await;
+    let html = app.get("/map").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(&format!(
+        r#"data-rx-map-tiles="{tiles}" data-rx-map-attribution="Map data &quot;Example&quot;""#
+    ));
+    has(
+        r#"role="application" aria-label="Map" aria-describedby="rx-pickup-help" data-rx-map-canvas"#,
+    );
+    has(r#"<ul class="rx-map__list rx-visually-hidden""#);
+    assert!(!html.contains("no map tiles are configured"), "{html}");
+    // No inline handlers or style attributes (CSP=strict): the height is data.
+    assert!(
+        !html.contains(" onclick=") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let app = maps_app(Blocks::new().map_tiles("ftp://tiles.example.com/{z}/{x}/{y}.png")).await;
+    let html = app.get("/map").await.assert_ok().text();
+    assert!(html.contains("no map tiles are configured"), "{html}");
+}
+
+/// The tags `<rx-map-picker>` and `<rx-map>` call the macros.
+#[renox::test]
+async fn the_map_blocks_are_tags_too() {
+    let app = maps_app(Blocks::new()).await;
+    let html = app.get("/map-tag").await.assert_ok().text();
+    for needle in [
+        r#"id="rx-spot-lat" name="spot[lat]""#,
+        r#"<span class="rx-label" id="rx-spot-label">Spot</span>"#,
+        r#"id="places" data-rx-map"#,
+        "<li>Place (1.5, 2.5)</li>",
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+}
+
+const RATING_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import rating %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/review">
+{{ csrf_field() }}
+{{ rating("score", max=5, label="Your rating", required=true, hint="Stars, one to five.") }}
+</form>
+{{ rating("seen", max=4, value=3, label="Average", readonly=true) }}
+{{ rating("none_yet", readonly=true) }}
+</body></html>"##;
+
+const RATING_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/review">
+<rx-rating name="stars" :max="3" :value="2"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize, Validate)]
+struct Review {
+    #[validate(required, between(1, 5))]
+    score: Option<u8>,
+    #[validate(required)]
+    title: Option<String>,
+}
+
+struct Reviews;
+
+impl Module for Reviews {
+    fn name(&self) -> &'static str {
+        "reviews"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/review", || async { view("review.html", ()) })
+            .get("/review-tag", || async { view("review-tag.html", ()) })
+            .post("/review", |Valid(form): Valid<Review>| async move {
+                Json(json!({ "score": form.score }))
+            })
+    }
+}
+
+async fn reviews_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Reviews)
+            .templates(|env| {
+                env.add_template("review.html", RATING_MACRO).unwrap();
+                renox::view::add_template(env, "review-tag.html", RATING_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The rating (#54): a fieldset of `max` radios with one name, each named
+/// "N of MAX" for a screen reader, with no script of its own; the readonly
+/// form is text and sends nothing; the tag calls the macro.
+#[renox::test]
+async fn the_rating_renders_as_a_radio_group() {
+    let app = reviews_app().await;
+    let html = app.get("/review").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(
+        r#"<fieldset class="rx-field rx-rating" id="rx-score" data-rx-rating aria-describedby="rx-score-hint rx-score-error">"#,
+    );
+    has(r#"<legend class="rx-label">Your rating</legend>"#);
+    for n in 1..=5 {
+        has(&format!(
+            r#"type="radio" id="rx-score-{n}" name="score" value="{n}""#
+        ));
+        has(&format!(
+            r#"<span class="rx-visually-hidden">{n} of 5</span>"#
+        ));
+    }
+    assert_eq!(html.matches(r#"name="score""#).count(), 5, "{html}");
+    // `required` sits on the first radio only; nothing is checked.
+    has(r#"id="rx-score-1" name="score" value="1" required>"#);
+    assert!(!html.contains(" checked"), "{html}");
+    has("Stars, one to five.");
+    has(r#"data-error-for="score" aria-live="polite"></p>"#);
+    // No handlers or style attributes (CSP=strict) and no part of its own.
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+    assert!(!html.contains("data-rating"), "{html}");
+
+    // Readonly: text for a screen reader, and no input to send.
+    has(r#"<span class="rx-label" id="rx-seen-label">Average</span>"#);
+    has(r#"role="img" aria-labelledby="rx-seen-label rx-seen-value""#);
+    has(r#"id="rx-seen-value">3 of 4</span>"#);
+    assert_eq!(html.matches("rx-rating__item--on").count(), 3, "{html}");
+    has(r#"id="rx-none_yet-value">Not rated</span>"#);
+    assert!(!html.contains(r#"name="seen""#) && !html.contains(r#"name="none_yet""#));
+
+    let html = app.get("/review-tag").await.assert_ok().text();
+    assert_eq!(html.matches(r#"name="stars""#).count(), 3, "{html}");
+    assert!(
+        html.contains(r#"id="rx-stars-2" name="stars" value="2" checked>"#),
+        "{html}"
+    );
+    assert!(
+        html.contains(r#"<span class="rx-required">(optional)</span>"#),
+        "{html}"
+    );
+}
+
+/// The chosen number arrives as an integer; none at all fails `required`
+/// with the field's message; a value out of range fails `between`, and the
+/// radio chosen is checked again on the page that shows the error.
+#[renox::test]
+async fn a_rating_posts_a_plain_integer_through_valid() {
+    let app = reviews_app().await;
+    app.get("/review").await;
+    app.post("/review", &[("score", "4"), ("title", "Fast")])
+        .await
+        .assert_ok()
+        .assert_json_path("score", 4);
+
+    app.request()
+        .json()
+        .post("/review", &[("title", "Fast")])
+        .await
+        .assert_status(422)
+        .assert_invalid("score");
+
+    // Out of range: the message comes back to the group.
+    app.request()
+        .header("referer", "/review")
+        .post("/review", &[("score", "9"), ("title", "Fast")])
+        .await
+        .assert_redirect("/review");
+    let html = app.get("/review").await.text();
+    assert!(html.contains(r#"<p class="rx-error" id="rx-score-error" data-error-for="score" aria-live="polite">The score must be between 1 and 5.</p>"#), "{html}");
+    assert!(html.contains(r#"aria-invalid="true""#), "{html}");
+
+    // Another field fails: the radio chosen is checked again.
+    app.request()
+        .header("referer", "/review")
+        .post("/review", &[("score", "3")])
+        .await
+        .assert_redirect("/review");
+    let html = app.get("/review").await.text();
+    assert!(
+        html.contains(r#"id="rx-score-3" name="score" value="3" checked>"#),
+        "{html}"
+    );
+    assert_eq!(html.matches(" checked").count(), 1, "{html}");
+}
+
+/// Every text of the signature pad and the camera capture is a `blocks.*`
+/// key (#53): an app's lang file replaces each one, the texts the script
+/// speaks (`data-rx-blocks-texts`) included, and the rest stays English.
+#[renox::test]
+async fn an_app_translates_the_signature_and_camera_texts() {
+    let dir = std::env::temp_dir().join(format!("renox-blocks-{}", renox::random_token()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("es.json"),
+        r#"{"blocks": {
+            "signature": {"area": "Zona de firma", "undo": "Deshacer", "clear": "Borrar",
+                "typed": "O escribe tu nombre", "drawn": "Firma hecha.", "help": "Dibuja la firma."},
+            "camera": {"shutter": "Hacer foto", "denied": "Sin permiso de cámara."}
+        }}"#,
+    )
+    .unwrap();
+    let lang = dir.clone();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Blocks::new())
+            .module(Signing)
+            .module(Photographing)
+            .templates(|env| {
+                env.add_template("sign.html", SIGN_MACRO).unwrap();
+                renox::view::add_template(env, "sign-tag.html", SIGN_TAG).unwrap();
+                env.add_template("photos.html", CAMERA_MACRO).unwrap();
+                renox::view::add_template(env, "photos-tag.html", CAMERA_TAG).unwrap();
+            }),
+        move |c| {
+            c.locale = "es".into();
+            c.lang_path = lang;
+        },
+    )
+    .await;
+    let html = app.get("/sign").await.assert_ok().text();
+    for text in [
+        r#"aria-label="Zona de firma""#,
+        "data-rx-signature-undo>Deshacer</button>",
+        "data-rx-signature-clear>Borrar</button>",
+        ">O escribe tu nombre</label>",
+        "Dibuja la firma.",
+        "Firma hecha.",
+        // Not translated by this app: English.
+        "Last stroke removed.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/photos-tag").await.assert_ok().text();
+    for text in [
+        "data-rx-camera-shutter>Hacer foto</button>",
+        "Sin permiso de cámara.",
+        "Photo removed.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+const GEO_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import geolocate %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/visit">
+{{ csrf_field() }}
+{{ geolocate("location", accuracy=50, label="Where is the bike?", required=true, hint="Stand next to it.") }}
+</form></body></html>"##;
+
+const GEO_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/visit">
+<rx-geolocate name="spot" button-label="Find me"/>
+</form></body></html>"##;
+
+/// What the form posts for the position; `at` is not read.
+#[derive(Debug, Deserialize)]
+struct Loc {
+    lat: f64,
+    lng: f64,
+    accuracy: f64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Visit {
+    location: Option<Loc>,
+    note: Option<String>,
+}
+
+impl Validate for Visit {
+    fn rules(&self, v: &mut Validator) {
+        v.field("location", &self.location.as_ref().map(|l| l.lat))
+            .required();
+        v.field("note", &self.note).required();
+    }
+}
+
+struct Visits;
+
+impl Module for Visits {
+    fn name(&self) -> &'static str {
+        "visits"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/visit", || async { view("visit.html", ()) })
+            .get("/visit-tag", || async { view("visit-tag.html", ()) })
+            .post("/visit", |Valid(form): Valid<Visit>| async move {
+                let loc = form.location.unwrap();
+                Json(json!({ "lat": loc.lat, "lng": loc.lng, "accuracy": loc.accuracy }))
+            })
+    }
+}
+
+async fn visits_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Visits)
+            .templates(|env| {
+                env.add_template("visit.html", GEO_MACRO).unwrap();
+                renox::view::add_template(env, "visit-tag.html", GEO_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The geolocate block (#54): four hidden inputs, disabled until there is a
+/// fix, a button that is the only thing asking for the position, a polite
+/// status, the wanted accuracy as a data attribute and the part's file; the
+/// tag calls the macro.
+#[renox::test]
+async fn the_geolocate_block_renders_as_a_macro_and_a_tag() {
+    let app = visits_app().await;
+    let html = app.get("/visit").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-geolocate data-rx-geolocate-accuracy="50" data-rx-geolocate-required"#);
+    has("Where is the bike?");
+    has("data-rx-geolocate-button>Use my location</button>");
+    has(r#"id="rx-location-status" role="status" aria-live="polite" data-rx-geolocate-status>"#);
+    has("Your position is asked for only when you press the button.");
+    for field in ["lat", "lng", "accuracy", "at"] {
+        has(&format!(
+            r#"<input type="hidden" name="location[{field}]" value="""#
+        ));
+    }
+    assert_eq!(html.matches("type=\"hidden\" name=\"location[").count(), 4);
+    assert_eq!(html.matches(" disabled>").count(), 4, "{html}");
+    has("Stand next to it.");
+    has(r#"data-error-for="location" aria-live="polite"></p>"#);
+    has("Location access was denied.");
+    has(r#"data-geolocate="/_renox/blocks/geolocate-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/visit-tag").await.assert_ok().text();
+    for needle in [
+        "data-rx-geolocate-button>Find me</button>",
+        r#"name="spot[lat]""#,
+        r#"<span class="rx-required">(optional)</span>"#,
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+    assert!(!html.contains("data-rx-geolocate-required"), "{html}");
+}
+
+/// The four posted fields arrive as a nested struct; with no fix the
+/// inputs are not sent and `required` returns the field's error; a position
+/// that came back with an error is shown again, enabled.
+#[renox::test]
+async fn a_position_arrives_through_valid() {
+    let app = visits_app().await;
+    app.get("/visit").await;
+    let fix = [
+        ("location[lat]", "40.4168"),
+        ("location[lng]", "-3.7038"),
+        ("location[accuracy]", "12.5"),
+        ("location[at]", "2026-10-18T09:30:00.000Z"),
+    ];
+    let mut form = fix.to_vec();
+    form.push(("note", "ok"));
+    app.post("/visit", &form)
+        .await
+        .assert_ok()
+        .assert_json_path("lat", 40.4168)
+        .assert_json_path("accuracy", 12.5);
+
+    app.request()
+        .json()
+        .post("/visit", &[("note", "ok")])
+        .await
+        .assert_status(422)
+        .assert_invalid("location");
+
+    // Another field fails: the position is back, enabled, with its status.
+    app.request()
+        .header("referer", "/visit")
+        .post("/visit", &fix)
+        .await
+        .assert_redirect("/visit");
+    let html = app.get("/visit").await.text();
+    assert!(
+        html.contains(r#"name="location[lat]" value="40.4168" data-rx-geolocate-lat>"#),
+        "{html}"
+    );
+    assert!(
+        html.contains("Position found: 40.4168, -3.7038 (about 12.5 m)."),
+        "{html}"
+    );
+}
+
+const SCAN_MACRO: &str = r##"{% from "renox-blocks/blocks.html" import barcode_scan %}
+<html><head>{{ renox_head() }}</head><body>
+<form method="post" action="/stock">
+{{ csrf_field() }}
+{{ barcode_scan("code", formats="ean_13,code_128", label="Part number", required=true, hint="On the box.", submit=true) }}
+</form></body></html>"##;
+
+const SCAN_TAG: &str = r##"<html><head><rx-head/></head><body>
+<form method="post" action="/stock">
+<rx-barcode-scan name="sku" value="4006381333931"/>
+</form></body></html>"##;
+
+#[derive(Debug, Deserialize)]
+struct Stock {
+    code: String,
+}
+
+impl Validate for Stock {
+    fn rules(&self, v: &mut Validator) {
+        v.field("code", &self.code).required();
+    }
+}
+
+struct Stocks;
+
+impl Module for Stocks {
+    fn name(&self) -> &'static str {
+        "stocks"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new()
+            .get("/stock", || async { view("stock.html", ()) })
+            .get("/stock-tag", || async { view("stock-tag.html", ()) })
+            .post("/stock", |Valid(form): Valid<Stock>| async move {
+                Json(json!({ "code": form.code }))
+            })
+    }
+}
+
+async fn stocks_app() -> TestApp {
+    TestApp::new(
+        App::new()
+            .module(Blocks::new())
+            .module(Stocks)
+            .templates(|env| {
+                env.add_template("stock.html", SCAN_MACRO).unwrap();
+                renox::view::add_template(env, "stock-tag.html", SCAN_TAG).unwrap();
+            }),
+    )
+    .await
+}
+
+/// The barcode_scan block (#54): a plain text field that works alone, the
+/// camera button (hidden until the script shows it), the formats and the
+/// submit flag as data attributes, a polite status and the part's file; the
+/// tag calls the macro.
+#[renox::test]
+async fn the_barcode_block_renders_as_a_macro_and_a_tag() {
+    let app = stocks_app().await;
+    let html = app.get("/stock").await.assert_ok().text();
+    let has = |needle: &str| assert!(html.contains(needle), "missing {needle}\n{html}");
+    has(r#"data-rx-barcode data-rx-barcode-formats="ean_13,code_128" data-rx-barcode-submit"#);
+    has(r#"<label class="rx-label" for="rx-code-input">Part number</label>"#);
+    has(r#"type="text" id="rx-code-input" name="code" value="""#);
+    has(r#"autocomplete="off""#);
+    has(
+        r#"type="button" hidden aria-controls="rx-code-live" aria-expanded="false" data-rx-barcode-button>Scan with camera</button>"#,
+    );
+    has(
+        r#"id="rx-code-status" role="status" aria-live="polite" data-rx-barcode-status>Type the code"#,
+    );
+    has("On the box.");
+    has("This browser cannot read codes from the camera.");
+    has(r#"data-error-for="code" aria-live="polite"></p>"#);
+    has(r#"data-barcode="/_renox/blocks/barcode-"#);
+    assert!(
+        !html.contains("onclick") && !html.contains(" style="),
+        "{html}"
+    );
+
+    let html = app.get("/stock-tag").await.assert_ok().text();
+    for needle in [
+        r#"data-rx-barcode-formats="ean_13,qr_code" data-rx-blocks-texts"#,
+        r#"name="sku" value="4006381333931""#,
+        r#"<span class="rx-required">(optional)</span>"#,
+    ] {
+        assert!(html.contains(needle), "missing {needle}\n{html}");
+    }
+    assert!(!html.contains("data-rx-barcode-submit"), "{html}");
+}
+
+/// The scanned or typed code is a plain string through `Valid`, and an
+/// empty one fails `required`.
+#[renox::test]
+async fn a_scanned_code_arrives_as_a_string() {
+    let app = stocks_app().await;
+    app.get("/stock").await;
+    app.post("/stock", &[("code", "4006381333931")])
+        .await
+        .assert_ok()
+        .assert_json_path("code", "4006381333931");
+    app.request()
+        .json()
+        .post("/stock", &[("code", "")])
+        .await
+        .assert_status(422)
+        .assert_invalid("code");
+}
+
+#[derive(Debug, Deserialize)]
+struct Spot {
+    location: renox::geo::Point,
+}
+
+impl Validate for Spot {
+    fn rules(&self, _: &mut Validator) {}
+}
+
+struct Spots;
+
+impl Module for Spots {
+    fn name(&self) -> &'static str {
+        "spots"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/spot", || async { "ok" }).post(
+            "/spot",
+            |Valid(form): Valid<Spot>| async move {
+                Json(json!({ "lat": form.location.lat(), "lng": form.location.lng() }))
+            },
+        )
+    }
+}
+
+/// The posted position is also what `renox::geo::Point` reads (#47): its
+/// latitude and longitude, the accuracy and the time ignored.
+#[renox::test]
+async fn a_position_is_also_a_geo_point() {
+    let app = TestApp::new(App::new().module(Blocks::new()).module(Spots)).await;
+    app.get("/spot").await;
+    app.post(
+        "/spot",
+        &[
+            ("location[lat]", "40.4168"),
+            ("location[lng]", "-3.7038"),
+            ("location[accuracy]", "12.5"),
+            ("location[at]", "2026-10-18T09:30:00.000Z"),
+        ],
+    )
+    .await
+    .assert_ok()
+    .assert_json_path("lat", 40.4168)
+    .assert_json_path("lng", -3.7038);
+}
+
+/// Every text of the rating, the geolocate and the barcode blocks is a
+/// `blocks.*` key an app overrides in its lang files (#54): the placeholders
+/// are filled, the texts the script needs reach it through the block's
+/// `data-rx-blocks-texts`, and a key the app leaves out stays English.
+#[renox::test]
+async fn an_app_translates_the_rating_position_and_barcode_texts() {
+    let dir = std::env::temp_dir().join(format!("renox-blocks-{}", renox::random_token()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("es.json"),
+        r#"{"blocks": {
+            "rating": {"option": ":n de :max"},
+            "geolocate": {"button": "Usar mi ubicación", "idle": "Se pide al pulsar.",
+                "denied": "Ubicación denegada.", "timeout": "Tardó demasiado."},
+            "barcode": {"button": "Escanear con la cámara", "help": "Escribe el código.",
+                "denied": "Cámara denegada."}
+        }}"#,
+    )
+    .unwrap();
+    let lang = dir.clone();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Blocks::new())
+            .module(Reviews)
+            .module(Visits)
+            .module(Stocks)
+            .templates(|env| {
+                env.add_template("review.html", RATING_MACRO).unwrap();
+                env.add_template("visit.html", GEO_MACRO).unwrap();
+                env.add_template("stock.html", SCAN_MACRO).unwrap();
+            }),
+        move |c| {
+            c.locale = "es".into();
+            c.lang_path = lang;
+        },
+    )
+    .await;
+    let html = app.get("/review").await.assert_ok().text();
+    for text in [
+        r#"<span class="rx-visually-hidden">3 de 5</span>"#,
+        // Not translated by this app: English.
+        "Stars, one to five.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/visit").await.assert_ok().text();
+    for text in [
+        "data-rx-geolocate-button>Usar mi ubicación</button>",
+        "Se pide al pulsar.",
+        // The texts the script needs, as JSON in the block's attribute.
+        r#""denied":"Ubicación denegada.""#,
+        r#""timeout":"Tardó demasiado.""#,
+        // Not translated: English, with the placeholders left for the script.
+        r#""unavailable":"Your position is not available here.""#,
+        r#""done":"Position found: :lat, :lng (about :accuracy m).""#,
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/stock").await.assert_ok().text();
+    for text in [
+        "data-rx-barcode-button>Escanear con la cámara</button>",
+        "Escribe el código.",
+        r#""denied":"Cámara denegada.""#,
+        r#""read":"Code read: :code.""#,
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

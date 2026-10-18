@@ -154,6 +154,7 @@ Most SQL is the same, but a few column types are written differently:
 | `INTEGER` 0/1 for `bool` fields | `BOOLEAN` |
 | `BLOB` | `BYTEA` |
 | `REAL` | `DOUBLE PRECISION` |
+| a `Money` field: `BIGINT` amount plus a `TEXT` currency | the same (the amount must be `BIGINT`, not `INTEGER`) |
 
 These are the same on both: plain `TEXT`, `NOT NULL`, `UNIQUE`,
 `REFERENCES … ON DELETE CASCADE`, `CREATE INDEX` and `DROP TABLE`.

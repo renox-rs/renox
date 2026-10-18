@@ -182,6 +182,16 @@ pub struct Config {
     pub mail: MailConfig,
     /// Queue workers `serve` runs in-process, from `QUEUE_WORKERS` (0 turns them off).
     pub queue_workers: usize,
+    /// Consecutive failed deliveries after which an outbound webhook endpoint is
+    /// disabled, from `WEBHOOK_DISABLE_AFTER` (default 20, at least 1).
+    pub webhook_disable_after: u32,
+    /// How far a signed request's timestamp may be from now, in seconds, from
+    /// `WEBHOOK_TOLERANCE_SECS` (default 300, at least 1). See `SignedRequest`.
+    pub webhook_tolerance_secs: u64,
+    /// Days the keys of `.offline()` routes are kept before `idempotency:prune`
+    /// (and its scheduled task) removes them, from `IDEMPOTENCY_RETENTION_DAYS`
+    /// (default 7, at least 1).
+    pub idempotency_retention_days: u32,
     /// Whether `serve` runs scheduled tasks, from `SCHEDULER`.
     pub scheduler: bool,
     /// `text` (default) or `json` (one object per line), from `LOG_FORMAT`.
@@ -252,6 +262,12 @@ impl std::fmt::Debug for Config {
             .field("lang_path", &self.lang_path)
             .field("mail", &self.mail)
             .field("queue_workers", &self.queue_workers)
+            .field("webhook_disable_after", &self.webhook_disable_after)
+            .field("webhook_tolerance_secs", &self.webhook_tolerance_secs)
+            .field(
+                "idempotency_retention_days",
+                &self.idempotency_retention_days,
+            )
             .field("scheduler", &self.scheduler)
             .field("log_format", &self.log_format)
             .field("log_file", &self.log_file)
@@ -416,6 +432,24 @@ impl Config {
                 .or("QUEUE_WORKERS", "2")
                 .parse()
                 .context("QUEUE_WORKERS must be a number")?,
+            webhook_disable_after: v
+                .or("WEBHOOK_DISABLE_AFTER", "20")
+                .parse()
+                .ok()
+                .filter(|n| *n > 0)
+                .context("WEBHOOK_DISABLE_AFTER must be a number of at least 1")?,
+            webhook_tolerance_secs: v
+                .or("WEBHOOK_TOLERANCE_SECS", "300")
+                .parse()
+                .ok()
+                .filter(|n| *n > 0)
+                .context("WEBHOOK_TOLERANCE_SECS must be a number of at least 1")?,
+            idempotency_retention_days: v
+                .or("IDEMPOTENCY_RETENTION_DAYS", "7")
+                .parse()
+                .ok()
+                .filter(|n| *n > 0)
+                .context("IDEMPOTENCY_RETENTION_DAYS must be a number of at least 1")?,
             scheduler: v.bool("SCHEDULER", true)?,
             log_format: LogFormat::parse(&v.or("LOG_FORMAT", "text"))?,
             log_file: v
@@ -517,6 +551,9 @@ impl Default for Config {
                 ..MailConfig::default()
             },
             queue_workers: 0,
+            webhook_disable_after: 20,
+            webhook_tolerance_secs: 300,
+            idempotency_retention_days: 7,
             scheduler: false,
             log_format: LogFormat::Text,
             log_file: None,

@@ -55,9 +55,17 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
     `revealable`: a button that shows the password; `copyable`: a button
     that copies the value. A disabled field isn't sent with the form; a
     readonly one is. -#}
-{% macro input(name, label, type="text", value=none, hint=none, required=false, autocomplete=none, placeholder=none, attrs={}, id=none, prefix=none, suffix=none, datalist=none, disabled=false, readonly=false, span=none, revealable=false, copyable=false, hide_label=false, bag=none, min=none, max=none, step=none) -%}
+{% macro input(name, label, type="text", value=none, hint=none, required=false, autocomplete=none, placeholder=none, attrs={}, id=none, prefix=none, suffix=none, datalist=none, disabled=false, readonly=false, span=none, revealable=false, copyable=false, hide_label=false, bag=none, min=none, max=none, step=none, currency=none, scale=none, unit=none) -%}
 {%- set id = id or _id(name) %}
 {%- set message = error(name, bag=bag) %}
+{#- type="money": a number field that steps by the currency's smallest unit, with its code as the suffix -#}
+{%- set money = type == "money" %}
+{%- set spec = money_input(currency) if money else none %}
+{#- type="quantity": the same, stepping by the scale's last digit, with its unit as the suffix -#}
+{%- set quantity = type == "quantity" %}
+{%- set qspec = quantity_input(scale) if quantity else none %}
+{%- set suffix = suffix or (spec.code if money else (unit if quantity else none)) %}
+{%- set step = step if step is not none else (spec.step if money else (qspec.step if quantity else none)) %}
 {%- set affixed = prefix or suffix or revealable or copyable %}
 <div class="{{ _field_class(span) }}">
   {{ _label(id, label, required, hide_label) }}
@@ -65,7 +73,8 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
   <div class="rx-affix">
     {%- if prefix %}<span class="rx-affix__text" id="{{ id }}-prefix">{{ prefix }}</span>{% endif %}
   {%- endif %}
-  <input class="rx-input" id="{{ id }}" name="{{ name }}" type="{{ type }}"
+  <input class="rx-input" id="{{ id }}" name="{{ name }}" type="{{ 'number' if money or quantity else type }}"
+    {%- if money or quantity %} inputmode="decimal"{% endif %}
     {%- if type != "password" %} value="{{ old(name, value if value is defined and value is not none else "") }}"{% endif %}
     {%- if required %} required aria-required="true"{% endif %}
     {%- if autocomplete %} autocomplete="{{ autocomplete }}"{% endif %}
@@ -608,9 +617,14 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
 <div class="rx-navbar__search" id="{{ id }}">{{ caller() }}</div>
 {%- endmacro %}
 
-{#- The navigation bar's links, kept together (on phones, a row that scrolls). -#}
-{% macro nav_links() -%}
-<div class="rx-navbar__links">{{ caller() }}</div>
+{#- The navigation bar's links, kept together (on phones, a row that scrolls).
+    `menu`: the links modules and the app contributed to that menu
+    (`App::nav`), the ones the user may see; the content comes after them. -#}
+{% macro nav_links(menu=none) -%}
+<div class="rx-navbar__links">
+  {%- if menu %}{% for group in nav(menu) %}{% for item in group["items"] %}{{ nav_link(item.url, item.label, active=item.active, badge=item.badge) }}{% endfor %}{% endfor %}{% endif -%}
+  {%- if caller is defined %}{{ caller() }}{% endif -%}
+</div>
 {%- endmacro %}
 
 {#- One link of a `navbar` or `sidebar`; `active` (e.g. `route_is('orders.*')`)
@@ -624,12 +638,20 @@ rx-choices{% if inline %} rx-choices--inline{% elif columns %} rx-cols-{{ column
     width="full", skip=false)` for the account menu and `<main
     class="rx-shell__content" id="main">`. On phones it becomes a bar on top
     whose links scroll sideways. The brand takes `logo` and `mark` as in
-    `navbar` (`mark` on by default). -#}
-{% macro sidebar(brand, href="/", logo=none, mark=true, label=none, skip=true) -%}
+    `navbar` (`mark` on by default). `menu`: the links modules and the app
+    contributed to that menu (`App::nav`), grouped and filtered for the user;
+    hand-written links in the content come after them. -#}
+{% macro sidebar(brand, href="/", logo=none, mark=true, label=none, skip=true, menu=none) -%}
 {%- if skip %}<a class="rx-skip" href="#main">{{ t('ui.skip') }}</a>{% endif %}
 <nav class="rx-sidebar" aria-label="{{ label or t('ui.main_navigation') }}">
   {%- if brand %}<a class="rx-sidebar__brand" href="{{ href }}">{{ _brand_mark(brand, logo, mark) }}<span>{{ brand }}</span></a>{% endif %}
-  <div class="rx-sidebar__links">{{ caller() }}</div>
+  <div class="rx-sidebar__links">
+    {%- if menu %}{% for group in nav(menu) %}
+    {%- if group.label %}{{ sidebar_section(group.label) }}{% endif %}
+    {%- for item in group["items"] %}{{ sidebar_link(item.url, item.label, active=item.active, badge=item.badge, icon=item.icon) }}{% endfor %}
+    {%- endfor %}{% endif -%}
+    {%- if caller is defined %}{{ caller() }}{% endif -%}
+  </div>
 </nav>
 {%- endmacro %}
 

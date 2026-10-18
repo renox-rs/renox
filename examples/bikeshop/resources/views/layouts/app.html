@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ app.locale }}">
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
 <head>
   {#- Title, description, canonical URL and social cards; a page fills the
       "seo" block with seo(title="…", description="…") -#}
@@ -17,7 +17,7 @@
 <body class="rx-page bs-public{{ ' bs-docked' if about }}{{ ' bs-docked--rail' if about and about.rail }}">
   {#- The public navigation, once, for the bar (desktop) and the menu panel
       (phones). One line per area; append yours. -#}
-  <rx-let name="nav" :value="[
+  <rx-let name="site_links" :value="[
     {'href': route('home'), 'label': t('nav.home'), 'active': route_is('home')},
     {'href': route('catalog.index'), 'label': t('nav.shop'), 'active': route_is('catalog.*')},
     {'href': route('rentals.create'), 'label': t('rentals.nav.rent'), 'active': route_is('rentals.create', 'rentals.show', 'rentals.mine', 'rentals.identity')},
@@ -43,7 +43,7 @@
       `rx-hide-narrow`, in the panel there. -#}
   <rx-navbar :brand="t('shop.name')" :href="route('home')" mark width="full" :tabs="tabs" :tabs-label="t('nav.tabs.label')">
     <rx-nav-links>
-      <rx-nav-link rx-for="link in nav" :href="link.href" :label="link.label" :active="link.active"/>
+      <rx-nav-link rx-for="link in site_links" :href="link.href" :label="link.label" :active="link.active"/>
     </rx-nav-links>
     <span class="rx-spacer"></span>
     {#- Slots the areas fill with a file of their own: the search box
@@ -83,7 +83,7 @@
       </span>
     </template>
   </rx-navbar>
-  <app-nav-menu :nav="nav"/>
+  <app-nav-menu :nav="site_links"/>
   <main class="rx-container rx-container--wide" id="main">
     <div class="rx-stack">
       <rx-alert rx-if="flash.status" :message="flash.status" kind="success"/>

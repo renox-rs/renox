@@ -1,0 +1,13 @@
+<rx-page layout="layout.html">
+  {#- The rating and the barcode field (#54), for blocks-field.test.mjs: a form that
+      posts to /echo, which prints what it got. `sku` submits after a scan, `shelf`
+      does not. -#}
+  <h1>Field blocks</h1>
+  <form id="field-form" method="post" action="/echo" novalidate>
+    {{ csrf_field() }}
+    <rx-rating name="score" id="rate" label="Your rating"/>
+    <rx-barcode-scan name="sku" id="scan-sku" label="Part number" submit/>
+    <rx-barcode-scan name="shelf" id="scan-shelf" label="Shelf"/>
+    <button type="submit" class="rx-button" id="send">Send</button>
+  </form>
+</rx-page>

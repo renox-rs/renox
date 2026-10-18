@@ -1,8 +1,10 @@
 use std::sync::LazyLock;
 
 use axum::Router;
+use axum::extract::{Path, State};
+use axum::http::StatusCode;
 use axum::http::header::{CACHE_CONTROL, CONTENT_TYPE};
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 
 use crate::AppState;
@@ -67,10 +69,14 @@ const IDIOMORPH: &str = include_str!("../assets/idiomorph-0.7.3.min.js");
 /// The live components' script (renox-live.js).
 pub(crate) const LIVE_JS: &str = include_str!("../assets/renox-live.js");
 
+/// The offline forms' script (renox-offline.js), loaded by pages with an offline form.
+pub(crate) const OFFLINE_JS: &str = include_str!("../assets/renox-offline.js");
+
 /// The kit's fonts (SIL Open Font License 1.1; assets/fonts has the
-/// licences): Inter for text, Poppins for titles and figures, Latin subsets.
+/// licences): Inter for text, Poppins for titles and figures, Latin subsets,
+/// and Noto Sans Arabic for Arabic-script text (loaded only by pages that use it).
 /// Their names carry the font's version, so they are cached for good.
-pub(crate) const FONTS: [(&str, &[u8]); 4] = [
+pub(crate) const FONTS: [(&str, &[u8]); 5] = [
     (
         "/_renox/fonts/inter-latin-wght-4.1.woff2",
         include_bytes!("../assets/fonts/inter-latin-wght-4.1.woff2"),
@@ -86,6 +92,10 @@ pub(crate) const FONTS: [(&str, &[u8]); 4] = [
     (
         "/_renox/fonts/poppins-latin-700-4.003.woff2",
         include_bytes!("../assets/fonts/poppins-latin-700-4.003.woff2"),
+    ),
+    (
+        "/_renox/fonts/noto-sans-arabic-wght-5.3.0.woff2",
+        include_bytes!("../assets/fonts/noto-sans-arabic-wght-5.3.0.woff2"),
     ),
 ];
 
@@ -125,6 +135,15 @@ static LIVE_URLS: LazyLock<[String; 2]> = LazyLock::new(|| {
 pub(crate) fn live_tags() -> String {
     let [idiomorph, live] = &*LIVE_URLS;
     format!("<script src=\"{idiomorph}\" defer></script>\n<script src=\"{live}\" defer></script>")
+}
+
+static OFFLINE_URL: LazyLock<String> =
+    LazyLock::new(|| format!("/_renox/offline-{:016x}.js", fnv1a(OFFLINE_JS)));
+
+/// `{{ renox_offline() }}` (once per page, from `<rx-form offline>`): the
+/// offline outbox script.
+pub(crate) fn offline_tags() -> String {
+    format!("<script src=\"{}\" defer></script>", *OFFLINE_URL)
 }
 
 static UI_URLS: LazyLock<[String; 2]> = LazyLock::new(|| {
@@ -319,6 +338,22 @@ static URLS: LazyLock<[String; 4]> = LazyLock::new(|| {
     ]
 });
 
+/// The hashed URLs the PWA worker precaches: the scripts, the kit's styles
+/// and its text font, in a fixed order.
+pub(crate) fn precache_urls() -> Vec<String> {
+    let [htmx, alpine, renox, alpine_csp] = &*URLS;
+    let [ui_css, ui_js] = &*UI_URLS;
+    vec![
+        htmx.clone(),
+        alpine.clone(),
+        alpine_csp.clone(),
+        renox.clone(),
+        ui_css.clone(),
+        ui_js.clone(),
+        FONTS[0].0.to_string(),
+    ]
+}
+
 pub(crate) fn router() -> Router<AppState> {
     let [htmx, alpine, renox, alpine_csp] = &*URLS;
     let [ui_css, ui_js] = &*UI_URLS;
@@ -330,6 +365,7 @@ pub(crate) fn router() -> Router<AppState> {
         router = router.route(url, get(move || async move { js(body) }));
     }
     router
+        .route("/_renox/theme/{file}", get(theme))
         .route(
             ui_css,
             get(|| async { asset("text/css; charset=utf-8", UI_CSS) }),
@@ -343,10 +379,30 @@ pub(crate) fn router() -> Router<AppState> {
         .route(&GRID_URLS[2], get(|| async { js(CALLY) }))
         .route(&LIVE_URLS[0], get(|| async { js(IDIOMORPH) }))
         .route(&LIVE_URLS[1], get(|| async { js(LIVE_JS) }))
+        .route(&OFFLINE_URL, get(|| async { js(OFFLINE_JS) }))
         .route(htmx, get(|| async { js(HTMX) }))
         .route(alpine, get(|| async { js(ALPINE) }))
         .route(renox, get(|| async { js(RENOX) }))
         .route(alpine_csp, get(|| async { js(ALPINE_CSP) }))
+}
+
+/// `/_renox/theme/{hash}.css`: a brand theme the app handed out. The hash is
+/// in the URL, so the answer never changes.
+async fn theme(State(state): State<AppState>, Path(file): Path<String>) -> Response {
+    match file
+        .strip_suffix(".css")
+        .and_then(|hash| state.themes.css(hash))
+    {
+        Some(css) => (
+            [
+                (CONTENT_TYPE, "text/css; charset=utf-8"),
+                (CACHE_CONTROL, "public, max-age=31536000, immutable"),
+            ],
+            css.to_string(),
+        )
+            .into_response(),
+        None => StatusCode::NOT_FOUND.into_response(),
+    }
 }
 
 /// The files modules serve (`Registry::asset`), cached like Renox's own.

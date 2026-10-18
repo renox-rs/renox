@@ -574,6 +574,7 @@ async fn check<T: DeserializeOwned + Validate + Send + Sync>(
             user,
             method: &axum::http::Method::POST,
             path: "",
+            locale: &state.config.locale,
         };
         data.after(&form, &mut errors).await?;
     }

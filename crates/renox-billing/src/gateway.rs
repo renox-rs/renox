@@ -7,12 +7,17 @@
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
 use renox::Config;
 use renox::axum::http::HeaderMap;
 use renox::prelude::*;
 
-use crate::{Owner, Plan, Subscription, SubscriptionStatus};
+use crate::payment::{
+    ChargeRequest, DisputeUpdate, PaymentPage, PaymentState, PaymentUpdate, Refund, RefundResult,
+    RefundUpdate,
+};
+use crate::{BillingPayment, Owner, Plan, Subscription, SubscriptionStatus, Unsupported};
 
 /// A boxed future that is `Send`, what [`Gateway`]'s methods return (so the
 /// trait works behind `dyn`, and handlers stay `Send`).
@@ -27,6 +32,8 @@ pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 /// [`Gateway::verify_webhook`], stores it once per
 /// [`Gateway::webhook_event_id`] (a provider's retry changes nothing), and a
 /// queue worker applies what [`Gateway::parse_webhook`] reads from it.
+/// `/billing/webhooks/{name}/{account}` is the same for a named account
+/// ([`Gateway::has_account`], [`Gateway::verify_webhook_account`]).
 pub trait Gateway: Send + Sync + 'static {
     /// The gateway's name in URLs and in the `subscriptions` and
     /// `billing_customers` tables: short, lower case, never changed.
@@ -154,6 +161,40 @@ pub trait Gateway: Send + Sync + 'static {
         self.verify_webhook(&state.config, headers, body)
     }
 
+    /// Whether the gateway has an account called `account`, so that
+    /// `/billing/webhooks/{name}/{account}` is served (an unknown account
+    /// answers 404). The default is `false`: a gateway that knows nothing of
+    /// accounts only serves its default account's URL.
+    fn has_account(&self, _state: &AppState, _account: &str) -> bool {
+        false
+    }
+
+    /// [`Gateway::verify_webhook_with`] for the named account (`None` is
+    /// the default account). This is what the webhook route calls; the
+    /// default calls `verify_webhook_with`, so existing gateways keep
+    /// working.
+    fn verify_webhook_account(
+        &self,
+        state: &AppState,
+        _account: Option<&str>,
+        headers: &HeaderMap,
+        body: &[u8],
+    ) -> Result {
+        self.verify_webhook_with(state, headers, body)
+    }
+
+    /// [`Gateway::parse_webhook_with`] for the named account (`None` is the
+    /// default account). This is what the queue worker calls; the default
+    /// calls `parse_webhook_with`.
+    fn parse_webhook_account(
+        &self,
+        state: &AppState,
+        _account: Option<&str>,
+        body: &[u8],
+    ) -> Result<Vec<Notice>> {
+        self.parse_webhook_with(state, body)
+    }
+
     /// The webhook's event id, so a provider's retry is processed once. The
     /// default: the `webhook-id` header, else the JSON body's top-level
     /// `id` (Stripe's `evt_…`), else a hash of the body.
@@ -183,6 +224,69 @@ pub trait Gateway: Send + Sync + 'static {
     fn parse_webhook_with(&self, _state: &AppState, body: &[u8]) -> Result<Vec<Notice>> {
         self.parse_webhook(body)
     }
+
+    /// Starts a one-off charge: a page at the provider where the customer
+    /// pays `request.amount`. `request.account` names the account to use
+    /// (`None` is the default). The default answers [`Unsupported`].
+    fn charge<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        unsupported(self.name(), "charge")
+    }
+
+    /// Makes a payment link for `request`. The default answers
+    /// [`Unsupported`].
+    fn payment_link<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a ChargeRequest,
+    ) -> BoxFuture<'a, Result<PaymentPage>> {
+        unsupported(self.name(), "payment_link")
+    }
+
+    /// Refunds part or all of `payment`, with the keys of the account the
+    /// payment was made through (`payment.account`). Answer a pending
+    /// refund unless the gateway refunded at once. The default answers
+    /// [`Unsupported`].
+    fn refund<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+        _refund: &'a Refund,
+    ) -> BoxFuture<'a, Result<RefundResult>> {
+        unsupported(self.name(), "refund")
+    }
+
+    /// Asks the gateway where `payment` stands now, with the payment's
+    /// account. The default answers [`Unsupported`].
+    fn payment_status<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result<PaymentState>> {
+        unsupported(self.name(), "payment_status")
+    }
+
+    /// Accepts the dispute on `payment` (gives up contesting it). The
+    /// default answers [`Unsupported`].
+    fn accept_dispute<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _payment: &'a BillingPayment,
+    ) -> BoxFuture<'a, Result> {
+        unsupported(self.name(), "accept_dispute")
+    }
+}
+
+/// A future that answers [`Unsupported`] for `operation` of `gateway`.
+pub(crate) fn unsupported<'a, T: Send + 'a>(
+    gateway: &str,
+    operation: &str,
+) -> BoxFuture<'a, Result<T>> {
+    let refusal = Unsupported::new(gateway, operation);
+    Box::pin(async move { Err(refusal.into()) })
 }
 
 /// What [`Gateway::checkout`] gets: who subscribes, to what, and where the
@@ -399,33 +503,144 @@ pub enum Notice {
     Subscription(Remote),
     /// A payment succeeded or failed.
     Payment(Payment),
+    /// A one-off payment (a charge or a link) changed.
+    OneOff(PaymentUpdate),
+    /// A refund changed.
+    Refund(RefundUpdate),
+    /// A dispute was opened or decided.
+    Dispute(DisputeUpdate),
 }
 
-/// A key given in code, or read from the configuration when a call needs
-/// it (`config.var`: `.env` or the environment).
+/// The account name a resolver gets for the gateway's default account.
+pub(crate) const DEFAULT_ACCOUNT: &str = "default";
+
+/// An account name as it appears in a configuration name (`acme-llc` is
+/// `ACME_LLC`); `None` for a name that isn't 1 to 64 letters, digits, `-` or
+/// `_`, which no account can have.
+pub(crate) fn account_suffix(account: &str) -> Option<String> {
+    let valid = !account.is_empty()
+        && account.len() <= 64
+        && account
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    valid.then(|| account.to_ascii_uppercase().replace('-', "_"))
+}
+
+/// A key looked up by the app on every use: gets the state and the account
+/// name, answers the key (`None` when the installation has none).
+pub(crate) type Resolver =
+    Arc<dyn Fn(&AppState, &str) -> BoxFuture<'static, Result<Option<String>>> + Send + Sync>;
+
+/// A key given in code, read from the configuration when a call needs it
+/// (`config.var`: `.env` or the environment), or looked up by a resolver
+/// on every call (never cached).
 #[derive(Clone)]
 pub(crate) enum Secret {
     Given(String),
     Config(&'static str),
+    Resolved(Resolver),
 }
 
 impl Secret {
+    /// A secret from `resolver`, which ignores the account.
+    pub(crate) fn resolved<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self::Resolved(Arc::new(move |state, _account| Box::pin(resolver(state))))
+    }
+
+    /// A secret from `resolver`, which gets the account's name.
+    pub(crate) fn resolved_accounts<F, Fut>(resolver: F) -> Self
+    where
+        F: Fn(&AppState, &str) -> Fut + Send + Sync + 'static,
+        Fut: Future<Output = Result<Option<String>>> + Send + 'static,
+    {
+        Self::Resolved(Arc::new(move |state, account| {
+            Box::pin(resolver(state, account))
+        }))
+    }
+
+    /// The key a synchronous check can see: a resolved key is not known
+    /// without awaiting it, so this is `None` for one.
     pub(crate) fn resolve(&self, config: &Config) -> Option<String> {
         match self {
             Self::Given(value) => Some(value.clone()).filter(|v| !v.is_empty()),
             Self::Config(name) => config.var(name),
+            Self::Resolved(_) => None,
         }
+    }
+
+    /// The webhook secret of `account` (`None`: the default account's, as
+    /// [`Secret::resolve`]). An account's secret is read from the same
+    /// configuration name with the account appended, upper case with `-` as
+    /// `_` (`STRIPE_WEBHOOK_SECRET_ACME_LLC` for `acme-llc`). A secret given
+    /// in code belongs to the default account only.
+    pub(crate) fn resolve_account(&self, config: &Config, account: Option<&str>) -> Option<String> {
+        let Some(account) = account else {
+            return self.resolve(config);
+        };
+        match self {
+            Self::Config(name) => config
+                .var(&format!("{name}_{}", account_suffix(account)?))
+                .filter(|v| !v.is_empty()),
+            _ => None,
+        }
+    }
+
+    /// Whether the key may be there: a resolved one is asked at use.
+    pub(crate) fn is_set(&self, config: &Config) -> bool {
+        matches!(self, Self::Resolved(_)) || self.resolve(config).is_some()
     }
 
     /// The key, or an error naming where to set it.
     pub(crate) fn require(&self, config: &Config, what: &str) -> Result<String> {
-        self.resolve(config).ok_or_else(|| {
-            let hint = match self {
-                Self::Config(name) => format!("set {name} in .env"),
-                Self::Given(_) => "it was given empty".into(),
-            };
-            renox::anyhow::anyhow!("{what} is missing: {hint}").into()
-        })
+        self.resolve(config).ok_or_else(|| self.missing(what))
+    }
+
+    /// The key, asking the resolver when there is one.
+    pub(crate) async fn require_async(&self, state: &AppState, what: &str) -> Result<String> {
+        match self {
+            Self::Resolved(resolver) => resolver(state, DEFAULT_ACCOUNT)
+                .await?
+                .filter(|key| !key.is_empty())
+                .ok_or_else(|| self.missing(what)),
+            _ => self.require(&state.config, what),
+        }
+    }
+
+    /// The key of `account` (`None`: the default account's, as
+    /// [`Secret::require_async`]). A resolver gets the account's name; a
+    /// configured key is read with the account appended (`STRIPE_SECRET_ACME_LLC`);
+    /// a key given in code belongs to the default account only.
+    pub(crate) async fn require_account(
+        &self,
+        state: &AppState,
+        account: Option<&str>,
+        what: &str,
+    ) -> Result<String> {
+        let Some(name) = account else {
+            return self.require_async(state, what).await;
+        };
+        match self {
+            Self::Resolved(resolver) => resolver(state, name)
+                .await?
+                .filter(|key| !key.is_empty())
+                .ok_or_else(|| self.missing(what)),
+            _ => self
+                .resolve_account(&state.config, account)
+                .ok_or_else(|| self.missing(what)),
+        }
+    }
+
+    fn missing(&self, what: &str) -> Error {
+        let hint = match self {
+            Self::Config(name) => format!("set {name} in .env"),
+            Self::Given(_) => "it was given empty".into(),
+            Self::Resolved(_) => "the key resolver answered none".into(),
+        };
+        renox::anyhow::anyhow!("{what} is missing: {hint}").into()
     }
 }
 
@@ -433,7 +648,7 @@ impl fmt::Debug for Secret {
     /// Never prints the key.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Given(_) => f.write_str("(hidden)"),
+            Self::Given(_) | Self::Resolved(_) => f.write_str("(hidden)"),
             Self::Config(name) => write!(f, "from {name}"),
         }
     }
@@ -473,6 +688,10 @@ mod tests {
             "sk_1"
         );
         assert_eq!(format!("{:?}", Secret::Given("sk".into())), "(hidden)");
+        let resolved = Secret::resolved(|_| async { Ok(Some("sk_2".to_string())) });
+        assert_eq!(format!("{resolved:?}"), "(hidden)");
+        assert!(resolved.is_set(&Config::default()));
+        assert!(!Secret::Config("X").is_set(&Config::default()));
     }
 
     #[test]

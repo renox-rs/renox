@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ app.locale }}">
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,6 +10,8 @@
   <rx-head/>
   {#- The UI kit (renox/ui.html, docs/ui.md): its styles and behavior. -#}
   <rx-ui/>
+  <rx-theme/>
+  <rx-pwa/>
   <link rel="stylesheet" href="{{ asset('app.css') }}">
   {#- The page patterns (components/, styled by public/patterns.css): yours to change. -#}
   <link rel="stylesheet" href="{{ asset('patterns.css') }}">
@@ -39,22 +41,13 @@
     {'href': route('register'), 'label': t('nav.register'), 'icon': 'circle-user'},
   ]"/>
   <rx-shell fill>
-  <rx-sidebar brand="{{ app.name }}" href="{{ route('home') }}">
-    <template rx-if="auth.check">
-      <rx-sidebar-link route="dashboard" label="{{ t('nav.dashboard') }}" icon="layout-dashboard" :active="route_is('dashboard')"/>
-      <rx-sidebar-link route="notifications.index" label="{{ t('nav.notifications') }}" icon="bell" :active="route_is('notifications.*')"/>
-      {#- Links behind a permission show only to those who have it
-          (`can(…)` asks the Permissions module). -#}
-      <template rx-if="can('users.manage') or can('activity.view')">
-        <rx-sidebar-section title="{{ t('nav.admin') }}"/>
-        <rx-sidebar-link rx-if="can('users.manage')" route="users.index" label="{{ t('nav.users') }}" icon="users" :active="route_is('users.*')"/>
-        <rx-sidebar-link rx-if="can('activity.view')" route="activity.index" label="{{ t('nav.activity') }}" icon="history" :active="route_is('activity.*')"/>
-      </template>
-      <rx-sidebar-section title="{{ t('nav.app') }}"/>
-      <rx-sidebar-link route="home" label="{{ t('nav.home') }}" icon="house"/>
-      <rx-sidebar-link route="account.show" label="{{ t('nav.account') }}" icon="circle-user" :active="route_is('account.*')"/>
-    </template>
-    <rx-sidebar-link rx-else route="home" label="{{ t('nav.home') }}" icon="house"/>
+  {#- The links come from the modules: each one adds its own to the "app"
+      menu (`app.nav("app", NavLink::route(…).permission("…"))` in its
+      `register`), and the sidebar draws only what the person may open, in
+      groups, with the current page marked. A guest (an error page) gets the
+      one hand-written link. -#}
+  <rx-sidebar menu="app" brand="{{ app.name }}" href="{{ route('home') }}">
+    <rx-sidebar-link rx-if="not auth.check" route="home" label="{{ t('nav.home') }}" icon="house"/>
   </rx-sidebar>
   <div class="rx-shell__main">
     <rx-navbar width="full" :skip="false" :tabs="tabs" tabs-label="{{ t('nav.sections') }}">

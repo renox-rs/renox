@@ -58,6 +58,10 @@ pub struct AppStateInner {
     pub(crate) mailer_limits: Arc<std::collections::HashMap<String, crate::queue::Limit>>,
     /// The app's other mailers (`App::mailer`), by name.
     pub(crate) mailers: Arc<std::collections::HashMap<String, Mailer>>,
+    /// The themes the app can serve at `/_renox/theme/{hash}.css`.
+    pub(crate) themes: crate::theme::ThemeRegistry,
+    /// The installable-app configuration (`App::pwa`), for `<rx-pwa/>`.
+    pub(crate) pwa: Option<Arc<crate::pwa::Pwa>>,
     /// Dispatches jobs.
     pub queue: Queue,
     /// The cache (`CACHE_STORE`).
@@ -89,12 +93,24 @@ pub struct AppStateInner {
     pub(crate) second_factor: Option<Arc<crate::auth::second_factor::SecondFactor>>,
     /// Sections other modules add to `/account` (`Registry::account_section`).
     pub(crate) account_sections: Arc<Vec<crate::auth::account::AccountSection>>,
+    /// The navigation menus (`App::nav`).
+    #[allow(dead_code)]
+    pub(crate) nav: Arc<crate::nav::Nav>,
+    /// Secrets of the senders whose signed requests are accepted
+    /// (`App::signing_key`), by key id.
+    pub(crate) signing_keys: Arc<std::collections::HashMap<String, String>>,
+    /// The values modules contributed in `register` (`AppState::contributions`).
+    pub(crate) contributions: Arc<crate::Contributions>,
     /// The `Auth` module's settings, when the app has it.
     pub(crate) auth: Option<Arc<crate::auth::module::Settings>>,
     /// `App::detect_locale`: the browser's `Accept-Language` picks the locale.
     pub(crate) detect_locale: bool,
+    /// `App::rtl_locales`: replaces the default right-to-left languages.
+    pub(crate) rtl_locales: Option<Arc<Vec<String>>>,
     pub(crate) security: Arc<crate::security::Security>,
     pub(crate) webhooks: crate::webhook::Handlers,
+    /// Events `App::webhook_event` made subscribable.
+    pub(crate) webhook_events: crate::webhook::outbound::EventDefs,
     /// Read by the live component route (#433).
     #[allow(dead_code)]
     pub(crate) live_components: crate::live_component::LiveMap,
@@ -196,6 +212,21 @@ impl Fakes {
 }
 
 impl AppState {
+    /// Every `T` modules contributed with `Registry::contribute`, in order:
+    /// the app's own first, then each module's as listed.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// struct Link(&'static str);
+    /// # fn demo(state: AppState) {
+    /// let links: &[Link] = state.contributions::<Link>();
+    /// # let _ = links;
+    /// # }
+    /// ```
+    pub fn contributions<T: 'static>(&self) -> &[T] {
+        self.contributions.all::<T>()
+    }
+
     /// The URL path of a named route, e.g. `state.url("products.show", &[&id])`.
     pub fn url(&self, name: &str, params: &[&dyn Display]) -> Result<String> {
         Ok(self.routes.url(name, params)?)

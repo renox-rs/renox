@@ -1,0 +1,10 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>Ticket <span id="status">{{ ticket.status }}</span></h1>
+<rx-transition-actions :actions="actions" action="/tickets/{{ ticket.id }}/transitions" label="Ticket actions" id="actions"/>
+<ol id="log">
+  {%- for item in items %}
+  <li>{{ item.title }}{% if item.body %} ({{ item.body }}){% endif %}</li>
+  {%- endfor %}
+</ol>
+{% endblock %}

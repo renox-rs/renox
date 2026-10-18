@@ -11,6 +11,7 @@ In this guide:
 - [Roles and permissions](#roles-and-permissions): jobs like "editor", and what each job allows
 - [Roles per branch](#roles-per-branch-a-role-in-one-store-for-a-while): a role in one store,
   for a while (scoped roles with dates)
+- [Navigation links](#showing-links-only-to-who-may-use-them): who sees which menu entry
 - [Super-admins](#super-admins-gate_before): one person who may do everything
 - [API tokens and abilities](#api-tokens-and-abilities): limits for programs that call your API
 - [Tenants](#tenants-rows-that-belong-to-a-team): keeping each team's data apart
@@ -398,6 +399,12 @@ What's going on:
 > check, so a scope set late in the request still counts. `rnx route:list` marks role and
 > permission guards with `*` to say they count the active scope.
 
+### Any scope: `has_permission_anywhere`
+
+`user.has_permission_anywhere("orders.refund")` is true when the user holds the permission
+globally or in at least one scope (a store, a team) that is active today. It answers "does this
+person do this anywhere?", which is what a menu needs; for a record use `has_permission_in`.
+
 ### Checking one record: `has_permission_in`
 
 A policy decides about one row, which belongs to its own store, whatever store the request
@@ -484,6 +491,24 @@ fn my_stores(query: renox::db::Query<Transfer>) -> renox::db::Query<Transfer> {
 > [!NOTE]
 > Permissions stay global: there's no "may refund in store 1 only" without a role. Make a role
 > for it and give that role in store 1.
+
+## Showing links only to who may use them
+
+A navigation link added with `NavLink` (see
+[docs/ui.md](ui.md#menus-that-modules-and-the-app-add-to)) can carry its own visibility. The
+checks run in this order, and the link is shown only if all of them pass:
+
+1. `App::nav_hide(menu, key)` removes it for everyone.
+2. `.permission("invoices.view")`: the user holds the permission **globally or in at least one
+   scope** (`user.has_permission_anywhere("invoices.view")`). A manager of one store sees the
+   "Refunds" link even though the permission is not global; the page it opens still checks
+   the scope with `has_permission_in`. Without the Permissions module there are no roles, so
+   the name falls back to the gates and `allows`; an unknown name denies.
+3. `.gate("view-reports")`: the gate allows this user.
+4. `.when(|user| user.has_role("auditor"))`: your own check.
+
+An anonymous visitor sees only the links with no restriction. Hiding a link is not
+protection: guard the route itself with `require_permission` or a gate.
 
 ## Super-admins: `gate_before`
 

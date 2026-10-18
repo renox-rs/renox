@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en" dir="auto">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline | {{title}}</title>
+  <style>
+    body { font-family: system-ui, sans-serif; display: grid; place-items: center; min-height: 100vh; margin: 0; padding: 1rem; text-align: center; color: #1f2937; background: #ffffff; }
+    h1 { margin: 0 0 .5rem; font-size: 1.5rem; }
+    p { margin: 0 0 1rem; color: #4b5563; }
+    a { color: #0b6e66; font-weight: 600; }
+    @media (prefers-color-scheme: dark) { body { color: #f3f4f6; background: #111827; } p { color: #9ca3af; } a { color: #5eead4; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>You are offline</h1>
+    <p>{{title}} needs a connection for this page. Check your network and try again.</p>
+    <a href="/">Try again</a>
+  </main>
+</body>
+</html>

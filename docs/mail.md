@@ -164,6 +164,8 @@ async fn invoice(State(state): State<AppState>) -> Result {
 }
 ```
 
+To make that PDF from a template instead of loading one, see [PDF documents](pdf.md#sending-it-download-or-mail).
+
 What each builder method adds:
 
 - `.html(…)`: an HTML version. The text from `Mail::new` is still sent, as the plain part.

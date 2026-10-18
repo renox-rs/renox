@@ -1,0 +1,30 @@
+{
+  "_id": "urn:order:6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "action": "SALE",
+  "amount": { "currencyCode": "USD", "value": 4500 },
+  "merchantOrderReference": "job-42-1",
+  "reference": "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "_embedded": {
+    "payment": [
+      {
+        "_id": "urn:payment:fake-payment-1",
+        "state": "PURCHASED",
+        "amount": { "currencyCode": "USD", "value": 4500 },
+        "_embedded": {
+          "cnp:capture": [
+            {
+              "_id": "urn:payment:fake-payment-1:capture:fake-capture-1",
+              "state": "SUCCESS",
+              "amount": { "currencyCode": "USD", "value": 4500 },
+              "_links": {
+                "cnp:refund": {
+                  "href": "https://api-gateway.ngenius-payments.com/transactions/outlets/outlet-ref-fake/orders/6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c/payments/fake-payment-1/captures/fake-capture-1/refund"
+                }
+              }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -71,6 +71,14 @@ pub(crate) const BUILTIN: &[(&str, &str)] = &[
     ),
     ("renox/debug.html", include_str!("../views/debug.html")),
     (
+        "renox/custom_fields.html",
+        include_str!("../views/custom_fields.html"),
+    ),
+    (
+        "renox/transition_actions.html",
+        include_str!("../views/transition_actions.html"),
+    ),
+    (
         "renox/notifications.html",
         include_str!("../views/notifications.html"),
     ),
@@ -625,12 +633,27 @@ impl Views {
                     styles.unwrap_or(true),
                 )))
             });
+            // The request's brand stylesheet (`App::theme`, `App::theme_for`):
+            // a `<link>` to the hashed route (`/_renox/theme/{hash}.css`, so
+            // nothing to escape), and nothing without a theme.
+            env.add_function("renox_theme", |state: &minijinja::State| {
+                let url = state
+                    .lookup(THEME_KEY)
+                    .and_then(|v| v.as_str().map(str::to_owned));
+                Value::from_safe_string(match url {
+                    Some(url) => format!("<link rel=\"stylesheet\" href=\"{url}\">"),
+                    None => String::new(),
+                })
+            });
             env.add_function("renox_calendar", || {
                 Value::from_safe_string(crate::assets::calendar_tags())
             });
             // Until the live component script ships (#435): nothing.
             env.add_function("renox_live", || {
                 Value::from_safe_string(crate::assets::live_tags())
+            });
+            env.add_function("renox_offline", || {
+                Value::from_safe_string(crate::assets::offline_tags())
             });
             // The kit's `icon(…)` macro: a Lucide icon as inline SVG.
             env.add_function(
@@ -656,10 +679,18 @@ impl Views {
             env.add_filter("date", crate::view_filters::date(zone));
             env.add_filter("since", crate::view_filters::since(zone));
             env.add_filter("money", crate::view_filters::money(currency.clone()));
+            env.add_filter("quantity", crate::view_filters::quantity);
             env.add_filter("words", crate::view_filters::words);
             env.add_filter("markdown", crate::view_filters::markdown);
             env.add_function("chart", crate::chart::chart(currency.clone()));
             env.add_function("class_names", crate::view_filters::class_names);
+            env.add_function("money_input", {
+                let app_currency = currency.clone();
+                move |code: Option<String>| {
+                    crate::view_filters::money_input(code.as_deref().unwrap_or(&app_currency))
+                }
+            });
+            env.add_function("quantity_input", crate::view_filters::quantity_input);
             env.add_function("rx_attr", crate::view_filters::rx_attr);
             env.add_function("rx_attr_value", crate::view_filters::attr_value);
             // The app's own functions and filters (`App::templates`).
@@ -805,6 +836,50 @@ impl Views {
         }
     }
 
+    /// The navigation menus the template `name` and the templates it reaches
+    /// (layouts, includes, imports) ask for with `nav("…")` or `menu="…"`.
+    /// Renox's own templates are not read: they get the menu name from the
+    /// caller.
+    pub(crate) fn menus_used(&self, name: &str) -> crate::nav::MenusUsed {
+        let mut used = crate::nav::MenusUsed::default();
+        let Ok(env) = self.reloader.acquire_env() else {
+            return used;
+        };
+        let mut seen = std::collections::HashSet::new();
+        let mut queue = vec![name.to_owned()];
+        while let Some(next) = queue.pop() {
+            if !seen.insert(next.clone()) || BUILTIN.iter().any(|(n, _)| *n == next) {
+                continue;
+            }
+            let Ok(template) = env.get_template(&next) else {
+                continue;
+            };
+            let source = template.source();
+            used.scan(source);
+            // Every quoted `….html` name is a layout, an include or an
+            // import (or text that happens to match). Found from the end of
+            // the name, so an apostrophe in a comment cannot pair the quotes
+            // wrongly.
+            let mut from = 0;
+            while let Some(at) = source[from..].find(".html") {
+                let end = from + at + ".html".len();
+                from = end;
+                let Some(quote) = source[end..]
+                    .chars()
+                    .next()
+                    .filter(|c| matches!(c, '"' | '\''))
+                else {
+                    continue;
+                };
+                let line_start = source[..end].rfind('\n').map_or(0, |i| i + 1);
+                if let Some(open) = source[line_start..end].rfind(quote) {
+                    queue.push(source[line_start + open + 1..end].to_owned());
+                }
+            }
+        }
+        used
+    }
+
     /// Whether a template of this name exists (the app's or a built-in).
     pub fn exists(&self, name: &str) -> bool {
         self.reloader
@@ -845,7 +920,16 @@ impl Views {
                 "the view gets a value named like a macro the template imports; the macro hides it (rename one)"
             );
         }
-        let ctx = merge_maps([shared, view.ctx.clone(), globals]);
+        // `nav('menu')` is a request global, but a page that already passes its
+        // own `nav` value keeps it (the global would otherwise hide it).
+        let own_nav = [&view.ctx, &shared]
+            .iter()
+            .find_map(|layer| layer.get_attr("nav").ok().filter(|n| !n.is_undefined()))
+            .map_or_else(
+                || Value::from_serialize(serde_json::Map::new()),
+                |nav| context! { nav },
+            );
+        let ctx = merge_maps([shared, view.ctx.clone(), globals, own_nav]);
         let stacks = crate::view_stack::Scope::begin();
         let rendered = match &view.fragment {
             Some(block) if htmx.wants_fragment() => (|| {
@@ -942,6 +1026,7 @@ pub(crate) const REQUEST_GLOBALS: &[&str] = &[
     "can",
     "request",
     "route_is",
+    "nav",
     "csrf_token",
     "csrf_field",
     "flash",
@@ -951,6 +1036,7 @@ pub(crate) const REQUEST_GLOBALS: &[&str] = &[
     "old",
     "has_old",
     "renox_head",
+    "renox_pwa",
     "seo",
     "csp_nonce",
     "toasts",
@@ -1332,6 +1418,7 @@ pub(crate) async fn middleware(
     let route = crate::routing::CurrentRoute::of(req.method(), req.extensions(), &state)
         .name()
         .map(str::to_owned);
+    let host = crate::domain::host(&req).unwrap_or_default();
     let nonce = req
         .extensions()
         .get::<crate::security::CspNonce>()
@@ -1454,10 +1541,28 @@ pub(crate) async fn middleware(
                 }
             }
         }
+        add_theme(
+            &mut shared,
+            &state,
+            &host,
+            &path,
+            &locale,
+            current_user.as_ref(),
+        )
+        .await;
         let events = match &session {
             Some(session) if !htmx.request => crate::analytics::take(session),
             _ => Vec::new(),
         };
+        let menus = request_menus(
+            &state,
+            current_user.as_ref(),
+            &locale,
+            route.as_deref(),
+            &path,
+            state.views.menus_used(&view.name),
+        )
+        .await;
         let globals = globals(
             &state,
             session.as_ref(),
@@ -1471,6 +1576,7 @@ pub(crate) async fn middleware(
                 events: &events,
             },
             &locale,
+            menus,
         );
         return match state
             .views
@@ -1520,6 +1626,29 @@ pub(crate) async fn middleware(
                     }
                 }
             }
+            add_theme(
+                &mut shared,
+                &state,
+                &host,
+                &path,
+                &locale,
+                current_user.as_ref(),
+            )
+            .await;
+            // The app's error page may extend a layout with a menu: build
+            // every menu, as the page that extends is not known here.
+            let menus = request_menus(
+                &state,
+                current_user.as_ref(),
+                &locale,
+                route.as_deref(),
+                &path,
+                crate::nav::MenusUsed {
+                    names: Vec::new(),
+                    dynamic: true,
+                },
+            )
+            .await;
             let page_globals = globals(
                 &state,
                 session.as_ref(),
@@ -1533,6 +1662,7 @@ pub(crate) async fn middleware(
                     events: &[],
                 },
                 &locale,
+                menus,
             );
             Some(merge_maps([page_globals, Value::from_serialize(&shared)]))
         } else {
@@ -1541,6 +1671,38 @@ pub(crate) async fn middleware(
         return error_response(&state, page, res, wants_json, &htmx, &request_line, globals);
     }
     res
+}
+
+/// The key a request's brand stylesheet URL is shared under, for `renox_theme()` (not named like the function: a value would hide it).
+pub(crate) const THEME_KEY: &str = "renox_theme_url";
+
+/// Resolves the request's brand (`App::theme`, `App::theme_for`) and shares
+/// the URL of its stylesheet with the views; nothing is shared when the app
+/// has no theme for this request.
+async fn add_theme(
+    shared: &mut std::collections::BTreeMap<String, Value>,
+    state: &AppState,
+    host: &str,
+    path: &str,
+    locale: &str,
+    user: Option<&CurrentUser>,
+) {
+    if !state.themes.is_set() {
+        return;
+    }
+    let url = state
+        .themes
+        .resolve(crate::theme::ThemeRequest {
+            host: host.to_owned(),
+            path: path.to_owned(),
+            locale: locale.to_owned(),
+            user: user.and_then(|c| c.user.clone()),
+            state: state.clone(),
+        })
+        .await;
+    if let Some(url) = url {
+        shared.insert(THEME_KEY.to_owned(), Value::from(url));
+    }
 }
 
 /// The error page (or JSON for API clients) for `page`.
@@ -1610,6 +1772,22 @@ impl minijinja::value::Object for Flashed {
     fn repr(self: &Arc<Self>) -> minijinja::value::ObjectRepr {
         minijinja::value::ObjectRepr::Map
     }
+}
+
+/// Builds the menus `used` names for the request's user.
+async fn request_menus(
+    state: &AppState,
+    current_user: Option<&CurrentUser>,
+    locale: &str,
+    route: Option<&str>,
+    path: &str,
+    used: crate::nav::MenusUsed,
+) -> std::collections::HashMap<String, Vec<crate::nav::MenuGroup>> {
+    if state.nav.menus.is_empty() || (used.names.is_empty() && !used.dynamic) {
+        return Default::default();
+    }
+    let user = current_user.and_then(|c| crate::auth::auth_user_of(c, state));
+    crate::nav::build_for_request(state, user.as_ref(), locale, route, path, &used).await
 }
 
 /// What templates see of the request, besides the session and user.
@@ -1684,6 +1862,7 @@ fn globals(
     htmx: &Htmx,
     requested: &Requested,
     locale: &str,
+    menus: std::collections::HashMap<String, Vec<crate::nav::MenuGroup>>,
 ) -> Value {
     let config = &state.config;
     let token = session.map(Session::token).unwrap_or_default();
@@ -1707,6 +1886,15 @@ fn globals(
         )
     };
     let nonce = requested.nonce.to_owned();
+    // `<rx-pwa/>`: the manifest link, colours, icon and registration script
+    // (with the CSP nonce); nothing without `App::pwa`.
+    let pwa = Value::from_safe_string(
+        state
+            .pwa
+            .as_ref()
+            .map(|pwa| pwa.head_tags(requested.nonce))
+            .unwrap_or_default(),
+    );
     let field = Value::from_safe_string(format!(
         "<input type=\"hidden\" name=\"{}\" value=\"{token}\">",
         crate::csrf::CSRF_FIELD
@@ -1759,6 +1947,7 @@ fn globals(
             debug => config.debug,
             url => config.url,
             locale => locale,
+            dir => state.direction(locale).as_str(),
             currency => config.currency,
         },
         auth => context! {
@@ -1798,6 +1987,12 @@ fn globals(
                 })
             })
         },
+        // `nav('staff')`: the groups of a menu the app's modules contributed
+        // to, for this request's user (built before rendering, only for the
+        // menus the page's templates name).
+        nav => Value::from_function(move |menu: String| {
+            Value::from_serialize(menus.get(&menu).map(Vec::as_slice).unwrap_or_default())
+        }),
         csrf_token => token,
         flash => Value::from_object(Flashed(session.map(Session::flashed).unwrap_or_default())),
         errors => errors,
@@ -1821,9 +2016,12 @@ fn globals(
                 return Ok::<_, minijinja::Error>(String::new());
             }
             // `items[0][name]`'s errors are keyed `items.0.name`.
+            // Custom fields are keyed as they are named (`extra[passport_no]`).
+            let raw = field.clone();
             let field = crate::validation::nested::normalize(&field);
             Ok(first_errors
-                .get(&field)
+                .get(&raw)
+                .or_else(|| first_errors.get(&field))
                 .or_else(|| {
                     let prefix = format!("{field}.");
                     first_errors
@@ -1835,6 +2033,7 @@ fn globals(
                 .unwrap_or_default())
         }),
         renox_head => Value::from_function(move || head.clone()),
+        renox_pwa => Value::from_function(move || pwa.clone()),
         seo => seo,
         csp_nonce => Value::from_function(move || nonce.clone()),
         csrf_field => Value::from_function(move || field.clone()),

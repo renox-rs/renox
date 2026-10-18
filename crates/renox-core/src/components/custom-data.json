@@ -277,6 +277,16 @@
     },
     {
       "attributes": [],
+      "description": "The request's brand stylesheet link, after `<rx-ui/>` (`renox_theme()`); nothing without a theme.",
+      "name": "rx-theme"
+    },
+    {
+      "attributes": [],
+      "description": "The installable-app head tags: manifest link, theme colour, touch icon and the service worker registration (`renox_pwa()`); nothing without `App::pwa`.",
+      "name": "rx-pwa"
+    },
+    {
+      "attributes": [],
       "description": "The toast region (`toasts()`).",
       "name": "rx-toasts"
     },
@@ -1314,6 +1324,80 @@
     {
       "attributes": [
         {
+          "description": "(required) The list from `CustomField::views_for(&db, \"parties\", locale, auth.as_ref())` (`views` without a viewer masks sensitive fields).",
+          "name": ":fields",
+          "values": []
+        },
+        {
+          "description": "The model's `Json<CustomValues>` column (`extra`); inputs are named `extra[key]`.",
+          "name": "name",
+          "values": []
+        },
+        {
+          "description": "The record's custom values (`party.extra.shown(&db, &fields)` so masked values stay out of the context).",
+          "name": ":values",
+          "values": []
+        },
+        {
+          "description": "`form` (default) draws inputs, `show` draws entries.",
+          "name": "mode",
+          "values": [
+            {
+              "name": "form"
+            },
+            {
+              "name": "show"
+            }
+          ]
+        },
+        {
+          "description": "The element's id.",
+          "name": "id",
+          "values": []
+        }
+      ],
+      "description": "The custom fields of a record: inputs in a form, entries on a page.",
+      "name": "rx-custom-fields"
+    },
+    {
+      "attributes": [
+        {
+          "description": "(required) The list from `record.available(&user, &db)`.",
+          "name": ":actions",
+          "values": []
+        },
+        {
+          "description": "(required) The address transitions post to (`/orders/1/transitions`); each button adds `/name`.",
+          "name": "action",
+          "values": []
+        },
+        {
+          "description": "The group's accessible name.",
+          "name": "label",
+          "values": []
+        },
+        {
+          "description": "The placeholder of the reason field.",
+          "name": "reason-label",
+          "values": []
+        },
+        {
+          "description": "The note under a button that waits for approval.",
+          "name": "approval-label",
+          "values": []
+        },
+        {
+          "description": "The element's id.",
+          "name": "id",
+          "values": []
+        }
+      ],
+      "description": "A button for each state machine transition the user may run now.",
+      "name": "rx-transition-actions"
+    },
+    {
+      "attributes": [
+        {
           "description": "The address; or use route. Left out, the page's own.",
           "name": "action",
           "values": []
@@ -1350,6 +1434,11 @@
               "name": "false"
             }
           ]
+        },
+        {
+          "description": "The name of an outbox: a post that fails for lack of network is kept and sent later. The route must be `.offline()`; the page loads the outbox script.",
+          "name": "offline",
+          "values": []
         }
       ],
       "description": "A form: the CSRF field and the method field are written for you.",
@@ -1412,6 +1501,12 @@
             },
             {
               "name": "range"
+            },
+            {
+              "name": "money"
+            },
+            {
+              "name": "quantity"
             }
           ]
         },
@@ -1550,6 +1645,21 @@
         {
           "description": "The step between values (number types).",
           "name": "step",
+          "values": []
+        },
+        {
+          "description": "For type money: the currency code (APP_CURRENCY by default); sets the step and the suffix.",
+          "name": "currency",
+          "values": []
+        },
+        {
+          "description": "For type quantity: the decimals of the quantity (0 to 9); sets the step.",
+          "name": "scale",
+          "values": []
+        },
+        {
+          "description": "For type quantity: the unit shown as the suffix (kg, m, ...).",
+          "name": "unit",
           "values": []
         }
       ],
@@ -3680,7 +3790,13 @@
       "name": "rx-navbar"
     },
     {
-      "attributes": [],
+      "attributes": [
+        {
+          "description": "A menu's name: the links modules and the app added with `App::nav`, for this user.",
+          "name": "menu",
+          "values": []
+        }
+      ],
       "description": "The navbar's links, kept together (a row that scrolls on phones).",
       "name": "rx-nav-links"
     },
@@ -3778,6 +3894,11 @@
               "name": "false"
             }
           ]
+        },
+        {
+          "description": "A menu's name: the links modules and the app added with `App::nav`, grouped, for this user.",
+          "name": "menu",
+          "values": []
         }
       ],
       "description": "Navigation down the side, for back offices.",

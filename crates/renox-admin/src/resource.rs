@@ -9,6 +9,7 @@ use std::sync::Arc;
 use renox::db::{Model, Query};
 use renox::grid::{Column, Grid};
 use renox::prelude::*;
+use renox::state_machine::{Available, MachineInfo, Outcome, StateMachine, TransitionError};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -213,6 +214,28 @@ pub trait AdminResource: Send + Sync + 'static {
     fn saved(&self, record: &Self::Model, cx: &SaveContext) -> impl Future<Output = Result> + Send {
         let _ = (record, cx);
         async { Ok(()) }
+    }
+
+    /// The model's state machine, for a read-only diagram on the view page:
+    /// `Some(renox::state_machine::info_of::<Order>())`. Pair it with
+    /// [`available_transitions`](Self::available_transitions) for the buttons
+    /// and [`AdminAction::transitions`] for what they run. `None` by default.
+    fn state_machine(&self) -> Option<MachineInfo> {
+        None
+    }
+
+    /// The transitions `user` may run on `record` now, shown as buttons on
+    /// its view page (each posts to the action of the same name, see
+    /// [`AdminAction::transitions`]). For a state machine model, return
+    /// `record.available(user, db).await`. None by default.
+    fn available_transitions(
+        &self,
+        record: &Self::Model,
+        user: &AuthUser,
+        db: &Db,
+    ) -> impl Future<Output = Result<Vec<Available>>> + Send {
+        let _ = (record, user, db);
+        async { Ok(Vec::new()) }
     }
 
     /// Every query the panel runs for this resource starts here: the
@@ -535,6 +558,63 @@ impl<M: Send + 'static> AdminAction<M> {
         cx: ActionContext,
     ) -> BoxFuture<'static, Result<Toast>> {
         (self.run)(records, cx)
+    }
+}
+
+impl<M: StateMachine + Send + Sync + 'static> AdminAction<M> {
+    /// One row action per transition of `M`'s machine (system transitions
+    /// left out), named like the transition, that runs it as the panel's
+    /// user with the engine's checks: permission, `from` state and guards.
+    /// A transition that needs a reason asks for it in a sheet. Use it as
+    /// the resource's [`actions`](AdminResource::actions).
+    ///
+    /// The view page offers only the ones that are
+    /// [`available`](AdminResource::available_transitions) for the record.
+    pub fn transitions() -> Vec<Self> {
+        renox::state_machine::info_of::<M>()
+            .transitions
+            .into_iter()
+            .filter(|t| !t.system)
+            .map(|t| {
+                let name = t.name.clone();
+                let label = t.label.clone();
+                let mut action = Self::new(&t.name, &t.label, move |records: Vec<M>, cx| {
+                    let name = name.clone();
+                    let label = label.clone();
+                    async move {
+                        let reason = cx.input.text("reason").trim().to_owned();
+                        let mut pending = false;
+                        for record in &records {
+                            let mut run = record.transition(&name).by(&cx.user);
+                            if !reason.is_empty() {
+                                run = run.reason(reason.clone());
+                            }
+                            match run
+                                .run(&cx.state)
+                                .await
+                                .map_err(TransitionError::into_error)?
+                            {
+                                Outcome::Done(_) => {}
+                                Outcome::Pending(_) => pending = true,
+                            }
+                        }
+                        Ok(Toast::success(if pending {
+                            format!("{label}: waiting for approval.")
+                        } else {
+                            format!("{label}: done.")
+                        }))
+                    }
+                })
+                .row_only();
+                if t.needs_reason {
+                    action = action.form(vec![Field::textarea("reason", "Reason").required()]);
+                }
+                if t.tone.as_deref() == Some("danger") {
+                    action = action.danger();
+                }
+                action
+            })
+            .collect()
     }
 }
 

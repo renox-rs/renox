@@ -181,6 +181,37 @@ async fn tagged_mails_render_byte_for_byte_like_the_template_statements() {
     assert!(html("renox/mail/auth/verify-email").contains(r#"href="https://shop.test/o/7""#));
 }
 
+/// An Arabic mail built for its recipient from an English context (the request that
+/// queues it) is `rtl` with `app.locale == "ar"`, and stays so when a worker sends it.
+#[tokio::test]
+async fn mail_views_take_dir_from_the_recipients_locale() {
+    let dir = views();
+    std::fs::write(
+        dir.path().join("mail/where.html"),
+        r#"{% extends "renox/mail/layout.html" %}{% block content %}<p>{{ app.locale }}:{{ app.dir }}</p>{% endblock %}"#,
+    )
+    .unwrap();
+    let kernel = kernel_with(config(dir.path())).await;
+    let state = kernel.state();
+
+    let english = state.mail_view("a@b.test", "Hi", "mail/where", ()).unwrap();
+    let html = english.html.as_deref().unwrap();
+    assert!(html.contains(r#"<html lang="en" dir="ltr">"#), "{html}");
+    assert!(html.contains("<p>en:ltr</p>"), "{html}");
+
+    let arabic = state
+        .mail_view_in("ar", "a@b.test", "Hi", "mail/where", ())
+        .unwrap();
+    let html = arabic.html.as_deref().unwrap();
+    assert!(html.contains(r#"<html lang="ar" dir="rtl">"#), "{html}");
+    assert!(html.contains("<p>ar:rtl</p>"), "{html}");
+
+    state.queue_mail(arabic).await.unwrap();
+    kernel.run_jobs().await.unwrap();
+    let sent = kernel.mailer().sent();
+    assert!(sent[0].html.as_deref().unwrap().contains(r#"dir="rtl""#));
+}
+
 #[tokio::test]
 async fn queued_mail_is_sent_by_a_worker() {
     let dir = views();

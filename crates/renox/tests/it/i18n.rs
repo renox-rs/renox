@@ -201,7 +201,7 @@ async fn built_in_texts_can_be_translated() {
         login.contains(">Se connecter</h2>"),
         "renox.auth.* overrides the built-in page"
     );
-    assert!(login.contains(r#"<html lang="fr">"#));
+    assert!(login.contains(r#"<html lang="fr" dir="ltr">"#));
     visitor.get("/lang/es").await;
     assert!(
         visitor.get("/login").await.1.contains(">Log in</h2>"),
@@ -258,6 +258,44 @@ async fn debug_mode_picks_up_edited_lang_files() {
 }
 
 #[renox::test]
+async fn direction_follows_the_default_list_and_app_rtl_locales() {
+    use renox::i18n::{Direction, direction};
+    for l in ["ar", "ar-AE", "he", "fa"] {
+        assert_eq!(direction(l), Direction::Rtl, "{l}");
+    }
+    for l in ["en", "es", ""] {
+        assert_eq!(direction(l), Direction::Ltr, "{l}");
+    }
+    let app = renox::testing::TestApp::new(App::new()).await;
+    assert_eq!(app.state().direction("ar"), Direction::Rtl);
+    let app = renox::testing::TestApp::new(App::new().rtl_locales(&["xx"])).await;
+    assert_eq!(app.state().direction("xx-YY"), Direction::Rtl);
+    assert_eq!(app.state().direction("ar"), Direction::Ltr);
+}
+
+#[tokio::test]
+async fn pages_expose_app_dir_for_the_visitors_locale() {
+    let dir = tempfile::tempdir().unwrap();
+    write_lang(dir.path());
+    std::fs::write(dir.path().join("lang/ar.json"), r#"{ "welcome": "x" }"#).unwrap();
+    let kernel = kernel(dir.path(), false).await;
+    std::fs::write(
+        dir.path().join("views/page.html"),
+        "{{ app.locale }}:{{ app.dir }}",
+    )
+    .unwrap();
+    let mut visitor = Visitor {
+        router: kernel.router(),
+        cookie: None,
+    };
+    assert_eq!(visitor.get("/").await.1, "en:ltr");
+    visitor.get("/lang/ar").await;
+    assert_eq!(visitor.get("/").await.1, "ar:rtl");
+    visitor.get("/lang/es").await;
+    assert_eq!(visitor.get("/").await.1, "es:ltr");
+}
+
+#[renox::test]
 async fn an_apps_language_file_brings_plurals_and_ranges() {
     // `tests/lang/es.json`: Renox ships English only; Spanish comes from the app.
     let app = renox::testing::TestApp::with_config(App::new(), |c| {
@@ -274,4 +312,23 @@ async fn an_apps_language_file_brings_plurals_and_ranges() {
     assert_eq!(es.t("ui.cancel", &[]), "Cancelar");
     // A language without a file gets the built-in English texts.
     assert_eq!(app.state().lang("fr").t("ui.cancel", &[]), "Cancel");
+}
+
+#[renox::test]
+async fn built_in_pages_write_dir_for_the_locale_and_error_pages_stay_ltr() {
+    let app = renox::testing::TestApp::with_config(App::new().module(Auth::new()), |c| {
+        c.locale = "ar".to_owned();
+    })
+    .await;
+    app.get("/login")
+        .await
+        .assert_see(r#"<html lang="ar" dir="rtl">"#);
+    app.get("/no-such-page")
+        .await
+        .assert_see(r#"<html lang="en" dir="ltr">"#);
+
+    let app = renox::testing::TestApp::new(App::new().module(Auth::new())).await;
+    app.get("/login")
+        .await
+        .assert_see(r#"<html lang="en" dir="ltr">"#);
 }

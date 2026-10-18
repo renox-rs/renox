@@ -83,6 +83,17 @@ pub(crate) fn template(key: &str) -> &'static str {
         "lte.array" => "The :attribute must have at most as many items as :other.",
         "lte.file" => "The :attribute must be at most as large as :other.",
         "lte.date" => "The :attribute must be the same as or before :other.",
+        "currency" => "The :attribute must be a valid currency code.",
+        "quantity" => "The :attribute must be a number with at most :decimals decimal places.",
+        "quantity_min" => "The :attribute must be at least :min.",
+        "quantity_max" => "The :attribute must be at most :max.",
+        "unit" => "The :attribute must be a valid unit.",
+        "money" => "The :attribute must be an amount with at most :decimals decimal places.",
+        "latitude" => "The :attribute must be a latitude between -90 and 90.",
+        "longitude" => "The :attribute must be a longitude between -180 and 180.",
+        "point" => {
+            "The :attribute must be a valid point, as {\"lat\": .., \"lng\": ..} or GeoJSON."
+        }
         "decimal" => "The :attribute must have :decimal decimal places.",
         "dimensions" => "The :attribute has invalid image dimensions.",
         "prohibits" => "The :attribute field can't be sent together with :other.",
@@ -200,6 +211,9 @@ mod tests {
             "doesnt_end_with",
             "not_regex",
             "declined",
+            "latitude",
+            "longitude",
+            "point",
             "password.uncompromised",
             "current_password",
         ] {

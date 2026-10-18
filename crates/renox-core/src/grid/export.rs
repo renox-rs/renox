@@ -56,7 +56,10 @@ impl Grid {
     /// ```
     ///
     /// Custom columns are left out, and so are the columns the user hid on
-    /// wide screens. Up to [`MAX_EXPORT_ROWS`] rows.
+    /// wide screens. A sensitive custom field's column (see
+    /// [`CustomField::sensitive`](crate::custom_fields::CustomField::sensitive))
+    /// is left out too unless the viewer holds its reveal ability, in which
+    /// case it holds the plain values. Up to [`MAX_EXPORT_ROWS`] rows.
     pub async fn export<M: Model + Serialize>(
         &self,
         query: Query<M>,
@@ -65,23 +68,27 @@ impl Grid {
         let Some(format) = request.param(&self.name("export")) else {
             return Ok(None);
         };
+        let grid = self.resolved::<M>(request).await?;
+        let this = grid.as_ref();
         let Some(format) = ExportFormat::parse(format) else {
             return Err(Error::BadRequest(format!(
                 "`{format}` isn't an export (csv, xlsx, print)"
             )));
         };
-        let prefs = load_prefs(request, &self.id).await;
+        let prefs = load_prefs(request, &this.id).await;
         let wide = prefs
             .wide
             .clone()
-            .unwrap_or_else(|| self.default_visible(false));
-        let columns: Vec<(&Column, Option<Pin>)> = self
+            .unwrap_or_else(|| this.default_visible(false));
+        let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&prefs)
             .into_iter()
-            .filter(|(c, _)| c.kind != Kind::Custom && wide.contains(&c.key))
+            .filter(|(c, _)| {
+                c.kind != Kind::Custom && wide.contains(&c.key) && this.may_see(c, request)
+            })
             .collect();
-        let query = self.filter(query, request);
-        self.file(&columns, query, format, request).await.map(Some)
+        let query = this.filter(query, request);
+        this.file(&columns, query, format, request).await.map(Some)
     }
 
     /// Every row `query` matches as a file, outside the grid's page: an
@@ -111,13 +118,17 @@ impl Grid {
         format: ExportFormat,
         request: &GridRequest,
     ) -> Result<Response> {
-        let shown = self.default_visible(false);
-        let columns: Vec<(&Column, Option<Pin>)> = self
+        let grid = self.resolved::<M>(request).await?;
+        let this = grid.as_ref();
+        let shown = this.default_visible(false);
+        let columns: Vec<(&Column, Option<Pin>)> = this
             .ordered(&GridPrefs::default())
             .into_iter()
-            .filter(|(c, _)| c.kind != Kind::Custom && shown.contains(&c.key))
+            .filter(|(c, _)| {
+                c.kind != Kind::Custom && shown.contains(&c.key) && this.may_see(c, request)
+            })
             .collect();
-        self.file(&columns, query, format, request).await
+        this.file(&columns, query, format, request).await
     }
 
     /// Every row of `query` (up to [`MAX_EXPORT_ROWS`]) with the related
@@ -128,7 +139,8 @@ impl Grid {
         request: &GridRequest,
     ) -> Result<Vec<Map<String, Value>>> {
         let items = query.limit(MAX_EXPORT_ROWS).get(&request.db).await?;
-        let related = self.related_values(&request.db, &items).await?;
+        let mut related = self.related_values(&request.db, &items).await?;
+        self.unseal_custom(request, &mut related);
         Ok(items
             .iter()
             .zip(related)
@@ -174,9 +186,9 @@ impl Grid {
                     columns => columns.iter().map(|(c, _)| json!({
                         "key": c.key,
                         "label": c.label,
-                        "numeric": matches!(c.kind, Kind::Number | Kind::Money),
+                        "numeric": matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity),
                     })).collect::<Vec<_>>(),
-                    rows => rows.iter().map(|row| columns.iter().map(|(c, _)| table.display(c, row.get(&c.key))).collect::<Vec<_>>()).collect::<Vec<_>>(),
+                    rows => rows.iter().map(|row| columns.iter().map(|(c, _)| table.display(c, row)).collect::<Vec<_>>()).collect::<Vec<_>>(),
                     total => rows.len(),
                     printed => crate::db::now().to_rfc3339(),
                     back => format!("{}?{}", request.path, serde_html_form::to_string(
@@ -327,6 +339,18 @@ impl Workbook {
     }
 }
 
+/// The currency code a money column with `currency_from` has in `row`.
+fn currency_of<'r>(column: &Column, row: &'r Map<String, Value>) -> Option<&'r str> {
+    let code = row.get(column.currency.as_ref()?)?.as_str()?;
+    (column.kind == Kind::Money && !code.is_empty()).then_some(code)
+}
+
+/// The unit code a quantity column with `unit_from` has in `row`.
+fn unit_of<'r>(column: &Column, row: &'r Map<String, Value>) -> Option<&'r str> {
+    let unit = row.get(column.unit.as_ref()?)?.as_str()?;
+    (column.kind == Kind::Quantity && !unit.is_empty()).then_some(unit)
+}
+
 /// The exported rows with their columns.
 struct Table<'a> {
     columns: &'a [(&'a Column, Option<Pin>)],
@@ -337,15 +361,19 @@ struct Table<'a> {
 impl Table<'_> {
     /// A number as the grid shows it, with its decimals: money is divided
     /// from the smallest unit into whole units of `APP_CURRENCY`.
-    fn figure(&self, column: &Column, n: f64) -> (f64, Option<u32>) {
+    fn figure(&self, column: &Column, row: &Map<String, Value>, n: f64) -> (f64, Option<u32>) {
         match column.kind {
             Kind::Money => {
-                let decimals = self.request.money_decimals;
+                let decimals = currency_of(column, row).map_or(self.request.money_decimals, |c| {
+                    crate::view_filters::currency_decimals(c)
+                });
                 (
                     n / 10f64.powi(decimals as i32),
                     Some(column.decimals.map_or(decimals, u32::from)),
                 )
             }
+            // Quantities are stored scaled and shown with all their digits.
+            Kind::Quantity => (n / 10f64.powi(column.scale as i32), Some(column.scale)),
             _ => (n, column.decimals.map(u32::from)),
         }
     }
@@ -367,7 +395,8 @@ impl Table<'_> {
 
     /// A value as text, the way the grid shows it (without number
     /// separators, so spreadsheets read numbers).
-    fn text(&self, column: &Column, value: Option<&Value>) -> String {
+    fn text(&self, column: &Column, row: &Map<String, Value>) -> String {
+        let value = row.get(&column.key);
         let label = |v: &str| {
             column
                 .options
@@ -381,7 +410,7 @@ impl Table<'_> {
             Some(Value::Number(n)) if column.kind == Kind::Bool => {
                 self.yes_no(n.as_i64() != Some(0))
             }
-            Some(Value::Number(n)) => match n.as_f64().map(|f| self.figure(column, f)) {
+            Some(Value::Number(n)) => match n.as_f64().map(|f| self.figure(column, row, f)) {
                 Some((f, Some(d))) => format!("{f:.*}", d as usize),
                 _ => n.to_string(),
             },
@@ -400,18 +429,42 @@ impl Table<'_> {
     }
 
     /// A value for people to read: numbers with the locale's separators.
-    fn display(&self, column: &Column, value: Option<&Value>) -> String {
+    fn display(&self, column: &Column, row: &Map<String, Value>) -> String {
+        let value = row.get(&column.key);
+        if column.kind == Kind::Quantity {
+            // Exact text (`2.500`) with the row's unit after it.
+            let locale = self
+                .request
+                .lang
+                .as_ref()
+                .map_or("en", |l| l.locale.as_str());
+            let mut text = match value {
+                Some(Value::Number(n)) => {
+                    let (n, d) = self.figure(column, row, n.as_f64().unwrap_or_default());
+                    crate::view_filters::format_number(n, d.unwrap_or(0), locale)
+                }
+                _ => self.text(column, row),
+            };
+            if let (Some(unit), false) = (unit_of(column, row), text.is_empty()) {
+                text = format!("{text} {unit}");
+            }
+            return text;
+        }
         match (column.kind, value.and_then(Value::as_f64)) {
-            (Kind::Number | Kind::Money, Some(n)) if column.kind != Kind::Bool => {
+            (Kind::Number | Kind::Money | Kind::Quantity, Some(n)) if column.kind != Kind::Bool => {
                 let locale = self
                     .request
                     .lang
                     .as_ref()
                     .map_or("en", |l| l.locale.as_str());
-                let (n, decimals) = self.figure(column, n);
-                crate::view_filters::format_number(n, decimals.unwrap_or(0), locale)
+                let (n, decimals) = self.figure(column, row, n);
+                match currency_of(column, row) {
+                    // `$12.50`, `¥1,250`: the symbol of the row's own currency.
+                    Some(code) => crate::view_filters::format_money(n, code, decimals, locale),
+                    None => crate::view_filters::format_number(n, decimals.unwrap_or(0), locale),
+                }
             }
-            _ => self.text(column, value),
+            _ => self.text(column, row),
         }
     }
 
@@ -449,8 +502,15 @@ impl Table<'_> {
                 self.columns
                     .iter()
                     .map(|(c, _)| {
-                        let text = self.text(c, row.get(&c.key));
-                        let numeric = matches!(c.kind, Kind::Number | Kind::Money);
+                        let mut text = self.text(c, row);
+                        let numeric = matches!(c.kind, Kind::Number | Kind::Money | Kind::Quantity);
+                        // The amount keeps its currency or unit: `12.50 USD`, `2.500 kg`.
+                        if let (Some(code), false) = (
+                            currency_of(c, row).or_else(|| unit_of(c, row)),
+                            text.is_empty(),
+                        ) {
+                            text = format!("{text} {code}");
+                        }
                         if !numeric && text.starts_with(['=', '+', '-', '@', '\t', '\r']) {
                             format!("'{text}")
                         } else {
@@ -552,12 +612,63 @@ fn write_sheet(sheet: &mut rust_xlsxwriter::Worksheet, table: &Table<'_>) -> Res
             let value = row.get(&column.key);
             match (column.kind, value) {
                 (_, None | Some(Value::Null)) => {}
+                (Kind::Quantity, Some(Value::Number(_) | Value::String(_))) => {
+                    // The decimal text becomes a number cell; a number format
+                    // per row carries the scale's digits and the unit.
+                    let n = match value {
+                        Some(Value::Number(n)) => {
+                            table.figure(column, row, n.as_f64().unwrap_or_default()).0
+                        }
+                        Some(Value::String(s)) => s.trim().parse().unwrap_or(f64::NAN),
+                        _ => f64::NAN,
+                    };
+                    if n.is_finite() {
+                        let mut format = format!(
+                            "#,##0{}",
+                            match column.scale {
+                                0 => String::new(),
+                                d => format!(".{}", "0".repeat(d as usize)),
+                            }
+                        );
+                        if let Some(unit) = unit_of(column, row) {
+                            format = format!("{format} \"{}\"", unit.replace('"', ""));
+                        }
+                        sheet
+                            .write_number_with_format(
+                                r,
+                                c,
+                                n,
+                                &Format::new().set_num_format(format),
+                            )
+                            .map_err(fail)?;
+                    } else {
+                        sheet
+                            .write_string(r, c, table.text(column, row))
+                            .map_err(fail)?;
+                    }
+                }
                 (Kind::Number | Kind::Money, Some(Value::Number(n))) => {
                     let n = n.as_f64().unwrap_or_default();
                     match (column.kind, column.decimals) {
                         (Kind::Money, _) => {
-                            let (n, _) = table.figure(column, n);
-                            sheet.write_number_with_format(r, c, n, &money)
+                            let (n, d) = table.figure(column, row, n);
+                            match currency_of(column, row) {
+                                // A number format per row: `#,##0.00 "USD"`.
+                                Some(code) => sheet.write_number_with_format(
+                                    r,
+                                    c,
+                                    n,
+                                    &Format::new().set_num_format(format!(
+                                        "#,##0{} \"{}\"",
+                                        match d.unwrap_or(0) {
+                                            0 => String::new(),
+                                            d => format!(".{}", "0".repeat(d as usize)),
+                                        },
+                                        code.replace('"', "")
+                                    )),
+                                ),
+                                None => sheet.write_number_with_format(r, c, n, &money),
+                            }
                         }
                         (_, Some(d)) if d > 0 => sheet.write_number_with_format(
                             r,
@@ -589,7 +700,7 @@ fn write_sheet(sheet: &mut rust_xlsxwriter::Worksheet, table: &Table<'_>) -> Res
                 }
                 _ => {
                     sheet
-                        .write_string(r, c, table.text(column, value))
+                        .write_string(r, c, table.text(column, row))
                         .map_err(fail)?;
                 }
             }

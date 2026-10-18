@@ -1,0 +1,22 @@
+{% extends "layout.html" %}
+{% block content %}
+<h1>Parties</h1>
+<form id="filter" method="get" action="/parties">
+  <label>Segment
+    <select name="segment">
+      <option value=""{% if not segment %} selected{% endif %}>All</option>
+      <option value="retail"{% if segment == "retail" %} selected{% endif %}>Retail</option>
+      <option value="corporate"{% if segment == "corporate" %} selected{% endif %}>Corporate</option>
+    </select>
+  </label>
+  <button type="submit">Filter</button>
+</form>
+<ul id="parties">
+  {%- for party in parties %}
+  <li class="party" data-name="{{ party.name }}">
+    <strong>{{ party.name }}</strong>
+    <rx-custom-fields :fields="fields" :values="party.extra" mode="show"/>
+  </li>
+  {%- endfor %}
+</ul>
+{% endblock %}

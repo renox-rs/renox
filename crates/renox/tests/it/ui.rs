@@ -864,6 +864,7 @@ async fn the_kit_serves_its_fonts_and_preloads_the_text_one() {
         "/_renox/fonts/poppins-latin-500-4.003.woff2",
         "/_renox/fonts/poppins-latin-600-4.003.woff2",
         "/_renox/fonts/poppins-latin-700-4.003.woff2",
+        "/_renox/fonts/noto-sans-arabic-wght-5.3.0.woff2",
     ] {
         let res = app.get(font).await;
         res.assert_ok()
@@ -883,6 +884,21 @@ async fn the_kit_serves_its_fonts_and_preloads_the_text_one() {
         .to_owned();
     let css = app.get(&css_url).await.text();
     assert!(css.contains("/_renox/fonts/poppins-latin-600-4.003.woff2"));
+    // The Arabic font is declared with a unicode-range, so Latin pages never fetch it.
+    let face = css
+        .split("@font-face")
+        .find(|f| f.contains("noto-sans-arabic-wght-5.3.0.woff2"))
+        .expect("an @font-face for Noto Sans Arabic");
+    assert!(face.contains("unicode-range: U+0600-06FF"), "{face}");
+    assert!(css.contains(r#"--rx-font: "Inter", "Noto Sans Arabic","#));
+    assert!(
+        app.get("/_renox/fonts/noto-sans-arabic-wght-5.3.0.woff2")
+            .await
+            .body
+            .len()
+            < 100_000,
+        "the Arabic subset stays under 100 KB"
+    );
     assert!(css.contains(r#":root:where([data-rx-theme="classic"])"#));
     assert!(css.contains(r#":root:where([data-rx-theme="warm"])"#));
     assert!(css.contains("--rx-type-hero:"));

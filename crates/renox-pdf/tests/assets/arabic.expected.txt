@@ -1,0 +1,22 @@
+Receipt
+Thank you for your order.
+كم
+ب
+لطلب
+
+اً
+كراً
+ش
+ش
+.
+Order 42
+
+ب
+الطلب
+
+م
+ق
+رق
+42
+ is paid
+Static line: Order 42

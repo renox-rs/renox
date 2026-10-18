@@ -303,6 +303,35 @@
   right-to-left aware). `blocks.week.*` and `blocks.stepper.*` texts; shown on the bike shop's
   /about/blocks; tests in crates/renox-blocks/tests/blocks.rs and
   tests/browser/blocks.test.mjs.
+- **#53, signature pad and camera capture** (part 1 of #32; parts 1-5): renox-blocks gets `signature_pad`
+  (`<rx-signature-pad>`) and `camera_capture` (`<rx-camera-capture>`), macros plus tags with contracts, parts
+  `assets/parts/signature.js` and `camera.js` (loaded only on a page that has the block, PARTS in `assets.rs`),
+  `blocks.signature.*` and `blocks.camera.*` texts. Both put their result on a hidden or visible `<input type=file>`
+  through `DataTransfer`, so the handler gets `Upload`s through `Valid<T>` and `image()` / `mimes()` / `max()` apply
+  unchanged: the pad posts `signature.png` (white background, strokes kept as fractions for Undo, Clear and resize)
+  or, typed, `{name}_name` with no file, the last way used winning; the camera downsizes each frame to `max_width`
+  and posts `photo-N.jpg`, and when `getUserMedia` is missing or refused the same input is shown with a status
+  saying why (what it picks is downsized the same way). The bike shop's work order has a "Customer sign-off" form
+  (`POST /staff/workshop/{order}/signoff`, `NoteKind::Signoff`, no migration: the kind is text) and `/about/blocks`
+  a demo (`POST /about/blocks/sign`). Tests: crates/renox-blocks/tests/blocks.rs (render, `Valid<T>`, translations),
+  examples/bikeshop tests `workshop.rs` and `blocks.rs`, and in a browser tests/browser/blocks-capture.test.mjs
+  (mouse strokes, keyboard, the fake camera through `Browser.launch({ args })`, a denied and a missing camera, RTL,
+  reduced motion, the parts loaded) and bikeshop-workshop.test.mjs (the sign-off). Guide: docs/blocks.md.
+- **#54, rating, geolocation and barcode** (part 2 of #32; parts 1-6): renox-blocks gets `rating` (`<rx-rating>`: a fieldset of
+  visually hidden radios drawn as stars, CSS only, no part; posts the chosen integer; `readonly` is text and sends nothing),
+  `geolocate` (`<rx-geolocate>`: a button, the position asked for only in its click, four hidden inputs `name[lat]`, `name[lng]`,
+  `name[accuracy]`, `name[at]` disabled until a fix; `accuracy` is the wanted metres and a worse fix is kept and flagged; denied,
+  unavailable and timeout states with "Try again"; `assets/parts/geolocate.js`) and `barcode_scan` (`<rx-barcode-scan>`: one text
+  field, a keyboard wedge (keys under 50 ms apart ending in Enter, Enter not submitting unless `submit`), the camera through
+  `BarcodeDetector` or the vendored `@zxing/library` 0.23.0 in `assets/vendor/zxing/` (named as `data-zxing` in the loader tag and
+  added by `assets/parts/barcode.js` only when the camera opens); `blocks.rating.*`, `blocks.geolocate.*` and `blocks.barcode.*`
+  texts. The bike shop's `/about/blocks` shows the three (`POST /about/blocks/field`) and its Permissions-Policy allows
+  `geolocation` and `camera` for self (the framework's defaults, which switch them off, are unchanged). Tests:
+  crates/renox-blocks/tests/blocks.rs (render, `Valid<T>`, a `renox::geo::Point`, translations) and `assets.rs`, examples/bikeshop
+  `blocks.rs`, and in a browser tests/browser/blocks-field.test.mjs (on the fixture's new `/field` page and the bike shop: arrow keys,
+  no script, right-to-left, wedge against typing, a stubbed `BarcodeDetector`, the zxing fallback with a canvas-stream camera,
+  granted/denied/timeout/unavailable positions through `Browser.grantPermissions` and `Emulation.setGeolocationOverride`; the new
+  `Browser#send` in lib/cdp.mjs sends browser-level commands), blocks.test.mjs and a11y.test.mjs for the page. Guide: docs/blocks.md.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 
@@ -507,3 +536,194 @@
   `examples/` (plus doctests), and 44 direct dependencies in renox-core (6 optional;
   pulldown-cmark came with the `markdown` filter, #94).
   Keep dependencies lean and remove unused ones.
+- **#34, `rnx make:package`**: `renox-cli/src/package.rs` (name, `--with`, workspace `members`
+  edit, the `renox` dependency, app registration) and `stubs/package/` (compiled in with
+  `include_str!`; a stub missing from the lists in `package.rs` isn't written). Migrations use the
+  `make:migration` timestamp form with the package name; the `0001…` prefix stays the
+  framework's. A virtual workspace is supported (`--register`, `renox.workspace = true`).
+  `--resource` reuses `scaffold::resource` with the package as target. `--with admin` errors until
+  it uses `renox_admin::contribute` (the mechanism exists since #31; the stub is not written yet). Guide: docs/development.md "Packages".
+- **#35, `rnx new --from`**: `renox-cli/src/template.rs` (`Config` for `renox-template.toml` with
+  unknown keys rejected, `Source` = `Path` | `Git`, the copy walker, `parse_set`/`answers`) and
+  `new::run_from` (the same `make_app` body as `rnx new`, with a prepared template instead of the
+  stubs). The template is resolved, its config read and its questions answered before anything is
+  written; a failure afterwards removes the folder. Git goes through `tools::git_clone` (shallow, no
+  submodules, no `ext::`); nothing from the template is executed. There is no built-in `Source`:
+  the stubs stay on the old path. Guide: docs/development.md "Start from your own template".
+- **#31, contributions and admin resources from modules**: `renox-core/src/contributions.rs`
+  (`Contributions`: one ordered list per type, each value with the name of the module whose `register`
+  added it; `all`, `all_from`), `Registry::contribute`, `Module::routes_with` (default calls `routes`),
+  `AppState::contributions`. `App::boot` sets the module name on the `Registry` before each `register`
+  ("app" for the app's own) and builds routes only after every `register` ran, so module order does not
+  matter. renox-admin: `AdminEntry` (`.panel(name)`), `renox_admin::contribute`, `Admin::named`,
+  `Admin::only_own_resources`; `Admin::routes_with` appends the entries after its own resources through
+  the same path as `Admin::resource`; a slug clash or an entry for an unknown panel panics at boot. Bikeshop:
+  `app::purchasing` contributes the suppliers resource. Tests: `tests/it/extension_points.rs`,
+  `send_handlers.rs`, `renox-admin/tests/admin.rs`. Guide: docs/admin.md "Resources from modules".
+- **#37, navigation menus**: `renox-core/src/nav.rs` (`NavLink`, the menu builder), stored in a
+  dedicated `Registry` field like `account_sections` (swapping it for `Registry::contribute`, which #31
+  added, is not done; the public API stays). Keys default to the route name; a duplicate key in one menu is a
+  boot error. Visibility order: `nav_hide`, `.permission` (`AuthUser::has_permission_anywhere`,
+  global or any scope; without the Permissions module it falls back to the gate), `.gate`,
+  `.when`. Menus and badges are built before render, only for the menus a page's templates name
+  (`nav("x")`, `menu="x"`); a failing badge is logged and left out. `menu=` on `rx-sidebar` and
+  `rx-nav-links`; adopted in the starter layout and bikeshop's staff layout. Guides:
+  docs/ui.md "Menus that modules and the app add to", docs/authorization.md "Showing links
+  only to who may use them".
+- **#38, outbound webhooks**: `renox-core/src/webhook/` became a folder: `inbound.rs` (the old file, unchanged),
+  `signing.rs` (Standard Webhooks `sign`/`verify`, `whsec_` secrets, the `SignedRequest<T>` extractor) and
+  `outbound.rs` (`Endpoint`, `emit_in`, the `DeliverWebhook` job, `Delivery` log, `EndpointDisabled`).
+  Migrations 000310/000311. A delivery counts as one failure when it ends in permanent failure, not per
+  attempt; 410 disables at once. `emit_in` uses `Queue::dispatch_in` (no after-commit hook exists);
+  `state.emit` of a registered event dispatches directly. The job payload is encrypted and has ids only.
+  `SignedRequest` buffers the body and keeps replay ids in the cache for the tolerance window.
+  Guide: docs/operations.md "Outbound webhooks".
+- **#33, install on phones**: `renox-core/src/pwa.rs` (`Pwa` builder, `PwaRequest`, `PwaBrand`, manifest JSON with
+  `lang`/`dir` from the request locale, name from the lang keys `pwa.name`/`pwa.short_name`) and the worker
+  `assets/renox-sw.js`, filled with the hashed `/_renox/*` assets. `App::pwa` merges `/manifest.webmanifest`, `/sw.js`,
+  `/_renox/offline` and the icon routes next to `robots(..)`, before sessions (no cookie); a `public/` file of the same
+  name wins; a missing icon or an offline view that fails to render is a boot error. The worker version is a sha256
+  prefix of worker, assets, offline HTML and brand hash. Navigations are network-only with the offline page as
+  fallback and are never stored. `App::pwa_for` resolves a `PwaBrand` per host (`Vary: Host`), serves its icons under
+  `/_renox/pwa/icons/<hash>/` and caches the offline page by hash; `None`, an error or invalid icons fall back to the
+  static `Pwa`. `<rx-pwa/>` / `renox_pwa()` emit the nonce-carrying registration script. `rnx make:pwa`
+  (`renox-cli/src/pwa.rs`). Several manifests per app are deferred; offline forms are #52.
+  Guide: docs/ui.md "Install on phones". Tests: `crates/renox/tests/it/pwa.rs` (AC1-AC5, AC7), the browser test
+  `tests/browser/pwa.test.mjs` (AC6) and the `make:pwa` step of `tests/cli/run.sh` (AC8).
+- **#52, offline forms** (parts 1-8): `renox-core/src/idempotency.rs` (store, `Skew`, `Offline`), migration `…000440`,
+  `Routes::offline()` / `offline_with`, `GET /_renox/csrf`, `idempotency:prune` with `IDEMPOTENCY_RETENTION_DAYS`, the
+  `rx-form offline` prop and `assets/renox-offline.js` (IndexedDB outbox, ordered replay, needs attention, cleared on
+  logout; Background Sync not used). Guide: docs/ui.md "Offline forms". Tests: `crates/renox/tests/it/idempotency.rs` (AC1-AC6; PostgreSQL in `postgres.rs`) and the browser test
+  `tests/browser/offline-forms.test.mjs` (AC7-AC11) on the fixture's `/offline-form` page (`fixture/src/offline.rs`), which is the example A14 names.
+- **#36, brand themes**: `renox-core/src/theme.rs` (colour core: hex, sRGB/OKLCH with gamut clipping, WCAG ratio,
+  nearest-passing lightness search; `Brand`, `Theme::from_brand`, `ContrastError`, `tokens()`/`dark_tokens()`,
+  `css()` with the kit's three selector blocks, a 16-digit content hash). Text variants move in lightness
+  (at most 0.3 OKLCH in light mode, 0.7 in dark); beyond that the brand is refused with the nearest passing
+  colour. The registry (hash to CSS) lives in app state and is filled by `App::theme` and by `theme_for`
+  results; `GET /_renox/theme/{hash}.css` is immutable-cached and 404s for unknown hashes. The request
+  middleware resolves chooser, then app theme, then none, and shares `renox_theme_url` with views;
+  `renox_theme()` / `<rx-theme/>` link it after `<rx-ui/>`. `Mail::theme` rewrites the button and panel colours
+  into the HTML, so queued mail keeps them. bikeshop: a const `Brand` table per store in `stores.rs`.
+  Guide: docs/ui.md "Brand themes".
+- **#28, right-to-left**: `i18n::direction` / `Direction` (base subtag against `RTL_LOCALES`) and `App::rtl_locales`
+  (stored in state; `AppState::direction` honours it). `app.dir` is built next to `app.locale` in `view.rs` (both
+  places) and in `mail_view`/`mail_view_in`, so a queued mail gets its own locale's direction. Every `<html` file
+  writes `dir="{{ app.dir }}"` (`error.html`/`debug.html` are `dir="ltr"`); `layout_dir.rs` greps for it across
+  crates, examples and the browser fixture. Noto Sans Arabic is a `FONTS` entry with `unicode-range` in
+  renox-ui.css. `icons.rs` marks `chevron-*`/`arrow-*` with `rx-icon--directional`, flipped by `:dir(rtl)` with a
+  `[dir="rtl"]` fallback. The kit, grid, blocks and editors CSS are logical; `css_logical.rs` is the lint with a
+  reason per allowlisted entry (charts and the like stay physical in an LTR isolate). JS parts read
+  `getComputedStyle(el).direction` when used. `tests/browser/rtl.test.mjs` runs the fixture with `APP_LOCALE=ar`
+  (its pages, `/rtl` and `/arabic` for the font network check) and flips the Spanish bike shop at run time for
+  the blocks and admin. Guide: docs/ui.md "Right-to-left".
+
+- **#39, state machines**: `renox-core/src/state_machine.rs` holds everything: `StateMachine`/`Machine`/`Transition`
+  (plain data, Send-safe boxed guards and effects), the engine (`TransitionBuilder`, `Outcome`, `Transitioned`),
+  `TransitionError` with its 401/403/404/422 mapping, the `state_transitions` history (migration 000410, `metadata`
+  JSONB on PostgreSQL), `available`, the global interceptor, the by-name registry (`App::state_machine`,
+  `machine_info`), `routes::<M>()` and `timeline`. `#[model(state_machine)]` sets `Model::guarded_column`/`check_insert`;
+  `save` matches the row on the loaded status and never writes it. `rnx state:diagram` is answered by the app binary
+  (`App::state_machine`); renox-admin has `state_machine()`, `available_transitions()` and `AdminAction::transitions()`.
+  `<rx-transition-actions>` is a built-in template (`BUILTIN` line in `view.rs`). Bikeshop rentals: `rentals/machine.rs`;
+  `counter.rs`, `reserve.rs` and `tasks.rs` set the other columns, `save`, then `transition(..).run_in(&mut tx)`, and emit
+  after the commit; all transitions are `.system()` (the areas authorise first). Guide: docs/state-machines.md
+  (doctest `StateMachinesGuide`, site page `state-machines`).
+
+- **#45, money in several currencies**: `renox-core/src/money.rs` holds `Currency` (the single ISO 4217 table; `view_filters.rs`
+  reads it), `Rounding`, `Rate`, `MoneyError` and `Money`. `ToDbValue` stores the amount and `Currency` as TEXT; `Row::try_get_money`
+  and `try_get_money_opt` read a pair. The `Model`/`FromRow` derives map `#[model(money)]` / `#[row(money)]` to two columns (or
+  one shared column) and `Option<Money>` to two nullable ones; `schema_check`/`schema_diff`/`auto_migration` expect the same pair.
+  `Validator` has `currency()` and `money(&str)`; `#[model(form)]` writes text fields for the pair and `fill` builds the `Money`.
+  `<rx-input type="money">` is a variant of the `input` macro (`money_input` helper, no new built-in file). The grid keeps
+  `Column::currency` and formats each row with `money(currency=row[...])`; its summaries are grouped by currency; the
+  admin `Field`/`Column`/`Entry` carry `currency_from`. Tests: `tests/it/money.rs`, `money_model.rs`, `forms.rs`, `grid.rs`,
+  `auto_migrations.rs`, `postgres.rs` (a pair on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), and
+  `renox-admin/tests/money.rs`. Bikeshop `/about/fields` has a deposit pair (migration `20261017090000`). Guide:
+  docs/types.md "Money".
+
+- **#69, decimal quantities with units**: `renox-core/src/quantity.rs` holds `Quantity<const SCALE>`, `QuantityError`, `Units`
+  (builder) and `UnitTable`; `Rounding` is the one from `money.rs`. `ToDbValue` and the sqlx `Type`/`Decode` impls make it one
+  `BIGINT` (`Option` works through the existing impls); its `ColumnType` is `BIGINT`, so the `Model` derive, `schema_check`,
+  `schema_diff` and `auto_migration` need no attribute, and `Number` makes `sum` return a `Quantity`. `Validator` has
+  `quantity(scale)`, `quantity_min`/`quantity_max` (compared as numbers through `quantity::nano`) and `unit(&table)`;
+  `#[model(form)]` writes a text field for a `Quantity<S>`; `<rx-input type="quantity">` is a variant of the `input` macro
+  (`quantity_input` helper, no new built-in file). The `quantity` filter lives next to `money` in `view_filters.rs`. The grid
+  keeps `Column::unit_from` and groups summaries by unit; the admin `Field`/`Column`/`Entry` carry `scale` and `unit_from`.
+  Tests: `tests/it/quantity.rs`, `quantity_model.rs`, `forms.rs`, `grid.rs`, `auto_migrations.rs`, `postgres.rs` (a round trip
+  on PostgreSQL; the other model tests run there with TEST_DATABASE_URL), `renox-admin/tests/quantity.rs`. Bikeshop
+  `/about/fields` has a load limit (migration `20261017100000`). Guide: docs/types.md "Quantities and units".
+
+- **#41, custom fields** (parts 1-10): `renox-core/src/custom_fields.rs` holds `CustomField` (builder,
+  `save`, `find`, `for_model` cached per `Db`, `all_for_model`, `activate`/`deactivate`/`delete`, `forget`, `views`), `FieldKind`,
+  `LocaleMap`, `FieldRules` and `is_valid_key`; `custom_fields/values.rs` holds `CustomValues` and `validate` (kinds, `extra[key]`
+  errors, files stored last). Migration `00010101000430_create_custom_fields_table` (SQLite, PostgreSQL, down; the count in
+  conventions §4.5 is twenty-four). `db/json.rs` has `Col<M, Json<T>>::json` -> `JsonPath` and `json_index`; `Query` carries
+  `Filter` JSON conditions and `Order::JsonKey`, `with_custom_fields` resolves them. `renox-macros/src/model.rs` reads
+  `custom_fields = "column"` (checked to be `Json<CustomValues>`, `Model::CUSTOM_FIELDS`) and merges it into the form and
+  `Valid<T>`; `FormContext::locale` was added. The kit tag `rx-custom-fields` is a `Render::Macro` contract over the built-in
+  `renox/custom_fields.html`. Grid `Column::custom_field` is resolved in `Grid::page`/`export` (`Grid::with_custom_fields` for the
+  sync `filter`). renox-admin: `field.rs`/`entry.rs`/`resource.rs` add inputs, entries, columns and filters, and `custom_fields.rs`
+  is the "Custom fields" resource the panel adds by itself. Tests: `tests/it/custom_fields.rs`, `model_forms.rs`, `grid.rs`,
+  `send_handlers.rs`, `postgres.rs` (definitions, validation and JSON paths on PostgreSQL), `tag_usage.rs` (the tag is on the browser
+  fixture's `/parties`), `renox-admin/tests`, and `tests/browser/custom-fields.test.mjs` (fixture `parties.rs`). The `error()` view
+  function tries the raw name before the dotted one, so `extra[key]` errors mark the right input. The sealed flag is #71 (below).
+  Guide: docs/types.md "Custom fields".
+
+- **#71, sensitive custom fields** (parts 1-5, done): `FieldRules.sensitive`/`reveal` (in the `rules` JSON, no migration) and
+  `CustomField::sensitive()`/`reveal_with()`; `custom_fields/values.rs` seals after validation (`SEALED_PREFIX`, `is_sealed`,
+  `CustomValues::open`/`shown`, `Opened`) and the `#[model(form)]` merge in `renox-macros/src/model.rs` keeps a stored seal on a
+  blank submit. `DbError::SealedCustomField` is raised by `with_custom_fields` (`db/json.rs`, `db/query.rs`) and the grid
+  (`grid/mod.rs`: non-sortable, non-filterable column, search skip, export omission, `GridRequest::viewed_by`).
+  `CustomField::views_for`/`can_reveal` give `FieldView.sensitive`/`masked`; the built-in `custom_fields.html` shows `••••••`,
+  `unreadable`, or an empty "unchanged" input. renox-admin: definitions form, masked forms, entries and lists. Tests:
+  `tests/it/custom_fields.rs` (`sealed`, `masking`, `acceptance`), `model_forms.rs` (keep on blank), `grid.rs`, `send_handlers.rs`,
+  `postgres.rs` (sealed storage and refusal; skips without `TEST_DATABASE_URL`), `renox-admin/tests/custom_fields.rs`, and
+  `tests/browser/custom-fields.test.mjs` (the fixture's `/parties` has a `tax_id` field; the demo user holds the ability).
+  Guide: docs/types.md "Sensitive fields"; key rotation: docs/operations.md.
+
+- **#44, one-off payments in `renox-billing`** (parts 1-15, done): `payment.rs` holds `BillingPayment`, `BillingRefund`, `PaymentKind`,
+  `PaymentStatus`, `RefundStatus`, the `Unsupported` error, the `Charge`/`PaymentLink`/`Refund` builders, `ChargeRequest`,
+  `PaymentPage`, `PaymentState` and the update types (`PaymentUpdate`, `RefundUpdate`, `DisputeUpdate`), plus
+  `Billing::payment_link`/`refund`/`payment_status`/`expire_links` (`Customer::charge` is in `customer.rs`). Migration
+  `00010101000910_create_billing_payments` (SQLite, PostgreSQL, down). The `Gateway` trait gained `charge`, `payment_link`,
+  `refund`, `payment_status`, `accept_dispute` (default `Unsupported`) and `has_account` / `verify_webhook_account` /
+  `parse_webhook_account`; `Notice` gained `OneOff`, `Refund` and `Dispute`. `Secret::Resolved` (crate-private) backs `resolved` /
+  `resolved_accounts` on `Stripe`, `Xendit` and the new `Ngenius` (`ngenius.rs`, access token kept per account and key). `sync.rs`
+  applies the notices (late-success rule) and fires the new events. The webhook event id is `{gateway}[/{account}]:{id}`.
+  `billing:expire-links` is an app command and an hourly scheduled task. Config: docs/contributing/config.md and `env.stub`.
+  Tests: `crates/renox-billing/tests/billing.rs` with fixtures under `tests/fixtures/{stripe,xendit,ngenius}`, written from the
+  gateways' public docs. Stripe disputes and dashboard refunds name only the PaymentIntent: the row stores it
+  (`gateway_intent`, migration `…000920`) and `BillingPayment::find_named` matches by id or intent (13/14). Part 15/15, the bikeshop "pay by link" example: a ready, unpaid work order gets
+  `POST /staff/workshop/{order}/pay-link` (`orders.sell` in the order's store), which calls `Billing::payment_link(PaymentLink::new(..)
+  .reference("work_order", id))`; an open link is shown again instead of a second one. The demo gateway (`plans/demo.rs`) gained
+  `payment_link`, `charge`, `payment_status` and one-off webhooks (`DemoOneOff`, queued as `DemoPaymentNotify`) with a signed hosted page
+  `/plans/demo-pay/link/{payment}`; the workshop's listener on renox-billing's `PaymentSucceeded` with `reference_type == "work_order"`
+  calls `booking::paid`. No migration: the reference lives on the `billing_payments` row. Tests: `examples/bikeshop/tests/workshop.rs`,
+  `tests/browser/bikeshop-workshop-paylink.test.mjs`. Guide: docs/billing.md "One-off payments".
+
+- **#30, `renox-pdf`** (complete): PDFs from Typst templates compiled in the process. `world.rs`/`source.rs` are our `typst::World`
+  (sources from the template root or an embedded map, path confinement, `today()` from `clock`, the only package is the virtual
+  kit, per-document in-memory assets); `fonts.rs` bundles Inter and Noto Sans Arabic and collects missing glyphs into
+  `PdfError::MissingGlyphs` (`lenient()` logs them); `document.rs` is the `Document` builder (`data` as the `data` dictionary and
+  `sys.inputs`, `locale` with the direction rule of #28, `asset`); `pool.rs` runs renders on blocking threads under a semaphore
+  (`PDF_MAX_CONCURRENT`) with `PDF_TIMEOUT`, and a timed-out render keeps its permit until its thread ends; `module.rs` is the `Pdf`
+  module (`Setup` is provided to the registry); `templates.rs` reads the disk in debug and `embedded!()` in release; `kit.rs` serves
+  `kit/kit.typ`; `testing.rs` reads text from the PDF with a small reader of Typst's output (no new dependency), so Arabic comes
+  back as shaped pieces. `rnx make:pdf` and its stub are in renox-cli. Guide: docs/pdf.md (doctested through `Guide` in `lib.rs`,
+  site `PAGES`). Release plumbing is in RELEASING.md. The bikeshop shows it (`src/app/rentals/receipt_pdf.rs`,
+  `resources/views/pdf/rental-receipt.typ`): the receipt of a returned rental downloads from `/staff/rentals/{rental}/receipt.pdf`
+  and is attached to the return mail, written in the customer's account language; a receipt that cannot be made is logged and the
+  mail goes without it. Acceptance: `crates/renox-pdf/tests/acceptance.rs` (public API), bikeshop `tests/rentals.rs`, browser test
+  `tests/browser/bikeshop-receipt-pdf.test.mjs`. Timeout and the concurrency cap are proven on the pool (`src/pool.rs`), since a
+  timed-out render keeps its thread; the "visual reference" of AC2 is the text-run reference `tests/assets/arabic.expected.txt`.
+- **#47, maps and geographic checks** (complete): `renox::geo` (`geo.rs` in renox-core, no dependency) has `Point` (validated, haversine
+  `distance_to`), `Circle` and `Polygon` (ray casting, holes, antimeridian, boundary inclusive), GeoJSON `[lng, lat]` and lat/lng form
+  (de)serialization; the rules `.latitude()`, `.longitude()` and `.point()` are in `validation/mod.rs` with their messages. In
+  renox-blocks: `map.rs` (tile settings from `Blocks::map_tiles` / `map_attribution` or `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION`),
+  the `map_picker` and `map` macros and tags, `assets/parts/map.js` (own point/circle/polygon drawing, typed coordinates in sync) and
+  Leaflet 1.9.4 in `assets/vendor/leaflet/` (LICENSE, NOTICE with a checksum), added by `map.js` from the loader tag's
+  `data-leaflet-js` / `data-leaflet-css` only when a block has tiles. Bikeshop `/about/blocks` has a maps section (English and
+  Spanish texts). Tests: `geo.rs` and `validation/mod.rs` unit tests, `tests/it/geo_forms.rs` (what the picker posts, read by `Valid<T>`),
+  `crates/renox-blocks/tests/blocks.rs` and `src/assets.rs`, bikeshop `tests/blocks.rs`, and `tests/browser/maps.test.mjs` on the browser
+  fixture's `/maps` (a Node tile stub, `CSP=strict`, `App::csp` allowing the stub's origin). Guides: blocks.md "Maps", types.md
+  "Places", validation.md.

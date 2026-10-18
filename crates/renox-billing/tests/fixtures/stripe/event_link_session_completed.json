@@ -1,0 +1,9 @@
+{
+  "id": "cs_test_link1",
+  "object": "checkout.session",
+  "mode": "payment",
+  "status": "complete",
+  "payment_status": "paid",
+  "payment_intent": "pi_3Link",
+  "payment_link": "plink_1Abc"
+}

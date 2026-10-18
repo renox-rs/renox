@@ -56,6 +56,8 @@ const BLOCKS = [
   '.rx-history',
   '.rx-plans',
   '[data-rx-receipt][data-rx-blocks-ready]',
+  '[data-rx-signature][data-rx-blocks-ready]',
+  '[data-rx-camera][data-rx-blocks-ready]',
 ];
 
 /** Waits until every block's code has set it up (the loader imports it). */

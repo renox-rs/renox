@@ -6,6 +6,7 @@
 
 use renox::audit;
 use renox::chart::{Period, Trend};
+use renox::nav::NavLink;
 use renox::prelude::*;
 
 pub struct Dashboard;
@@ -13,6 +14,18 @@ pub struct Dashboard;
 impl Module for Dashboard {
     fn name(&self) -> &'static str {
         "dashboard"
+    }
+
+    /// The sidebar link (`<rx-sidebar menu="app"/>` in the layout): the
+    /// signed-in pages only.
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "app",
+            NavLink::route("dashboard", "nav.dashboard")
+                .icon("layout-dashboard")
+                .order(0)
+                .when(|_| true),
+        );
     }
 
     fn routes(&self) -> Routes {

@@ -1,0 +1,36 @@
+[package]
+name = "renox-pdf"
+description = "PDF documents from Typst templates, with right-to-left text and embedded fonts, for Renox apps."
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords = ["web", "framework", "pdf", "typst", "rtl"]
+categories = ["web-programming::http-server", "text-processing"]
+
+[dependencies]
+renox.workspace = true
+# The Typst compiler as a library: pure Rust, Apache-2.0, shapes text
+# (Arabic included) and handles bidi. 0.15 needs Rust 1.92, below the
+# workspace's 1.94 (#30). `typst-pdf` writes the PDF. We implement
+# `typst::World` ourselves, so `typst-kit` (file system, network package
+# download) is deliberately not used: a render never touches the network.
+# `typst-assets` is not used either: with its `fonts` feature it embeds
+# OFL fonts (Libertinus, New Computer Modern, DejaVu) that cargo-deny
+# can't see; the crate bundles Inter and the kit's Arabic font itself.
+typst = "0.15.1"
+typst-pdf = "0.15.1"
+# `typst::compile` is generic over the output and `PagedDocument` (what
+# `typst-pdf` takes) is only defined here; already in the tree through `typst`.
+typst-layout = "0.15.1"
+tracing = "0.1.44"
+# `testing::text_of` inflates the PDF's content streams. Already in the tree
+# (typst-pdf writes them with it), so no new package.
+flate2 = "1.1.10"
+
+[dev-dependencies]
+# `#[tokio::test]` for the render pool tests (the macro needs the crate by name).
+tokio = { version = "1.53.1", features = ["macros", "rt-multi-thread", "time"] }

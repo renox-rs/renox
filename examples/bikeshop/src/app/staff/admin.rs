@@ -75,7 +75,6 @@ pub fn panel() -> Admin {
         .resource(Photos)
         .resource(ServiceTasks)
         .resource(ServicePlans)
-        .resource(Suppliers)
         .resource(Stores)
 }
 // [/explain:admin.panel]
@@ -807,76 +806,6 @@ impl AdminResource for ServicePlans {
         plan.description = form.description.unwrap_or_default();
         plan.active = form.active;
     }
-}
-
-// --- Suppliers ---
-
-/// The suppliers the stores buy from.
-pub struct Suppliers;
-
-// [explain:admin.suppliers.form]
-/// A supplier's form.
-#[derive(Deserialize, Serialize, Validate)]
-pub struct SupplierForm {
-    #[validate(required, max = 150)]
-    pub name: String,
-    #[validate(email, max = 255)]
-    pub email: Option<String>,
-    #[validate(max = 40)]
-    pub phone: Option<String>,
-    #[validate(required, min = 0, max = 365)]
-    pub lead_days: i64,
-}
-// [/explain:admin.suppliers.form]
-
-// [explain:admin.suppliers.show]
-impl AdminResource for Suppliers {
-    type Model = Supplier;
-    type Form = SupplierForm;
-
-    fn label(&self) -> &str {
-        "Supplier"
-    }
-    fn plural_label(&self) -> &str {
-        "Suppliers"
-    }
-    fn navigation_group(&self) -> Option<&str> {
-        Some("Purchasing")
-    }
-    fn record_title(&self, record: &Supplier) -> String {
-        record.name.clone()
-    }
-    // [/explain:admin.suppliers.show]
-    // [explain:admin.suppliers.columns]
-    fn columns(&self) -> Vec<Column> {
-        vec![
-            Column::text("name", "Name").searchable(),
-            Column::text("email", "Email"),
-            Column::text("phone", "Phone"),
-            Column::number("lead_days", "Lead time (days)"),
-        ]
-    }
-    // [/explain:admin.suppliers.columns]
-    // [explain:admin.suppliers.form]
-    fn fields(&self) -> Vec<Field> {
-        vec![
-            Field::text("name", "Name").required(),
-            Field::email("email", "Email"),
-            Field::tel("phone", "Phone"),
-            Field::number("lead_days", "Lead time (days)")
-                .required()
-                .min(0)
-                .max(365)
-                .default_value(7),
-        ]
-    }
-    fn fill(&self, supplier: &mut Supplier, form: SupplierForm) {
-        supplier.name = form.name;
-        supplier.email = form.email.filter(|e| !e.trim().is_empty());
-        supplier.phone = form.phone.filter(|p| !p.trim().is_empty());
-        supplier.lead_days = form.lead_days;
-    }
-    // [/explain:admin.suppliers.form]
 }
 
 // --- Stores ---

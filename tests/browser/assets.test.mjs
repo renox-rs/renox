@@ -18,6 +18,8 @@ const FILES = [
   'crates/renox-core/assets/renox-grid.js',
   'crates/renox-core/assets/renox-live.js',
   'crates/renox-editors/assets/editors.js',
+  'crates/renox-blocks/assets/parts/geolocate.js',
+  'crates/renox-blocks/assets/parts/barcode.js',
 ];
 
 /** renox.js lives in a Rust string (crates/renox-core/src/assets.rs). */

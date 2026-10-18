@@ -33,9 +33,14 @@ full reload.
 - [The UI kit](#the-ui-kit) that ships with Renox (`renox/ui.html`):
   - form fields;
   - the page's frame (navigation bar, sidebar, page headers);
-  - themes and type;
+  - themes and type, and [brand themes](#brand-themes) (one colour in, readable accent tokens out);
+  - [installing the app on phones](#install-on-phones): manifest, service worker, offline page;
+  - [offline forms](#offline-forms): posts that wait on the device for the network;
+  - [right-to-left](#right-to-left) pages: `app.dir`, logical CSS, the Arabic font;
   - infolists (read-only details);
   - actions (action groups, wizards, import, duplicate, export) and dashboards.
+- [Menus that modules add to](#menus-that-modules-and-the-app-add-to): `App::nav`, `NavLink`,
+  `<rx-sidebar menu="…">`.
 - [Toasts](#toasts): short pop-up messages.
 - [Fragments and out-of-band swaps](#fragments-and-out-of-band-swaps): sending only part of a
   page.
@@ -290,6 +295,8 @@ Here are fields side by side, and a group with a title:
 ```html
 <rx-form-grid columns="2">
   <rx-input name="price" label="Price" type="number" prefix="$" required step="0.01"/>
+  <rx-input name="total" label="Total" type="money" currency="AED" hint="Steps by the currency's smallest unit."/>
+  <rx-input name="stock" label="Stock" type="quantity" scale="3" unit="kg" hint="Steps by 0.001; the unit is the suffix."/>
   <rx-input name="weight" label="Weight" type="number" suffix="kg"/>
   <rx-input name="city" label="City" :datalist="['Jakarta', 'Bandung', 'Surabaya']" span="full"/>
 </rx-form-grid>
@@ -628,6 +635,81 @@ The bar shows the app's name (a link home), two links (Products, and Cart with a
 on the right a menu with the user's name. `active=route_is('products.*')` highlights
 "Products" on every products page.
 
+### Menus that modules and the app add to
+
+A module's links should not have to be copied into the layout. Instead, each module (and the
+app) adds its links to a **named menu** at boot, and the layout draws the menu:
+
+```rust
+use renox::prelude::*;
+use renox::nav::NavLink;
+
+struct Billing;
+
+impl Module for Billing {
+    fn name(&self) -> &'static str { "billing" }
+
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "staff",
+            NavLink::route("invoices.index", "Invoices")
+                .icon("receipt")
+                .group("Billing")
+                .order(10)
+                .permission("invoices.view")
+                // Runs only when a page draws the menu, and only for a link this user sees.
+                .badge(|_state: AppState, _user: AuthUser| async move {
+                    Ok(Some("3".to_owned()))
+                }),
+        );
+    }
+}
+
+# fn app() -> App {
+App::new()
+    .module(Billing)
+    // The app adds links too, and can hide a module's link by its key.
+    .nav("staff", NavLink::url("/help", "Help").key("help").order(90))
+    .nav_hide("staff", "invoices.index")
+# }
+```
+
+Menu names are free strings. Then the layout draws one:
+
+```html
+<rx-sidebar brand="{{ app.name }}" menu="staff"/>
+<rx-nav-links menu="portal"/>
+```
+
+- `NavLink::route(name, label)` points at a named route; `NavLink::url(url, label)` at a
+  path or address. The key defaults to the route name; `.key("…")` sets another one (a URL
+  link needs it). Two links with the same key in one menu stop the app at boot.
+  `nav_hide(menu, key)` removes a link whichever module added it.
+- `<rx-sidebar menu>` draws the links under `<rx-sidebar-section>` headings (the `.group`),
+  with their icons and badges; links without a group come first. Groups are ordered by their
+  lowest `.order`, links by `.order`, then by the order they were added. Hand-written
+  `<rx-sidebar-link>` children are drawn after the menu, so both can be mixed.
+- `<rx-nav-links menu>` draws plain `<rx-nav-link>` items: groups and icons are ignored.
+- Group and link labels go through `t()`; a label with no translation shows as written.
+- The active link follows the route: a route link is active on its own route and on the
+  routes under its prefix (`invoices.show` marks `invoices.index`), and `aria-current="page"`
+  is set. `.active("invoices.*")` sets another pattern; a URL link is active only on its exact
+  path.
+- A link can be restricted (see [visibility](authorization.md#showing-links-only-to-who-may-use-them)):
+  `.permission`, `.gate` and `.when`. Without a restriction, everyone sees it; an anonymous
+  visitor sees only those.
+- `.badge` returns `Result<Option<String>>`. It is called only for visible links and only on a
+  page that draws the menu. An `Err` is logged and the link is drawn without a badge; the page
+  still answers 200.
+- In your own markup, `nav("staff")` gives the groups
+  (`{% for group in nav('staff') %}` with `group.label`, which is empty for ungrouped links, and
+  `group.items`; each item has `key`, 
+  `label`, `url`, `icon`, `badge` and `active`). An unknown or empty menu draws nothing.
+  `view:check` knows the `menu` prop and `nav()`.
+
+Links that depend on the page (a link with an id in it, a count you already have in the
+context) stay hand-written next to the menu.
+
 #### Tabs at the bottom on phones
 
 On a phone, a shop's main sections are easier to reach at the bottom of the screen, under
@@ -946,6 +1028,296 @@ An app's own `:root` tokens, in a stylesheet loaded after `renox_ui()`, win over
 theme. So a brand colour stays when the theme changes. The bike shop keeps its teal and
 terracotta this way ([public/theme.css](../examples/bikeshop/public/theme.css)).
 
+### Brand themes
+
+To give an app (or each store, tenant or company) its own colour, derive the kit's accent
+tokens from one brand colour instead of writing them by hand. `Theme::from_brand` does the
+colour maths and refuses a colour whose text could not be read:
+
+```rust
+use renox::prelude::*;
+use renox::theme::{Brand, Theme};
+
+fn app() -> App {
+    let brand = Brand::new("#1E3A5F").second("#B8532E").display_font("Poppins");
+    let theme = Theme::from_brand(&brand).expect("a readable brand");
+    App::new().theme(theme)
+}
+```
+
+Put `<rx-theme/>` (or `{{ renox_theme() }}`) right after `<rx-ui/>` in the layout. The layouts
+`rnx new` writes already have it. It links a stylesheet at `/_renox/theme/{hash}.css` and
+renders nothing when the request has no theme, so it is safe to leave in.
+
+What the theme sets, for light and dark mode (the same selectors the kit uses):
+
+| Token | Meaning |
+|---|---|
+| `--rx-accent`, `-hover`, `-pressed` | the brand colour and its states |
+| `--rx-accent-text` | the colour for links and accent-coloured text, 4.5:1 on the page and surfaces |
+| `--rx-on-accent` | the label on an accent button (white or near-black), 3:1 on the accent |
+| `--rx-accent-soft`, `--rx-focus`, `--rx-chart-1` | soft background, focus ring, first chart colour |
+| `--rx-accent-2`, `--rx-accent-2-text` | with `.second(..)`; without it the kit's second accent stays |
+| `--rx-font-display` | with `.display_font(..)`; only sets the name, load the font yourself |
+
+Status colours, spacing, radii and the type scale are not touched. The stylesheet loads after
+the kit's, so the brand wins over `data-rx-theme="warm"` and `"classic"` too.
+
+**Colours that can't be read.** A colour that cannot reach contrast (pale yellow `#FFF59D`) is
+refused with a `ContrastError`; its `suggestion` is the nearest colour that works, and a
+malformed colour is a different `kind` (`InvalidColor`) with no suggestion. Show the message
+next to a colour field:
+
+```rust
+use renox::theme::{Brand, ContrastErrorKind, Theme};
+
+let err = Theme::from_brand(&Brand::new("#FFF59D")).unwrap_err();
+assert_eq!(err.kind, ContrastErrorKind::LowContrast);
+// err.to_string(): "`#FFF59D` cannot reach readable contrast; try #…"
+assert!(Theme::from_brand(&Brand::new(err.suggestion.as_str())).is_ok());
+```
+
+**A brand per request.** `App::theme_for` runs for each rendered page and may return
+`Ok(None)` (use the app's `theme`, or the kit's look). `ThemeRequest` has `host`, `path`,
+`locale`, `user` and `state`. The bike shop picks a store's brand by host
+([stores.rs](../examples/bikeshop/src/app/home/stores.rs)). To let an administrator choose the
+colour, keep it in a [settings](settings.md) group and read it in the chooser:
+
+```rust
+use renox::prelude::*;
+use renox::settings::SettingsGroup;
+use renox::theme::{Brand, Theme, ThemeRequest};
+use serde::{Deserialize, Serialize};
+
+#[derive(Serialize, Deserialize, Validate, Default, Clone)]
+pub struct Appearance {
+    /// `#rrggbb`; empty means the kit's look.
+    pub brand_color: String,
+}
+
+impl SettingsGroup for Appearance {
+    const KEY: &'static str = "appearance";
+}
+
+fn app() -> App {
+    App::new().settings::<Appearance>().theme_for(|req: ThemeRequest| async move {
+        let appearance = req.state.settings::<Appearance>().await?;
+        if appearance.brand_color.is_empty() {
+            return Ok(None);
+        }
+        // A bad saved colour falls back to the kit (the error is logged).
+        Ok(Some(Theme::from_brand(&Brand::new(appearance.brand_color.as_str()))?))
+    })
+}
+```
+
+Validate the colour when the form is saved (call `Theme::from_brand` in an `after` rule or the
+handler and show `err.suggestion`), so the chooser seldom fails. Themes are kept by hash, so
+the URL changes when the colour does and a browser never shows an old brand. A theme that has
+been served stays available under its hash.
+
+**CSP.** The stylesheet is a same-origin `<link>`, never inline `<style>`, so it works under
+`CSP=strict` without a nonce. It is cached for a year (`immutable`); the hash in the URL is the
+cache key.
+
+**Tokens and mail.** `theme.tokens()` and `theme.dark_tokens()` return the values as a
+`BTreeMap` (for a PDF, a chart library or a #30 template). `Mail::theme(&theme)` colours the
+mail components (`rx-mail-button`, `rx-mail-panel`) with the brand. The colours are written
+into the mail, so a queued mail needs no theme when it is sent:
+
+```rust
+use renox::mail::Mail;
+use renox::theme::{Brand, Theme};
+
+let theme = Theme::from_brand(&Brand::new("#1E3A5F")).unwrap();
+let accent = theme.tokens()["--rx-accent"].clone();
+let html = r#"<a style="background:#1c1917;color:#ffffff;">Pay</a>"#;
+let mail = Mail::new("ana@example.com", "Invoice", "Invoice").html(html).theme(&theme);
+assert!(mail.html.unwrap().contains(&accent));
+```
+
+### Install on phones
+
+A phone can put a web app on its home screen and open it without browser bars. `App::pwa`
+makes yours installable: Renox serves the manifest and a small service worker, and the worker
+shows an offline page when the network is gone.
+
+```rust
+use renox::prelude::*;
+use renox::pwa::Pwa;
+
+fn app() -> App {
+    App::new().pwa(
+        Pwa::new("Bike Shop")
+            .short_name("Bikes")
+            .theme_color("#1E3A5F")
+            .icons("public/icons")
+            .offline_page("offline.html"),
+    )
+}
+```
+
+The quickest start is `rnx make:pwa`. It writes `resources/views/offline.html`, three
+placeholder icons in `public/icons/` and the `.pwa(..)` call (after your last `.module(`);
+replace the icons with your own. It refuses to overwrite files unless you pass `--force`.
+Put `<rx-pwa/>` (or `{{ renox_pwa() }}`) in the layout's head, after `<rx-theme/>`; the
+layouts `rnx new` writes already have it. It links the manifest and sets `theme-color`, the
+apple-touch-icon and the script that registers the worker. The script carries the request's
+nonce, so it works under `CSP=strict`. Without `App::pwa` the tag renders nothing.
+
+| Builder | Meaning |
+|---|---|
+| `Pwa::new(name)` | the app's name |
+| `.short_name(..)` | the label under the icon (defaults to the name) |
+| `.theme_color(..)`, `.background_color(..)` | default `#0b6e66` (the kit's accent) and `#ffffff` |
+| `.icons(dir)` | a folder with `icon-192.png`, `icon-512.png` and `icon-maskable-512.png` |
+| `.start_url(..)` | a route name or a path |
+| `.display(..)` | `PwaDisplay::Standalone` by default |
+| `.offline_page(view)` | the view shown offline |
+
+What Renox serves:
+
+- `GET /manifest.webmanifest` with `name`, `short_name`, `icons`, `start_url`, `display`,
+  the two colours, `lang` and `dir`. `lang` and `dir` follow the request's locale. To translate
+  the name, define the lang keys `pwa.name` and `pwa.short_name`; otherwise the builder values
+  are used.
+- `GET /sw.js`, sent with `Cache-Control: no-cache` and `Service-Worker-Allowed: /`, and
+  without a session cookie. Its version changes when the hashed `/_renox/*` assets, the
+  offline page or the brand change, and a new worker replaces the old one.
+- `GET /_renox/offline` and the icons under `/_renox/pwa/icons/`.
+- A `public/manifest.webmanifest` or `public/sw.js` of your own wins, as `robots.txt` does.
+
+The app fails to boot when an icon file is missing or the offline view does not render; the
+message names the file or view. The offline page is rendered once with an empty context (no
+signed-in user), so keep it plain. The worker is deliberately small: it caches the offline
+page and the hashed assets, goes to the network for every navigation (the offline page is
+only a fallback) and never stores a page, so a signed-in page is never shown from a cache.
+It does not touch POST or other non-GET requests.
+
+**A brand per request.** For several brands by host, or a name and logo that an administrator
+edits, `App::pwa_for` runs for each manifest, worker and offline request and returns a
+`PwaBrand` with the name, short name, theme colour and icons (a folder or bytes), or `Ok(None)`
+to use the static `Pwa`. It needs `App::pwa` as the fallback:
+
+```rust
+use renox::prelude::*;
+use renox::pwa::{Pwa, PwaBrand, PwaRequest};
+
+fn app() -> App {
+    App::new()
+        .pwa(Pwa::new("Bike Shop").icons("public/icons"))
+        .pwa_for(|req: PwaRequest| async move {
+            Ok((req.host() == "north.example.com").then(|| {
+                PwaBrand::new("North Bikes").short_name("North").theme_color("#0F766E")
+            }))
+        })
+}
+```
+
+The responses send `Vary: Host`, the brand's icons are served under a path with the brand's
+hash, and the hash is part of the worker version, so a changed brand installs a new worker.
+Icons are checked on first use; an invalid one is logged and the static icons stay, as they
+do when the closure returns an error. Keep the closure cheap. One manifest per app is the
+rule for now; a second manifest with its own scope is not supported.
+
+### Offline forms
+
+A form can wait for the network. Field work (a delivery driver, an inspector in a basement)
+often happens where the connection drops. Mark the form `offline="name"` and, when a post
+fails because the device is offline, the browser keeps it in an **outbox** on the device,
+shows it as waiting, and sends it once the network is back. Pages are not stored; only posts
+are (see "What Renox serves" above: the worker never caches a page).
+
+Three parts, all opt-in:
+
+```rust
+use renox::prelude::*;
+
+async fn complete_stop(offline: Offline) -> Result<String> {
+    if offline.skew_exceeded {
+        // The device clock is far from the server's: refuse, or accept for review.
+        return Err(Error::BadRequest("Check the clock on this device.".into()));
+    }
+    Ok(format!("Stop completed at {}", offline.recorded_at))
+}
+
+fn routes() -> Routes {
+    Routes::new()
+        .post("/stops/{id}/complete", complete_stop)
+        .offline()
+        .require_auth()
+}
+```
+
+```html
+<rx-form action="/stops/7/complete" offline="stops">
+  <rx-input name="note" label="Note"/>
+  <rx-button>Complete</rx-button>
+</rx-form>
+```
+
+- **The route** is marked `.offline()`. It then requires an `Idempotency-Key` header (400
+  without one), runs the handler once per key, and answers a repeat of the same key and body
+  with the stored response (header `Idempotent-Replayed`). The same key with a different body
+  is 422. A 5xx answer is not stored, so the browser may try again. Keys are kept per route
+  and per user or session, and `idempotency:prune` deletes the old ones
+  (`IDEMPOTENCY_RETENTION_DAYS`, 7 days; docs/operations.md).
+- **The handler** may take the `Offline` extractor: `recorded_at` (when the user acted, by
+  the device's clock), `received_at` (the server's time), `client_id` (the device's outbox,
+  from `X-Client-Id`) and `skew_exceeded`. Time is read through the clock, never
+  `SystemTime::now`.
+- **The form** is `<rx-form offline="name">` (a POST form; GET with `offline` is a compile
+  error). The page then loads `renox-offline.js`, a same-origin script with no inline code, so
+  it works under `CSP=strict`. Pages without an offline form do not load it. The texts of the
+  badge and the list are the `ui.offline.*` lang keys.
+
+**Skew.** A phone's clock can be wrong. By default `recorded_at` may be up to 24 hours in the
+past and 5 minutes ahead of the server. `.offline_with(Skew::new().past(..).future(..))`
+changes the limits. Outside them the handler still gets the device time as `recorded_at`, with
+`skew_exceeded` set to `true`; the app decides whether to refuse, accept for review or ask for
+approval. A missing or unreadable `X-Recorded-At` falls back to the server time with
+`skew_exceeded` false.
+
+**What happens in the browser.**
+
+- Only a network failure queues a post (the request itself failed, not an HTTP error). The
+  form shows a "saved, waiting to send" note and a count of waiting posts.
+- Waiting posts are sent strictly in the order they were recorded, one at a time, when the
+  page loads, when the browser goes back online, and on a timer that backs off while the
+  network is down. Each send carries `Idempotency-Key`, `X-Client-Id` and `X-Recorded-At`,
+  and a fresh CSRF token fetched from `GET /_renox/csrf` (`Cache-Control: no-store`, same
+  origin only), because the token on the page may be old by then. A post that was sent but
+  whose answer was lost is sent again with the same key, so it is applied once.
+- A 2xx or a redirect removes the post. A 5xx, 408, 419 or 429 stops the pass and tries
+  later. Any other 4xx (409, 422, ...) moves the post to **needs attention** and the pass
+  goes on with later posts. The list shows each one with **Review** (puts the fields back in
+  the form with the server's field errors; edit and send again, which keeps the client id
+  and takes a new key only when the body changed) and **Discard**.
+- If the session has ended (401, or a redirect to the login page), replay pauses and the
+  badge says to sign in to send. Signing in and loading a page sends the rest.
+
+**What is stored, and for how long.** The outbox is an IndexedDB database named
+`renox-offline` on that device and browser. Per post it keeps the form's action and method,
+the key, the client id, the recorded time and the fields, with chosen files as Blobs.
+Password fields and the CSRF token are never stored.
+
+> [!WARNING]
+> The outbox is **not encrypted**: anyone who can use the browser profile can read it. Keep
+> offline forms for data that may sit on the device, and tell the people who use shared
+> devices to sign out.
+
+The outbox is cleared on logout: a form whose action ends in `/logout`, or any element with
+`data-rx-logout`, on a page that loads the script, empties it before the logout goes on.
+Posts that are still waiting are lost then, which is the point on a shared device.
+
+**Background Sync is not used.** The Background Sync API exists only in Chromium browsers, and
+a replay needs a fresh CSRF token and a signed-in session, which a background worker without
+a page cannot be sure of. Posts are sent while a page of the app is open. Close the app and
+the posts wait for the next visit.
+
+Out of scope: reading pages offline, merging edits made on two devices, and storing anything
+other than posts.
+
 ### The type scale
 
 The type scale has eight roles. Each one is a whole `font` (weight, size, line height,
@@ -979,9 +1351,70 @@ The fonts are Latin subsets under the SIL Open Font License 1.1, about 72 KB in 
 serves them from `/_renox/fonts/…`, and browsers keep them in their cache for good.
 `renox_ui()` asks the browser to load the text font early (it "preloads" it).
 
+Arabic script has a font of its own, Noto Sans Arabic (about 70 KB, also OFL-1.1), which
+comes after the Latin ones in `--rx-font` and `--rx-font-display`. Its `@font-face` has a
+`unicode-range` for the Arabic blocks, so a page without Arabic text never downloads it.
 Other writing systems fall back to the system font. An app that wants other fonts sets
 `--rx-font` and `--rx-font-display` on `:root`, and also the `--rx-type-*` tokens, since they
 name the font family.
+
+### Right-to-left
+
+Arabic, Hebrew, Persian, Urdu and a few other languages are written from right to left.
+A Renox page switches by itself: `app.dir` is `"rtl"` or `"ltr"` for the visitor's locale,
+and every layout Renox ships (and every one `rnx new` writes) puts it on the root element.
+
+```html
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
+```
+
+Nothing else changes in your templates. The kit's stylesheets use logical properties
+(`margin-inline-start`, `inset-inline-end`, `text-align: start`), so the sidebar moves to
+the right, a slide-over sheet comes from the left, tables and forms mirror, and chevrons
+and arrows (icons named `chevron-*` and `arrow-*`, class `rx-icon--directional`) turn
+around. The keyboard follows what is drawn: in a right-to-left page the arrow keys of tabs,
+the calendar, the week grid, the gallery and the kanban go the way the page reads, and the
+grid freezes its first column on the right. Charts, code, phone numbers, quantities and
+the keypad stay left to right on purpose.
+
+The locale decides, the same way as for `app.locale`. A mail is judged by its own locale
+(`Mail::locale`, a recipient's), so an Arabic mail queued from an English request is
+`dir="rtl"` when the worker renders it. The error and debug pages are English and stay
+`dir="ltr"`.
+
+The default list is `ar`, `he`, `fa`, `ur`, `ps`, `yi`, `dv` and `ckb`, matched by language
+(`ar-AE` and `ar_AE` are Arabic too). `App::rtl_locales` replaces it, and
+`state.direction(locale)` asks with that list; the free function `i18n::direction` always
+uses the default one.
+
+```rust
+# use renox::prelude::*;
+use renox::i18n::{direction, Direction};
+
+assert_eq!(direction("ar-AE"), Direction::Rtl);
+assert_eq!(direction("en").as_str(), "ltr");
+
+// An app that serves a language the default list does not know:
+# let _ =
+App::new().rtl_locales(&["ar", "he", "sd"])
+# ;
+```
+
+In your own CSS, write what you mean in the reading direction and the page mirrors without
+a second stylesheet: `margin-inline-start` instead of `margin-left`, `padding-inline` instead
+of `padding-left` and `-right`, `inset-inline-end` instead of `right`, `text-align: start`
+instead of `left`, `border-start-start-radius` instead of `border-top-left-radius`. Wrap
+something that must keep its direction (a chart, a code sample, a number you format
+yourself) in `dir="ltr"`, or give it `unicode-bidi: isolate`. A part of your own that
+reads the direction in JavaScript asks when it is used, not once at load:
+`getComputedStyle(el).direction === "rtl"`.
+
+Renox ships English texts only, so Arabic translations of the kit's texts are yours to add
+(see [The kit's texts](#the-kits-texts)). Arabic-Indic digits and the Hijri calendar are not
+part of the kit. The kit's own stylesheets are checked by a lint test
+(`crates/renox/tests/it/css_logical.rs`) that fails on a physical `left` or `margin-right`
+unless the entry has a reason, and `tests/browser/rtl.test.mjs` checks the pages in a
+browser.
 
 ### Infolists: read-only details
 
@@ -1064,7 +1497,8 @@ after a `|`: `{{ order.total | money }}`. The infolist uses them too.
 | Filter | Gives |
 |---|---|
 | `number`, `number(2)` | `75,000` in `en`, `75.000` in `es` or `de`: the page's language picks the separators. |
-| `money` | An amount in the currency's smallest unit (cents), as the model stores it and as the data grid's `money` columns take it, shown in `APP_CURRENCY` (default `USD`): `7500` is `$75.00` (en), `$75,00` (es). It divides by the currency's usual decimals (`renox::currency_decimals`: 100 for `USD`, 1 for `IDR` or `JPY`, so `75000` is `Rp 75,000` with `IDR`). Options: `currency="EUR"` for another currency, `decimals=0`, `divide_by=…` to divide by something else (`divide_by=1` for an amount already in whole units). `renox::format_money` formats in Rust, but takes **whole units** (`12.99`), not cents. |
+| `quantity`, `quantity(decimals=2, unit="kg")` | An exact decimal such as a `renox::quantity::Quantity` (it serializes to the text `"2.500"`), a decimal string or a number, with the page's separators: `2,500.000` in `en`, `2.500,000` in `es`. The digits are read as text, never through a float. Every digit of the value is kept unless `decimals=n` pads or rounds it (half-up, for display only); `unit="kg"` is appended: `2,500.000 kg`. Text that isn't a plain decimal is an error. |
+| `money` | An amount in the currency's smallest unit (cents), as the model stores it and as the data grid's `money` columns take it, shown in `APP_CURRENCY` (default `USD`): `7500` is `$75.00` (en), `$75,00` (es). It divides by the currency's usual decimals (`renox::currency_decimals`: 100 for `USD`, 1 for `IDR` or `JPY`, so `75000` is `Rp 75,000` with `IDR`). Options: `currency="EUR"` for another currency, `decimals=0`, `divide_by=…` to divide by something else (`divide_by=1` for an amount already in whole units). A `renox::money::Money` value is shown in its own currency with that currency's decimals (`{{ invoice.total | money }}` gives `AED 125.00` for `Money::aed(12500)`); `currency=` is ignored for it, `decimals` and `divide_by` still apply. `renox::format_money` formats in Rust, but takes **whole units** (`12.99`), not cents. |
 | `date`, `date('%d/%m/%Y %H:%M')` | A date, with chrono's format codes. A moment in time (`created_at`) is shown in `APP_TIMEZONE`. |
 | `since` | "3 hours ago", "in 2 days", "just now" (translated with `ui.since.*`). It uses the clock that `TestApp::travel` moves, so tests can check it. |
 | `words(20)` | The first 20 words, then "…" (change it with `end="…"`). |

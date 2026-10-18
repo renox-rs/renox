@@ -457,25 +457,43 @@ const ICONS: &[(&str, &str)] = &[
 /// The elements of the icon `name` (a Lucide name, or one of the kit's
 /// older names), or `None` for a name the set doesn't have.
 pub(crate) fn paths(name: &str) -> Option<&'static str> {
-    let name = ALIASES
-        .iter()
-        .find(|(alias, _)| *alias == name)
-        .map_or(name, |(_, real)| real);
+    let name = resolve(name);
     ICONS
         .binary_search_by(|(n, _)| (*n).cmp(name))
         .ok()
         .map(|i| ICONS[i].1)
 }
 
+/// The Lucide name behind `name` (an older kit name is looked up in `ALIASES`).
+fn resolve(name: &str) -> &str {
+    ALIASES
+        .iter()
+        .find(|(alias, _)| *alias == name)
+        .map_or(name, |(_, real)| real)
+}
+
+/// Whether the icon points along the reading direction (`chevron-*`,
+/// `arrow-*`, and the aliases `next`, `prev`, `up`, `down`), so it gets the
+/// class `rx-icon--directional`, which the kit's CSS mirrors in right-to-left.
+fn is_directional(name: &str) -> bool {
+    let name = resolve(name);
+    name.starts_with("chevron-") || name.starts_with("arrow-")
+}
+
 /// The `<svg>` of the icon `name`, `size` pixels square, in `currentColor`.
 /// Decorative (`aria-hidden`) unless it has a `label`, which makes it an
-/// image with that name (`role="img"`). `class` is added after `rx-icon`.
+/// image with that name (`role="img"`). `class` is added after `rx-icon`. A direction-bearing icon (a chevron or
+/// an arrow) also gets `rx-icon--directional`, which the CSS mirrors in
+/// right-to-left pages.
 /// An unknown name gives an empty string.
 pub(crate) fn svg(name: &str, size: u32, label: Option<&str>, class: Option<&str>) -> String {
     let Some(paths) = paths(name) else {
         return String::new();
     };
     let mut out = String::from("<svg class=\"rx-icon");
+    if is_directional(name) {
+        out.push_str(" rx-icon--directional");
+    }
     if let Some(class) = class.filter(|c| !c.is_empty()) {
         out.push(' ');
         out.push_str(&escape(class));
@@ -545,5 +563,24 @@ mod tests {
         assert!(named.contains("role=\"img\" aria-label=\"Cart &quot;3&quot;\""));
         assert!(!named.contains("aria-hidden"));
         assert_eq!(svg("trash", 16, None, None), svg("trash-2", 16, None, None));
+    }
+
+    #[test]
+    fn chevrons_and_arrows_are_directional() {
+        for name in [
+            "chevron-left",
+            "chevron-right",
+            "arrow-left",
+            "next",
+            "prev",
+        ] {
+            let icon = svg(name, 16, None, Some("big"));
+            assert!(
+                icon.starts_with("<svg class=\"rx-icon rx-icon--directional big\""),
+                "{name}: {icon}"
+            );
+        }
+        assert!(!svg("bike", 16, None, None).contains("directional"));
+        assert!(!svg("check", 16, None, None).contains("directional"));
     }
 }

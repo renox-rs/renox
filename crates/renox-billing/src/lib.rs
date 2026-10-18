@@ -19,8 +19,8 @@
 //! ```
 //!
 //! A plans page (`/billing`) sends the user to the gateway's payment page;
-//! the subscription arrives by webhook (`/billing/webhooks/{gateway}`,
-//! verified, stored once per event, applied by a queue worker) into the
+//! the subscription arrives by webhook (`/billing/webhooks/{gateway}`
+//! or `/billing/webhooks/{gateway}/{account}`, verified, stored once per event, applied by a queue worker) into the
 //! `subscriptions` table, and the account page shows it with "Change
 //! plan", "Cancel" and "Resume". In code, [`Billing::of`] answers
 //! `subscribed()`, `on_trial()`, `on_grace_period()` and does `checkout`,
@@ -44,6 +44,8 @@ pub mod gateway;
 mod guard;
 mod handlers;
 mod model;
+pub mod ngenius;
+pub mod payment;
 mod plan;
 pub mod stripe;
 mod sync;
@@ -52,31 +54,72 @@ pub mod xendit;
 
 pub use customer::{Billable, Customer, Owner};
 pub use events::{
-    PaymentFailed, PaymentSucceeded, SubscriptionCanceled, SubscriptionCreated, SubscriptionPaused,
-    SubscriptionUnpaused, SubscriptionUpdated,
+    DisputeLost, DisputeOpened, DisputeWon, PaymentFailed, PaymentLinkExpired, PaymentRefunded,
+    PaymentSucceeded, RefundFailed, RefundSucceeded, SubscriptionCanceled, SubscriptionCreated,
+    SubscriptionPaused, SubscriptionUnpaused, SubscriptionUpdated,
 };
 pub use gateway::{BoxFuture, Checkout, CheckoutRequest, Gateway, Notice, Payment, Remote};
 pub use guard::SubscriptionRoutes;
 pub use model::{BillingCustomer, Subscription, SubscriptionStatus};
+pub use ngenius::Ngenius;
+pub use payment::{
+    BillingPayment, BillingRefund, Charge, ChargeRequest, DisputeState, DisputeUpdate, PaymentKind,
+    PaymentLink, PaymentPage, PaymentState, PaymentStatus, PaymentUpdate, Refund, RefundResult,
+    RefundStatus, RefundUpdate, Unsupported,
+};
 pub use plan::{Interval, Plan};
 pub use stripe::Stripe;
 pub use xendit::Xendit;
 
-const MIGRATIONS: &[Migration] = &[Migration::new(
-    "00010101000900_create_billing_tables",
-    "",
-    Some(include_str!(
-        "../migrations/00010101000900_create_billing_tables.down.sql"
-    )),
-)
-.sqlite(
-    include_str!("../migrations/00010101000900_create_billing_tables.up.sql"),
-    None,
-)
-.postgres(
-    include_str!("../migrations/00010101000900_create_billing_tables.postgres.up.sql"),
-    None,
-)];
+const MIGRATIONS: &[Migration] = &[
+    Migration::new(
+        "00010101000900_create_billing_tables",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000900_create_billing_tables.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000900_create_billing_tables.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!("../migrations/00010101000900_create_billing_tables.postgres.up.sql"),
+        None,
+    ),
+    Migration::new(
+        "00010101000910_create_billing_payments",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000910_create_billing_payments.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000910_create_billing_payments.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!("../migrations/00010101000910_create_billing_payments.postgres.up.sql"),
+        None,
+    ),
+    Migration::new(
+        "00010101000920_add_gateway_intent_to_billing_payments",
+        "",
+        Some(include_str!(
+            "../migrations/00010101000920_add_gateway_intent_to_billing_payments.down.sql"
+        )),
+    )
+    .sqlite(
+        include_str!("../migrations/00010101000920_add_gateway_intent_to_billing_payments.up.sql"),
+        None,
+    )
+    .postgres(
+        include_str!(
+            "../migrations/00010101000920_add_gateway_intent_to_billing_payments.postgres.up.sql"
+        ),
+        None,
+    ),
+];
 
 /// The templates, compiled in. An app replaces one with a file of the same
 /// name under its views directory (`resources/views/billing/plans.html`).
@@ -142,6 +185,13 @@ impl Billing {
     /// from the configuration (off while the key is missing).
     pub fn xendit(self) -> Self {
         self.gateway(Xendit::from_config())
+    }
+
+    /// Adds N-Genius (one-off payments only), with `NGENIUS_API_KEY`,
+    /// `NGENIUS_OUTLET_REF` and `NGENIUS_WEBHOOK_SECRET` from the
+    /// configuration (off while the API key is missing).
+    pub fn ngenius(self) -> Self {
+        self.gateway(Ngenius::from_config())
     }
 
     /// Adds a gateway: [`Stripe::new`] with keys given in code, or one of
@@ -213,6 +263,30 @@ impl Setup {
             .cloned()
     }
 
+    /// The gateway named `name` (the first configured one without a name)
+    /// for a one-off payment.
+    pub(crate) fn payment_gateway(
+        &self,
+        state: &AppState,
+        name: Option<&str>,
+    ) -> Result<Arc<dyn Gateway>> {
+        let found = match name {
+            Some(name) => self.gateway(state, name),
+            None => self
+                .gateways
+                .iter()
+                .find(|g| g.configured(&state.config))
+                .cloned(),
+        };
+        found.ok_or_else(|| {
+            renox::anyhow::anyhow!(
+                "no payment gateway is set up{}: set its keys in .env",
+                name.map(|n| format!(" for `{n}`")).unwrap_or_default()
+            )
+            .into()
+        })
+    }
+
     /// The gateway that sells `plan`.
     pub(crate) fn gateway_for(&self, state: &AppState, plan: &Plan) -> Result<Arc<dyn Gateway>> {
         let found = match &plan.gateway {
@@ -279,6 +353,19 @@ impl Module for Billing {
                 }
             }
         });
+        app.command(
+            "billing:expire-links",
+            "Expire payment links that ran out unpaid",
+            |_args, state| async move {
+                let expired = Billing::expire_links(&state).await?;
+                println!("Expired {expired} payment links.");
+                Ok(())
+            },
+        );
+        app.schedule()
+            .hourly("billing:expire-links", |state| async move {
+                Billing::expire_links(&state).await.map(|_| ())
+            });
         app.account_section("billing/section.html", 30, |user, state| async move {
             let setup = setup(&state)?;
             let billing = Billing::of(&state, &user);

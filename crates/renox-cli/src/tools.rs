@@ -26,6 +26,57 @@ pub(crate) fn find(name: &str) -> Option<PathBuf> {
     find_in(name, std::env::var_os("PATH").as_deref(), cfg!(windows))
 }
 
+/// Why [`git_clone`] failed.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum CloneError {
+    /// `git` is not on `PATH`.
+    NoGit,
+    /// `git` ran and failed; its last error line.
+    Failed(String),
+}
+
+/// Shallow-clones `url` (at tag or branch `git_ref`, else the default branch)
+/// into `dest`, which must not exist yet, with the `git` found on `PATH`.
+///
+/// Nothing from the repository runs: no hooks (`core.hooksPath` points at
+/// nothing), no `ext::` transports, no submodules, no credential prompts.
+pub(crate) fn git_clone(url: &str, git_ref: Option<&str>, dest: &Path) -> Result<(), CloneError> {
+    let git = find("git").ok_or(CloneError::NoGit)?;
+    let no_hooks = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let mut cmd = std::process::Command::new(git);
+    cmd.arg("-c")
+        .arg(format!("core.hooksPath={no_hooks}"))
+        .args(["-c", "protocol.ext.allow=never"])
+        .args([
+            "clone",
+            "--quiet",
+            "--depth",
+            "1",
+            "--no-recurse-submodules",
+        ]);
+    if let Some(git_ref) = git_ref {
+        cmd.args(["--branch", git_ref]);
+    }
+    let out = cmd
+        .arg("--")
+        .arg(url)
+        .arg(dest)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|e| CloneError::Failed(e.to_string()))?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let line = stderr
+        .lines()
+        .rev()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("git clone failed");
+    Err(CloneError::Failed(line.trim().to_string()))
+}
+
 /// A linker faster than the default.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Linker {

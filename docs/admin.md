@@ -18,6 +18,7 @@ panel authorized by permission, with a column of its own and the Markdown editor
 - filters, actions (also ones that ask for input), soft deletes and the trash, exports;
 - what runs after a save, child rows managed from a record (relation managers), and resources
   that are only edited;
+- resources a module contributes to the panel from its own `register`;
 - settings pages, the view page, the routes, words in another language, and adding to or replacing the panel's
   pages;
 - how it maps to Laravel's Filament.
@@ -81,7 +82,9 @@ pub fn app() -> App {
 What each part does:
 
 - `Admin::new()` makes a panel at `/admin`. `.path("/backoffice")` moves it; the route names
-  stay `admin.*`.
+  stay `admin.*`. A panel named with `.named("ops")` has the route names `admin.ops.*`
+  (`admin.ops.dashboard`, `admin.ops.products.index`) and the module name `admin.ops`, so two
+  panels at different paths can run in one app.
 - `.title(…)` names the panel in its sidebar and page titles.
 - `.authorize(|user| …)` says who may open the panel at all. **Nobody may until you say so**:
   without it every page answers 403 (forbidden). Guests are sent to log in. `.gate("admin")`
@@ -241,6 +244,52 @@ label. The kind decides which of the kit's fields draws it:
 > `12.99`, and `12.99` typed in reaches the form's rules and `fill` as `1299` (rounded to the
 > cent). For a currency without decimals (IDR, JPY) the amount is as typed. The view page's
 > `money` entries show `$12.99` too.
+
+A record that keeps its own currency (the `<field>_currency` column of a `#[model(money)]`
+field) says so with `currency_from`, on the field, the column and the entry:
+
+```rust,no_run
+# use renox_admin::{Entry, Field};
+# use renox::grid::Column;
+let column = Column::money("total", "Total").currency_from("total_currency");
+let entry = Entry::new("total", "Total").format("money").currency_from("total_currency");
+let fields = vec![
+    Field::money("total", "Total").currency_from("total_currency"),
+    Field::select("total_currency", "Currency", [("USD", "USD"), ("JPY", "JPY")])
+        .default_value("USD"),
+];
+```
+
+The list shows each row in its currency, the view page shows `¥1,250` or `$12.50`, and the
+form shows the amount with that currency's decimals and code (the create page uses the
+currency field's default value). On save the amount is read with the decimals of the
+currency posted with it, so `1250` is 1250 JPY and `1.250` is 1250 fils in KWD. The
+currency itself is an ordinary field of the form (a `select` of codes); validate it with
+`.currency()`. Without `currency_from` nothing changes: `APP_CURRENCY` applies.
+`Entry::from_column` carries a column's `currency_from` over.
+
+An exact quantity (a `Quantity<S>` field of the model) is `Field::quantity`, with the
+scale of its type and, when the record keeps a unit, the field that holds it:
+
+```rust,no_run
+# use renox_admin::{Entry, Field};
+# use renox::grid::Column;
+let column = Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit");
+let entry = Entry::new("stock", "Stock").format("quantity").scale(3).unit_from("stock_unit");
+let fields = vec![
+    Field::quantity("stock", "Stock").scale(3).unit_from("stock_unit"),
+    Field::select("stock_unit", "Unit", [("kg", "kg"), ("g", "g")]).default_value("kg"),
+];
+```
+
+The list shows each row as `2.500 kg` (the grid's quantity column), the view page shows
+`2,500.000 g` and the form shows the decimal text with the scale's digits, a step of the last
+digit and the unit after the input (the create page uses the unit field's default). A
+quantity travels as decimal text (`"2.500"`), so unlike money nothing is converted on save:
+the form's field is a `Quantity<S>` or a `String` (`#[validate(quantity(3))]`, then
+`Quantity::parse_exact` in `fill`). The unit is an ordinary field of the form (a `select` of
+codes; check it with `.unit(&units)`). Without `scale` the field has no decimals, without
+`unit_from` no unit. `Entry::from_column` carries a column's scale and `unit_from` over.
 
 Options every field takes:
 
@@ -699,6 +748,74 @@ disabled without a button. A group marked `ENCRYPTED` never prints its values: i
 empty with a note "Set, last changed …" (or "Not set yet."), and a field left empty keeps its
 stored value. The page is `renox-admin/settings.html`; the words are `renox.admin.sealed_set`
 and `renox.admin.sealed_unset`.
+
+## Resources from modules
+
+A module can add a resource to the app's panel from its own `register`, so the panel's builder
+never names it. This is `Registry::contribute` (a typed list any module can add to and read) with
+`renox_admin::contribute` on top:
+
+```rust
+use renox::grid::Column;
+use renox::prelude::*;
+use renox_admin::{Admin, AdminEntry, AdminResource, Field};
+# #[derive(Model, serde::Serialize, Default)] struct Supplier { id: i64, name: String }
+# impl Policy for Supplier { fn allows(&self, _: &User, _: &str) -> bool { true } }
+# #[derive(serde::Deserialize, serde::Serialize, Validate)] struct SupplierForm { #[validate(required)] name: String }
+# struct SupplierResource;
+# impl AdminResource for SupplierResource {
+#     type Model = Supplier;
+#     type Form = SupplierForm;
+#     fn label(&self) -> &str { "Supplier" }
+#     fn plural_label(&self) -> &str { "Suppliers" }
+#     fn columns(&self) -> Vec<Column> { vec![Column::text("name", "Name")] }
+#     fn fields(&self) -> Vec<Field> { vec![Field::text("name", "Name")] }
+#     fn fill(&self, s: &mut Supplier, f: SupplierForm) { s.name = f.name; }
+# }
+
+/// A module that adds suppliers to the admin panel.
+pub struct Purchasing;
+
+impl Module for Purchasing {
+    fn name(&self) -> &'static str { "purchasing" }
+
+    fn register(&self, app: &mut Registry) {
+        renox_admin::contribute(app, SupplierResource);
+        // Or, for a panel with a name (see below):
+        // app.contribute(AdminEntry::new(SupplierResource).panel("staff"));
+    }
+}
+
+/// The panel lists no supplier; the module adds it.
+pub fn app() -> App {
+    App::new()
+        .module(Auth::new())
+        .module(Admin::new().authorize(|user| user.has_role("staff")))
+        .module(Purchasing)
+}
+```
+
+The order of the `.module(...)` lines does not matter: every module's `register` runs before any
+panel builds its routes. The contributed resource behaves like one added with `Admin::resource`:
+
+- it has the same pages, the `admin.{slug}.*` routes (`rnx route:list` shows them), the panel's
+  `authorize` or `gate`, the model's `Policy` and the resource's `allows`, and its navigation
+  group (`group(...)` on the resource);
+- it is listed after the panel's own resources: the app's contributions first, then the modules'
+  in the order they were added.
+
+Which panel takes it:
+
+- By default an `Admin` takes the entries that name no panel. With two panels, give one a name
+  with `Admin::named("staff")` and aim an entry at it with `AdminEntry::new(r).panel("staff")`; a
+  named panel takes only entries for its name. An entry for a name no `Admin` has stops the boot
+  with an error.
+- `Admin::new().only_own_resources()` ignores what modules contribute: only the resources added
+  to it with `.resource(...)`.
+
+Two resources with the same slug stop the boot, and the message names who added each:
+`"suppliers" is contributed by purchasing and by billing`; a clash with the panel's own resource
+names "the app's Admin". Settings pages and dashboard widgets are not contributed this way yet.
 
 ## Routes
 

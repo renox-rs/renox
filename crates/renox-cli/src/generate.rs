@@ -8,7 +8,7 @@ use anyhow::{Context, Result, bail};
 use heck::{ToKebabCase, ToSnakeCase, ToTitleCase, ToUpperCamelCase};
 
 /// `path` relative to the app root, for messages.
-fn shown(path: &Path) -> String {
+pub(crate) fn shown(path: &Path) -> String {
     let cwd = std::env::current_dir().unwrap_or_default();
     path.strip_prefix(&cwd)
         .unwrap_or(path)
@@ -198,7 +198,7 @@ pub(crate) fn register_in_main(main_rs: &Path, path: &str) -> Result<()> {
 
 /// Adds `call` (e.g. `.seeder(…)`) after the last `.module(` call in
 /// `lib.rs`/`main.rs`; prints it when the file doesn't look like that.
-fn register_call(main_rs: &Path, call: &str) -> Result<()> {
+pub(crate) fn register_call(main_rs: &Path, call: &str) -> Result<()> {
     let hint = || println!("Register it where the App is built: {call}");
     let Ok(source) = fs::read_to_string(main_rs) else {
         hint();
@@ -227,7 +227,7 @@ fn register_call(main_rs: &Path, call: &str) -> Result<()> {
 }
 
 /// Where the App is built: `src/lib.rs` (apps from `rnx new`) or `main.rs`.
-fn app_file(root: &Path) -> PathBuf {
+pub(crate) fn app_file(root: &Path) -> PathBuf {
     let lib = root.join("src/lib.rs");
     if lib.is_file() {
         lib

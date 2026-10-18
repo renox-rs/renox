@@ -133,7 +133,11 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [catalogue.rs](examples/bikeshop/src/app/access/catalogue.rs),
     [policy.rs](examples/bikeshop/src/app/access/policy.rs),
     [active_store.rs](examples/bikeshop/src/app/access/active_store.rs); rentals:
-    [booking.rs](examples/bikeshop/src/app/rentals/booking.rs); stock ledger:
+    [booking.rs](examples/bikeshop/src/app/rentals/booking.rs), status changes through the
+    state machine [machine.rs](examples/bikeshop/src/app/rentals/machine.rs), the receipt as a PDF
+    (download and mail attachment, `renox-pdf`)
+    [receipt_pdf.rs](examples/bikeshop/src/app/rentals/receipt_pdf.rs) with the template
+    [pdf/rental-receipt.typ](examples/bikeshop/resources/views/pdf/rental-receipt.typ); stock ledger:
     [stock/ledger.rs](examples/bikeshop/src/app/stock/ledger.rs); books between stores:
     [multistore/books.rs](examples/bikeshop/src/app/multistore/books.rs); reports:
     [reports/dashboard.rs](examples/bikeshop/src/app/reports/dashboard.rs),
@@ -151,7 +155,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [layouts/store.html](examples/bikeshop/resources/views/layouts/store.html)
   - `/about/fields`, the reference for form fields (docs/types.md points here): every HTML
     input ↔ form type ↔ model type ↔ SQLite ↔ PostgreSQL column (`REFERENCE`), a form that
-    tries them all (text with a `datalist`, Markdown, number, `f64`, money in cents, switch,
+    tries them all (text with a `datalist`, Markdown, number, `f64`, money in cents, a deposit as a
+    `Money` pair in USD, JPY or KWD (`#[model(money)]`, `<rx-input type="money">`), a load limit as a
+    `Quantity<3>` in kg, g or t (`<rx-input type="quantity">`), switch,
     radio → `DbEnum`, checkbox list → `Json<Vec<String>>` with `each`/`distinct`, `tags_input`,
     `key_value` → `Json<KeyValues>` (a nested form), `rich_editor` → `RichText`, `code_editor`
     → `.json()`, time, datetime-local, `date_picker`, an image checked by content and
@@ -175,7 +181,9 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
     [tests/htmx.rs](examples/bikeshop/tests/htmx.rs)
   - The admin panel (renox-admin, a custom column):
     [staff/admin.rs](examples/bikeshop/src/app/staff/admin.rs); service plans billed with
-    renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); the
+    renox-billing: [plans/billing.rs](examples/bikeshop/src/app/plans/billing.rs); a one-off payment link
+    for a work order (`Billing::payment_link`, a demo gateway with `payment_link`, a `PaymentSucceeded` listener):
+    [workshop/order.rs](examples/bikeshop/src/app/workshop/order.rs), [plans/demo.rs](examples/bikeshop/src/app/plans/demo.rs); the
     Midtrans webhook: [sales/gateway.rs](examples/bikeshop/src/app/sales/gateway.rs); report
     grids grouped, summed and exported: [reports/grids.rs](examples/bikeshop/src/app/reports/grids.rs);
     a CSV or Excel import with `renox::import` (checked first with `dry_run_if`):
@@ -199,12 +207,48 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   ids), error reports (`App::report`), error pages, the debug inspector, deploys without refused
   connections (systemd socket activation), database sessions, timeouts, `TRUSTED_PROXIES`,
   `/health`, what happens when the database or SMTP fails, recovering failed jobs and webhook
-  calls, backups (and what `APP_KEY` protects), migrations at deploy, the scheduler's time zone,
+  calls, outbound webhooks (`Endpoint`, `App::webhook_event`, `emit_in`, Standard Webhooks
+  signing, retries, `webhook:*` commands, `Request::sign` and `SignedRequest`), backups (and what `APP_KEY` protects), migrations at deploy, the scheduler's time zone,
   tables to prune, maintenance mode.
 - [docs/development.md](docs/development.md): faster builds, and `rnx doctor` (profiles, linker, features to drop,
-  sccache, the cargo-chef Dockerfile).
+  sccache, the cargo-chef Dockerfile); "Packages": `rnx make:package` writes a reusable module crate
+  (migrations named after the package, views the app can override, texts, tests), joined to the workspace;
+  "Start from your own template": `rnx new <name> --from <dir | git+url#tag-or-branch>` copies a template
+  repository, fills `{{name}}`-style placeholders (exact keys only, other `{{ }}` untouched), asks the
+  `[[ask]]` questions of its `renox-template.toml` (`--set key=value`), and executes nothing from it.
 - [docs/types.md](docs/types.md): every Rust field type with its form input and its SQLite and
   PostgreSQL column (`DbEnum`, `Json<T>`, dates and times, money, UUID).
+- Money in several currencies (`renox::money`: `Money`, `Currency`, `Rounding`): the amount in the smallest unit plus an
+  ISO 4217 code; `checked_add`/`checked_sub` (no mixing currencies), `allocate`, `percent`, `mul_ratio`, `convert`
+  (explicit `Rounding`, exact decimal rates, never `f64`); `#[model(money)]` stores `<field>` + `<field>_currency`
+  (`money(currency = "currency")` shares one column); `.currency()` / `.money(&self.currency)` validation,
+  `<rx-input type="money" currency="JPY"/>`, `{{ total | money }}`, `Column::money(..).currency_from(..)` (grid),
+  `Field::money(..).currency_from(..)` (admin); schema checks know the pair. docs/types.md#money; shown in
+  `examples/bikeshop`'s `/about/fields` (`src/app/about/fields.rs`, `tests/fields.rs`).
+- Decimal quantities with units (`renox::quantity`: `Quantity<SCALE>`, `Units`/`UnitTable`): an exact `i64` of 10^-SCALE units,
+  one `BIGINT`, the unit in a `String` column of the record; `parse`/`mul_ratio`/`mul_decimal`/`rescale`/`convert` take an explicit
+  `Rounding` (`parse_exact` refuses lost digits), `checked_add`/`checked_sub`, decimal-string serde; typed `lt`/`between`/`sum` are exact;
+  `.quantity(3)` / `.quantity_min("0")` / `.unit(&units)` validation, `<rx-input type="quantity" scale="3" unit="kg"/>`,
+  `{{ stock | quantity(unit="kg") }}`, `Column::quantity(..).unit_from(..)` (grid), `Field::quantity(..).unit_from(..)` (admin); the scale
+  is not in the schema. docs/types.md#quantities-and-units; shown in `examples/bikeshop`'s `/about/fields`
+  (`src/app/about/fields.rs`, `tests/fields.rs`).
+- Places (`renox::geo`: `Point`, `Circle`, `Polygon`, `GeoError`; no dependency): `Point::new(lat, lng)` is validated, `distance_to` is
+  haversine in metres, `Circle::contains` and `Polygon::contains` (ray casting, holes, antimeridian; the boundary is inside) check a
+  reported location on the server; GeoJSON is `[lng, lat]`, the API `(lat, lng)`; a `Point` reads from `{lat,lng}`, GeoJSON or the form
+  fields `lat`/`lng` (`spot[lat]`); `.latitude()` / `.longitude()` / `.point()` validation; the `map_picker` and `map` blocks (docs/blocks.md#maps)
+  show and pick them. docs/types.md#places-points-circles-and-areas.
+- Custom fields (`renox::custom_fields`: `CustomField`, `FieldKind`, `LocaleMap`, `CustomValues`): definitions an administrator
+  adds at run time (text, number, date, bool, choice, reference, file; label and choice labels per locale with fallback; free
+  `meta` JSON) in the `custom_fields` table (migration 430), values in one `Json<CustomValues>` column named by
+  `#[model(custom_fields = "extra")]`; `#[model(form)]` takes `extra[key]` and `Valid<T>` validates it against the definitions;
+  typed JSON paths `Party::EXTRA.json("segment").eq(..)`, `order_by_json[_desc]`, `Query::with_custom_fields(&db)` (unknown key =
+  error), `db::json_index(..)`; `<rx-custom-fields :fields name values mode/>` (fed by `CustomField::views`),
+  `Column::custom_field("extra", "segment")` (grid), renox-admin picks it all up plus a "Custom fields" resource.
+  `CustomField::sensitive()` / `reveal_with("ability")` seal a value with `APP_KEY` (`rx-sealed:1:…`; not for reference or
+  file), mask it as `••••••` unless the viewer holds the ability (`custom_fields.reveal` by default; `CustomField::views_for`,
+  `CustomValues::shown`), refuse filter/sort/search on it (`DbError::SealedCustomField`) and leave it out of exports;
+  a blank submit keeps the seal, a changed `APP_KEY` makes it `unreadable`. Shown on the browser fixture's `/parties`.
+  docs/types.md#custom-fields-columns-an-administrator-adds.
 - Check models against the schema (`App::model`, `rnx db:check`, `assert_models_match_schema`):
   [docs/types.md](docs/types.md#checking-models-against-the-tables); shown in
   `examples/bikeshop`'s catalog (`src/app/catalog/mod.rs`, `tests/catalog.rs`).
@@ -227,6 +271,14 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/live.md](docs/live.md): live components (`LiveComponent`, `#[renox::live_component]`,
   `<live-NAME>`, `rx-click`/`rx-submit`/`rx-model`, the signed snapshot, `TestApp::live`); example: the bike
   shop's `/about/htmx/live` ([live.rs](examples/bikeshop/src/app/about/live.rs)).
+- [docs/state-machines.md](docs/state-machines.md): state machines for models with a status
+  (`StateMachine`, `Machine`, `Transition` with `permission`/`permission_in`/`system`, guards and
+  effects, `record.transition(name).by(&user).reason(..).input(..).meta(..).run(&state)` / `run_in`,
+  `Outcome`, `Transitioned`, `TransitionError` as 401/403/404/422, `available`,
+  `<rx-transition-actions>`, `state_machine::routes`, `history` and `timeline` for `<rx-history>`,
+  `#[model(state_machine)]` guarding the status column, `insert_in_state`, the global interceptor
+  for approvals, `Machine::mermaid`, `rnx state:diagram`, `AdminAction::transitions`); example: the
+  bike shop's rentals ([machine.rs](examples/bikeshop/src/app/rentals/machine.rs)).
 - [docs/testing.md](docs/testing.md): `TestApp` requests and assertions (JSON paths, views,
   session, login), the database, jobs, event and notification fakes, HTTP fakes, time travel,
   counting queries, a browser-test recipe.
@@ -237,6 +289,7 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   [supplier pages](examples/bikeshop/resources/views/stock/suppliers/),
   [reports/dashboard.html](examples/bikeshop/resources/views/reports/dashboard.html) and
   [about/fields.html](examples/bikeshop/resources/views/about/fields.html).
+- Right-to-left (#28): `app.dir` (`rtl`/`ltr`) in views and mails, `renox::i18n::{direction, Direction}`, `App::rtl_locales(&[..])`, `AppState::direction`; every layout writes `dir="{{ app.dir }}"`, the kit's CSS is logical (a lint test guards it), chevrons/arrows mirror (`rx-icon--directional`), Noto Sans Arabic loads only for Arabic text; write your own CSS with logical properties: [docs/ui.md](docs/ui.md#right-to-left). Browser checks: tests/browser/rtl.test.mjs.
 - [docs/ui.md](docs/ui.md): components that see the request, components as tags (`<rx-card>`,
   `<app-price-tag>`, `rx-if`/`rx-for`, `rx-page`, `rx-table`, form tags such as `rx-repeater` and `rx-wizard`; navigation, menu, tab and sheet tags (`rx-navbar`, `rx-sidebar`, `rx-shell`, `rx-menu`, `rx-tabs`, `rx-sheet`); dashboard tags (`rx-stats`, `rx-chart`), `rx-grid`, mail tags (`rx-mail`, `rx-mail-button`, `rx-mail-panel`, `rx-mail-table`, `rx-mail-divider`), `rx-icon`, `rx-action-group`, `rx-wizard-action`, `rx-import-action`, and plugin tags (`Registry::component`, `view::add_template`); compiled in
   `crates/renox-core/src/components/`; bikeshop's supplier pages show them), the UI kit (`renox/ui.html`: fields,
@@ -250,11 +303,23 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   duplicating with `Model::replicate`, exports with `Grid::export_as`;
   `date_picker` with `disabled_dates`/`closed_weekdays`; `icon(name)` (Lucide line icons);
   the page's frame: `navbar`/`nav_links`/`nav_link` (`tabs=[…]`: a bottom tab bar on phones,
-  `nav_search`: the search behind a button there), `sidebar` + `<rx-shell fill>` for
+  `nav_search`: the search behind a button there), menus that modules and the app fill
+  (`app.nav("staff", NavLink::route(..).group(..).order(..).permission(..).badge(..))`, `app.nav_hide`,
+  drawn by `<rx-sidebar menu="staff"/>`, `<rx-nav-links menu="portal"/>` or `nav("staff")`;
+  `.permission` holds globally or in any scope, `AuthUser::has_permission_anywhere`;
+  guide: docs/ui.md "Menus that modules and the app add to", examples/bikeshop), `sidebar` + `<rx-shell fill>` for
   dashboard apps (the standard: `rx-fill`, `rx-pane`, `rx-panes`, `--rx-fill-min`), `page_header`, `toolbar`, `row_actions`, `list`, `card_grid`/`media_card`,
   `link_tabs`, `thumbnail`, `progress`, `rx-page--fill`: build pages from these, not app CSS;
+  brand themes (`Theme::from_brand(&Brand::new("#1E3A5F").second(..).display_font(..))` derives contrast-checked accent tokens,
+  light and dark, or `Err(ContrastError { suggestion })`; `App::theme(theme)` or `App::theme_for(|req: ThemeRequest| ..)` per host/tenant/setting;
+  `<rx-theme/>` after `<rx-ui/>` links the hashed `/_renox/theme/{hash}.css`, CSP strict safe; `theme.tokens()`/`dark_tokens()`,
+  `Mail::theme(&theme)`; guide: docs/ui.md "Brand themes", example: examples/bikeshop per-store brands),
+  installable on phones (`App::new().pwa(Pwa::new("Bike Shop").icons("public/icons").offline_page("offline.html"))` serves
+  `/manifest.webmanifest`, a versioned `/sw.js` and `/_renox/offline`; `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`
+  per host with `Vary: Host`; `<rx-pwa/>` after `<rx-theme/>`, CSP strict safe; `rnx make:pwa`; navigations are never cached;
+  guide: docs/ui.md "Install on phones"),
   themes and the type scale: the warm default, `data-rx-theme="classic"`, `--rx-type-*`),
-  the filters `number`, `money` (`APP_CURRENCY`), `date`, `since`, `words`, `markdown`,
+  the filters `number`, `money` (`APP_CURRENCY`), `quantity`, `date`, `since`, `words`, `markdown`,
   dashboards (`renox::chart`: `Period` with presets, weeks and custom ranges, `Trend` per
   day/week/month, `Series`; `chart(…)` line/area/bar/pie/doughnut/scatter/bubble/heatmap, `stat`,
   `stats`, `dashboard`, `widget`, `period_filter` with its custom range, `query_fields`), and its
@@ -266,7 +331,10 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `relations` with `RelationManager::has_many`/`belongs_to_many`), actions that take input
   (`AdminAction::form`, `cx.input`), the abilities the model's `Policy` is asked, soft deletes
   and the trash, exports, the routes `admin.{slug}.*`, the `renox.admin.*` translation keys,
-  `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates.
+  `Admin::slot` (`Slot`) to add to the layout, replacing the panel's templates, resources from modules
+  (`renox_admin::contribute`, `AdminEntry::panel`, `Admin::named`, `only_own_resources`; built on
+  `Registry::contribute`, `Contributions`, `Module::routes_with`, `AppState::contributions`; example:
+  [purchasing/mod.rs](examples/bikeshop/src/app/purchasing/mod.rs)).
 - [docs/settings.md](docs/settings.md): typed settings kept in the database: `Settings` (the
   opt-in module: the `settings` table and `settings:get|set|list`), `SettingsGroup` (`KEY`,
   `ENCRYPTED`), `App::settings::<T>()` / `settings_in_views` (`{{ settings.company.name }}`) /
@@ -276,13 +344,24 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `--scope`), sealed groups (`<sealed>` unless `--reveal`), the cache and how other servers notice
   (a version row in `cache`), `Admin::settings` with `AdminSettings` in renox-admin,
   `TestApp::with_settings`.
+- [docs/pdf.md](docs/pdf.md): the renox-pdf crate: `Pdf` module (`font`, `lenient`, `templates`),
+  `Pdf::document(&state, "invoice")` then `.data(&value)`, `.locale("ar")`, `.asset(name, bytes)`,
+  `.render(&state).await` (bytes; blocking thread, `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), a Typst template in
+  `resources/views/pdf` (`rnx make:pdf`), the kit `@renox/kit:0.1.0` (`money`, `date`, `page-header`,
+  `data-table`, tokens), right-to-left and fonts, `PdfError` (`MissingGlyphs`), returning the bytes as a
+  `Download` or a `Mail::attach`, `renox_pdf::testing` (`text_of`, `PdfAssertions`).
 - [docs/billing.md](docs/billing.md): the renox-billing crate: `Billing` (plans, `stripe()`,
   `xendit()`, `generic_trials`, `without_proration`), `Plan` (price in the smallest unit,
   `trial_days`, `via`, `price_id` / `STRIPE_PRICE_<KEY>`), setting up Stripe and Xendit,
   `Billing::of(&state, &user)` (`subscribed`, `on_trial`, `checkout`, `swap`, `cancel`,
   `resume`, `pause`/`unpause`…), `require_subscription`/`require_plan` (and the `_named` ones), the webhooks (verified, once per event,
   out-of-order safe), its events, billing a team (`Billable`), another gateway (`Gateway`),
-  replacing the pages, testing with `fake_http` and signed webhooks.
+  replacing the pages, testing with `fake_http` and signed webhooks. One-off payments:
+  `Billing::of(..).charge(Charge)`, `Billing::payment_link(PaymentLink)`, `refund`, `payment_status`,
+  `expire_links` (`billing:expire-links`), the `billing_payments` rows with your reference, keys per
+  installation (`Stripe::resolved`, `resolved_accounts`), several accounts (`.account("acme-llc")`,
+  `/billing/webhooks/{gateway}/{account}`), refunds and disputes with their events, the late-success
+  rule, the typed `Unsupported`, N-Genius (`Billing::ngenius()`).
 - [docs/editors.md](docs/editors.md): the renox-editors crate: `rich_editor` (Trix; read as
   `RichText`, cleaned with ammonia; shown with `| rich_text`), `markdown_editor` (toolbar and
   a server-rendered preview), `code_editor` (CodeJar + Prism), `code_entry`; how the files load.
@@ -292,8 +371,21 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `month_calendar`, `availability`, `week_calendar` (resources against a week, hx-post from a
   free slot, grid keys), `status_stepper` (a record's statuses), `kanban` (+ `kanban_card`, htmx POST per move,
   `rx:kanban-moved`), `receipt` (`<rx-receipt width="80mm|58mm">`: a till receipt that prints alone
-  on a roll, with a code slot and a Print button); each block's options, keyboard use, translations (`renox_blocks::TEXTS`,
-  `blocks.*` keys), how the files load.
+  on a roll, with a code slot and a Print button), `signature_pad` (`<rx-signature-pad name="signature">`: a drawn
+  PNG `signature` or a typed `signature_name`, one of the two; `Option<Upload>`, `image()`, `mimes(&["png"])`),
+  `camera_capture` (`<rx-camera-capture name="photos" :max="3">`: getUserMedia photos downsized to `max_width` as
+  `photo-N.jpg`, a visible `<input type=file capture>` when denied or missing; `Vec<Upload>`, `max(3)`; both need
+  a `multipart/form-data` form, shown by the bike shop's work order sign-off and `/about/blocks`),
+  `rating` (`<rx-rating name="score">`: radios drawn as stars, posts one number, no JavaScript needed),
+  `geolocate` (`<rx-geolocate name="location" :accuracy="50">`: a button asks for the position, posts
+  `location[lat]`, `location[lng]`, `location[accuracy]`, `location[at]`; read as a struct or `renox::geo::Point`) and
+  `barcode_scan` (`<rx-barcode-scan name="sku" formats="ean_13,qr_code">`: one text field filled by typing, a keyboard-wedge
+  scanner or the camera through `BarcodeDetector` or a vendored @zxing/library; a `String`); the camera and the position need
+  `camera` / `geolocation` allowed in `App::permissions_policy`,
+  `map_picker` (a point, circle or polygon: clicks or typed coordinates; `name[lat]`/`name[lng]` or GeoJSON
+  `[lng, lat]`) and `map` (markers and shapes; Leaflet 1.9.4 vendored, tiles from
+  `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION`, never a default); each block's options, keyboard use, translations
+  (`renox_blocks::TEXTS`, `blocks.*` keys), how the files load.
 - [docs/grid.md](docs/grid.md): data grids (`renox::grid` + `renox/grid.html`): columns and their
   kinds, filters per heading, search, filter chips, the advanced filter, preferences (per user
   or in the session), details under a row, editing in place, reordering rows, merged cells,
@@ -334,6 +426,8 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - [docs/stability.md](docs/stability.md): what semver covers, which types may grow
   (`#[non_exhaustive]`), public dependencies (axum yes, sqlx only through escape hatches).
 - `rnx make:deploy` writes `deploy/README.md` (Docker, systemd, Litestream backups).
+- Offline forms (docs/ui.md "Offline forms"): `Routes::…post(..).offline()` (or `.offline_with(Skew::new().past(..).future(..))`) requires `Idempotency-Key`, replays the stored reply for the same key and body (422 for another body); the `Offline` extractor gives `recorded_at`, `received_at`, `client_id`, `skew_exceeded` (outside the limits the device time is still passed); `<rx-form offline="name">` queues failed posts in an unencrypted IndexedDB outbox that replays in order with a fresh token from `GET /_renox/csrf` and is cleared on logout; `idempotency:prune`; no Background Sync.
+- `rnx make:pwa` writes `resources/views/offline.html`, three placeholder icons in `public/icons/` and the `.pwa(..)` call (docs/ui.md "Install on phones").
 
 ## Where things are (for changing Renox itself)
 
@@ -371,11 +465,16 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
 - `crates/renox-blocks`: the optional blocks plugin crate (same version as `renox`): the
   `Blocks` module (`lib.rs`: its views registered unless the app has the file, `renox_blocks()`
   for the tags, `renox_blocks_t()` for texts), `texts.rs` (`TEXTS`, the English), `assets.rs`
-  (hashed URLs, `Registry::asset`), `views/blocks.html` (the twelve macros),
-  `assets/blocks.css`, `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
+  (hashed URLs, `Registry::asset`), `views/blocks.html` (the macros),
+  `map.rs` (the tile settings), `assets/vendor/leaflet/` (Leaflet 1.9.4, licence, NOTICE), `assets/vendor/zxing/` (@zxing/library 0.23.0,
+  licence; `assets/vendor/NOTICE`), `assets/blocks.css`,
+  `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
   code, imported only when a page has it; Web Animations, no library). Guide:
   [docs/blocks.md](docs/blocks.md); used in examples/bikeshop (every page with a block, and
-  `/about/blocks`); browser tests tests/browser/blocks.test.mjs.
+  `/about/blocks`); browser tests tests/browser/blocks.test.mjs, blocks-capture.test.mjs (the signature pad
+  and camera capture, with Chrome's fake camera: `Browser.launch({ args })`), tests/browser/blocks-field.test.mjs (rating, geolocate
+  and barcode_scan: `Browser#send('Browser.grantPermissions', ..)`, `Emulation.setGeolocationOverride`, a stubbed `BarcodeDetector`)
+  and tests/browser/maps.test.mjs (a local tile stub).
 - Passwordless login (#42): `Auth::new().magic_link()` and `.login_codes(LoginCodes::new()..)`
   (renox-core `auth/passwordless.rs`: the routes `login.link.*` / `login.code.*`, the queued
   `SendLoginSecret` job, `LoginCodes`, `LoginCodeDelivery`; views `views/auth/login-link*.html`,
@@ -407,15 +506,23 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `form.html`, `fields.html`, `show.html`, `relation.html`, `settings.html`; `settings.rs` is
   `Admin::settings` / `AdminSettings`, a form for a settings group). Guide: [docs/admin.md](docs/admin.md); used in
   examples/bikeshop (resources authorized by permission).
+- `crates/renox-pdf`: the optional PDF plugin crate (same version as `renox`; Typst compiled in the process):
+  the `Pdf` module (`module.rs`), `Document` (`document.rs`: `data`, `locale`, `asset`, `render`), the render pool
+  (`pool.rs`: `PDF_MAX_CONCURRENT`, `PDF_TIMEOUT`), our `typst::World` (`world.rs`, `source.rs`: confined to the
+  template root, no network, `clock` for `today()`), template loading (`templates.rs`), fonts (`fonts.rs`: Inter and
+  Noto Sans Arabic, missing glyphs), the kit (`kit.rs`, `kit/kit.typ`), `PdfError`, `testing.rs`. Guide:
+  [docs/pdf.md](docs/pdf.md); `rnx make:pdf` writes a starter template.
 - `crates/renox-billing`: the optional subscriptions plugin crate (same version as `renox`),
   Laravel's Cashier: the `Billing` module (`lib.rs`: plans, gateways, the provided settings,
   the account section, the listeners: a deleted account's subscriptions end, audit entries),
   `Plan`/`Interval` (`plan.rs`), `Customer`/`Billable`/`Owner` (`customer.rs`), the
   `Gateway` trait with `Remote`, `Notice`, `Payment`, `Checkout`, `CheckoutRequest`
-  (`gateway.rs`), `stripe.rs`, `xendit.rs`, `Subscription`/`BillingCustomer`/
+  (`gateway.rs`), `stripe.rs`, `xendit.rs`, `ngenius.rs`, one-off payments (`payment.rs`:
+  `BillingPayment`, `BillingRefund`, `Charge`, `PaymentLink`, `Refund`, `Unsupported`, tables
+  `billing_payments` and `billing_refunds`), `Subscription`/`BillingCustomer`/
   `SubscriptionStatus` (`model.rs`, tables `subscriptions` and `billing_customers`), how a
   `Remote` becomes a row and events (`sync.rs`), the webhook (`webhook.rs`: one route,
-  `/billing/webhooks/{gateway}`, through `renox::webhook`), the pages (`handlers.rs`,
+  `/billing/webhooks/{gateway}` and `/billing/webhooks/{gateway}/{account}`, through `renox::webhook`), the pages (`handlers.rs`,
   `views/plans.html`, `views/section.html`), the guards (`guard.rs`). Guide:
   [docs/billing.md](docs/billing.md); used in examples/bikeshop (a
   named subscription per bike).

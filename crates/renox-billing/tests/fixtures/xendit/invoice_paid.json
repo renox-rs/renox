@@ -1,0 +1,11 @@
+{
+  "id": "579c8d61f23fa4ca35e52da4",
+  "external_id": "job-42-1",
+  "status": "PAID",
+  "amount": 45,
+  "paid_amount": 45,
+  "paid_at": "2026-10-17T11:30:00.000Z",
+  "updated": "2026-10-17T11:30:01.000Z",
+  "payment_method": "CREDIT_CARD",
+  "currency": "USD"
+}

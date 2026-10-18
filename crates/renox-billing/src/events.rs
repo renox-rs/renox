@@ -25,7 +25,7 @@
 
 use renox::prelude::*;
 
-use crate::{Owner, Subscription, SubscriptionStatus};
+use crate::{BillingPayment, Owner, Subscription, SubscriptionStatus};
 
 /// A subscription was made: a trial without a payment method, or a
 /// gateway's subscription arriving by webhook.
@@ -94,6 +94,10 @@ pub struct PaymentSucceeded {
     pub owner: Option<Owner>,
     /// The subscription it paid for, when known.
     pub subscription: Option<Subscription>,
+    /// The kind of the app's record a one-off payment is for.
+    pub reference_type: Option<String>,
+    /// That record's id.
+    pub reference_id: Option<String>,
 }
 
 /// A payment failed; the gateway may retry it (the subscription is then
@@ -113,6 +117,75 @@ pub struct PaymentFailed {
     pub owner: Option<Owner>,
     /// The subscription it was for, when known.
     pub subscription: Option<Subscription>,
+    /// The kind of the app's record a one-off payment is for.
+    pub reference_type: Option<String>,
+    /// That record's id.
+    pub reference_id: Option<String>,
+}
+
+/// A one-off payment was refunded in full or in part (after the refund
+/// succeeded).
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct PaymentRefunded {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+}
+
+/// A refund went through.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RefundSucceeded {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+    /// The amount refunded, in the payment's currency.
+    pub amount: i64,
+}
+
+/// A refund could not be done.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct RefundFailed {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+    /// The amount asked, in the payment's currency.
+    pub amount: i64,
+    /// Why, as the gateway said.
+    pub reason: Option<String>,
+}
+
+/// The customer disputed a payment.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct DisputeOpened {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+    /// When the evidence is due.
+    pub evidence_due_by: Option<DateTime>,
+}
+
+/// A dispute was decided for the merchant.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct DisputeWon {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+}
+
+/// A dispute was decided against the merchant.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct DisputeLost {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
+}
+
+/// A payment link ran out before it was paid.
+#[derive(Debug, Clone)]
+#[non_exhaustive]
+pub struct PaymentLinkExpired {
+    /// The payment as stored now.
+    pub payment: BillingPayment,
 }
 
 impl Event for SubscriptionCreated {}
@@ -122,3 +195,10 @@ impl Event for SubscriptionPaused {}
 impl Event for SubscriptionUnpaused {}
 impl Event for PaymentSucceeded {}
 impl Event for PaymentFailed {}
+impl Event for PaymentRefunded {}
+impl Event for RefundSucceeded {}
+impl Event for RefundFailed {}
+impl Event for DisputeOpened {}
+impl Event for DisputeWon {}
+impl Event for DisputeLost {}
+impl Event for PaymentLinkExpired {}

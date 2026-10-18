@@ -33,6 +33,9 @@ async fn the_page_shows_every_block_with_its_signature() {
         "class=\"rx-stepper rx-stepper--horizontal\"",
         "class=\"rx-stepper rx-stepper--vertical\"",
         "data-rx-week",
+        "data-rx-signature",
+        "data-rx-camera",
+        r#"enctype="multipart/form-data""#,
         "class=\"rx-month\"",
         "class=\"rx-availability\"",
         "data-rx-datetime-range",
@@ -42,6 +45,9 @@ async fn the_page_shows_every_block_with_its_signature() {
         "class=\"rx-plans\"",
         "class=\"rx-receipt rx-receipt--w80\"",
         "class=\"rx-receipt rx-receipt--w58\"",
+        "data-rx-map-picker data-rx-map-mode=\"point\"",
+        "data-rx-map-picker data-rx-map-mode=\"polygon\"",
+        "id=\"demo-map\" data-rx-map",
     ] {
         page.assert_see(marker);
     }
@@ -52,6 +58,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "keypad(target,",
         "status_stepper(steps, current=none",
         "week_calendar(resources, events=[]",
+        "signature_pad(name, label=none",
+        "camera_capture(name, label=none",
         "kanban(id, columns, url",
         "kanban_card(card)",
         "month_calendar(month, events=[]",
@@ -61,6 +69,8 @@ async fn the_page_shows_every_block_with_its_signature() {
         "history(items",
         "compare_plans(plans, features=[]",
         "receipt(lines, totals=[]",
+        "map_picker(name, mode=\"point\"",
+        "map(markers=[], shapes=[]",
     ] {
         page.assert_see(signature);
     }
@@ -298,6 +308,115 @@ async fn the_week_calendar_books_a_slot_the_server_checks() {
         .assert_invalid("end");
 }
 
+const PNG: &[u8] = include_bytes!("fixtures/bike.png");
+
+#[renox::test]
+async fn the_signature_and_photos_arrive_as_uploads_the_server_checks() {
+    let app = TestApp::new(bikeshop::app()).await;
+    // A drawn signature and two photos pass (the toast says what arrived).
+    app.post_multipart(
+        "/about/blocks/sign",
+        &[],
+        &[
+            ("signature", "signature.png", PNG),
+            ("photos", "photo-1.jpg", PNG),
+            ("photos", "photo-2.jpg", PNG),
+        ],
+    )
+    .await
+    .assert_status(303);
+    // A typed name alone is enough...
+    app.post_multipart("/about/blocks/sign", &[("signature_name", "Ana R.")], &[])
+        .await
+        .assert_status(303);
+    // ...but neither is not, a text file is no signature, and four photos
+    // are one too many.
+    app.htmx()
+        .post_multipart("/about/blocks/sign", &[], &[])
+        .await
+        .assert_invalid("signature_name");
+    app.htmx()
+        .post_multipart(
+            "/about/blocks/sign",
+            &[],
+            &[("signature", "signature.png", b"just text")],
+        )
+        .await
+        .assert_invalid("signature");
+    app.htmx()
+        .post_multipart(
+            "/about/blocks/sign",
+            &[("signature_name", "Ana R.")],
+            &[
+                ("photos", "a.jpg", PNG),
+                ("photos", "b.jpg", PNG),
+                ("photos", "c.jpg", PNG),
+                ("photos", "d.jpg", PNG),
+            ],
+        )
+        .await
+        .assert_invalid("photos");
+}
+
+#[renox::test]
+async fn the_rating_position_and_code_arrive_as_plain_values() {
+    let app = TestApp::new(bikeshop::app()).await;
+    // The three blocks are on the page, with their signatures.
+    app.get("/about/blocks")
+        .await
+        .assert_see(r#"id="field-form""#)
+        .assert_see(r#"type="radio" id="rx-score-5" name="score" value="5""#)
+        .assert_see(r#"name="location[lat]""#)
+        .assert_see(r#"name="location[at]""#)
+        .assert_see(r#"name="code""#)
+        .assert_see("rating(name, max=5")
+        .assert_see("geolocate(name, accuracy=none")
+        .assert_see("barcode_scan(name, value=none");
+    // Everything filled in passes; so does an empty form (nothing is stored).
+    app.post(
+        "/about/blocks/field",
+        &[
+            ("score", "4"),
+            ("code", "4006381333931"),
+            ("location[lat]", "40.4168"),
+            ("location[lng]", "-3.7038"),
+            ("location[accuracy]", "25"),
+            ("location[at]", "2026-10-18T09:30:00Z"),
+        ],
+    )
+    .await
+    .assert_status(303);
+    app.post("/about/blocks/field", &[])
+        .await
+        .assert_status(303);
+    // The server checks what the blocks only discourage.
+    app.htmx()
+        .post("/about/blocks/field", &[("score", "9")])
+        .await
+        .assert_invalid("score");
+    app.htmx()
+        .post(
+            "/about/blocks/field",
+            &[
+                ("location[lat]", "123"),
+                ("location[lng]", "0"),
+                ("location[accuracy]", "10"),
+            ],
+        )
+        .await
+        .assert_invalid("location");
+}
+
+#[renox::test]
+async fn the_shop_allows_the_camera_and_the_position_for_itself() {
+    let app = TestApp::new(bikeshop::app()).await;
+    let page = app.get("/about/blocks").await;
+    let policy = page.header("permissions-policy").unwrap_or_default();
+    assert!(policy.contains("geolocation=(self)"), "{policy}");
+    assert!(policy.contains("camera=(self)"), "{policy}");
+    assert!(policy.contains("microphone=()"), "{policy}");
+}
+
 #[renox::test]
 async fn the_page_speaks_spanish() {
     let app = TestApp::new(bikeshop::app()).await;
@@ -310,5 +429,24 @@ async fn the_page_speaks_spanish() {
         .assert_see("Foto anterior")
         .assert_see("Reservar Trail 5 a las 09:00")
         .assert_see("Reservar Bay 1, ")
-        .assert_see("paso actual");
+        .assert_see("paso actual")
+        .assert_see("Valoración, posición y código de barras")
+        // The map blocks, with no tiles configured: the note, in Spanish.
+        .assert_see("Punto de recogida")
+        .assert_see("El mapa no se muestra: no hay teselas configuradas. Define BLOCKS_MAP_TILES");
+}
+
+/// Without `BLOCKS_MAP_TILES` the demo maps explain what is missing, and the
+/// picker's typed coordinates still work (no canvas, no tiles host).
+#[renox::test]
+async fn the_demo_maps_explain_a_missing_tile_setting() {
+    let app = TestApp::new(bikeshop::app()).await;
+    let page = app.get("/about/blocks").await;
+    page.assert_ok()
+        .assert_see("The map is not shown: no map tiles are configured. Set BLOCKS_MAP_TILES")
+        .assert_see("name=\"pickup[lat]\"")
+        .assert_see("name=\"zone\" data-rx-map-value")
+        .assert_dont_see("data-rx-map-tiles")
+        // The vertices stay a typed field with its own label.
+        .assert_see("Vertices (latitude, longitude, one per line)");
 }

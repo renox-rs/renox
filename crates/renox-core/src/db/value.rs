@@ -128,6 +128,56 @@ impl ToDbValue for String {
     }
 }
 
+/// The currency's ISO 4217 code, stored as `TEXT` (`"USD"`).
+impl ToDbValue for crate::money::Currency {
+    fn to_db_value(&self) -> DbValue {
+        DbValue::Text(self.code().to_owned())
+    }
+}
+
+/// The amount in minor units, stored as `BIGINT`. The currency goes in its
+/// own column: bind `money.currency` next to it.
+impl ToDbValue for crate::money::Money {
+    fn to_db_value(&self) -> DbValue {
+        DbValue::Integer(self.minor)
+    }
+}
+
+/// The scaled integer, stored as `BIGINT`: exact on both databases. The scale
+/// lives in the Rust type, not in the schema.
+impl<const S: u32> ToDbValue for crate::quantity::Quantity<S> {
+    fn to_db_value(&self) -> DbValue {
+        DbValue::Integer(self.raw())
+    }
+}
+
+/// Reads a `Quantity` from its `BIGINT` column (`FromDb` through sqlx).
+macro_rules! quantity_column {
+    ($db:ty) => {
+        impl<const S: u32> sqlx::Type<$db> for crate::quantity::Quantity<S> {
+            fn type_info() -> <$db as sqlx::Database>::TypeInfo {
+                <i64 as sqlx::Type<$db>>::type_info()
+            }
+
+            fn compatible(ty: &<$db as sqlx::Database>::TypeInfo) -> bool {
+                <i64 as sqlx::Type<$db>>::compatible(ty)
+            }
+        }
+
+        impl<'r, const S: u32> sqlx::Decode<'r, $db> for crate::quantity::Quantity<S> {
+            fn decode(
+                value: <$db as sqlx::Database>::ValueRef<'r>,
+            ) -> Result<Self, sqlx::error::BoxDynError> {
+                Ok(Self::from_raw(<i64 as sqlx::Decode<$db>>::decode(value)?))
+            }
+        }
+    };
+}
+
+quantity_column!(sqlx::sqlite::Sqlite);
+#[cfg(feature = "postgres")]
+quantity_column!(sqlx::postgres::Postgres);
+
 impl ToDbValue for Vec<u8> {
     fn to_db_value(&self) -> DbValue {
         DbValue::Blob(self.clone())

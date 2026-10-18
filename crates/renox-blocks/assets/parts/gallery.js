@@ -18,7 +18,10 @@ export function setup(gallery, kit) {
   let index = 0;
   let sliding = null;
 
-  const at = (n) => `translateX(${-n * viewport.clientWidth}px)`;
+  // +1 in left-to-right text, -1 in right-to-left: the first photo sits at
+  // the start edge, so the track moves the other way in RTL. Read at use time.
+  const sign = () => (getComputedStyle(viewport).direction === "rtl" ? -1 : 1);
+  const at = (n) => `translateX(${-sign() * n * viewport.clientWidth}px)`;
 
   // At rest the track sits at the current photo, in pixels, and follows
   // the gallery's width when the window changes.
@@ -79,7 +82,7 @@ export function setup(gallery, kit) {
   });
 
   gallery.addEventListener("keydown", (event) => {
-    const keys = { ArrowLeft: index - 1, ArrowRight: index + 1, Home: 0, End: slides.length - 1 };
+    const keys = { ArrowLeft: index - sign(), ArrowRight: index + sign(), Home: 0, End: slides.length - 1 };
     if (!(event.key in keys) || event.altKey || event.ctrlKey || event.metaKey) return;
     event.preventDefault();
     show(keys[event.key]);
@@ -93,7 +96,7 @@ export function setup(gallery, kit) {
   let drag = null;
   viewport.addEventListener("pointerdown", (event) => {
     if (event.button !== 0) return;
-    drag = { id: event.pointerId, x: event.clientX, at: -index * viewport.clientWidth, dx: 0, time: Date.now(), moved: false };
+    drag = { id: event.pointerId, x: event.clientX, at: -sign() * index * viewport.clientWidth, dx: 0, time: Date.now(), moved: false };
   });
   viewport.addEventListener("pointermove", (event) => {
     if (!drag || event.pointerId !== drag.id) return;
@@ -108,7 +111,8 @@ export function setup(gallery, kit) {
         // The pointer is gone already.
       }
     }
-    const edge = (index === 0 && drag.dx > 0) || (index === slides.length - 1 && drag.dx < 0);
+    const forward = drag.dx * sign() < 0;
+    const edge = (index === 0 && !forward) || (index === slides.length - 1 && forward);
     track.style.transform = `translateX(${drag.at + (edge ? drag.dx / 3 : drag.dx)}px)`;
   });
   function release(event) {
@@ -118,7 +122,7 @@ export function setup(gallery, kit) {
     if (!done.moved) return;
     const width = viewport.clientWidth;
     const fast = Math.abs(done.dx) / Math.max(1, Date.now() - done.time) > 0.5;
-    const step = Math.abs(done.dx) > width / 5 || fast ? (done.dx < 0 ? 1 : -1) : 0;
+    const step = Math.abs(done.dx) > width / 5 || fast ? (done.dx * sign() < 0 ? 1 : -1) : 0;
     show(index + step, done.at + done.dx);
   }
   viewport.addEventListener("pointerup", release);

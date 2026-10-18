@@ -16,6 +16,7 @@ pub struct Registry {
     pub(crate) schedule: Schedule,
     pub(crate) duplicate_job: Option<&'static str>,
     pub(crate) webhooks: HashMap<&'static str, crate::webhook::HandleFn>,
+    pub(crate) webhook_events: HashMap<TypeId, crate::webhook::outbound::EventDef>,
     pub(crate) live_components: HashMap<&'static str, crate::live_component::LiveFn>,
     pub(crate) duplicate_live: Option<&'static str>,
     pub(crate) commands: Vec<crate::command::Command>,
@@ -47,6 +48,14 @@ pub struct Registry {
     /// that owns their table is on.
     pub(crate) settings_groups: Vec<crate::settings::Group>,
     pub(crate) settings_module: bool,
+    /// Links modules add to named menus (`nav`), and the ones they hide.
+    pub(crate) nav_links: Vec<(String, crate::nav::NavLink)>,
+    pub(crate) nav_hidden: Vec<(String, String)>,
+    /// Secrets of the senders whose signed requests are accepted
+    /// (`signing_key`), by key id.
+    pub(crate) signing_keys: HashMap<String, String>,
+    /// Values modules contribute for other modules to collect (`contribute`).
+    pub(crate) contributions: crate::Contributions,
 }
 
 /// A seeder registered with `App::seeder` or `Registry::seeder`.
@@ -125,6 +134,28 @@ impl Registry {
             self.duplicate_job.get_or_insert(W::PROVIDER);
         }
         self
+    }
+
+    /// Makes `E` a webhook event named `name`: endpoints subscribed to it
+    /// get `map(&event)` as the payload's `data`. A plain `state.emit(event)`
+    /// queues the deliveries; inside a transaction use
+    /// `renox::webhook::outbound::emit_in`.
+    pub fn webhook_event<E: Event>(
+        &mut self,
+        name: &str,
+        map: impl Fn(&E) -> serde_json::Value + Send + Sync + 'static,
+    ) -> &mut Self {
+        let map = std::sync::Arc::new(map);
+        let mapper = std::sync::Arc::clone(&map);
+        self.webhook_events.insert(
+            TypeId::of::<E>(),
+            crate::webhook::outbound::EventDef::new::<E>(name, move |event| mapper(event)),
+        );
+        let name = name.to_owned();
+        self.listen(move |event: E, state| {
+            let (name, data) = (name.clone(), map(&event));
+            async move { crate::webhook::outbound::emit_alone(&state, &name, data).await }
+        })
     }
 
     /// Runs `listener` whenever an `E` is emitted.
@@ -426,6 +457,53 @@ impl Registry {
     {
         self.account_sections
             .push(crate::auth::account::section(template, order, data));
+        self
+    }
+
+    /// Adds `link` to the navigation menu `menu`. A second link with the same
+    /// key in one menu is a boot error; see [`crate::nav::NavLink`].
+    pub fn nav(&mut self, menu: &str, link: crate::nav::NavLink) -> &mut Self {
+        self.nav_links.push((menu.to_owned(), link));
+        self
+    }
+
+    /// Removes the link with `key` from the menu `menu`, whichever module
+    /// added it.
+    pub fn nav_hide(&mut self, menu: &str, key: &str) -> &mut Self {
+        self.nav_hidden.push((menu.to_owned(), key.to_owned()));
+        self
+    }
+
+    /// Registers the secret (`whsec_<base64>`) a sender signs its requests
+    /// with, under the key id it sends in `webhook-key-id` (see
+    /// `Request::sign`). A second key with the same id replaces the first,
+    /// which is how a key is rotated.
+    pub fn signing_key(&mut self, key_id: &str, secret: &str) -> &mut Self {
+        self.signing_keys
+            .insert(key_id.to_owned(), secret.to_owned());
+        self
+    }
+
+    /// Adds a value of type `T` for another module to collect. Many values
+    /// of one type are kept in order: the app's first, then each module's.
+    /// They are read through [`crate::Contributions::all`].
+    ///
+    /// ```
+    /// use renox::prelude::*;
+    ///
+    /// struct Widget(&'static str);
+    ///
+    /// struct Shop;
+    /// impl Module for Shop {
+    ///     fn name(&self) -> &'static str { "shop" }
+    ///     fn register(&self, app: &mut Registry) {
+    ///         app.contribute(Widget("orders"));
+    ///     }
+    /// }
+    /// # let _ = Shop;
+    /// ```
+    pub fn contribute<T: Send + Sync + 'static>(&mut self, value: T) -> &mut Self {
+        self.contributions.push(value);
         self
     }
 

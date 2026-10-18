@@ -1,0 +1,11 @@
+{#- __crate__: the page at /__crate__. Replace it with
+    resources/views/__crate__/index.html in your app. -#}
+<rx-page layout="layouts/app.html" :title="heading">
+  <rx-stack>
+    <rx-page-header :title="heading"/>
+    <rx-table :rows="entries" as="entry" :key="entry.id" :caption="heading">
+      <rx-column label="Title">{{ entry.title }}</rx-column>
+      <rx-slot name="empty"><rx-empty :title="empty"/></rx-slot>
+    </rx-table>
+  </rx-stack>
+</rx-page>

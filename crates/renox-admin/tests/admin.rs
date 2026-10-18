@@ -7,7 +7,8 @@ use renox::grid::Column;
 use renox::prelude::*;
 use renox::testing::TestApp;
 use renox_admin::{
-    Admin, AdminAction, AdminResource, Entry, Field, Filter, RelationManager, SaveContext, Slot,
+    Admin, AdminAction, AdminEntry, AdminResource, Entry, Field, Filter, RelationManager,
+    SaveContext, Slot,
 };
 use serde::{Deserialize, Serialize};
 
@@ -2155,4 +2156,358 @@ async fn the_panels_own_words_follow_the_apps_translations() {
         .assert_hx_redirect("/admin/products");
     let toast = app.get("/admin/products").await.text();
     assert!(toast.contains("Producto guardado."), "{toast}");
+}
+
+// ---------- #31: resources from modules ----------
+
+/// A module that adds the categories to the app's panel.
+struct Hr;
+
+impl Module for Hr {
+    fn name(&self) -> &'static str {
+        "hr"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        renox_admin::contribute(app, Categories);
+    }
+}
+
+/// A module that adds the categories too, maybe to a named panel.
+struct Billing(Option<&'static str>);
+
+impl Module for Billing {
+    fn name(&self) -> &'static str {
+        "billing"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        let entry = AdminEntry::new(Categories);
+        app.contribute(match self.0 {
+            Some(panel) => entry.panel(panel),
+            None => entry,
+        });
+    }
+}
+
+async fn booted(app: App) -> TestApp {
+    TestApp::new(app.migrations(renox::migrations!("tests/migrations"))).await
+}
+
+#[renox::test]
+async fn a_module_adds_a_resource_to_the_panel() {
+    // The module is listed after the panel: order does not matter.
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(
+                Admin::new()
+                    .authorize(|u| u.email.ends_with("@example.com"))
+                    .resource(Products),
+            )
+            .module(Hr),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.get("/admin/categories").await.assert_ok();
+    app.get("/admin/categories/create").await.assert_ok();
+    let nav = app.get("/admin/products").await.text();
+    assert!(nav.contains("/admin/categories"), "{nav}");
+    assert_eq!(
+        app.state().url("admin.categories.index", &[]).unwrap(),
+        "/admin/categories"
+    );
+    // The panel's gate applies to it.
+    let stranger = user(&app, "x@elsewhere.test").await;
+    app.acting_as(&stranger);
+    app.get("/admin/categories").await.assert_forbidden();
+}
+
+#[renox::test]
+async fn only_own_resources_ignores_contributions() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).only_own_resources())
+            .module(Hr),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.get("/admin/categories").await.assert_not_found();
+}
+
+#[renox::test]
+async fn a_named_panel_takes_only_its_entries() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).named("staff"))
+            .module(Billing(Some("staff"))),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.get("/admin/categories").await.assert_ok();
+}
+
+/// The categories again under another slug, in a navigation group.
+struct People;
+
+impl AdminResource for People {
+    type Model = Category;
+    type Form = CategoryForm;
+
+    fn label(&self) -> &str {
+        "Person"
+    }
+
+    fn plural_label(&self) -> &str {
+        "People"
+    }
+
+    fn slug(&self) -> &str {
+        "people"
+    }
+
+    fn navigation_group(&self) -> Option<&str> {
+        Some("Humans")
+    }
+
+    fn columns(&self) -> Vec<Column> {
+        vec![Column::text("name", "Name")]
+    }
+
+    fn fields(&self) -> Vec<Field> {
+        vec![Field::text("name", "Name").required()]
+    }
+
+    fn fill(&self, category: &mut Category, form: CategoryForm) {
+        category.name = form.name;
+    }
+
+    /// Nobody may delete a person called "Keep", whatever the policy says.
+    fn allows(&self, user: &AuthUser, ability: &str, record: Option<&Category>) -> bool {
+        if ability == "delete" && record.is_some_and(|c| c.name == "Keep") {
+            return false;
+        }
+        user.email == "owner@example.com"
+    }
+}
+
+struct Crew;
+
+impl Module for Crew {
+    fn name(&self) -> &'static str {
+        "crew"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        renox_admin::contribute(app, People);
+    }
+}
+
+#[renox::test]
+async fn a_contributed_resource_has_every_page_its_group_and_its_allows() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).resource(Products))
+            .module(Crew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.post("/admin/people", &[("name", "Ana")])
+        .await
+        .assert_redirect("/admin/people");
+    app.post("/admin/people", &[("name", "Keep")])
+        .await
+        .assert_redirect("/admin/people");
+    app.assert_database_count("categories", 2).await;
+    let rows = Category::all(app.db()).await.unwrap();
+    let ana = rows.iter().find(|c| c.name == "Ana").unwrap();
+    let keep = rows.iter().find(|c| c.name == "Keep").unwrap();
+    app.get("/admin/people")
+        .await
+        .assert_ok()
+        .assert_see(&format!("/admin/people/{}/edit", ana.id));
+    app.get("/admin/people/create").await.assert_ok();
+    app.get(&format!("/admin/people/{}/edit", ana.id))
+        .await
+        .assert_ok();
+    app.put(&format!("/admin/people/{}", ana.id), &[("name", "Anna")])
+        .await
+        .assert_redirect("/admin/people");
+    app.get("/admin/people").await.assert_see("Anna");
+    // The group heading comes with the link.
+    let html = app.get("/admin").await.text();
+    let group = html.find(">Humans<").expect("the group's heading");
+    assert!(html[group..].contains("/admin/people"), "{html}");
+    // The resource's own `allows` is asked.
+    app.delete(&format!("/admin/people/{}", keep.id))
+        .await
+        .assert_forbidden();
+    app.assert_database_count("categories", 2).await;
+    app.delete(&format!("/admin/people/{}", ana.id))
+        .await
+        .assert_redirect("/admin/people");
+    app.assert_database_count("categories", 1).await;
+}
+
+/// Adds the people to the panel named "ops".
+struct OpsCrew;
+
+impl Module for OpsCrew {
+    fn name(&self) -> &'static str {
+        "ops_crew"
+    }
+
+    fn register(&self, app: &mut Registry) {
+        app.contribute(AdminEntry::new(People).panel("ops"));
+    }
+}
+
+#[renox::test]
+async fn two_named_panels_run_side_by_side() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(
+                Admin::new()
+                    .authorize(|_| true)
+                    .named("staff")
+                    .resource(Products),
+            )
+            .module(
+                Admin::new()
+                    .path("/ops")
+                    .authorize(|_| true)
+                    .named("ops")
+                    .resource(Products),
+            )
+            .module(Billing(Some("staff")))
+            .module(OpsCrew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    // Each panel has its own route names.
+    let url = |name: &str| app.state().url(name, &[]).unwrap();
+    assert_eq!(url("admin.staff.dashboard"), "/admin");
+    assert_eq!(url("admin.ops.dashboard"), "/ops");
+    assert_eq!(url("admin.staff.products.index"), "/admin/products");
+    assert_eq!(url("admin.ops.products.index"), "/ops/products");
+    app.get("/admin/products").await.assert_ok();
+    app.get("/ops/products").await.assert_ok();
+    // A contribution lands only in the panel it names.
+    app.get("/admin/categories").await.assert_ok();
+    app.get("/ops/categories").await.assert_not_found();
+    app.get("/ops/people").await.assert_ok();
+    app.get("/admin/people").await.assert_not_found();
+}
+
+#[renox::test]
+async fn a_named_panel_does_not_take_the_unnamed_entries() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(
+                Admin::new()
+                    .authorize(|_| true)
+                    .named("staff")
+                    .resource(Products),
+            )
+            .module(Billing(Some("staff")))
+            .module(Crew),
+    )
+    .await;
+    let owner = user(&app, "owner@example.com").await;
+    app.acting_as(&owner);
+    app.get("/admin/categories").await.assert_ok();
+    app.get("/admin/people").await.assert_not_found();
+}
+
+#[renox::test]
+async fn contributed_routes_show_in_the_route_list() {
+    let app = booted(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().authorize(|_| true).resource(Products))
+            .module(Hr),
+    )
+    .await;
+    let routes = app.kernel().routes();
+    for (method, path, name) in [
+        ("GET", "/admin/categories", "admin.categories.index"),
+        ("GET", "/admin/categories/create", "admin.categories.create"),
+        ("POST", "/admin/categories", "admin.categories.store"),
+        (
+            "GET",
+            "/admin/categories/{id}/edit",
+            "admin.categories.edit",
+        ),
+    ] {
+        let route = routes
+            .iter()
+            .find(|r| r.method == method && r.path == path)
+            .unwrap_or_else(|| panic!("{method} {path} is not listed"));
+        assert_eq!(route.name.as_deref(), Some(name), "{path}");
+        assert_eq!(route.module, "admin", "{path}");
+    }
+}
+
+/// The message of the panic a boot raises.
+fn boot_panic(app: App) -> String {
+    let result = std::thread::spawn(move || {
+        renox::tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap()
+            .block_on(TestApp::new(app));
+    })
+    .join();
+    let payload = result.expect_err("the boot should fail");
+    payload
+        .downcast_ref::<String>()
+        .cloned()
+        .or_else(|| payload.downcast_ref::<&str>().map(|s| (*s).to_owned()))
+        .unwrap_or_default()
+}
+
+#[test]
+fn clashing_slugs_fail_the_boot_naming_both() {
+    let own = boot_panic(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().resource(Categories))
+            .module(Hr),
+    );
+    assert!(
+        own.contains("\"categories\" is contributed by the app's Admin and by hr"),
+        "{own}"
+    );
+    let two = boot_panic(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new())
+            .module(Hr)
+            .module(Billing(None)),
+    );
+    assert!(
+        two.contains("\"categories\" is contributed by hr and by billing"),
+        "{two}"
+    );
+}
+
+#[test]
+fn entries_for_an_unknown_panel_fail_the_boot() {
+    let msg = boot_panic(
+        App::new()
+            .module(Auth::new())
+            .module(Admin::new().named("staff"))
+            .module(Billing(Some("ops"))),
+    );
+    assert!(msg.contains("no Admin is named \"ops\""), "{msg}");
 }

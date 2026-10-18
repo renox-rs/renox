@@ -330,6 +330,69 @@ async fn checkout_sends_the_user_to_stripe_with_the_plan_and_its_trial() {
 }
 
 #[renox::test]
+async fn a_resolved_key_is_asked_on_every_call_and_never_shown() {
+    let key = std::sync::Arc::new(std::sync::Mutex::new("sk_first".to_string()));
+    let shared = key.clone();
+    let stripe = Stripe::resolved(move |_state| {
+        let key = shared.lock().unwrap().clone();
+        async move { Ok(Some(key)) }
+    });
+    assert_eq!(
+        format!("{stripe:?}").matches("sk_").count(),
+        0,
+        "{stripe:?}"
+    );
+    let billing = Billing::new()
+        .plan(
+            Plan::new("basic", "Basic")
+                .price(900, "USD", Interval::Month)
+                .price_id("stripe", "price_basic"),
+        )
+        .gateway(stripe);
+    let app = app_with(billing).await;
+    user(&app, "Ana").await;
+    let http = stripe_checkout(&app);
+    app.post("/billing/checkout/basic", &[])
+        .await
+        .assert_status(303);
+    // The key is changed in the store: the next call uses it, no restart.
+    *key.lock().unwrap() = "sk_second".to_string();
+    app.post("/billing/checkout/basic", &[])
+        .await
+        .assert_status(303);
+    let auth: Vec<_> = http
+        .sent()
+        .iter()
+        .map(|r| r.header("authorization").map(str::to_owned))
+        .collect();
+    assert_eq!(
+        auth,
+        [
+            Some("Bearer sk_first".to_string()),
+            Some("Bearer sk_first".to_string()),
+            Some("Bearer sk_second".to_string()),
+        ]
+    );
+}
+
+#[renox::test]
+async fn a_resolver_without_a_key_fails_without_showing_anything() {
+    let billing = Billing::new()
+        .plan(
+            Plan::new("basic", "Basic")
+                .price(900, "USD", Interval::Month)
+                .price_id("stripe", "price_basic"),
+        )
+        .gateway(Stripe::resolved(|_state| async { Ok(None) }));
+    let app = app_with(billing).await;
+    user(&app, "Ana").await;
+    let http = stripe_checkout(&app);
+    let response = app.post("/billing/checkout/basic", &[]).await;
+    assert!(http.sent().is_empty(), "no call without a key");
+    assert!(!response.text().contains("sk_"));
+}
+
+#[renox::test]
 async fn webhooks_make_and_update_the_subscription_once_each() {
     let app = app().await;
     app.fake_events();
@@ -2410,5 +2473,2175 @@ async fn a_custom_gateway_verifies_webhooks_with_the_app_state() {
         Manual
             .verify_webhook_with(app.state(), &Default::default(), b"")
             .is_ok()
+    );
+}
+
+#[renox::test]
+async fn payments_and_refunds_are_stored_with_money_and_the_reference() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, BillingRefund, PaymentKind, PaymentStatus, RefundStatus};
+
+    let app = app().await;
+    let mut new = BillingPayment::new("stripe", PaymentKind::Link, Money::usd(4_500));
+    new.reference_type = Some("job".into());
+    new.reference_id = Some("17".into());
+    new.gateway_id = Some("cs_1".into());
+    let payment = BillingPayment::create(app.db(), new).await.unwrap();
+    assert_eq!(payment.amount, Money::usd(4_500));
+    assert_eq!(payment.status, PaymentStatus::Pending);
+    assert!(payment.owner().is_none());
+    assert_eq!(payment.refundable(), Money::usd(0));
+
+    let found = BillingPayment::find_at(app.db(), "stripe", "cs_1")
+        .await
+        .unwrap()
+        .expect("found by gateway id");
+    assert_eq!(found.id, payment.id);
+    let by_reference = BillingPayment::for_reference(app.db(), "job", "17")
+        .await
+        .unwrap();
+    assert_eq!(by_reference.len(), 1);
+
+    let mut paid = found;
+    paid.status = PaymentStatus::PartiallyRefunded;
+    paid.refunded_amount = 1_000;
+    paid.save(app.db()).await.unwrap();
+    assert_eq!(paid.refunded(), Money::usd(1_000));
+    assert_eq!(paid.refundable(), Money::usd(3_500));
+
+    BillingRefund::create(
+        app.db(),
+        BillingRefund {
+            payment_id: paid.id,
+            amount: 1_000,
+            status: RefundStatus::Succeeded,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(paid.refunds(app.db()).await.unwrap().len(), 1);
+}
+
+#[test]
+fn unsupported_names_the_gateway_and_the_operation() {
+    use renox_billing::Unsupported;
+
+    let err: Error = Unsupported::new("xendit", "accept_dispute").into();
+    let found = Unsupported::of(&err).expect("downcast");
+    assert_eq!(found.gateway, "xendit");
+    assert_eq!(found.operation, "accept_dispute");
+    assert!(Unsupported::of(&Error::NotFound).is_none());
+}
+
+/// A webhook signed with `secret`, posted to `path`.
+async fn signed_stripe(app: &TestApp, path: &str, id: &str, secret: &str) -> TestResponse {
+    let payload = json!({
+        "id": id, "object": "event", "type": "ping", "created": 1,
+        "data": { "object": {} },
+    })
+    .to_string();
+    let t = now(app).await;
+    let signature = renox::webhook::hmac_sha256_hex(secret, format!("{t}.{payload}"));
+    app.request()
+        .header("stripe-signature", &format!("t={t},v1={signature}"))
+        .post_body(path, "application/json", payload)
+        .await
+}
+
+#[renox::test]
+async fn webhooks_of_a_named_account_use_that_accounts_secret() {
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::from_config()));
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("STRIPE_SECRET", "sk_test_1"),
+            ("STRIPE_WEBHOOK_SECRET", "whsec_default"),
+            ("STRIPE_WEBHOOK_SECRET_ACME_LLC", "whsec_acme"),
+            ("STRIPE_WEBHOOK_SECRET_B", "whsec_b"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let acme = "/billing/webhooks/stripe/acme-llc";
+
+    // The account's secret verifies; the default's and another account's don't.
+    signed_stripe(&app, acme, "evt_1", "whsec_acme")
+        .await
+        .assert_ok();
+    signed_stripe(&app, acme, "evt_2", "whsec_default")
+        .await
+        .assert_unauthorized();
+    signed_stripe(&app, acme, "evt_3", "whsec_b")
+        .await
+        .assert_unauthorized();
+    // The default URL keeps the default secret only.
+    signed_stripe(&app, "/billing/webhooks/stripe", "evt_1", "whsec_default")
+        .await
+        .assert_ok();
+    signed_stripe(&app, "/billing/webhooks/stripe", "evt_4", "whsec_acme")
+        .await
+        .assert_unauthorized();
+    // Dedupe is per account: the same event id at the default account is
+    // another event; a repeat at the same account changes nothing.
+    app.assert_database_count("webhook_calls", 2).await;
+    signed_stripe(&app, acme, "evt_1", "whsec_acme")
+        .await
+        .assert_ok();
+    app.assert_database_count("webhook_calls", 2).await;
+
+    // An unknown or malformed account, or a gateway without accounts, is a 404.
+    for path in [
+        "/billing/webhooks/stripe/nobody",
+        "/billing/webhooks/stripe/bad%20name",
+        "/billing/webhooks/paypal/acme-llc",
+    ] {
+        signed_stripe(&app, path, "evt_9", "whsec_acme")
+            .await
+            .assert_not_found();
+    }
+}
+
+/// A gateway that implements none of the one-off payment methods.
+struct Bare;
+
+impl renox_billing::Gateway for Bare {
+    fn name(&self) -> &str {
+        "bare"
+    }
+    fn label(&self) -> &str {
+        "Bare"
+    }
+    fn configured(&self, _config: &Config) -> bool {
+        true
+    }
+    fn create_customer<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _owner: &'a renox_billing::Owner,
+    ) -> renox_billing::BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok("bare-1".into()) })
+    }
+    fn checkout<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a renox_billing::CheckoutRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Checkout>> {
+        Box::pin(async { Ok(renox_billing::Checkout::redirect("/bare")) })
+    }
+    fn swap<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _plan: &'a Plan,
+        _prorate: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn cancel<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _at_period_end: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn verify_webhook(
+        &self,
+        _config: &Config,
+        _headers: &renox::axum::http::HeaderMap,
+        _body: &[u8],
+    ) -> Result {
+        Ok(())
+    }
+    fn parse_webhook(&self, _body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
+        Ok(Vec::new())
+    }
+}
+
+#[renox::test]
+async fn operations_a_gateway_does_not_have_answer_unsupported() {
+    use renox::money::{Currency, Money};
+    use renox_billing::payment::{Charge, PaymentLink, Refund, Unsupported};
+    use renox_billing::{BillingPayment, Gateway, PaymentKind};
+
+    let app = app().await;
+    let state = app.state();
+    let money = Money::new(1_000, Currency::parse("USD").unwrap());
+    let charge = Charge::new(money).account("acme-llc");
+    let link = PaymentLink::new(money);
+    let payment = BillingPayment::new("bare", PaymentKind::Charge, money);
+    let refund = Refund::new(money);
+    // A gateway that implements none of the new methods.
+    let gateway = Bare;
+
+    let refusals = [
+        (
+            "charge",
+            gateway.charge(state, charge.request()).await.err(),
+        ),
+        (
+            "payment_link",
+            gateway.payment_link(state, link.request()).await.err(),
+        ),
+        (
+            "refund",
+            gateway.refund(state, &payment, &refund).await.err(),
+        ),
+        (
+            "payment_status",
+            gateway.payment_status(state, &payment).await.err(),
+        ),
+        (
+            "accept_dispute",
+            gateway.accept_dispute(state, &payment).await.err(),
+        ),
+    ];
+    for (operation, err) in refusals {
+        let err = err.unwrap_or_else(|| panic!("{operation} should be refused"));
+        let found = Unsupported::of(&err).expect("a typed refusal");
+        assert_eq!(found.gateway, "bare");
+        assert_eq!(found.operation, operation);
+    }
+}
+
+/// A gateway of the app's own that can charge, link, refund and report.
+struct PayHub {
+    calls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl renox_billing::Gateway for PayHub {
+    fn name(&self) -> &str {
+        "payhub"
+    }
+    fn label(&self) -> &str {
+        "PayHub"
+    }
+    fn configured(&self, _config: &Config) -> bool {
+        true
+    }
+    fn create_customer<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _owner: &'a renox_billing::Owner,
+    ) -> renox_billing::BoxFuture<'a, Result<String>> {
+        Box::pin(async { Ok("hub-1".into()) })
+    }
+    fn checkout<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _request: &'a renox_billing::CheckoutRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Checkout>> {
+        Box::pin(async { Ok(renox_billing::Checkout::redirect("/hub")) })
+    }
+    fn swap<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _plan: &'a Plan,
+        _prorate: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn cancel<'a>(
+        &'a self,
+        _state: &'a AppState,
+        _subscription: &'a Subscription,
+        _at_period_end: bool,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::Remote>> {
+        Box::pin(async { Err(Error::BadRequest("no".into())) })
+    }
+    fn verify_webhook(
+        &self,
+        _config: &Config,
+        _headers: &renox::axum::http::HeaderMap,
+        _body: &[u8],
+    ) -> Result {
+        Ok(())
+    }
+    fn parse_webhook(&self, body: &[u8]) -> Result<Vec<renox_billing::Notice>> {
+        use renox_billing::{
+            DisputeState, DisputeUpdate, Notice, PaymentStatus, PaymentUpdate, RefundStatus,
+            RefundUpdate,
+        };
+        let json: renox::serde_json::Value = renox::serde_json::from_slice(body)?;
+        let text = |key: &str| json[key].as_str().unwrap_or_default().to_owned();
+        let at = json["at"].as_i64();
+        let status = match text("status").as_str() {
+            "succeeded" => PaymentStatus::Succeeded,
+            "failed" => PaymentStatus::Failed,
+            "expired" => PaymentStatus::Expired,
+            _ => PaymentStatus::Pending,
+        };
+        Ok(match text("kind").as_str() {
+            "payment" => {
+                let mut update = PaymentUpdate::new(text("pay"), status);
+                update.at = at;
+                vec![Notice::OneOff(update)]
+            }
+            "refund" => {
+                let refund_status = match text("status").as_str() {
+                    "succeeded" => RefundStatus::Succeeded,
+                    "failed" => RefundStatus::Failed,
+                    _ => RefundStatus::Pending,
+                };
+                let mut update =
+                    RefundUpdate::new(text("refund"), refund_status).payment(text("pay"));
+                update.reason = json["reason"].as_str().map(str::to_owned);
+                vec![Notice::Refund(update)]
+            }
+            "dispute" => {
+                let state = match text("status").as_str() {
+                    "won" => DisputeState::Won,
+                    "lost" => DisputeState::Lost,
+                    _ => DisputeState::Opened,
+                };
+                vec![Notice::Dispute(
+                    DisputeUpdate::new(text("pay"), state).evidence_due_by(renox::db::now()),
+                )]
+            }
+            _ => Vec::new(),
+        })
+    }
+    fn charge<'a>(
+        &'a self,
+        _state: &'a AppState,
+        request: &'a renox_billing::ChargeRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentPage>> {
+        self.calls.lock().unwrap().push(format!(
+            "charge {} {} {:?} {:?}",
+            request.payment_id,
+            request.amount.minor,
+            request.account,
+            request.metadata()
+        ));
+        let id = request.payment_id;
+        Box::pin(async move {
+            Ok(renox_billing::PaymentPage::new(
+                format!("pay_{id}"),
+                format!("https://pay.example/{id}"),
+            ))
+        })
+    }
+    fn payment_link<'a>(
+        &'a self,
+        state: &'a AppState,
+        request: &'a renox_billing::ChargeRequest,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentPage>> {
+        self.charge(state, request)
+    }
+    fn refund<'a>(
+        &'a self,
+        _state: &'a AppState,
+        payment: &'a renox_billing::BillingPayment,
+        refund: &'a renox_billing::Refund,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::RefundResult>> {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("refund {} {}", payment.id, refund.amount.minor));
+        let now = refund.reason.as_deref() == Some("now");
+        Box::pin(async move {
+            Ok(if now {
+                renox_billing::RefundResult::succeeded("re_1")
+            } else {
+                renox_billing::RefundResult::pending("re_2")
+            })
+        })
+    }
+    fn payment_status<'a>(
+        &'a self,
+        _state: &'a AppState,
+        payment: &'a renox_billing::BillingPayment,
+    ) -> renox_billing::BoxFuture<'a, Result<renox_billing::PaymentState>> {
+        use renox_billing::PaymentStatus;
+        let status = match payment.reference_type.as_deref() {
+            Some("unpaid") => PaymentStatus::Pending,
+            Some("declined") => PaymentStatus::Failed,
+            Some("gone") => PaymentStatus::Expired,
+            _ if payment.gateway_id.is_some() => PaymentStatus::Succeeded,
+            _ => PaymentStatus::Pending,
+        };
+        Box::pin(async move { Ok(renox_billing::PaymentState::new(status)) })
+    }
+}
+
+fn assert_send<T: Send>(_: &T) {}
+
+/// Charges and links are written with their reference, owner and account,
+/// refunds are checked before the gateway and add up, and a gateway that
+/// cannot leaves no row.
+#[renox::test]
+async fn one_off_payments_are_stored_refunded_and_checked() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, Charge, PaymentLink, PaymentRefunded, PaymentStatus, Refund,
+        RefundStatus, RefundSucceeded, Unsupported,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(
+        Billing::new()
+            .gateway(PayHub {
+                calls: calls.clone(),
+            })
+            .gateway(Manual),
+    )
+    .await;
+    app.fake_events();
+    let user = user(&app, "Mia").await;
+    let state = app.state();
+
+    let customer = Billing::of(state, &user);
+    let charge = customer.charge(
+        Charge::new(Money::usd(4_500))
+            .reference("job", 42)
+            .account("acme"),
+    );
+    assert_send(&charge);
+    let payment = charge.await.unwrap();
+    assert_eq!(payment.gateway, "payhub");
+    assert_eq!(payment.account.as_deref(), Some("acme"));
+    assert_eq!(
+        payment.gateway_id.as_deref(),
+        Some(&*format!("pay_{}", payment.id))
+    );
+    assert_eq!(
+        payment.url.as_deref(),
+        Some(&*format!("https://pay.example/{}", payment.id))
+    );
+    assert_eq!(payment.status, PaymentStatus::Pending);
+    assert_eq!(payment.billable_id, Some(user.id));
+    assert_eq!(payment.reference_id.as_deref(), Some("42"));
+    let seen = calls.lock().unwrap()[0].clone();
+    assert!(
+        seen.contains("4500") && seen.contains("Some(\"acme\")"),
+        "{seen}"
+    );
+    assert!(
+        seen.contains(&format!("renox_payment\", \"{}", payment.id)),
+        "{seen}"
+    );
+    let found = BillingPayment::for_reference(&state.db, "job", "42")
+        .await
+        .unwrap();
+    assert_eq!(found.len(), 1);
+
+    // A link has no owner.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::usd(900)).reference("invoice", "7"),
+    )
+    .await
+    .unwrap();
+    assert!(link.billable_id.is_none() && link.url.is_some());
+
+    // Unsupported leaves nothing behind.
+    let before = BillingPayment::query().count(&state.db).await.unwrap();
+    let err = Billing::of(state, &user)
+        .charge(Charge::new(Money::usd(100)).via("manual"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "charge");
+    let err = Billing::payment_link(state, PaymentLink::new(Money::usd(100)).via("manual"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "payment_link");
+    assert_eq!(
+        BillingPayment::query().count(&state.db).await.unwrap(),
+        before
+    );
+    assert!(
+        Billing::of(state, &user)
+            .charge(Charge::new(Money::usd(0)))
+            .await
+            .is_err()
+    );
+
+    // Refunds need a paid payment.
+    let refund = |minor, reason: &str| Refund::new(Money::usd(minor)).reason(reason);
+    assert!(matches!(
+        Billing::refund(state, payment.id, refund(100, "x")).await,
+        Err(Error::BadRequest(_))
+    ));
+    let status = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(status.status, PaymentStatus::Succeeded);
+    let mut paid = payment.clone();
+    paid.status = PaymentStatus::Succeeded;
+    paid.save(&state.db).await.unwrap();
+
+    // Pending refunds count against what is left; over-refunding never
+    // reaches the gateway.
+    let calls_before = calls.lock().unwrap().len();
+    let pending = Billing::refund(state, payment.id, refund(3_000, "late"))
+        .await
+        .unwrap();
+    assert_eq!(pending.status, RefundStatus::Pending);
+    assert_eq!(pending.gateway_id.as_deref(), Some("re_2"));
+    assert!(matches!(
+        Billing::refund(state, payment.id, refund(1_501, "now")).await,
+        Err(Error::BadRequest(_))
+    ));
+    let euro = Money::new(1, renox::money::Currency::parse("EUR").unwrap());
+    assert!(matches!(
+        Billing::refund(state, payment.id, Refund::new(euro)).await,
+        Err(Error::BadRequest(_))
+    ));
+    assert_eq!(calls.lock().unwrap().len(), calls_before + 1);
+
+    // A refund done at once moves the payment and is announced.
+    let done = Billing::refund(state, payment.id, refund(1_000, "now"))
+        .await
+        .unwrap();
+    assert_eq!(done.status, RefundStatus::Succeeded);
+    let stored = BillingPayment::find(&state.db, payment.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    app.assert_emitted::<PaymentRefunded>(|e| e.payment.id == payment.id);
+    assert_eq!(stored.refunds(&state.db).await.unwrap().len(), 2);
+
+    // A gateway without refunds leaves no refund row.
+    let rows = BillingRefund::query().count(&state.db).await.unwrap();
+    let mut other = BillingPayment::new(
+        "manual",
+        renox_billing::PaymentKind::Charge,
+        Money::usd(500),
+    );
+    other.status = PaymentStatus::Succeeded;
+    let other = BillingPayment::create(&state.db, other).await.unwrap();
+    let err = Billing::refund(state, other.id, refund(100, "x"))
+        .await
+        .unwrap_err();
+    assert_eq!(Unsupported::of(&err).unwrap().operation, "refund");
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), rows);
+}
+
+/// Payment, refund and dispute notices are applied to the rows once, a late
+/// success is applied and a late failure is not, and each change carries the
+/// reference in its event.
+#[renox::test]
+async fn payment_webhooks_are_applied_once_with_the_late_success_rule() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, Charge, DisputeLost, DisputeOpened, DisputeWon, PaymentFailed,
+        PaymentRefunded, PaymentStatus, PaymentSucceeded, Refund, RefundFailed, RefundSucceeded,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let user = user(&app, "Mia").await;
+    let state = app.state();
+    let make = |reference: i32| {
+        let user = &user;
+        async move {
+            Billing::of(state, user)
+                .charge(Charge::new(Money::usd(4_500)).reference("job", reference))
+                .await
+                .unwrap()
+        }
+    };
+    let hook = |body: renox::serde_json::Value| {
+        let app = &app;
+        async move {
+            app.post_body(
+                "/billing/webhooks/payhub",
+                "application/json",
+                body.to_string(),
+            )
+            .await;
+            app.run_jobs().await;
+        }
+    };
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+
+    // Expired, then paid late: the success is applied and evented.
+    let a = make(1).await;
+    let pay = a.gateway_id.clone().unwrap();
+    hook(json!({"id": "e1", "kind": "payment", "pay": pay, "status": "expired", "at": 100})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Expired);
+    hook(json!({"id": "e2", "kind": "payment", "pay": pay, "status": "succeeded", "at": 50})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.reference_id.as_deref() == Some("1") && e.reference_type.as_deref() == Some("job")
+    });
+    // A failure after the success is ignored, and a redelivery fires nothing.
+    hook(json!({"id": "e3", "kind": "payment", "pay": pay, "status": "failed", "at": 200})).await;
+    hook(json!({"id": "e2", "kind": "payment", "pay": pay, "status": "succeeded", "at": 50})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::Succeeded);
+
+    // Refund: pending, failed with a reason, then done after all (a refund's
+    // success is never refused), once; a later failure is ignored.
+    let refund = Billing::refund(state, a.id, Refund::new(Money::usd(1_000)))
+        .await
+        .unwrap();
+    let rid = refund.gateway_id.clone().unwrap();
+    hook(json!({"id": "e4", "kind": "refund", "pay": pay, "refund": rid, "status": "failed", "reason": "closed"})).await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("closed"));
+    assert_eq!(reload(a.id).await.refunded_amount, 0);
+    hook(json!({"id": "e5", "kind": "refund", "pay": pay, "refund": rid, "status": "succeeded"}))
+        .await;
+    let stored = reload(a.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    hook(json!({"id": "e6", "kind": "refund", "pay": pay, "refund": rid, "status": "succeeded"}))
+        .await;
+    hook(json!({"id": "e7", "kind": "refund", "pay": pay, "refund": rid, "status": "failed"}))
+        .await;
+    assert_eq!(reload(a.id).await.refunded_amount, 1_000);
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    app.assert_emitted::<PaymentRefunded>(|e| e.payment.id == a.id);
+
+    // Disputes: opened, won (back to partially refunded), opened, lost.
+    hook(json!({"id": "e8", "kind": "dispute", "pay": pay, "status": "opened"})).await;
+    let stored = reload(a.id).await;
+    assert_eq!(stored.status, PaymentStatus::Disputed);
+    assert!(stored.evidence_due_by.is_some());
+    app.assert_emitted::<DisputeOpened>(|e| e.payment.id == a.id && e.evidence_due_by.is_some());
+    hook(json!({"id": "e9", "kind": "dispute", "pay": pay, "status": "won"})).await;
+    assert_eq!(reload(a.id).await.status, PaymentStatus::PartiallyRefunded);
+    app.assert_emitted::<DisputeWon>(|e| e.payment.id == a.id);
+    hook(json!({"id": "e10", "kind": "dispute", "pay": pay, "status": "opened"})).await;
+    hook(json!({"id": "e11", "kind": "dispute", "pay": pay, "status": "lost"})).await;
+    let stored = reload(a.id).await;
+    assert_eq!(
+        (stored.status, stored.refundable().minor),
+        (PaymentStatus::Refunded, 0)
+    );
+    app.assert_emitted::<DisputeLost>(|e| e.payment.id == a.id);
+
+    // A failed payment that is later asked about is paid: the status check
+    // applies it like a webhook.
+    let b = make(2).await;
+    let pay_b = b.gateway_id.clone().unwrap();
+    hook(json!({"id": "e12", "kind": "payment", "pay": pay_b, "status": "failed", "at": 10})).await;
+    assert_eq!(reload(b.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.reference_id.as_deref() == Some("2"));
+    Billing::payment_status(state, b.id).await.unwrap();
+    assert_eq!(reload(b.id).await.status, PaymentStatus::Succeeded);
+}
+
+/// A Stripe fixture (written from Stripe's public API docs).
+fn fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/stripe/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn stripe_charge() -> renox_billing::Charge {
+    renox_billing::Charge::new(renox::money::Money::usd(4_500))
+        .reference("job", 42)
+        .description("Brake service")
+        .success_url("https://shop.test/paid")
+        .cancel_url("https://shop.test/cancelled")
+}
+
+/// A Stripe charge and a Payment Link send the amount, the currency and the
+/// reference, and a paid, refunded and disputed charge is followed through
+/// status checks and webhooks.
+#[renox::test]
+async fn stripe_charges_links_refunds_and_disputes_against_fixtures() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentStatus, Refund, RefundFailed,
+        RefundStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::new("sk_test_fake", "whsec_test")));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/products"),
+        FakeResponse::json(200, fixture("product")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/payment_links"),
+        FakeResponse::json(200, fixture("payment_link")),
+    );
+
+    // A charge: Checkout in payment mode with the amount and the reference.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(payment.gateway_id.as_deref(), Some("cs_test_a1B2c3"));
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://checkout.stripe.com/c/pay/cs_test_a1B2c3")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].header("authorization"), Some("Bearer sk_test_fake"));
+    assert_eq!(sent[0].url, format!("{STRIPE}/checkout/sessions"));
+    let body = form(&sent[0].body);
+    for (name, value) in [
+        ("mode", "payment".to_owned()),
+        ("line_items[0][price_data][currency]", "usd".into()),
+        ("line_items[0][price_data][unit_amount]", "4500".into()),
+        (
+            "line_items[0][price_data][product_data][name]",
+            "Brake service".into(),
+        ),
+        ("client_reference_id", "42".into()),
+        ("metadata[renox_payment]", payment.id.to_string()),
+        ("metadata[renox_reference_type]", "job".into()),
+        ("metadata[renox_reference_id]", "42".into()),
+        (
+            "payment_intent_data[metadata][renox_reference_id]",
+            "42".into(),
+        ),
+        ("customer_email", "ana@example.com".into()),
+        ("success_url", "https://shop.test/paid".into()),
+    ] {
+        assert_eq!(
+            param(&body, name).as_deref(),
+            Some(value.as_str()),
+            "{name}"
+        );
+    }
+
+    // A link: a product, then the link, one payment per link.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::usd(900))
+            .reference("invoice", "7")
+            .description("Invoice 7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some("plink_1Abc"));
+    assert_eq!(
+        link.url.as_deref(),
+        Some("https://buy.stripe.com/test_9AQ1Abc")
+    );
+    let sent = http.sent();
+    assert_eq!(
+        param(&form(&sent[1].body), "name").as_deref(),
+        Some("Invoice 7")
+    );
+    assert_eq!(sent[2].url, format!("{STRIPE}/payment_links"));
+    let body = form(&sent[2].body);
+    for (name, value) in [
+        ("line_items[0][price_data][product]", "prod_Q1"),
+        ("line_items[0][price_data][unit_amount]", "900"),
+        ("line_items[0][price_data][currency]", "usd"),
+        ("restrictions[completed_sessions][limit]", "1"),
+        ("metadata[renox_reference_id]", "7"),
+    ] {
+        assert_eq!(param(&body, name).as_deref(), Some(value), "{name}");
+    }
+
+    // The session is paid (by webhook), then refunded in part.
+    stripe_webhook(
+        &app,
+        "evt_1",
+        "checkout.session.completed",
+        now(&app).await,
+        fixture("checkout_session_paid"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_paid")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/refunds"),
+        FakeResponse::json(200, fixture("refund_pending")),
+    );
+    let refund = Billing::refund(
+        state,
+        payment.id,
+        Refund::new(Money::usd(1_000)).reason("duplicate"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("re_3Abc"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.url, format!("{STRIPE}/refunds"));
+    let body = form(&made.body);
+    assert_eq!(param(&body, "payment_intent").as_deref(), Some("pi_3Abc"));
+    assert_eq!(param(&body, "amount").as_deref(), Some("1000"));
+    assert_eq!(
+        param(&body, "metadata[renox_reason]").as_deref(),
+        Some("duplicate")
+    );
+
+    // The refund fails, then Stripe's `charge.refunded` says it went through.
+    stripe_webhook(
+        &app,
+        "evt_2",
+        "charge.refund.updated",
+        now(&app).await,
+        fixture("event_refund_updated"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("expired_or_canceled_card"));
+    stripe_webhook(
+        &app,
+        "evt_3",
+        "charge.refunded",
+        now(&app).await,
+        fixture("event_charge_refunded"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // A status check on the link reads its newest session; the charge's
+    // refunds are reported; an expired session is reported expired.
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions?payment_link=plink_1Abc&limit=1"),
+        FakeResponse::json(200, fixture("session_list_paid")),
+    );
+    http.on(
+        &format!("GET {STRIPE}/refunds?payment_intent=pi_3Link"),
+        FakeResponse::json(200, json!({ "object": "list", "data": [] })),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Succeeded);
+    http.on(
+        &format!("GET {STRIPE}/refunds?payment_intent=pi_3Abc"),
+        FakeResponse::json(200, fixture("refund_list")),
+    );
+    // (Answers for one URL are given in turn: the paid session of the
+    // refund, then expired.)
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_expired")),
+    );
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    // An expiry after a success changes nothing.
+    assert_eq!(
+        reload(payment.id).await.status,
+        PaymentStatus::PartiallyRefunded
+    );
+
+    // Accepting a dispute on the link's payment closes it at Stripe.
+    http.on(
+        &format!("GET {STRIPE}/disputes?payment_intent=pi_3Link&limit=1"),
+        FakeResponse::json(200, fixture("dispute_list")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/disputes/dp_1Abc/close"),
+        FakeResponse::json(200, fixture("dispute_closed")),
+    );
+    let gateway = Stripe::new("sk_test_fake", "whsec_test");
+    renox_billing::Gateway::accept_dispute(&gateway, state, &reload(link.id).await)
+        .await
+        .unwrap();
+    http.assert_sent(|r| r.method == "POST" && r.url == format!("{STRIPE}/disputes/dp_1Abc/close"));
+}
+
+/// Stripe's one-off webhooks are read into notices; sessions of a Payment
+/// Link, delayed methods and subscriptions are told apart.
+#[test]
+fn stripe_parses_one_off_webhooks() {
+    use renox_billing::payment::{DisputeState, PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let stripe = Stripe::new("sk_test_fake", "whsec_test");
+    let parse = |kind: &str, object: Value| {
+        let body =
+            json!({ "id": "evt", "type": kind, "created": 77, "data": { "object": object } });
+        stripe.parse_webhook(body.to_string().as_bytes()).unwrap()
+    };
+    let one_off = |notices: Vec<Notice>| match notices.as_slice() {
+        [Notice::OneOff(update)] => (update.gateway_id.clone(), update.status, update.at),
+        other => panic!("{other:?}"),
+    };
+    // The session's own id, or the Payment Link's.
+    let paid = parse(
+        "checkout.session.completed",
+        fixture("checkout_session_paid"),
+    );
+    assert_eq!(
+        one_off(paid),
+        ("cs_test_a1B2c3".into(), PaymentStatus::Succeeded, Some(77))
+    );
+    let paid = parse(
+        "checkout.session.completed",
+        fixture("event_link_session_completed"),
+    );
+    assert_eq!(one_off(paid).0, "plink_1Abc");
+    let expired = parse(
+        "checkout.session.expired",
+        fixture("checkout_session_expired"),
+    );
+    assert_eq!(one_off(expired).1, PaymentStatus::Expired);
+    // A link's lapsed session, a delayed method still unpaid and a
+    // subscription's checkout say nothing final about a one-off payment.
+    let mut lapsed = fixture("checkout_session_expired");
+    lapsed["payment_link"] = json!("plink_1Abc");
+    assert!(parse("checkout.session.expired", lapsed).is_empty());
+    let mut delayed = fixture("checkout_session_paid");
+    delayed["payment_status"] = json!("unpaid");
+    assert!(parse("checkout.session.completed", delayed.clone()).is_empty());
+    assert_eq!(
+        one_off(parse(
+            "checkout.session.async_payment_failed",
+            delayed.clone()
+        ))
+        .1,
+        PaymentStatus::Failed
+    );
+    delayed["mode"] = json!("subscription");
+    assert!(parse("checkout.session.completed", delayed).is_empty());
+
+    match parse("charge.refunded", fixture("event_charge_refunded")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "re_3Abc");
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Succeeded, Some(1_000))
+            );
+            assert_eq!(update.payment_gateway_id.as_deref(), Some("pi_3Abc"));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.refund.updated", fixture("event_refund_updated")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.status, RefundStatus::Failed);
+            assert_eq!(update.reason.as_deref(), Some("expired_or_canceled_card"));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.dispute.created", fixture("event_dispute_created")).as_slice() {
+        [Notice::Dispute(update)] => {
+            assert_eq!(update.state, DisputeState::Opened);
+            assert_eq!(update.payment_gateway_id, "pi_3Abc");
+            assert_eq!(
+                update.evidence_due_by.map(|d| d.timestamp()),
+                Some(1_893_456_000)
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("charge.dispute.closed", fixture("event_dispute_won")).as_slice() {
+        [Notice::Dispute(update)] => assert_eq!(update.state, DisputeState::Won),
+        other => panic!("{other:?}"),
+    }
+    let mut closed = fixture("event_dispute_won");
+    closed["status"] = json!("warning_closed");
+    assert!(parse("charge.dispute.closed", closed).is_empty());
+}
+
+/// Stripe's disputes and dashboard-made refunds name only the PaymentIntent:
+/// the paid webhook stores it on the row, and they reach that row by it.
+#[renox::test]
+async fn stripe_disputes_and_dashboard_refunds_find_the_row_by_its_payment_intent() {
+    use renox_billing::{
+        BillingPayment, DisputeLost, DisputeOpened, DisputeWon, PaymentStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::new("sk_test_fake", "whsec_test")));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    app.fake_http().on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    let reload = || async {
+        BillingPayment::find(&state.db, payment.id)
+            .await
+            .unwrap()
+            .unwrap()
+    };
+    assert_eq!(reload().await.gateway_intent, None);
+
+    // Before it is paid the intent is unknown, so a dispute finds nothing.
+    let mut dispute = fixture("event_dispute_created");
+    stripe_webhook(
+        &app,
+        "evt_d0",
+        "charge.dispute.created",
+        100,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload().await.status, PaymentStatus::Pending);
+
+    // The paid webhook stores the PaymentIntent.
+    stripe_webhook(
+        &app,
+        "evt_p",
+        "checkout.session.completed",
+        200,
+        fixture("checkout_session_paid"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    let paid = reload().await;
+    assert_eq!(paid.status, PaymentStatus::Succeeded);
+    assert_eq!(paid.gateway_intent.as_deref(), Some("pi_3Abc"));
+
+    // A refund made in Stripe's dashboard is new to the app and names only
+    // the intent.
+    let mut dashboard = fixture("event_refund_updated");
+    dashboard["id"] = json!("re_dashboard");
+    dashboard["status"] = json!("succeeded");
+    dashboard["amount"] = json!(500);
+    stripe_webhook(&app, "evt_r", "charge.refund.updated", 300, dashboard)
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.payment.id == payment.id && e.amount == 500);
+    let refunded = reload().await;
+    assert_eq!(
+        (refunded.refunded_amount, refunded.status),
+        (500, PaymentStatus::PartiallyRefunded)
+    );
+
+    // A dispute opens, is won, opens again and is lost.
+    stripe_webhook(
+        &app,
+        "evt_d1",
+        "charge.dispute.created",
+        400,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeOpened>(|e| {
+        e.payment.id == payment.id
+            && e.evidence_due_by.map(|d| d.timestamp()) == Some(1_893_456_000)
+    });
+    assert_eq!(reload().await.status, PaymentStatus::Disputed);
+    stripe_webhook(
+        &app,
+        "evt_d2",
+        "charge.dispute.closed",
+        500,
+        fixture("event_dispute_won"),
+    )
+    .await
+    .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeWon>(|e| e.payment.id == payment.id);
+    assert_eq!(reload().await.status, PaymentStatus::PartiallyRefunded);
+    stripe_webhook(
+        &app,
+        "evt_d3",
+        "charge.dispute.created",
+        600,
+        dispute.clone(),
+    )
+    .await
+    .assert_ok();
+    dispute["status"] = json!("lost");
+    stripe_webhook(&app, "evt_d4", "charge.dispute.closed", 700, dispute)
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<DisputeLost>(|e| e.payment.id == payment.id);
+    let lost = reload().await;
+    assert_eq!(
+        (lost.status, lost.refunded_amount),
+        (PaymentStatus::Refunded, 4_500)
+    );
+}
+
+/// A charge on a named account uses that account's key, and a refund of it
+/// uses the account stored on the payment; the default account's key is not
+/// used for either, and an account without a key is refused.
+#[renox::test]
+async fn stripe_calls_use_the_account_of_the_payment() {
+    use renox::money::Money;
+    use renox_billing::{PaymentStatus, Refund};
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(Stripe::from_config()));
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("STRIPE_SECRET", "sk_test_fake_default"),
+            ("STRIPE_SECRET_ACME_LLC", "sk_test_fake_acme"),
+            ("STRIPE_WEBHOOK_SECRET", "whsec_test"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    http.on(
+        &format!("GET {STRIPE}/checkout/sessions/cs_test_a1B2c3"),
+        FakeResponse::json(200, fixture("checkout_session_paid")),
+    );
+    http.on(
+        &format!("POST {STRIPE}/refunds"),
+        FakeResponse::json(200, fixture("refund_pending")),
+    );
+    let mut payment = Billing::of(state, &ana)
+        .charge(stripe_charge().account("acme-llc"))
+        .await
+        .unwrap();
+    assert_eq!(payment.account.as_deref(), Some("acme-llc"));
+    payment.status = PaymentStatus::Succeeded;
+    payment.save(&state.db).await.unwrap();
+    Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+        .await
+        .unwrap();
+    let sent = http.sent();
+    assert_eq!(sent.len(), 3, "the session, its read, the refund");
+    for request in sent {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Bearer sk_test_fake_acme"),
+            "{}",
+            request.url
+        );
+    }
+    // An account without a key is refused before any request is sent.
+    let err = Billing::of(state, &ana)
+        .charge(stripe_charge().account("nobody"))
+        .await
+        .unwrap_err();
+    assert!(err.to_string().contains("Stripe's secret key"), "{err}");
+    assert_eq!(http.sent().len(), 3);
+}
+
+/// A Xendit fixture (written from Xendit's public API docs).
+fn xendit_fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/xendit/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// An invoice callback: the invoice itself, with the callback token.
+async fn xendit_invoice_callback(app: &TestApp, invoice: Value) -> TestResponse {
+    app.request()
+        .header("x-callback-token", "callback-token")
+        .post_body(
+            "/billing/webhooks/xendit",
+            "application/json",
+            invoice.to_string(),
+        )
+        .await
+}
+
+/// A Xendit refund event from a fixture.
+async fn xendit_refund_event(app: &TestApp, fixture: &str) -> TestResponse {
+    let event = xendit_fixture(fixture);
+    xendit_webhook(
+        app,
+        event["event"].as_str().unwrap(),
+        event["created"].as_str().unwrap(),
+        event["data"].clone(),
+    )
+    .await
+}
+
+/// A Xendit charge and link are invoices that send the amount in whole
+/// units, the currency and the reference; a paid, refunded and expired
+/// payment is followed through status checks and callbacks.
+#[renox::test]
+async fn xendit_charges_links_refunds_and_reads_callbacks_against_fixtures() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentLinkExpired, PaymentStatus, Refund,
+        RefundFailed, RefundStatus, RefundSucceeded,
+    };
+    const BASIC: &str = "Basic eG5kX2RldmVsb3BtZW50X2Zha2U6";
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(renox_billing::Xendit::new(
+            "xnd_development_fake",
+            "callback-token",
+        )));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_created")),
+    );
+    // (Answers for one URL are given in turn: the charge's, then the link's.)
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_link_created")),
+    );
+
+    // A charge: an invoice of 45 dollars (4500 cents) with the reference.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(
+        payment.gateway_id.as_deref(),
+        Some("579c8d61f23fa4ca35e52da4")
+    );
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://checkout.xendit.co/web/579c8d61f23fa4ca35e52da4")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].url, format!("{XENDIT}/v2/invoices"));
+    assert_eq!(sent[0].header("authorization"), Some(BASIC));
+    let body = sent[0].json();
+    assert_eq!(body["external_id"], format!("job-42-{}", payment.id));
+    assert_eq!(body["amount"], 45);
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["description"], "Brake service");
+    assert_eq!(body["payer_email"], "ana@example.com");
+    assert_eq!(body["success_redirect_url"], "https://shop.test/paid");
+    assert_eq!(body["failure_redirect_url"], "https://shop.test/cancelled");
+    assert_eq!(body["metadata"]["renox_payment"], payment.id.to_string());
+    assert_eq!(body["metadata"]["renox_reference_id"], "42");
+
+    // A link in rupiah (no minor unit): the amount is sent as it is.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::new(99_000, renox::money::Currency::IDR))
+            .reference("invoice", "7")
+            .description("Invoice 7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some("579c8d61f23fa4ca35e52db5"));
+    let body = http.sent()[1].json();
+    assert_eq!(body["external_id"], format!("invoice-7-{}", link.id));
+    assert_eq!(body["amount"], 99_000);
+    assert_eq!(body["currency"], "IDR");
+    assert!(body.get("payer_email").is_none());
+
+    // The invoice is paid (callback), then refunded in part.
+    xendit_invoice_callback(&app, xendit_fixture("invoice_paid"))
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.gateway == "xendit" && e.reference_id.as_deref() == Some("42")
+    });
+    // A repeated delivery changes nothing.
+    xendit_invoice_callback(&app, xendit_fixture("invoice_paid"))
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+
+    http.on(
+        &format!("POST {XENDIT}/refunds"),
+        FakeResponse::json(200, xendit_fixture("refund_pending")),
+    );
+    let refund = Billing::refund(
+        state,
+        payment.id,
+        Refund::new(Money::usd(1_000)).reason("duplicate"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("rfd_8d3f1a"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.url, format!("{XENDIT}/refunds"));
+    assert_eq!(made.header("authorization"), Some(BASIC));
+    let body = made.json();
+    assert_eq!(body["invoice_id"], "579c8d61f23fa4ca35e52da4");
+    assert_eq!(body["amount"], 10);
+    assert_eq!(body["currency"], "USD");
+    assert_eq!(body["reason"], "DUPLICATE");
+    assert_eq!(body["metadata"]["renox_payment"], payment.id.to_string());
+
+    // The refund fails, then Xendit says it went through.
+    xendit_refund_event(&app, "event_refund_failed")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.reason.as_deref() == Some("INSUFFICIENT_BALANCE"));
+    xendit_refund_event(&app, "event_refund_succeeded")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // A wrong callback token is refused.
+    app.request()
+        .header("x-callback-token", "wrong")
+        .post_body(
+            "/billing/webhooks/xendit",
+            "application/json",
+            xendit_fixture("invoice_paid").to_string(),
+        )
+        .await
+        .assert_status(401);
+
+    // Status: the invoice and its refunds are read; an expired invoice is
+    // reported expired.
+    http.on(
+        &format!("GET {XENDIT}/v2/invoices/579c8d61f23fa4ca35e52da4"),
+        FakeResponse::json(200, xendit_fixture("invoice_paid")),
+    );
+    http.on(
+        &format!("GET {XENDIT}/refunds?invoice_id=579c8d61f23fa4ca35e52da4"),
+        FakeResponse::json(200, xendit_fixture("refund_list")),
+    );
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    assert_eq!(reported.refunds[0].amount, Some(1_000));
+    let sent = http.sent();
+    let status = sent
+        .iter()
+        .find(|r| r.method == "GET" && r.url.contains("/v2/invoices/"))
+        .unwrap();
+    assert_eq!(status.header("authorization"), Some(BASIC));
+
+    http.on(
+        &format!("GET {XENDIT}/v2/invoices/579c8d61f23fa4ca35e52db5"),
+        FakeResponse::json(200, xendit_fixture("invoice_expired")),
+    );
+    http.on(
+        &format!("GET {XENDIT}/refunds?invoice_id=579c8d61f23fa4ca35e52db5"),
+        FakeResponse::json(200, json!({ "data": [] })),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Expired);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == link.id);
+}
+
+/// The scheduled sweep expires pending links that are past due and unpaid,
+/// asks the gateway first (a paid link becomes succeeded, never expired),
+/// leaves links that are not due, and announces `PaymentLinkExpired` once.
+#[renox::test]
+async fn expire_links_sweep_expires_only_unpaid_past_due_links() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, PaymentLink, PaymentLinkExpired, PaymentStatus};
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let state = app.state();
+    let hour = renox::db::now() + renox::chrono::Duration::hours(1);
+    let week = renox::db::now() + renox::chrono::Duration::days(7);
+    let link = |reference: &'static str, at| {
+        Billing::payment_link(
+            state,
+            PaymentLink::new(Money::usd(900))
+                .reference(reference, 1)
+                .expires_at(at),
+        )
+    };
+    let unpaid = link("unpaid", hour).await.unwrap();
+    let paid = link("invoice", hour).await.unwrap();
+    let later = link("unpaid", week).await.unwrap();
+    let status = |id| async move {
+        BillingPayment::find(&state.db, id)
+            .await
+            .unwrap()
+            .unwrap()
+            .status
+    };
+
+    // Nothing is due yet.
+    app.run_scheduled("billing:expire-links").await.unwrap();
+    assert_eq!(status(unpaid.id).await, PaymentStatus::Pending);
+
+    app.travel(Duration::from_secs(2 * 3600));
+    app.run_scheduled("billing:expire-links").await.unwrap();
+    assert_eq!(status(unpaid.id).await, PaymentStatus::Expired);
+    assert_eq!(status(paid.id).await, PaymentStatus::Succeeded);
+    assert_eq!(status(later.id).await, PaymentStatus::Pending);
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 1);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == unpaid.id);
+
+    // A second sweep changes nothing and announces nothing.
+    assert_eq!(
+        app.at_travelled_time(Billing::expire_links(state))
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 1);
+}
+
+/// Xendit has no disputes API here: accepting one is the typed refusal.
+#[renox::test]
+async fn xendit_answers_unsupported_for_disputes() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, Gateway, PaymentKind, Unsupported};
+    let app = app().await;
+    let gateway = renox_billing::Xendit::new("xnd_development_fake", "callback-token");
+    let payment = BillingPayment::new("xendit", PaymentKind::Charge, Money::usd(100));
+    let err = gateway
+        .accept_dispute(app.state(), &payment)
+        .await
+        .unwrap_err();
+    let found = Unsupported::of(&err).expect("a typed refusal");
+    assert_eq!(
+        (found.gateway.as_str(), found.operation.as_str()),
+        ("xendit", "accept_dispute")
+    );
+}
+
+/// Xendit's callbacks are read into notices: an invoice callback is the
+/// invoice (paid or expired), refund events carry whole-unit amounts.
+#[test]
+fn xendit_parses_one_off_callbacks() {
+    use renox_billing::payment::{PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let xendit = renox_billing::Xendit::new("xnd_development_fake", "callback-token");
+    let parse = |body: Value| xendit.parse_webhook(body.to_string().as_bytes()).unwrap();
+    match parse(xendit_fixture("invoice_paid")).as_slice() {
+        [Notice::OneOff(update)] => {
+            assert_eq!(update.gateway_id, "579c8d61f23fa4ca35e52da4");
+            assert_eq!(update.status, PaymentStatus::Succeeded);
+            assert_eq!(update.at, Some(1_792_236_600));
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse(xendit_fixture("invoice_expired")).as_slice() {
+        [Notice::OneOff(update)] => assert_eq!(update.status, PaymentStatus::Expired),
+        other => panic!("{other:?}"),
+    }
+    // A pending invoice says nothing new.
+    assert!(parse(xendit_fixture("invoice_created")).is_empty());
+    match parse(xendit_fixture("event_refund_failed")).as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "rfd_8d3f1a");
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Failed, Some(1_000))
+            );
+            assert_eq!(
+                update.payment_gateway_id.as_deref(),
+                Some("579c8d61f23fa4ca35e52da4")
+            );
+            assert_eq!(update.reason.as_deref(), Some("INSUFFICIENT_BALANCE"));
+        }
+        other => panic!("{other:?}"),
+    }
+}
+
+/// A charge on a named account uses that account's key, and a refund of it
+/// uses the account stored on the payment.
+#[renox::test]
+async fn xendit_calls_use_the_account_of_the_payment() {
+    use renox::money::Money;
+    use renox_billing::{PaymentStatus, Refund};
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(
+            Billing::new().gateway(renox_billing::Xendit::resolved_accounts(
+                |_state, account: &str| {
+                    let key = format!("xnd_development_{account}");
+                    async move { Ok(Some(key)) }
+                },
+            )),
+        );
+    let app = TestApp::with_config(app, |_| {}).await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {XENDIT}/v2/invoices"),
+        FakeResponse::json(200, xendit_fixture("invoice_created")),
+    );
+    http.on(
+        &format!("POST {XENDIT}/refunds"),
+        FakeResponse::json(200, xendit_fixture("refund_pending")),
+    );
+    let mut payment = Billing::of(state, &ana)
+        .charge(stripe_charge().account("acme"))
+        .await
+        .unwrap();
+    assert_eq!(payment.account.as_deref(), Some("acme"));
+    payment.status = PaymentStatus::Succeeded;
+    payment.save(&state.db).await.unwrap();
+    Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+        .await
+        .unwrap();
+    let sent = http.sent();
+    assert_eq!(sent.len(), 2, "the invoice, the refund");
+    for request in sent {
+        assert_eq!(
+            request.header("authorization"),
+            Some("Basic eG5kX2RldmVsb3BtZW50X2FjbWU6"),
+            "{}",
+            request.url
+        );
+    }
+}
+
+const NGENIUS: &str = "https://api-gateway.ngenius-payments.com";
+const NGENIUS_ORDER: &str = "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c";
+const NGENIUS_LINK_ORDER: &str = "0c7d2e91-8a3b-4d6f-b1e4-5a9c8d7e6f01";
+
+/// An N-Genius fixture (written from Network International's public API
+/// docs).
+fn ngenius_fixture(name: &str) -> Value {
+    let path = format!(
+        "{}/tests/fixtures/ngenius/{name}.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    renox::serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+/// An N-Genius webhook event from a fixture, with the shared secret.
+async fn ngenius_event(app: &TestApp, fixture: &str, secret: &str) -> TestResponse {
+    app.request()
+        .header("x-webhook-secret", secret)
+        .post_body(
+            "/billing/webhooks/ngenius",
+            "application/json",
+            ngenius_fixture(fixture).to_string(),
+        )
+        .await
+}
+
+/// A charge and a link are orders that send the amount in minor units, the
+/// currency, the reference and the outlet with a bearer token traded for
+/// the API key; a paid, refunded and declined payment is followed through
+/// status checks and webhooks.
+#[renox::test]
+async fn ngenius_charges_links_refunds_and_reads_webhooks_against_fixtures() {
+    use renox::money::{Currency, Money};
+    use renox_billing::{
+        BillingPayment, BillingRefund, PaymentLink, PaymentStatus, Refund, RefundFailed,
+        RefundStatus, RefundSucceeded,
+    };
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(renox_billing::Ngenius::new(
+            "ngenius-api-key-fake",
+            "outlet-ref-fake",
+            "hook-secret",
+        )));
+    let app = TestApp::with_config(app, |_| {}).await;
+    app.fake_events();
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    let orders = format!("{NGENIUS}/transactions/outlets/outlet-ref-fake/orders");
+    http.on(
+        &format!("POST {NGENIUS}/identity/auth/access-token"),
+        FakeResponse::json(200, ngenius_fixture("access_token")),
+    );
+    http.on(
+        &format!("POST {orders}"),
+        FakeResponse::json(200, ngenius_fixture("order_created")),
+    );
+    http.on(
+        &format!("POST {orders}"),
+        FakeResponse::json(200, ngenius_fixture("order_link_created")),
+    );
+
+    // A charge: the token first, then an order of 4500 cents of USD.
+    let payment = Billing::of(state, &ana)
+        .charge(stripe_charge())
+        .await
+        .unwrap();
+    assert_eq!(payment.gateway_id.as_deref(), Some(NGENIUS_ORDER));
+    assert_eq!(
+        payment.url.as_deref(),
+        Some("https://paypage.ngenius-payments.com/?code=fake-code")
+    );
+    let sent = http.sent();
+    assert_eq!(sent[0].url, format!("{NGENIUS}/identity/auth/access-token"));
+    assert_eq!(
+        sent[0].header("authorization"),
+        Some("Basic ngenius-api-key-fake")
+    );
+    assert_eq!(sent[1].url, orders);
+    assert_eq!(
+        sent[1].header("authorization"),
+        Some("Bearer fake-access-token-1")
+    );
+    let body = sent[1].json();
+    assert_eq!(body["action"], "SALE");
+    assert_eq!(body["amount"]["value"], 4_500);
+    assert_eq!(body["amount"]["currencyCode"], "USD");
+    assert_eq!(
+        body["merchantOrderReference"],
+        format!("job-42-{}", payment.id)
+    );
+    assert_eq!(body["emailAddress"], "ana@example.com");
+    assert_eq!(
+        body["merchantAttributes"]["redirectUrl"],
+        "https://shop.test/paid"
+    );
+    assert_eq!(
+        body["merchantAttributes"]["cancelUrl"],
+        "https://shop.test/cancelled"
+    );
+
+    // A link in dirhams reuses the kept token.
+    let link = Billing::payment_link(
+        state,
+        PaymentLink::new(Money::new(12_000, Currency::parse("AED").unwrap()))
+            .reference("invoice", "7"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(link.gateway_id.as_deref(), Some(NGENIUS_LINK_ORDER));
+    let sent = http.sent();
+    assert_eq!(sent.len(), 3, "no second token request");
+    let body = sent[2].json();
+    assert_eq!(
+        body["merchantOrderReference"],
+        format!("invoice-7-{}", link.id)
+    );
+    assert_eq!(body["amount"]["value"], 12_000);
+    assert_eq!(body["amount"]["currencyCode"], "AED");
+    assert!(body.get("emailAddress").is_none());
+
+    // The order is purchased (webhook); a repeat and a wrong secret change
+    // nothing.
+    ngenius_event(&app, "event_purchased", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+    assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    app.assert_emitted::<PaymentSucceeded>(|e| {
+        e.gateway == "ngenius" && e.reference_id.as_deref() == Some("42")
+    });
+    ngenius_event(&app, "event_purchased", "hook-secret")
+        .await
+        .assert_ok();
+    ngenius_event(&app, "event_declined", "wrong")
+        .await
+        .assert_status(401);
+    app.run_jobs().await;
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Pending);
+
+    // A refund goes to the refund link of the order's capture.
+    let order_url = format!("{orders}/{NGENIUS_ORDER}");
+    let refund_url = format!("{order_url}/payments/fake-payment-1/captures/fake-capture-1/refund");
+    http.on(
+        &format!("GET {order_url}"),
+        FakeResponse::json(200, ngenius_fixture("order_purchased")),
+    );
+    // (Answers are given in turn: the refund reads the first, the status
+    // check below the second.)
+    http.on(
+        &format!("GET {order_url}"),
+        FakeResponse::json(200, ngenius_fixture("order_refunded")),
+    );
+    http.on(
+        &format!("POST {refund_url}"),
+        FakeResponse::json(201, ngenius_fixture("refund_pending")),
+    );
+    let refund = Billing::refund(state, payment.id, Refund::new(Money::usd(1_000)))
+        .await
+        .unwrap();
+    assert_eq!(
+        (refund.status, refund.gateway_id.as_deref()),
+        (RefundStatus::Pending, Some("fake-refund-1"))
+    );
+    let sent = http.sent();
+    let made = sent.last().unwrap();
+    assert_eq!(made.method, "POST");
+    assert_eq!(made.url, refund_url);
+    assert_eq!(
+        made.header("authorization"),
+        Some("Bearer fake-access-token-1")
+    );
+    let body = made.json();
+    assert_eq!(body["amount"]["value"], 1_000);
+    assert_eq!(body["amount"]["currencyCode"], "USD");
+
+    // The refund fails, then N-Genius says it went through.
+    ngenius_event(&app, "event_refund_failed", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundFailed>(|e| e.amount == 1_000);
+    ngenius_event(&app, "event_refunded", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    app.assert_emitted::<RefundSucceeded>(|e| e.amount == 1_000);
+    let stored = reload(payment.id).await;
+    assert_eq!(
+        (stored.refunded_amount, stored.status),
+        (1_000, PaymentStatus::PartiallyRefunded)
+    );
+    assert_eq!(BillingRefund::query().count(&state.db).await.unwrap(), 1);
+
+    // Status: the order and its refunds are read.
+    let reported = Billing::payment_status(state, payment.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Succeeded);
+    assert_eq!(reported.refunds.len(), 1);
+    assert_eq!(reported.refunds[0].amount, Some(1_000));
+    http.on(
+        &format!("GET {orders}/{NGENIUS_LINK_ORDER}"),
+        FakeResponse::json(200, ngenius_fixture("order_pending")),
+    );
+    let reported = Billing::payment_status(state, link.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Pending);
+
+    // A declined payment fails the link.
+    ngenius_event(&app, "event_declined", "hook-secret")
+        .await
+        .assert_ok();
+    app.run_jobs().await;
+    assert_eq!(reload(link.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.gateway == "ngenius");
+}
+
+/// The access token is kept per account until it expires, a changed key
+/// gets a new one, accounts use their own key, outlet and webhook secret,
+/// and a missing key is refused before any request.
+#[renox::test]
+async fn ngenius_tokens_are_kept_per_account_and_follow_the_key() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    let version = Arc::new(AtomicU32::new(1));
+    let seen = version.clone();
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(
+            Billing::new().gateway(renox_billing::Ngenius::resolved_accounts(
+                move |_state, account: &str| {
+                    let key = (account != "nobody")
+                        .then(|| format!("key-{account}-{}", seen.load(Ordering::SeqCst)));
+                    async move { Ok(key) }
+                },
+            )),
+        );
+    let app = TestApp::with_config(app, |config| {
+        for (name, value) in [
+            ("NGENIUS_OUTLET_REF", "o-default"),
+            ("NGENIUS_OUTLET_REF_ACME", "o-acme"),
+            ("NGENIUS_WEBHOOK_SECRET", "default-secret"),
+            ("NGENIUS_WEBHOOK_SECRET_ACME", "acme-secret"),
+        ] {
+            config.vars.insert(name.into(), value.into());
+        }
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {NGENIUS}/identity/auth/access-token"),
+        FakeResponse::json(200, ngenius_fixture("access_token")),
+    );
+    // Every order has its own reference (answers are given in turn).
+    for (outlet, count) in [("o-default", 4), ("o-acme", 1)] {
+        for n in 0..count {
+            let mut order = ngenius_fixture("order_created");
+            order["reference"] = json!(format!("{outlet}-{n}"));
+            http.on(
+                &format!("POST {NGENIUS}/transactions/outlets/{outlet}/orders"),
+                FakeResponse::json(200, order),
+            );
+        }
+    }
+    let tokens = || {
+        http.sent()
+            .into_iter()
+            .filter(|r| r.url.ends_with("/identity/auth/access-token"))
+            .map(|r| r.header("authorization").unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    let ana = &ana;
+    let charge = |account: Option<&'static str>| async move {
+        let charge = match account {
+            Some(name) => stripe_charge().account(name),
+            None => stripe_charge(),
+        };
+        Billing::of(state, ana).charge(charge).await
+    };
+
+    charge(None).await.unwrap();
+    charge(None).await.unwrap();
+    assert_eq!(tokens(), ["Basic key-default-1"], "kept for the next call");
+    let acme = charge(Some("acme")).await.unwrap();
+    assert_eq!(acme.account.as_deref(), Some("acme"));
+    assert_eq!(tokens(), ["Basic key-default-1", "Basic key-acme-1"]);
+    assert!(
+        http.sent()
+            .last()
+            .unwrap()
+            .url
+            .contains("/outlets/o-acme/orders")
+    );
+
+    // The stored key changed: the next call trades the new one.
+    version.store(2, Ordering::SeqCst);
+    charge(None).await.unwrap();
+    assert_eq!(tokens().last().unwrap(), "Basic key-default-2");
+
+    // The token ends: the next call asks for a new one.
+    let before = tokens().len();
+    app.travel(Duration::from_secs(400));
+    app.at_travelled_time(charge(None)).await.unwrap();
+    assert_eq!(tokens().len(), before + 1);
+
+    // No key: refused before any request, without printing a key.
+    let sent = http.sent().len();
+    let err = charge(Some("nobody")).await.unwrap_err();
+    assert!(err.to_string().contains("N-Genius's API key"), "{err}");
+    assert!(!format!("{err:?}").contains("key-"), "{err:?}");
+    assert_eq!(http.sent().len(), sent);
+
+    // Each account has its own webhook secret.
+    let post = |path: &'static str, secret: &'static str| {
+        app.request()
+            .header("x-webhook-secret", secret)
+            .post_body(path, "application/json", "{}")
+    };
+    post("/billing/webhooks/ngenius/acme", "default-secret")
+        .await
+        .assert_status(401);
+    post("/billing/webhooks/ngenius/acme", "acme-secret")
+        .await
+        .assert_ok();
+    post("/billing/webhooks/ngenius", "acme-secret")
+        .await
+        .assert_status(401);
+    post("/billing/webhooks/ngenius/nobody", "acme-secret")
+        .await
+        .assert_not_found();
+}
+
+/// N-Genius has no subscriptions and no disputes API: those answer the
+/// typed refusal.
+#[renox::test]
+async fn ngenius_answers_unsupported_for_subscriptions_and_disputes() {
+    use renox_billing::{BillingPayment, Gateway, Owner, PaymentKind, Unsupported};
+    let app = app().await;
+    let state = app.state();
+    let gateway = renox_billing::Ngenius::new("ngenius-api-key-fake", "outlet", "hook-secret");
+    assert_eq!(gateway.name(), "ngenius");
+    let payment = BillingPayment::new(
+        "ngenius",
+        PaymentKind::Charge,
+        renox::money::Money::usd(100),
+    );
+    let refusals = [
+        (
+            "create_customer",
+            gateway
+                .create_customer(state, &Owner::new("user", 1))
+                .await
+                .err(),
+        ),
+        (
+            "accept_dispute",
+            gateway.accept_dispute(state, &payment).await.err(),
+        ),
+    ];
+    for (operation, err) in refusals {
+        let err = err.unwrap_or_else(|| panic!("{operation} should be refused"));
+        let found = Unsupported::of(&err).expect("a typed refusal");
+        assert_eq!(
+            (found.gateway.as_str(), found.operation.as_str()),
+            ("ngenius", operation)
+        );
+    }
+    app.fake_http().assert_sent_count(0);
+}
+
+/// N-Genius' webhook events are read into notices.
+#[test]
+fn ngenius_parses_webhook_events() {
+    use renox_billing::payment::{PaymentStatus, RefundStatus};
+    use renox_billing::{Gateway, Notice};
+    let gateway = renox_billing::Ngenius::new("ngenius-api-key-fake", "outlet", "hook-secret");
+    let parse = |name: &str| {
+        gateway
+            .parse_webhook(ngenius_fixture(name).to_string().as_bytes())
+            .unwrap()
+    };
+    match parse("event_purchased").as_slice() {
+        [Notice::OneOff(update)] => {
+            assert_eq!(update.gateway_id, NGENIUS_ORDER);
+            assert_eq!(update.status, PaymentStatus::Succeeded);
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("event_declined").as_slice() {
+        [Notice::OneOff(update)] => assert_eq!(update.status, PaymentStatus::Failed),
+        other => panic!("{other:?}"),
+    }
+    match parse("event_refunded").as_slice() {
+        [Notice::Refund(update)] => {
+            assert_eq!(update.gateway_id, "fake-refund-1");
+            assert_eq!(update.payment_gateway_id.as_deref(), Some(NGENIUS_ORDER));
+            assert_eq!(
+                (update.status, update.amount),
+                (RefundStatus::Succeeded, Some(1_000))
+            );
+        }
+        other => panic!("{other:?}"),
+    }
+    match parse("event_refund_failed").as_slice() {
+        [Notice::Refund(update)] => assert_eq!(update.status, RefundStatus::Failed),
+        other => panic!("{other:?}"),
+    }
+    // An event that says nothing new is ignored; the id is the event's.
+    assert!(
+        gateway
+            .parse_webhook(br#"{"eventName":"AUTHORISED","order":{"reference":"o"}}"#)
+            .unwrap()
+            .is_empty()
+    );
+    let id = gateway
+        .webhook_event_id(
+            &renox::axum::http::HeaderMap::new(),
+            ngenius_fixture("event_purchased").to_string().as_bytes(),
+        )
+        .unwrap();
+    assert_eq!(id, "evt-0001");
+}
+
+/// A status check turns a pending payment into failed or expired like a
+/// webhook would (the event carries the reference), an expiry from a webhook
+/// announces the link, and a late success after either is still applied.
+#[renox::test]
+async fn status_checks_and_expiry_webhooks_apply_like_webhooks() {
+    use renox::money::Money;
+    use renox_billing::{
+        BillingPayment, PaymentFailed, PaymentLink, PaymentLinkExpired, PaymentStatus,
+        PaymentSucceeded,
+    };
+    let calls = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let app = app_with(Billing::new().gateway(PayHub { calls })).await;
+    app.fake_events();
+    let state = app.state();
+    let link = |reference: &'static str| {
+        Billing::payment_link(
+            state,
+            PaymentLink::new(Money::usd(900)).reference(reference, 5),
+        )
+    };
+    let reload =
+        |id: i64| async move { BillingPayment::find(&state.db, id).await.unwrap().unwrap() };
+
+    let declined = link("declined").await.unwrap();
+    let reported = Billing::payment_status(state, declined.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Failed);
+    assert_eq!(reload(declined.id).await.status, PaymentStatus::Failed);
+    app.assert_emitted::<PaymentFailed>(|e| e.reference_type.as_deref() == Some("declined"));
+
+    let gone = link("gone").await.unwrap();
+    let reported = Billing::payment_status(state, gone.id).await.unwrap();
+    assert_eq!(reported.status, PaymentStatus::Expired);
+    assert_eq!(reload(gone.id).await.status, PaymentStatus::Expired);
+    app.assert_emitted::<PaymentLinkExpired>(|e| e.payment.id == gone.id);
+
+    // The gateway's own expiry webhook announces the link too, once.
+    let hooked = link("unpaid").await.unwrap();
+    let pay = hooked.gateway_id.clone().unwrap();
+    for id in ["x1", "x1"] {
+        app.post_body(
+            "/billing/webhooks/payhub",
+            "application/json",
+            json!({"id": id, "kind": "payment", "pay": pay, "status": "expired"}).to_string(),
+        )
+        .await;
+        app.run_jobs().await;
+    }
+    assert_eq!(reload(hooked.id).await.status, PaymentStatus::Expired);
+    assert_eq!(app.emitted::<PaymentLinkExpired>().len(), 2);
+
+    // Paid after all: the success wins over both and is evented.
+    for payment in [&declined, &gone] {
+        // Their reference says declined or gone; a webhook says paid.
+        let pay = payment.gateway_id.clone().unwrap();
+        app.post_body(
+            "/billing/webhooks/payhub",
+            "application/json",
+            json!({"id": format!("late-{pay}"), "kind": "payment", "pay": pay, "status": "succeeded"})
+                .to_string(),
+        )
+        .await;
+        app.run_jobs().await;
+        assert_eq!(reload(payment.id).await.status, PaymentStatus::Succeeded);
+    }
+    assert_eq!(app.emitted::<PaymentSucceeded>().len(), 2);
+}
+
+/// Two accounts of one gateway keep their own keys; a key rotated in the
+/// store reaches the next call, a refund included; an account without a key
+/// fails without a request and without showing any key.
+#[renox::test]
+async fn accounts_keep_their_keys_and_a_rotated_key_reaches_refunds() {
+    use renox::money::Money;
+    use renox_billing::{BillingPayment, PaymentStatus, Refund};
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    let keys: Arc<Mutex<HashMap<String, String>>> = Arc::new(Mutex::new(HashMap::from([
+        ("a".to_string(), "sk_test_fake_a1".to_string()),
+        ("b".to_string(), "sk_test_fake_b1".to_string()),
+    ])));
+    let shared = keys.clone();
+    let stripe = Stripe::resolved_accounts(move |_state, account: &str| {
+        let key = shared.lock().unwrap().get(account).cloned();
+        async move { Ok(key) }
+    });
+    assert!(!format!("{stripe:?}").contains("sk_"));
+    let app = App::new()
+        .module(Auth::new().account())
+        .module(Billing::new().gateway(stripe));
+    let app = TestApp::with_config(app, |config| {
+        config
+            .vars
+            .insert("STRIPE_WEBHOOK_SECRET".into(), "whsec_test".into());
+    })
+    .await;
+    let ana = user(&app, "Ana").await;
+    let state = app.state();
+    let http = app.fake_http();
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, fixture("checkout_session")),
+    );
+    // (Answers for one URL are given in turn: a's session, then b's.)
+    let mut second = fixture("checkout_session");
+    second["id"] = json!("cs_test_b2");
+    http.on(
+        &format!("POST {STRIPE}/checkout/sessions"),
+        FakeResponse::json(200, second),
+    );
+    let mut second_refund = fixture("refund_pending");
+    second_refund["id"] = json!("re_b2");
+    for refund in [fixture("refund_pending"), second_refund] {
+        http.on(
+            &format!("POST {STRIPE}/refunds"),
+            FakeResponse::json(200, refund),
+        );
+    }
+    let mut paid_b = fixture("checkout_session_paid");
+    paid_b["id"] = json!("cs_test_b2");
+    for (id, body) in [
+        ("cs_test_a1B2c3", fixture("checkout_session_paid")),
+        ("cs_test_b2", paid_b),
+    ] {
+        http.on(
+            &format!("GET {STRIPE}/checkout/sessions/{id}"),
+            FakeResponse::json(200, body),
+        );
+    }
+    let mut paid = Vec::new();
+    for account in ["a", "b"] {
+        let mut payment = Billing::of(state, &ana)
+            .charge(stripe_charge().account(account))
+            .await
+            .unwrap();
+        assert_eq!(payment.account.as_deref(), Some(account));
+        payment.status = PaymentStatus::Succeeded;
+        payment.save(&state.db).await.unwrap();
+        paid.push(payment);
+    }
+    // a's key is rotated; the refund of a's payment uses the new one, b's
+    // refund keeps b's.
+    keys.lock()
+        .unwrap()
+        .insert("a".into(), "sk_test_fake_a2".into());
+    for payment in &paid {
+        Billing::refund(state, payment.id, Refund::new(Money::usd(100)))
+            .await
+            .unwrap();
+    }
+    let auth: Vec<_> = http
+        .sent()
+        .iter()
+        .map(|r| {
+            let key = r.header("authorization").unwrap_or_default().to_owned();
+            (
+                format!("{} {}", r.method, r.url.rsplit('/').next().unwrap()),
+                key,
+            )
+        })
+        .collect();
+    let bearer = |key: &str| format!("Bearer {key}");
+    assert_eq!(
+        auth,
+        [
+            ("POST sessions".to_string(), bearer("sk_test_fake_a1")),
+            ("POST sessions".to_string(), bearer("sk_test_fake_b1")),
+            ("GET cs_test_a1B2c3".to_string(), bearer("sk_test_fake_a2")),
+            ("POST refunds".to_string(), bearer("sk_test_fake_a2")),
+            ("GET cs_test_b2".to_string(), bearer("sk_test_fake_b1")),
+            ("POST refunds".to_string(), bearer("sk_test_fake_b1")),
+        ]
+    );
+
+    // An account without a key: no request, no key in the message or the row.
+    let rows = BillingPayment::query().count(&state.db).await.unwrap();
+    let err = Billing::of(state, &ana)
+        .charge(stripe_charge().account("c"))
+        .await
+        .unwrap_err();
+    assert!(!err.to_string().contains("sk_"), "{err}");
+    assert_eq!(http.sent().len(), 6);
+    assert_eq!(
+        BillingPayment::query().count(&state.db).await.unwrap(),
+        rows
     );
 }

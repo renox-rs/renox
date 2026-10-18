@@ -21,6 +21,12 @@ cally.js
 fonts/
   Inter 4.1 and Poppins 4.003, Latin subsets. SIL Open Font License 1.1
   (fonts/OFL-Inter.txt, fonts/OFL-Poppins.txt).
+  Noto Sans Arabic 5.3.0 (variable weight), by the Noto Project Authors,
+  subset to the Arabic, Arabic Supplement and Arabic Extended-A blocks. SIL
+  Open Font License 1.1 (fonts/OFL-NotoSansArabic.txt).
+  Source: https://registry.npmjs.org/@fontsource-variable/noto-sans-arabic/-/noto-sans-arabic-5.3.0.tgz
+  (files/noto-sans-arabic-arabic-wght-normal.woff2). Change: subset further
+  to U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FDF2, U+FDFC, U+200C-200F.
 
 The UI kit's icons (src/icons.rs, the `icon(…)` macro of renox/ui.html)
   Lucide's line icons, lucide-static 1.53.0, by Lucide Icons and

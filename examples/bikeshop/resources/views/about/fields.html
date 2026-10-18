@@ -39,7 +39,7 @@
     </rx-card>
 
     <rx-card rx-if="logged_in" title="{{ t('fields.try.title') }}" subtitle="{{ t('fields.try.lead') }}">
-      <app-about-fields-form :brands="brands" :price="price" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>
+      <app-about-fields-form :brands="brands" :price="price" :deposit="deposit" :deposit-currency="deposit_currency" :load="load" :load-unit="load_unit" :money-symbol="money_symbol" :money-step="money_step" :photo-url="photo_url"/>
     </rx-card>
     <rx-card rx-else title="{{ t('fields.try.title') }}" subtitle="{{ t('fields.try.lead') }}">
       <rx-alert kind="info">{{ t('fields.try.login') }}</rx-alert>

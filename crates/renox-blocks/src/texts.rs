@@ -146,10 +146,141 @@ pub const TEXTS: &[(&str, &str)] = &[
     ("blocks.plans.feature", "Feature"),
     ("blocks.plans.included", "Included"),
     ("blocks.plans.not_included", "Not included"),
+    ("blocks.signature.label", "Signature"),
+    ("blocks.signature.area", "Signature area"),
+    (
+        "blocks.signature.help",
+        "Draw your signature with a finger, a pen or the mouse, or type your name in the field below instead.",
+    ),
+    ("blocks.signature.undo", "Undo"),
+    ("blocks.signature.clear", "Clear"),
+    ("blocks.signature.typed", "Or type your name"),
+    ("blocks.signature.drawn", "Signature drawn."),
+    ("blocks.signature.undone", "Last stroke removed."),
+    ("blocks.signature.cleared", "Signature cleared."),
+    ("blocks.camera.label", "Photos"),
+    (
+        "blocks.camera.help",
+        "Take a photo with the camera, or choose one from your device.",
+    ),
+    ("blocks.camera.shutter", "Take photo"),
+    ("blocks.camera.photo", "Photo :n"),
+    ("blocks.camera.remove", "Remove photo :n"),
+    ("blocks.camera.taken", "Photo :n taken."),
+    ("blocks.camera.removed", "Photo removed."),
+    ("blocks.camera.full", "That is the most photos you can add."),
+    (
+        "blocks.camera.denied",
+        "Camera access was denied. Choose a photo from your device instead.",
+    ),
+    (
+        "blocks.camera.missing",
+        "No camera is available here. Choose a photo from your device instead.",
+    ),
+    (
+        "blocks.camera.failed",
+        "The camera could not be started. Choose a photo from your device instead.",
+    ),
+    ("blocks.map.label", "Map"),
+    ("blocks.map.picker", "Location"),
+    ("blocks.map.area", "Map"),
+    (
+        "blocks.map.no_tiles",
+        "The map is not shown: no map tiles are configured. Set :variable to a tile URL template.",
+    ),
+    (
+        "blocks.map.help_point",
+        "Click the map to place the point, or type its latitude and longitude.",
+    ),
+    (
+        "blocks.map.help_circle",
+        "Click the map for the centre, then click again for the radius, or type the centre and radius.",
+    ),
+    (
+        "blocks.map.help_polygon",
+        "Click the map to add vertices and press Enter to close the shape, or type one vertex per line.",
+    ),
+    ("blocks.map.latitude", "Latitude"),
+    ("blocks.map.longitude", "Longitude"),
+    (
+        "blocks.map.typed_circle",
+        "Centre and radius (latitude, longitude, metres)",
+    ),
+    (
+        "blocks.map.typed_polygon",
+        "Vertices (latitude, longitude, one per line)",
+    ),
+    ("blocks.map.markers", "Places on the map"),
+    ("blocks.map.marker", "Place"),
     ("blocks.receipt.label", "Receipt"),
     ("blocks.receipt.item", "Item"),
     ("blocks.receipt.amount", "Amount"),
     ("blocks.receipt.print", "Print receipt"),
+    ("blocks.rating.label", "Rating"),
+    ("blocks.rating.option", ":n of :max"),
+    ("blocks.rating.none", "Not rated"),
+    ("blocks.geolocate.label", "Location"),
+    ("blocks.geolocate.button", "Use my location"),
+    ("blocks.geolocate.retry", "Try again"),
+    (
+        "blocks.geolocate.idle",
+        "Your position is asked for only when you press the button.",
+    ),
+    ("blocks.geolocate.locating", "Finding your position..."),
+    (
+        "blocks.geolocate.done",
+        "Position found: :lat, :lng (about :accuracy m).",
+    ),
+    (
+        "blocks.geolocate.wanted",
+        "Position found: about :accuracy m, wanted :wanted m.",
+    ),
+    (
+        "blocks.geolocate.denied",
+        "Location access was denied. Allow it in your browser settings, then try again.",
+    ),
+    (
+        "blocks.geolocate.unavailable",
+        "Your position is not available here.",
+    ),
+    (
+        "blocks.geolocate.timeout",
+        "Finding your position took too long. Try again.",
+    ),
+    (
+        "blocks.geolocate.needed",
+        "Press the button to share your position.",
+    ),
+    (
+        "blocks.geolocate.no_script",
+        "Sharing your position needs JavaScript.",
+    ),
+    ("blocks.barcode.label", "Code"),
+    ("blocks.barcode.button", "Scan with camera"),
+    ("blocks.barcode.close", "Close camera"),
+    (
+        "blocks.barcode.help",
+        "Type the code, scan it with a barcode reader, or use the camera.",
+    ),
+    ("blocks.barcode.scanning", "Point the camera at the code."),
+    ("blocks.barcode.read", "Code read: :code."),
+    ("blocks.barcode.closed", "Camera closed."),
+    (
+        "blocks.barcode.denied",
+        "Camera access was denied. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.missing",
+        "No camera is available here. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.failed",
+        "The camera could not be started. Type the code instead.",
+    ),
+    (
+        "blocks.barcode.unsupported",
+        "This browser cannot read codes from the camera. Type the code instead.",
+    ),
 ];
 
 /// The English text of `key`, if the blocks have one.

@@ -18,6 +18,7 @@ pub mod catalog;
 pub mod home;
 pub mod multistore;
 pub mod plans;
+pub mod purchasing;
 pub mod rentals;
 pub mod reports;
 pub mod sales;

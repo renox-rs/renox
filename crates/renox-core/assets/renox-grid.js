@@ -70,14 +70,17 @@
       var th = grid.querySelector('thead th[data-col="' + CSS.escape(key) + '"]');
       return th ? th.getBoundingClientRect().width : 0;
     }
+    // "left" and "right" are the saved names of the start and end sides; the
+    // sticky offsets are logical, so a right-to-left grid freezes on the right.
+    function inset(side) { return side === "left" ? "insetInlineStart" : "insetInlineEnd"; }
     function place(keys, side, start) {
       var at = start || 0, last = null;
       keys.forEach(function (key) {
         if (!shown.has(key)) return;
         offsets[key] = at;
         cellsOf(grid, key).forEach(function (cell) {
-          cell.style[side] = at + "px";
-          cell.style[side === "left" ? "right" : "left"] = "";
+          cell.style[inset(side)] = at + "px";
+          cell.style[inset(side === "left" ? "right" : "left")] = "";
         });
         at += width(key);
         last = key;
@@ -88,7 +91,7 @@
     var toolsWidth = 0;
     if (tools.length) {
       toolsWidth = tools[0].getBoundingClientRect().width;
-      tools.forEach(function (cell) { cell.style.left = "0px"; });
+      tools.forEach(function (cell) { cell.style.insetInlineStart = "0px"; });
     }
     place(cfg.left || [], "left", toolsWidth);
     if (tools.length && !(cfg.left || []).some(function (k) { return shown.has(k); })) {
@@ -99,7 +102,7 @@
       var side = th.getAttribute("data-pin");
       var keys = th.getAttribute("data-cols").split(" ").filter(function (k) { return k in offsets; });
       if (!keys.length) return;
-      th.style[side] = Math.min.apply(null, keys.map(function (k) { return offsets[k]; })) + "px";
+      th.style[inset(side)] = Math.min.apply(null, keys.map(function (k) { return offsets[k]; })) + "px";
     });
     edges(grid);
   }
@@ -825,7 +828,9 @@
     var grid = handle.closest("form.rx-grid");
     var th = handle.closest("th");
     var step = event.shiftKey ? 50 : 10;
-    setWidth(grid, th.getAttribute("data-col"), th.getBoundingClientRect().width + (event.key === "ArrowRight" ? step : -step));
+    // The handle is on the end edge: the arrow that moves it away from the column widens it.
+    var away = getComputedStyle(grid).direction === "rtl" ? "ArrowLeft" : "ArrowRight";
+    setWidth(grid, th.getAttribute("data-col"), th.getBoundingClientRect().width + (event.key === away ? step : -step));
     clearTimeout(grid._rxSaveWidths);
     grid._rxSaveWidths = setTimeout(function () { savePrefs(grid); }, 400);
   });
@@ -856,6 +861,7 @@
     if (!target || target === moving.th || target.closest("form.rx-grid") !== moving.grid) return;
     var r = target.getBoundingClientRect();
     var after = event.clientX > r.left + r.width / 2;
+    if (getComputedStyle(moving.grid).direction === "rtl") after = !after;
     target.classList.add(after ? "rx-grid__drop-after" : "rx-grid__drop-before");
     moving.target = { key: target.getAttribute("data-col"), after: after };
   });

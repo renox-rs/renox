@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="{{ app.locale }}">
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,6 +7,8 @@
   <rx-outlet name="seo">{{ seo() }}</rx-outlet>
   <rx-head/>
   <rx-ui/>
+  <rx-theme/>
+  <rx-pwa/>
   <link rel="stylesheet" href="{{ asset('app.css') }}">
   {#- The page patterns (components/, styled by public/patterns.css): yours to change. -#}
   <link rel="stylesheet" href="{{ asset('patterns.css') }}">

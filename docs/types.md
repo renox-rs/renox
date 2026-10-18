@@ -9,7 +9,7 @@ value arrives safely at every one.
 - one big table: for each kind of form field, the Rust type and the database column to use;
 - enums (a fixed list of choices, like a status);
 - what browsers really send from forms, and how Renox reads it;
-- advice for the tricky cases: money, time zones, keys, deleted rows and PostgreSQL.
+- advice for the tricky cases: money, quantities, places, custom fields, time zones, keys, deleted rows and PostgreSQL.
 
 ### Words you'll meet
 
@@ -45,6 +45,8 @@ columns are what to write in your migration's `CREATE TABLE`, for SQLite or Post
 | `type=number step=0.01` (measures) | `f64` | `REAL` | `DOUBLE PRECISION` |
 | `type=number step=0.01`, single precision | `f32` | `REAL` | `REAL` |
 | money | `i64` in the smallest unit (cents), never `f64` | `INTEGER` | `BIGINT` |
+| money in its own currency (`type=money` plus a currency `<select>`) | `Money` (`renox::money`), with `#[model(money)]`: a string and a code in the form (`#[model(form)]` writes both) | `INTEGER` amount + `TEXT` code | `BIGINT` amount + `TEXT` code |
+| an exact decimal with units (`type=quantity scale=3 unit=kg`, plus a unit `<select>`) | `Quantity<3>` (`renox::quantity`): a string in the form (`#[model(form)]` writes it); the unit is an ordinary `String` field | `INTEGER` (thousandths) | `BIGINT` (thousandths) |
 | `type=checkbox` (one) | `bool`: with `Valid<T>`, `on` (or `1`, `yes`, `checked`) → `true`, unchecked (nothing sent; or `off`, `0`, `no`) → `false` (see [Checkboxes](#checkboxes)) | `INTEGER` 0/1 | `BOOLEAN` |
 | `<select>` | an enum with `#[derive(DbEnum)]` | `TEXT` | `TEXT` |
 | `<select multiple>`, checkboxes sharing a name | `Vec<String>` with `#[serde(default)]`; stored as `Json<Vec<String>>` | `TEXT` | `JSONB` |
@@ -182,14 +184,294 @@ Advice for the cases where the wrong type causes trouble later.
 
 ### Money
 
-Use `i64` in the smallest unit, `price: i64 // cents`, and format it for display (the
-`money` template filter, in `APP_CURRENCY`, which is `USD` by default). So 12.50 dollars is
-stored as `1250` cents, and `{{ 1250 | money }}` shows `$12.50`. A currency without decimals
-(IDR, JPY) stores the amount as it is.
+For a shop with one currency, use `i64` in the smallest unit, `price: i64 // cents`, and format
+it for display (the `money` template filter, in `APP_CURRENCY`, which is `USD` by default). So
+12.50 dollars is stored as `1250` cents, and `{{ 1250 | money }}` shows `$12.50`. A currency
+without decimals (IDR, JPY) stores the amount as it is.
+
+When records carry their own currency (invoices in dollars and dirhams, a deposit in yen), use
+`Money` from `renox::money`: the amount in the smallest unit plus its ISO 4217 `Currency`.
+`#[model(money)]` stores it in two columns, `<field>` (`BIGINT`) and `<field>_currency`
+(`TEXT`); `Option<Money>` makes both columns nullable, set or cleared together. Several fields
+can share one currency column with `#[model(money(currency = "currency"))]`.
+
+```rust
+# use renox::prelude::*;
+use renox::money::{Money, Rounding};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "invoices", form)]
+struct Invoice {
+    id: i64,
+    #[model(money(currency = "currency"))]
+    subtotal: Money,
+    #[model(money(currency = "currency"))]
+    tax: Money,
+    #[model(money)]
+    deposit: Option<Money>, // deposit + deposit_currency, both NULL when none
+}
+
+# fn demo() -> Result<(), renox::money::MoneyError> {
+let subtotal = Money::aed(10_000);
+let tax = subtotal.percent(500, Rounding::HalfUp)?; // 5%, the rounding is always your choice
+assert_eq!(subtotal.checked_add(tax)?.to_string(), "AED 105.00");
+// Different currencies never add up by accident.
+assert!(Money::usd(1).checked_add(Money::jpy(1)).is_err());
+// A split loses no minor unit: 100 in three parts is 34, 33, 33.
+assert_eq!(Money::usd(100).allocate(3)?[0], Money::usd(34));
+# Ok(())
+# }
+```
+
+Show it with `{{ invoice.total | money }}` (its own currency and decimals: `¥1,250`,
+`KWD 12.345`), `Column::money(..).currency_from("total_currency")` in a grid and
+`Field::money(..).currency_from(..)` in renox-admin. In a form, `<rx-input type="money"
+currency="JPY"/>` steps by the currency's smallest unit and the server rejects too many
+decimals (`10.5` yen) instead of rounding. The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs)
+keeps a deposit this way, in USD, JPY or KWD.
 
 Why not a float (`f64`)? Floats round: `0.1 + 0.2 != 0.3`. And why not a decimal type? sqlx
 (the database library Renox uses) deliberately has no decimal type on SQLite, so a `Decimal`
-would behave differently on the two databases.
+would behave differently on the two databases. A fixed currency stays a plain `i64`.
+
+### Quantities and units
+
+Weights, lengths and volumes need decimals but not floats. `Quantity<SCALE>` from
+`renox::quantity` is an exact decimal kept as an `i64` in units of 10^-`SCALE`: `Quantity<3>` counts
+thousandths, so 2.5 kg is `2500` and shows as `2.500`. It is one `BIGINT` column on SQLite and
+PostgreSQL; `Option<Quantity<3>>` makes it nullable. A quantity carries no unit: a record keeps
+its unit in a `String` column of its own (`stock` + `stock_unit`), and a `UnitTable` (`Units`)
+converts between units with exact decimal factors.
+
+```rust
+# use renox::prelude::*;
+use renox::money::Rounding;
+use renox::quantity::{Quantity, QuantityError, Units};
+
+#[derive(Model, serde::Serialize, Debug)]
+#[model(table = "bins", form)] // BinForm: "12.5" texts checked with quantity(3); fill() builds the Quantity
+struct Bin {
+    id: i64,
+    stock: Quantity<3>,         // BIGINT NOT NULL, thousandths
+    stock_unit: String,         // "kg", "g", "t"
+    spare: Option<Quantity<3>>, // BIGINT, NULL when none
+}
+
+# fn demo() -> Result<(), QuantityError> {
+// Parsing says what happens to extra digits: a rounding, or an error. There is no default.
+let kg = Quantity::<3>::parse_exact("2.5")?;
+assert_eq!(kg.to_string(), "2.500");
+assert_eq!(Quantity::<3>::parse("0.0005", Rounding::HalfUp)?.raw(), 1);
+assert_eq!(Quantity::<3>::parse_exact("0.0005"), Err(QuantityError::Inexact));
+// Arithmetic is checked and exact: 0.1 + 0.2 is 0.3.
+let sum = Quantity::<3>::parse_exact("0.1")?.checked_add(Quantity::parse_exact("0.2")?)?;
+assert_eq!(sum.raw(), 300);
+// Units convert through their base, with the rounding you choose.
+let units = Units::new().base("kg").unit("g", "kg", "0.001").unit("t", "kg", "1000").build()?;
+assert_eq!(units.convert(kg, "kg", "g", Rounding::HalfEven)?.to_string(), "2500.000");
+assert_eq!(units.convert(Quantity::<3>::parse_exact("1500")?, "g", "kg", Rounding::HalfEven)?.to_string(), "1.500");
+# Ok(())
+# }
+```
+
+Typed columns compare the scaled integer, so `Bin::STOCK.lt(Quantity::<3>::parse_exact("5")?)`,
+`order_by` and `sum` are exact on both databases (5.000 is not 4.999; `sum` returns a `Quantity`).
+Show it with `{{ bin.stock | quantity(unit=bin.stock_unit) }}` (all three digits, the locale's
+separators), `Column::quantity("stock", "Stock").unit_from("stock_unit")` in a grid (one summary per
+unit) and `Field::quantity(..).unit_from(..)` in renox-admin. In a form, `<rx-input type="quantity"
+scale="3" unit="kg"/>` steps by the scale and the server refuses a fourth decimal (`2.5004`)
+instead of rounding; `.quantity(3)`, `.quantity_min("0")` and `.unit(&units)` are the rules.
+
+Two pieces of advice. The scale lives in the Rust type, not in the schema: `db:check` and
+`make:migration --auto` see a `BIGINT` either way, so note the scale in a comment on the column
+(`-- thousandths`). And pick the scale by the precision you measure, not by the currency: cents
+(`Money`, `i64`) are the smallest unit of a price, thousandths are a quantity's chosen precision.
+The bike shop's [`/about/fields`](../examples/bikeshop/src/app/about/fields.rs) keeps a load limit
+this way, in kg, g or t.
+
+### Places: points, circles and areas
+
+A check-in, a delivery stop or a service area is a place on the earth. `renox::geo` has the
+three shapes, with no GIS stack behind them: a `Point` (latitude and longitude, checked), a
+`Circle` (a centre and a radius in metres) and a `Polygon` (an outer ring and optional holes).
+Everything is plain Rust and runs on the server, so a reported location can be verified
+instead of trusted.
+
+```rust
+use renox::geo::{Circle, Point, Polygon};
+
+# fn demo() -> Result<(), renox::geo::GeoError> {
+// The API order is (lat, lng). GeoJSON is the other way round: [lng, lat].
+let here = Point::new(25.2048, 55.2708)?;
+assert!(Point::new(91.0, 0.0).is_err()); // out of range or not finite: an error, never a panic
+
+// Distances are haversine, in metres, the short way round (also across the antimeridian).
+let site = Circle::new(Point::new(25.2050, 55.2710)?, 150.0)?;
+assert!(site.contains(here)); // on the radius counts as inside
+
+// A GeoJSON Polygon (or a Feature holding one) reads as is; holes are supported.
+let area: Polygon = renox::serde_json::from_str(
+    r#"{"type":"Polygon","coordinates":[[[55.0,25.0],[56.0,25.0],[56.0,26.0],[55.0,26.0],[55.0,25.0]]]}"#,
+)
+.unwrap();
+assert!(area.contains(here));
+assert!(here.distance_to(Point::new(25.3, 55.3)?) < 15_000.0);
+# Ok(())
+# }
+```
+
+The edges are decided once: a point exactly on a circle's radius, on a polygon's edge or on a
+vertex is inside; the boundary of a hole is inside the polygon too (the hole is open). A
+polygon is tested on the flat plane of longitude and latitude, with longitudes shifted
+relative to its first vertex, so one that crosses the antimeridian works; one that spans more
+than 180 degrees of longitude is not supported. A ring needs three distinct vertices, and a
+radius must be positive and finite.
+
+A `Point` reads from the JSON `{"lat": .., "lng": ..}`, from a GeoJSON `Point` and from the
+form fields `lat` and `lng`, so a struct field `spot: Option<Point>` is filled by the fields
+`spot[lat]` and `spot[lng]` that the `map_picker` block posts ([blocks.md](blocks.md#maps)).
+A `Circle` is `{center, radius}` and a `Polygon` the GeoJSON `Polygon`; a picker posts a circle
+as a GeoJSON `Point` with a `radius` in metres and a polygon as a GeoJSON string, which you
+read with `serde_json::from_str`. A bad coordinate is a validation error: `.latitude()`,
+`.longitude()` and `.point()` (a JSON or GeoJSON point as text) are rules
+([validation.md](validation.md)). Store a point as two `REAL` columns (`lat`, `lng`) or as
+JSON text; there is no column type and no migration for it.
+
+### Custom fields: columns an administrator adds
+
+Sometimes the person who runs the app needs a field you did not plan: a passport number on a
+party, a segment on a customer. A migration is not the answer when they add it themselves.
+Custom fields (`renox::custom_fields`) keep the *definitions* in a `custom_fields` table
+(migration `00010101000430`, created with the framework's tables) and the *values* in one JSON
+column of the model. A definition has a model (the table name), a stable `key`
+(`[a-z][a-z0-9_]*`), a kind (text, number, date, bool, choice, reference to a record of another
+model, or a file stored on a disk), rules (required, min, max, options), a label per locale, a
+free `meta` JSON that the framework never interprets, a position and an active flag.
+
+```rust
+# use renox::prelude::*;
+use renox::custom_fields::{CustomField, CustomValues};
+use renox::db::Json;
+
+#[derive(Model, serde::Serialize, Default, Debug)]
+#[model(table = "parties", form, custom_fields = "extra")] // must name a Json<CustomValues> column
+struct Party {
+    id: i64,
+    #[form(validate(required))]
+    name: String,
+    extra: Json<CustomValues>, // TEXT on SQLite, JSONB on PostgreSQL
+}
+
+# async fn demo(db: &Db) -> Result {
+CustomField::text("parties", "passport_no")
+    .label("Passport no.")              // the fallback locale ("en")
+    .label_in("es", "N.º de pasaporte") // the request's locale wins; then the fallback; then the key
+    .required()
+    .max(20)
+    .save(db)
+    .await?;
+CustomField::choice("parties", "segment").options(&["retail", "corporate"]).save(db).await?;
+
+// Filter and sort on a key; `with_custom_fields` checks the keys against the definitions.
+let retail = Party::query()
+    .where_(Party::EXTRA.json("segment").eq("retail"))
+    .order_by_json_desc(Party::EXTRA.json("segment"))
+    .with_custom_fields(db)
+    .await?
+    .get(db)
+    .await?;
+# let _ = retail;
+# Ok(())
+# }
+```
+
+A key never changes, because the stored values are keyed by it: saving a definition again
+updates its label, rules, `meta`, position and active flag, so renaming a field is changing its
+label, and deactivating one hides it but keeps what was stored. `CustomField::for_model` is
+cached per model and dropped on every write (other servers pick a change up after a restart, or
+`CustomField::forget`).
+
+With `custom_fields = "extra"` the generated form takes the values as `extra[passport_no]`.
+`Valid<Party>` checks them against the active definitions after the struct's own rules (required,
+length, number range, date, choice membership, that a reference exists, a file upload), reports
+errors under the same names (`extra[passport_no]`) and drops keys that have no definition;
+`fill` stores the cleaned values. In a template, `CustomField::views(&db, "parties", locale)`
+gives the fields with their labels already in the request's locale, and one tag draws them:
+
+```html
+<rx-custom-fields :fields="fields" name="extra" :values="party.extra"/>          {# inputs #}
+<rx-custom-fields :fields="fields" :values="party.extra" mode="show"/>           {# entries #}
+```
+
+A grid column is `Column::custom_field("extra", "segment")`; it takes its label, kind and choices
+from the definition and sorts, filters, searches and exports (CSV, xlsx, print) on the JSON
+value (`Grid::page` and `export` resolve it; call `grid.with_custom_fields::<Party>(&request)`
+before the sync `filter`). renox-admin does all of this by itself for a resource whose model
+declares `custom_fields`: inputs on the forms, entries on the view page, a column and a filter
+per definition, and a "Custom fields" resource to manage the definitions.
+
+Two things to know about the queries. A key is never put into SQL unless it matches the key
+shape, and values are always bound, so `Party::EXTRA.json("x'; --")` is an error, not an
+injection. And `.json(key)` is not indexed: for a key you filter on often, run
+`db::json_index(dialect, "parties", "extra", "segment")` from a migration and it gives you the
+`CREATE INDEX` statement for SQLite or PostgreSQL.
+
+#### Sensitive fields
+
+A tax id or a salary should not sit in the table as plain text, nor show on every page. Mark the
+definition `.sensitive()` and its value is sealed with `APP_KEY` (the AES-256-GCM that `Encrypted<T>`
+columns use) inside the JSON column: the stored value is the text `rx-sealed:1:…`, a new
+nonce per write, so the same text seals differently each time. The value is validated as plain text
+first (required, max, number, date, choice), then sealed. Only text, number, date, bool and choice
+fields can be sensitive; `save` refuses a sensitive reference or file, because a sealed record id or file
+key would not protect the record or the file.
+
+```rust
+# use renox::prelude::*;
+use renox::custom_fields::CustomField;
+
+# async fn demo(db: &Db) -> Result {
+CustomField::text("parties", "tax_id")
+    .label("Tax id")
+    .sensitive()                    // sealed with APP_KEY
+    .reveal_with("see-tax-ids")     // optional: the ability that shows it
+    .save(db)
+    .await?;
+# Ok(())
+# }
+
+// The ability is a gate you declare like any other; an undeclared name denies.
+let app = App::new().gate("see-tax-ids", |user| user.email.ends_with("@hr.example"));
+# let _ = app;
+```
+
+Who sees the value is the ability: the definition's own `reveal_with` name, else the app-wide
+`custom_fields.reveal`. A viewer without it (and a request with no logged-in user) gets `••••••`, never the
+length or a part of the value, and the plain text is never put into the template's context. Use
+`CustomField::views_for(&db, "parties", locale, auth.as_ref())` instead of `views` so the viewer's ability
+decides (`views` masks every sensitive field), and `party.extra.shown(&db, &fields)` for the values:
+
+```html
+<rx-custom-fields :fields="fields" name="extra"/>                          {# empty input, placeholder "unchanged" #}
+<rx-custom-fields :fields="fields" :values="extra" mode="show"/>           {# ••••••, or the value with the ability #}
+```
+
+- **Editing.** A form never holds the stored value: a sensitive input is empty and says "unchanged". A
+  blank submit keeps the stored sealed value (even for someone who may not see it), a filled one replaces it.
+- **Not filterable or sortable.** A sealed value cannot be compared in SQL. After `with_custom_fields`, a
+  condition, `order_by_json[_desc]`, a grid filter, sort or search on a sensitive key is refused with a
+  typed error (`DbError::SealedCustomField`, a 400 in the grid). The grid column of a sensitive field is
+  not sortable or filterable, and the global search skips it.
+- **Exports.** CSV, xlsx and print leave a sensitive column out for a viewer without the ability (a
+  spreadsheet never holds a fake value) and contain the plain value with it. The grid takes the viewer from
+  the logged-in user (`GridRequest::viewed_by` in tests and commands).
+- **renox-admin** has a "Sensitive" checkbox and a "Reveal ability" on the definitions form, and masks
+  the forms, entries and lists of a resource the same way. It declares no ability: you do.
+- **Changing the flag** affects new writes only. Stored values are not rewritten: a plain value stays
+  plain (and is masked from then on) until the record is saved again; a sealed one stays sealed.
+- **Rotating `APP_KEY`** makes sealed values unreadable, like `Encrypted<T>` columns: they show as
+  `unreadable` to someone with the ability and as the mask to everyone else, and nothing errors. Re-save them
+  under the new key before you switch ([operations](operations.md#backups)). There is no automatic re-seal.
 
 ### Time zones
 

@@ -18,6 +18,9 @@ renox-billing.workspace = true
 renox-blocks.workspace = true
 renox-editors.workspace = true
 renox-oauth.workspace = true
+# The rental receipt as a PDF, downloaded and attached to the return mail
+# (src/app/rentals/receipt_pdf.rs, resources/views/pdf/rental-receipt.typ).
+renox-pdf.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 # Logs a gateway that didn't answer, and a plan visit that found no room (#237).
 tracing = "0.1.44"

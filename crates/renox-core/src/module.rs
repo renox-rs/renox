@@ -1,5 +1,5 @@
 use crate::db::Migration;
-use crate::{Registry, Routes};
+use crate::{Contributions, Registry, Routes};
 
 /// A self-contained piece of an application: its routes and migrations, and
 /// later its jobs, policies and views.
@@ -27,6 +27,27 @@ pub trait Module: Send + Sync + 'static {
     /// The module's routes; none by default.
     fn routes(&self) -> Routes {
         Routes::new()
+    }
+
+    /// The module's routes, given everything modules contributed in
+    /// `register` (see `Registry::contribute`). Every `register` has run
+    /// by then, so module order does not matter. Calls [`Module::routes`]
+    /// by default.
+    ///
+    /// ```
+    /// # use renox::prelude::*;
+    /// struct Link(&'static str);
+    /// struct Menu;
+    /// impl Module for Menu {
+    ///     fn name(&self) -> &'static str { "menu" }
+    ///     fn routes_with(&self, contributions: &Contributions) -> Routes {
+    ///         let _links = contributions.all::<Link>();
+    ///         Routes::new()
+    ///     }
+    /// }
+    /// ```
+    fn routes_with(&self, _contributions: &Contributions) -> Routes {
+        self.routes()
     }
 
     /// Migrations this module owns, e.g. `renox::migrations!("src/app/products/migrations")`.

@@ -58,7 +58,7 @@
   **cargo-deny**, **coverage** (informational); a separate workflow, **Release build (site)**
   (release-site.yml: on pushes to main that touch the docs, builds site/ for Renoxium's server,
   which pulls it),
-  **Release** (release.yml: on a pushed `v*` tag, publishes the ten crates to crates.io with
+  **Release** (release.yml: on a pushed `v*` tag, publishes the eleven crates to crates.io with
   Trusted Publishing and creates the GitHub release; RELEASING.md),
   **semver checks** (pull requests:
   `cargo semver-checks -p renox-core -p renox --release-type minor` against the latest

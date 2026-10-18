@@ -1,0 +1,8 @@
+{
+  "id": "dp_1Abc",
+  "object": "dispute",
+  "status": "needs_response",
+  "payment_intent": "pi_3Abc",
+  "charge": "ch_3Abc",
+  "evidence_details": { "due_by": 1893456000, "has_evidence": false }
+}

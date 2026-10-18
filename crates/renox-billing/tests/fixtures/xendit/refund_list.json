@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "id": "rfd_8d3f1a",
+      "invoice_id": "579c8d61f23fa4ca35e52da4",
+      "amount": 10,
+      "currency": "USD",
+      "status": "SUCCEEDED",
+      "reason": "DUPLICATE"
+    }
+  ],
+  "has_more": false
+}

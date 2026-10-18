@@ -2,6 +2,7 @@
 //! `layouts/public.html`), made of the app's page patterns
 //! (`resources/views/components/`). Signed-in people go on to `/dashboard`.
 
+use renox::nav::NavLink;
 use renox::prelude::*;
 
 use super::roles::ROLES;
@@ -11,6 +12,19 @@ pub struct Home;
 impl Module for Home {
     fn name(&self) -> &'static str {
         "home"
+    }
+
+    /// The sidebar link back to the front page, for signed-in people (a
+    /// guest gets a hand-written one in the layout).
+    fn register(&self, app: &mut Registry) {
+        app.nav(
+            "app",
+            NavLink::route("home", "nav.home")
+                .icon("house")
+                .group("nav.app")
+                .order(20)
+                .when(|_| true),
+        );
     }
 
     fn routes(&self) -> Routes {

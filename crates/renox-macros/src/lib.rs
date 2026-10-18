@@ -51,7 +51,18 @@ use syn::{DeriveInput, parse_macro_input};
 ///   (`Model::indexes`); every column must exist. On a field,
 ///   `default = "sql"` records the column's SQL default and
 ///   `references = "table"` the table it points at (`Model::column_info`).
+/// - `#[model(money)]` on a `Money` or `Option<Money>` field stores it in two
+///   columns, `<field>` (the minor amount) and `<field>_currency` (the code);
+///   `#[model(money(currency = "currency"))]` makes several fields share one
+///   currency column, declared once. The constants are `Col<_, i64>` (or
+///   `Option<i64>`) for the amount and `Col<_, String>` for the currency.
+///   An `Option<Money>` is read as `None` when both columns are `NULL`.
 /// - `default_scope = "path::to::fn"` and `hooks`: see `renox::db::Model`.
+/// - `state_machine` guards the status column of a model that implements
+///   `renox::state_machine::StateMachine`: `save`, `save_only` and
+///   `save_changes` refuse to change it (only a transition does; a bulk
+///   `update` query bypasses the guard, like hooks), and inserts must start in
+///   one of the machine's `initial` states unless `insert_in_state` is used.
 /// - `form` also generates `<Model>Form`, with the model's visibility: every
 ///   field except `id`, `created_at`, `updated_at`, `deleted_at` and
 ///   `#[model(skip)]`/`#[form(skip)]` fields, in their own types, deriving
@@ -154,6 +165,9 @@ pub fn derive_view_data(input: TokenStream) -> TokenStream {
 ///     note: String, // Default
 /// }
 /// ```
+///
+/// `#[row(money)]` reads a `Money` (or `Option<Money>`) from the column and
+/// `<column>_currency`; `#[row(money(currency = "col"))]` names the currency column.
 ///
 /// `derive(Model)` implements `FromRow` too.
 #[proc_macro_derive(FromRow, attributes(row))]

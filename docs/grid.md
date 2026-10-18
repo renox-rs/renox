@@ -260,6 +260,29 @@ A few things to know about the table:
   Currencies without decimals (IDR, JPY) show the number as it is. There's no currency symbol,
   and the from–to filter takes whole units too. The `money` template filter takes the same
   smallest unit, so a cell and a page written with `| money` agree.
+- Rows in different currencies: `Column::money("total", "Total").currency_from("total_currency")`
+  reads each row's ISO 4217 code from that model column (the `<field>_currency` column of a
+  `#[model(money)]` field). Each cell then shows its own symbol and decimals (`$12.50`,
+  `¥1,250`, `KWD 12.345`). Summaries show one figure per currency (`$37.50 · ¥1,250`), never a
+  sum across currencies, in the footer and under each group. `cur.total=JPY` filters by currency
+  (the filter menu has a Currency box) and makes `min.`/`max.` read that currency's decimals. CSV
+  exports write the code after the amount (`12.50 USD`), XLSX gives each cell a number format with
+  its currency, and the print page shows the symbol. Without `currency_from` nothing changes.
+- Exact quantities: `Column::quantity("stock", "Stock").scale(3).unit_from("stock_unit")` shows a
+  `Quantity<3>` field with its three digits (`2.500 kg`; the scale is the type's, `.scale` must
+  match it). Filters (`min.stock=1.25`), sorts and summaries act on the stored integer, so they are
+  exact. `unit_from` reads each row's unit from that `String` column: summaries show one figure per
+  unit (`3.751 kg · 10.000 m`), never a sum across units, in the footer and under each group;
+  `unit.stock=kg` filters by unit (the filter menu has a Unit box). CSV writes the unit after the
+  value (`2.500 kg`), XLSX gives a number cell with a format that carries the digits and the unit,
+  and the print page shows the formatted text. Without `unit_from` the column has one total.
+- Custom fields: `Column::custom_field("extra", "segment")` shows the key `segment` of a model's
+  `Json<CustomValues>` column (`custom_fields = "extra"`). `page` and the exports resolve it against
+  the model's active definitions: label in the request's locale, kind (text, number, date; choice
+  and bool fields become pick-lists) and options. It sorts, filters, searches and exports on the JSON
+  value (values bound, never put in the SQL); CSV and XLSX write the choice label. The grid key is
+  `extra_segment`. A key without an active definition leaves the column out. Call
+  `grid.with_custom_fields::<Party>(&request).await?` before the sync `filter` / `selected`.
 
 ### Options every column takes
 
@@ -858,6 +881,8 @@ Every value belongs to one grid. With `.prefix("orders")`, each name starts with
 | `q.number=A%` | a text filter (`%` makes it a pattern) |
 | `m.number=starts` | how `q.` matches: `contains` (default), `starts`, `ends`, `equals` |
 | `min.total=1000`, `max.total=…` | a number or money range (money in whole units: `min.total=40.5` is 4050 cents) |
+| `cur.total=JPY` | a money column with `currency_from`: only rows in that currency |
+| `unit.stock=kg` | a quantity column with `unit_from`: only rows in that unit |
 | `from.ordered_on=2026-01-01`, `to.ordered_on=…` | a date range (`to` includes its day) |
 | `in.status=paid` (repeated) | select and tags choices; bool uses `in.paid=1` / `in.paid=0` |
 | `group=region` | group by one of `.groups`; empty for no groups |

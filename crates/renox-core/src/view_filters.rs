@@ -1,4 +1,4 @@
-//! Filters every template gets: `number`, `money`, `date`, `since`,
+//! Filters every template gets: `number`, `money`, `quantity`, `date`, `since`,
 //! `words` and `markdown`.
 
 use minijinja::value::Kwargs;
@@ -14,7 +14,7 @@ fn locale(state: &State) -> String {
 }
 
 /// Thousands and decimal separators for a locale.
-fn separators(locale: &str) -> (&'static str, &'static str) {
+pub(crate) fn separators(locale: &str) -> (&'static str, &'static str) {
     let language = locale.split(['-', '_']).next().unwrap_or(locale);
     match language {
         "id" | "de" | "nl" | "es" | "it" | "pt" | "tr" | "da" | "nb" | "ms" | "vi" => (".", ","),
@@ -58,7 +58,8 @@ fn to_number(filter: &str, value: &Value) -> Result<f64, Error> {
 /// `10^currency_decimals(code)` (100 for `USD`, 1 for `IDR`). Keywords:
 /// `currency` (another ISO 4217 code for this amount), `decimals`, and
 /// `divide_by`, which replaces that divisor (`divide_by=1` for an amount
-/// already in whole units).
+/// already in whole units). A [`Money`](crate::money::Money) value is shown in
+/// its own currency (`currency=` is ignored for it).
 pub(crate) fn money(
     currency: String,
 ) -> impl Fn(&State, Value, Kwargs) -> Result<String, Error> + Send + Sync + 'static {
@@ -67,10 +68,131 @@ pub(crate) fn money(
         let decimals: Option<u32> = kwargs.get("decimals")?;
         let divide_by: Option<f64> = kwargs.get("divide_by")?;
         kwargs.assert_all_used()?;
+        if let Some(m) = money_object(&value)? {
+            // A `Money` carries its own currency, which wins over `currency=`.
+            if decimals.is_none() && divide_by.is_none() {
+                return Ok(m.format(&locale(state)));
+            }
+            let code = m.currency.code();
+            let amount = m.minor as f64 / money_divisor(code, divide_by);
+            return Ok(format_money(amount, code, decimals, &locale(state)));
+        }
         let code = code.map_or_else(|| currency.clone(), |c| c.trim().to_ascii_uppercase());
         let amount = to_number("money", &value)? / money_divisor(&code, divide_by);
         Ok(format_money(amount, &code, decimals, &locale(state)))
     }
+}
+
+/// The [`Money`](crate::money::Money) a template value holds: a map with an
+/// integer `minor` and a `currency` code (what `Money` serializes to).
+/// `None` for anything else, so plain numbers keep the old path.
+fn money_object(value: &Value) -> Result<Option<crate::money::Money>, Error> {
+    if value.kind() != minijinja::value::ValueKind::Map {
+        return Ok(None);
+    }
+    let (Ok(minor), Ok(code)) = (value.get_attr("minor"), value.get_attr("currency")) else {
+        return Ok(None);
+    };
+    let (Ok(minor), Some(code)) = (i64::try_from(minor), code.as_str()) else {
+        return Ok(None);
+    };
+    let currency = crate::money::Currency::parse(code)
+        .map_err(|e| Error::new(ErrorKind::InvalidOperation, format!("money: {e}")))?;
+    Ok(Some(crate::money::Money { minor, currency }))
+}
+
+/// `{{ stock | quantity }}` → `2,500.000` for a `Quantity<3>` (or the text
+/// `"2500.000"`) in `en`, `2.500,000` in `es`. The digits are read as exact
+/// decimal text, never through a float, so nothing is lost. Without
+/// `decimals` every digit of the value is kept (`"2.500"` stays `2.500`);
+/// `decimals=n` pads or rounds half-up (for display only). `unit="kg"` is
+/// appended after a space. Separators follow the page's locale, as in
+/// `number`.
+pub(crate) fn quantity(state: &State, value: Value, kwargs: Kwargs) -> Result<String, Error> {
+    let decimals: Option<u32> = kwargs.get("decimals")?;
+    let unit: Option<String> = kwargs.get("unit")?;
+    kwargs.assert_all_used()?;
+    let text = match value.as_str() {
+        Some(s) => s.trim().to_owned(),
+        None => value.to_string(),
+    };
+    let (negative, whole, fraction) = split_decimal(&text).ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidOperation,
+            format!("quantity: `{text}` is not a decimal number"),
+        )
+    })?;
+    let (whole, fraction) = round_decimal(whole, fraction, decimals);
+    let (thousands, point) = separators(&locale(state));
+    let mut out = String::new();
+    if negative && whole.chars().chain(fraction.chars()).any(|c| c != '0') {
+        out.push('-');
+    }
+    for (i, digit) in whole.chars().enumerate() {
+        if i > 0 && (whole.len() - i) % 3 == 0 {
+            out.push_str(thousands);
+        }
+        out.push(digit);
+    }
+    if !fraction.is_empty() {
+        out.push_str(point);
+        out.push_str(&fraction);
+    }
+    if let Some(unit) = unit.filter(|u| !u.is_empty()) {
+        out.push(' ');
+        out.push_str(&unit);
+    }
+    Ok(out)
+}
+
+/// `-12.50` as (negative, "12", "50"); `None` unless it is a plain decimal
+/// (optional sign, digits, optional `.digits`; no exponent or separators).
+fn split_decimal(text: &str) -> Option<(bool, &str, &str)> {
+    let (negative, rest) = match text.as_bytes().first()? {
+        b'-' => (true, &text[1..]),
+        b'+' => (false, &text[1..]),
+        _ => (false, text),
+    };
+    let (whole, fraction) = rest.split_once('.').unwrap_or((rest, ""));
+    let digits = |s: &str| s.bytes().all(|b| b.is_ascii_digit());
+    if whole.is_empty() || !digits(whole) || !digits(fraction) || rest.ends_with('.') {
+        return None;
+    }
+    Some((negative, whole, fraction))
+}
+
+/// The digits of `whole.fraction` at `decimals` places (all of them when
+/// `None`), padded with zeros or rounded half-up on the magnitude.
+fn round_decimal(whole: &str, fraction: &str, decimals: Option<u32>) -> (String, String) {
+    let whole = whole.trim_start_matches('0');
+    let whole = if whole.is_empty() { "0" } else { whole };
+    let Some(n) = decimals.map(|d| d as usize) else {
+        return (whole.into(), fraction.into());
+    };
+    if fraction.len() <= n {
+        return (whole.into(), format!("{fraction:0<n$}"));
+    }
+    let round_up = fraction.as_bytes()[n] >= b'5';
+    let mut digits: Vec<u8> = whole.bytes().chain(fraction.bytes().take(n)).collect();
+    if round_up {
+        let mut i = digits.len();
+        loop {
+            if i == 0 {
+                digits.insert(0, b'1');
+                break;
+            }
+            i -= 1;
+            if digits[i] == b'9' {
+                digits[i] = b'0';
+            } else {
+                digits[i] += 1;
+                break;
+            }
+        }
+    }
+    let split = digits.len() - n;
+    let text = String::from_utf8(digits).unwrap_or_default();
+    (text[..split].to_owned(), text[split..].to_owned())
 }
 
 /// What an amount in `code`'s smallest unit is divided by to give whole
@@ -116,27 +238,10 @@ pub fn currency_decimals(code: &str) -> u32 {
     currency(code).1
 }
 
-/// A currency's symbol and usual decimals (the code itself and 2 when it
-/// isn't one of the listed ones).
+/// A currency's symbol and usual decimals from the one table in
+/// [`crate::money`] (the code itself and 2 when it isn't listed).
 fn currency(code: &str) -> (&str, u32) {
-    match code {
-        "IDR" => ("Rp", 0),
-        "USD" => ("$", 2),
-        "EUR" => ("€", 2),
-        "GBP" => ("£", 2),
-        "JPY" => ("¥", 0),
-        "CNY" => ("CN¥", 2),
-        "SGD" => ("S$", 2),
-        "MYR" => ("RM", 2),
-        "AUD" => ("A$", 2),
-        "CAD" => ("CA$", 2),
-        "INR" => ("₹", 2),
-        "KRW" => ("₩", 0),
-        "THB" => ("฿", 2),
-        "PHP" => ("₱", 2),
-        "VND" => ("₫", 0),
-        other => (other, 2),
-    }
+    crate::money::info(code)
 }
 
 /// `n` with `decimals` decimals and the locale's separators: `75.000` in
@@ -386,6 +491,33 @@ pub(crate) fn attr_value(value: Value) -> Value {
         };
     }
     Value::from(value.to_string())
+}
+
+/// `money_input(code)`: `{code, decimals, step}` for `<rx-input type="money">`
+/// (`step` is the currency's smallest unit as a decimal: `0.01`, `1`, `0.001`).
+pub(crate) fn money_input(code: &str) -> Value {
+    let code = code.trim().to_ascii_uppercase();
+    let decimals = currency_decimals(&code);
+    let step = match decimals {
+        0 => "1".to_owned(),
+        d => format!("0.{}1", "0".repeat(d as usize - 1)),
+    };
+    minijinja::context! { code, decimals, step }
+}
+
+/// `quantity_input(scale)`: `{decimals, step}` for `<rx-input type="quantity">`
+/// (`step` is one unit of the last digit: `1`, `0.1`, `0.001`).
+pub(crate) fn quantity_input(scale: Option<Value>) -> Value {
+    // The tag's `scale="3"` arrives as text, `:scale="3"` as a number.
+    let decimals = scale
+        .and_then(|v| v.to_string().trim().parse::<usize>().ok())
+        .unwrap_or(0)
+        .min(9) as u32;
+    let step = match decimals {
+        0 => "1".to_owned(),
+        d => format!("0.{}1", "0".repeat(d as usize - 1)),
+    };
+    minijinja::context! { decimals, step }
 }
 
 /// `rx_attr("name", value)`: ` name`, ` name="text"` (escaped) or nothing, by [`attr_value`].

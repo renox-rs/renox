@@ -102,18 +102,22 @@ Paths are relative to this folder.
 | Payment: Midtrans through `state.http` and its webhook (`renox::webhook`), a demo gateway without keys | `/pay/{payment}` | [src/app/sales/gateway.rs](src/app/sales/gateway.rs), [src/app/sales/payments.rs](src/app/sales/payments.rs) |
 | Orders and invoices (signed links for guests, print styles); a counter sale's receipt is the `receipt` block (80 mm, #48) | `/orders/{order}` | [src/app/sales/orders.rs](src/app/sales/orders.rs) |
 | Renting: `datetime_range` and `availability` blocks, two overlap checks (form hook + `Db::begin_immediate` + `lock_for_update`) | `/rent`, `/rentals`, `/rentals/{code}` | [src/app/rentals/reserve.rs](src/app/rentals/reserve.rs), [src/app/rentals/booking.rs](src/app/rentals/booking.rs), [src/app/rentals/pricing.rs](src/app/rentals/pricing.rs) |
+| Rental status as a state machine (`#[model(state_machine)]`, `Machine`, `Transition` with guards, `transition(..).run_in(&mut tx)`, the history in `state_transitions`, `rnx state:diagram Rental`) | `/staff/rentals/{rental}`, `/rentals/{code}` | [src/app/rentals/machine.rs](src/app/rentals/machine.rs), [counter.rs](src/app/rentals/counter.rs), [tasks.rs](src/app/rentals/tasks.rs), [docs/state-machines.md](../../docs/state-machines.md) |
+| A returned rental's receipt as a PDF (`renox-pdf`: a Typst template on the kit, `Pdf::document(..).locale(..).data(..).render(..)`), downloaded by staff of the rental's store and attached to the return mail, in the customer's language (English or Spanish) | `/staff/rentals/{rental}/receipt.pdf` | [src/app/rentals/receipt_pdf.rs](src/app/rentals/receipt_pdf.rs), [resources/views/pdf/rental-receipt.typ](resources/views/pdf/rental-receipt.typ), [tests/rentals.rs](tests/rentals.rs), [docs/pdf.md](../../docs/pdf.md) |
 | ID check: `Upload`, `Encrypted<String>`, reviewed by staff | `/rentals/identity` | [src/app/rentals/identity.rs](src/app/rentals/identity.rs) |
 | My bikes and their service history (`has_many`, the `history` block) | `/bikes`, `/bikes/{bike}` | [src/app/workshop/bikes.rs](src/app/workshop/bikes.rs) |
 | Booking a service within the workshop's capacity (the kit's `date_picker` with `disabled_dates` and `closed_weekdays`) | `/service/book`, `/service/{order}` | [src/app/workshop/booking.rs](src/app/workshop/booking.rs), [src/app/workshop/capacity.rs](src/app/workshop/capacity.rs) |
 | Approving extra work from a signed, single-use link | `/service/approve/{extra}` | [src/app/workshop/approval.rs](src/app/workshop/approval.rs) |
 | Service plans with renox-billing (Stripe, Xendit, a demo gateway), the `compare_plans` and `month_calendar` blocks | `/plans`, `/plans/subscribe`, `/plans/mine`, `/plans/mine/{subscription}` | [src/app/plans/](src/app/plans/) |
+| Pay a ready work order by payment link: `Billing::payment_link` with the reference `work_order`, the demo gateway's `payment_link` and signed page, a `PaymentSucceeded` listener that marks it paid | `/staff/workshop/{order}/pay-link`, `/plans/demo-pay/link/{payment}` | [src/app/workshop/order.rs](src/app/workshop/order.rs), [src/app/plans/demo.rs](src/app/plans/demo.rs), [src/app/workshop/mod.rs](src/app/workshop/mod.rs) |
 | Accounts: Renox's `Auth` (login, register, reset, verification), account sections (`Registry::account_section`), language, privacy (download, delete) | `/login`, `/register`, `/account` | [src/app/accounts/](src/app/accounts/) |
 | Notifications: the bell, `DatabaseMessage`, live over Server-Sent Events; a reservation's confirmation mail carries a calendar file (`Mail::attach_ics`, #48) | `/notifications` | [src/app/accounts/preferences.rs](src/app/accounts/preferences.rs), each area's `notify.rs`, [src/app/rentals/reserve.rs](src/app/rentals/reserve.rs) |
 | Social login (renox-oauth) and two-factor login (renox-2fa) | `/login`, `/two-factor/setup` | [src/lib.rs](src/lib.rs), [src/app/staff/two_factor.rs](src/app/staff/two_factor.rs) |
 | A walk-in customer claiming their record (signed URL) | `/claim/{customer}/{email}` | [src/app/accounts/claim.rs](src/app/accounts/claim.rs) |
 | Personal API tokens with abilities | `/account/api-tokens` | [src/app/api/tokens.rs](src/app/api/tokens.rs) |
 | Each store's own page on its own host: `Routes::domain`, `DomainParams`, a domain `fallback` | `north.localhost:3000/` | [src/app/home/stores.rs](src/app/home/stores.rs), [resources/views/home/store.html](resources/views/home/store.html), [layouts/store.html](resources/views/layouts/store.html) |
-| Every form input ↔ Rust ↔ SQLite ↔ PostgreSQL, a form that tries them all (files public and private, a photo resized with a thumbnail by the upload pipeline (`renox::upload::images`), `Uuid` keys, the editors, live validation), read back on an infolist | `/about/fields` | [src/app/about/fields.rs](src/app/about/fields.rs), [resources/views/components/about_fields_form.html](resources/views/components/about_fields_form.html), [tests/fields.rs](tests/fields.rs) |
+| Each store's own brand colour by host: `Brand` → `Theme::from_brand` (contrast-guarded), `App::theme_for` choosing by `ThemeRequest::host`, `<rx-theme/>` after `<rx-ui/>` | `north.localhost:3000/` (navy), `south.…` (rust), `west.…` (violet); the shop's host keeps the default | [src/app/home/stores.rs](src/app/home/stores.rs), [src/lib.rs](src/lib.rs), [resources/views/components/head.html](resources/views/components/head.html) |
+| Every form input ↔ Rust ↔ SQLite ↔ PostgreSQL, a form that tries them all (files public and private, a photo resized with a thumbnail by the upload pipeline (`renox::upload::images`), `Uuid` keys, a deposit as a `Money` pair in USD, JPY or KWD (`#[model(money)]`, `<rx-input type="money">`), a load limit as a `Quantity<3>` with its unit in kg, g or t (`<rx-input type="quantity">`), the editors, live validation), read back on an infolist | `/about/fields` | [src/app/about/fields.rs](src/app/about/fields.rs), [resources/views/components/about_fields_form.html](resources/views/components/about_fields_form.html), [tests/fields.rs](tests/fields.rs) |
 | htmx recipes, live: a modal form, out-of-band swaps (`.also`), `HxRetarget`/`HxReswap`, inline edit, Alpine tabs, `HxRefresh`/`HxRedirect`, toasts, infinite scroll | `/about/htmx` | [src/app/about/htmx.rs](src/app/about/htmx.rs), [resources/views/about/htmx.html](resources/views/about/htmx.html), [tests/htmx.rs](tests/htmx.rs) |
 | The same checklist as a live component: a struct and a method per action, `rx-click`, `rx-model`, `rx-submit`, a signed snapshot | `/about/htmx/live` | [src/app/about/live.rs](src/app/about/live.rs), [resources/views/about/live/_checklist.html](resources/views/about/live/_checklist.html), [tests/htmx.rs](tests/htmx.rs) |
 
@@ -131,10 +135,11 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 
 | Feature | Page | Files |
 |---|---|---|
-| The staff shell (`sidebar` + `<rx-shell fill>`, the dashboard standard), the active store and its switcher, `permissions::set_scope` | `/staff` | [src/app/access/active_store.rs](src/app/access/active_store.rs), [resources/views/layouts/staff.html](resources/views/layouts/staff.html) |
+| The staff shell (`sidebar menu="staff"` fed by `app.nav`, + `<rx-shell fill>`, the dashboard standard), the active store and its switcher, `permissions::set_scope` | `/staff` | [src/app/access/active_store.rs](src/app/access/active_store.rs), [src/app/staff/nav.rs](src/app/staff/nav.rs), [resources/views/layouts/staff.html](resources/views/layouts/staff.html) |
 | Rental counter, walk-ins (`renox::select`), pick-up and return with damage photos, receipts (`Morph`) | `/staff/rentals`, `/staff/rentals/{rental}` | [src/app/rentals/counter.rs](src/app/rentals/counter.rs) |
 | Fleet board: `renox::grid` with `poll`, `cards_on_mobile`, badges, related columns | `/staff/fleet` | [src/app/rentals/fleet.rs](src/app/rentals/fleet.rs) |
 | Workshop board: the `kanban` block (drag or keyboard), the bench, parts from stock | `/staff/workshop`, `/staff/workshop/{order}` | [src/app/workshop/board.rs](src/app/workshop/board.rs), [src/app/workshop/order.rs](src/app/workshop/order.rs) |
+| Job sign-off on the bench: the `signature_pad` and `camera_capture` blocks post a signature (or a typed name) and up to three photos, kept as notes with private files and signed photo links (#53) | `/staff/workshop/{order}/signoff` | [src/app/workshop/order.rs](src/app/workshop/order.rs), [resources/views/workshop/order.html](resources/views/workshop/order.html) |
 | Point of sale: `keypad` and `quantity` blocks, keyboard shortcuts (`data-rx-key`), gapless receipt numbers (`Sequence`) | `/staff/counter` | [src/app/sales/counter.rs](src/app/sales/counter.rs) |
 | Orders: ready, handed over, cancelled, returned (`action_sheet`) | `/staff/orders` | [src/app/sales/staff.rs](src/app/sales/staff.rs) |
 | Stock: one ledger (`stock_movements`, `Morph` to its cause), a database view as a model, stock takes | `/staff/stock`, `/staff/stock/{level}`, `/staff/stock/take` | [src/app/stock/levels.rs](src/app/stock/levels.rs), [src/app/stock/ledger.rs](src/app/stock/ledger.rs), [src/app/stock/take.rs](src/app/stock/take.rs) |
@@ -149,7 +154,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | Stores (opening hours in a `repeater`), the team, invitations, roles per store with dates | `/staff/stores`, `/staff/team` | [src/app/staff/stores.rs](src/app/staff/stores.rs), [src/app/staff/team.rs](src/app/staff/team.rs) |
 | The role × permission matrix, edited live | `/staff/roles` | [src/app/staff/roles.rs](src/app/staff/roles.rs) |
 | The audit log (`Audit` module, store and role on each entry) | `/staff/audit` | [src/app/staff/audit.rs](src/app/staff/audit.rs) |
-| The admin panel (renox-admin) for the catalogue, workshop, suppliers and stores, with renox-editors | `/admin` | [src/app/staff/admin.rs](src/app/staff/admin.rs), [src/app/staff/catalog_tools.rs](src/app/staff/catalog_tools.rs) |
+| The admin panel (renox-admin) for the catalogue, workshop, suppliers and stores, with renox-editors | `/admin` | [src/app/staff/admin.rs](src/app/staff/admin.rs), [src/app/staff/catalog_tools.rs](src/app/staff/catalog_tools.rs); the suppliers resource is contributed by its own module, [src/app/purchasing/mod.rs](src/app/purchasing/mod.rs) (`renox_admin::contribute`) |
 | Kiosk tokens for the JSON API | `/staff/api-tokens` | [src/app/api/tokens.rs](src/app/api/tokens.rs) |
 | Every mail, previewed | `/sales/mails`, `/plans/mails` | [src/app/sales/mails.rs](src/app/sales/mails.rs), [src/app/plans/mails.rs](src/app/plans/mails.rs) |
 
@@ -160,7 +165,7 @@ The live version has no routes, fragments or out-of-band parts of its own: `live
 | The app: modules, plugins, layers, the reporter | [src/lib.rs](src/lib.rs) |
 | "About this page": `Explanation`, the registry, the docked panel and the sheet, `BIKESHOP_EXPLAIN` | [src/explain.rs](src/explain.rs), each area's `explain.rs`, [about_explain.html](resources/views/components/about_explain.html), [about_dock.html](resources/views/components/about_dock.html), [about_panel.html](resources/views/components/about_panel.html), [public/explain.css](public/explain.css), [public/explain.js](public/explain.js) |
 | Its code samples: regions marked in the source, cut out by `build.rs`, coloured on the server | [src/code.rs](src/code.rs), [build.rs](build.rs), [src/highlight.rs](src/highlight.rs) (a copy of the docs site's) |
-| Models and factories per area, migrations for SQLite and PostgreSQL, money as integers (US dollars in cents, `APP_CURRENCY=USD`; typed amounts converted in [src/money.rs](src/money.rs)) | `src/app/<area>/model.rs`, `src/app/<area>/factories.rs`, [migrations/](migrations/) |
+| Models and factories per area, migrations for SQLite and PostgreSQL, money as integers (US dollars in cents, `APP_CURRENCY=USD`; typed amounts converted in [src/money.rs](src/money.rs); a record with its own currency is a `Money` pair, as the deposit of `/about/fields`) | `src/app/<area>/model.rs`, `src/app/<area>/factories.rs`, [migrations/](migrations/) |
 | Seeds (`db:seed`, the typed `demo:seed` command) and test fixtures | [src/seed/](src/seed/) |
 | Scheduled tasks (below), jobs, events and listeners | each area's `tasks.rs` / `mod.rs` |
 | Error reports (`App::report`) to `storage/logs/errors.log` | [src/report.rs](src/report.rs) |
@@ -259,7 +264,7 @@ its category (`content::product_photo`: photo `(id % n) + 1`); migration
 The epic's rule was that a missing basic component stops the page and goes to the Renox team.
 **The owner decided otherwise for this example** (2026-10-06, a comment on #231): the components
 the kit didn't have were built here first, as **blocks**, written like a small library so they
-could move to a crate. They since have (#347): twelve of them are the
+could move to a crate. They since have (#347): most of them are the
 [renox-blocks](../../crates/renox-blocks) plugin (guide: [docs/blocks.md](../../docs/blocks.md)),
 which the app adds with `.module(renox_blocks::Blocks::new())` and a page uses like a kit
 component (a tag such as `<rx-gallery …/>`). Their classes are `rx-` ones
@@ -285,6 +290,12 @@ with `disabled_dates` and `closed_weekdays`. Form blocks send plain fields, so `
 | `history(items, label, date_format)` | A vertical timeline | a bike's service history |
 | `compare_plans(plans, features, highlight, …)` | Pricing cards and a comparison table | service plans |
 | `receipt(lines, totals, width, title, header, number, date, footer, …)` | An 80 mm or 58 mm till receipt that prints alone, with a code slot (#48) | a counter sale's receipt |
+| `signature_pad(name, label, name_label, required, width, height, …)` | A drawn signature sent as `signature.png`, or a typed name (`signature_name`), the last way used winning (#53) | a work order's sign-off, `/about/blocks` |
+| `camera_capture(name, label, facing, max, max_width, quality, …)` | Photos from the camera, downsized to JPEG files; a visible file input when the camera is denied or missing (#53) | a work order's sign-off, `/about/blocks` |
+| `rating(name, max, value, label, required, readonly, …)` | Stars as a radio group that works without JavaScript; posts the chosen number (#54) | `/about/blocks` |
+| `geolocate(name, accuracy, label, button_label, required, …)` | A button that asks for the device position and posts `name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`; the app allows it with `.permissions_policy(…)` (#54) | `/about/blocks` |
+| `barcode_scan(name, value, label, formats, required, submit, …)` | A text field filled by typing, a scanner or the camera (`BarcodeDetector`, or a bundled decoder where it is missing); posts the code as text (#54) | `/about/blocks` |
+| `map_picker(name, mode, value, label, height, hint, id, bag)` + `map(markers, shapes, label, height, id)` | Pick a point, circle or polygon (typed coordinates as the keyboard way) and show markers and areas, on tiles from `BLOCKS_MAP_TILES`; without it each block says what is missing (#47) | the blocks page only |
 
 ## The JSON API (#241)
 

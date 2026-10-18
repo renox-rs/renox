@@ -129,6 +129,14 @@ pub static PAGES: &[Page] = &[
         "A part of a page with state in a Rust struct: click, and the server draws it again."
     ),
     page!(
+        "state-machines",
+        "State machines",
+        Guides,
+        "arrow-right-left",
+        "docs/state-machines.md",
+        "Declare how a status moves, who may move it, and keep a history of every change."
+    ),
+    page!(
         "grid",
         "The data grid",
         Guides,
@@ -223,6 +231,14 @@ pub static PAGES: &[Page] = &[
         "credit-card",
         "docs/billing.md",
         "Charge for plans with trials, upgrades and cancellations, with the renox-billing crate."
+    ),
+    page!(
+        "pdf",
+        "PDF documents",
+        Guides,
+        "file-text",
+        "docs/pdf.md",
+        "Invoices and receipts as PDF files from Typst templates, with Arabic text, with the renox-pdf crate."
     ),
     page!(
         "queue",

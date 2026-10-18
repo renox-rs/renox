@@ -41,16 +41,20 @@ pub mod prelude {
     pub use renox_core::auth::{Auth, Can, User};
     pub use renox_core::db::{DateTime, Db, Factory, FromRow, Model, Page, Paginated};
     pub use renox_core::events::Event;
+    pub use renox_core::idempotency::Offline;
     pub use renox_core::live_component::LiveComponent;
+    pub use renox_core::pwa::{Pwa, PwaBrand, PwaRequest};
     pub use renox_core::queue::{Job, JobContext};
     pub use renox_core::serde_json::json;
-    pub use renox_core::webhook::{Webhook, WebhookCall, WebhookRequest};
+    pub use renox_core::webhook::{SignedRequest, Webhook, WebhookCall, WebhookRequest};
     pub use renox_core::{
         App, AppState, Back, Config, Environment, Error, Errors, Htmx, HxRedirect, HxRefresh,
         HxTrigger, Module, Resource, Result, Routes, Session, Toast, Valid, Validate,
         ValidationError, Validator, View, ViewData, context, view,
     };
-    pub use renox_core::{AuthUser, ClientIp, KeyValues, Lang, Policy, Registry, Upload};
+    pub use renox_core::{
+        AuthUser, ClientIp, Contributions, KeyValues, Lang, Policy, Registry, Upload,
+    };
     pub use renox_core::{RedirectExt, abort, abort_if, abort_unless};
     pub use renox_macros::{DbEnum, FromRow, Model, Validate, ViewData};
 
@@ -119,6 +123,11 @@ pub struct SchedulingGuide;
 #[cfg(doctest)]
 #[doc = include_str!("../../../docs/live.md")]
 pub struct LiveGuide;
+
+/// Compiles the Rust in docs/state-machines.md as a doctest.
+#[cfg(doctest)]
+#[doc = include_str!("../../../docs/state-machines.md")]
+pub struct StateMachinesGuide;
 
 /// Compiles the Rust in docs/testing.md as a doctest.
 #[cfg(doctest)]
@@ -234,6 +243,28 @@ pub struct CheatSheet;
 /// #[derive(Model)]
 /// #[model(search = "title", search_language = "english'; --")]
 /// struct Post { id: i64, title: String }
+/// ```
+///
+/// `custom_fields` names a `Json<CustomValues>` column of the model:
+/// ```compile_fail
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "extra")]
+/// struct Party { id: i64, extra: String }
+/// ```
+/// ```compile_fail
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "missing")]
+/// struct Party { id: i64, name: String }
+/// ```
+/// …while this one compiles:
+/// ```
+/// # use renox::prelude::*;
+/// #[derive(Model)]
+/// #[model(custom_fields = "extra")]
+/// struct Party { id: i64, extra: renox::db::Json<renox::custom_fields::CustomValues> }
+/// assert_eq!(Party::CUSTOM_FIELDS, Some("extra"));
 /// ```
 ///
 /// Unknown attributes are refused:

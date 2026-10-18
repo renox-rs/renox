@@ -4,7 +4,7 @@
     beside the theme's art (public/patterns.css, `app-auth`), except on the
     account pages. Every sign-in page extends it. -#}
 <!doctype html>
-<html lang="{{ app.locale }}">
+<html lang="{{ app.locale }}" dir="{{ app.dir }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -12,6 +12,8 @@
   <title><rx-outlet name="title">{{ app.name }}</rx-outlet></title>
   <rx-head/>
   <rx-ui/>
+  <rx-theme/>
+  <rx-pwa/>
   <link rel="stylesheet" href="{{ asset('app.css') }}">
   <link rel="stylesheet" href="{{ asset('patterns.css') }}">
   <rx-outlet stack="head"/>

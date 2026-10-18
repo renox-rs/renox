@@ -5,7 +5,7 @@
 <div class="rx-stack bs-showcase" data-bs-reveal>
   <rx-page-header :title="t('blocks.page.title')" :subtitle="t('blocks.page.lead')"/>
 
-  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans']]"/>
+  <rx-let name="toc" :value="[['gallery', 'gallery'], ['form', 'range_slider · quantity · keypad · datetime_range · swatches'], ['filter', 'range_slider (GET)'], ['kanban', 'kanban'], ['calendar', 'month_calendar'], ['availability', 'availability'], ['week', 'week_calendar'], ['sign', 'signature_pad · camera_capture'], ['maps', 'map_picker · map'], ['history', 'history'], ['receipt', 'receipt'], ['stepper', 'status_stepper'], ['plans', 'compare_plans'], ['field', 'rating · geolocate · barcode_scan']]"/>
   <nav aria-label="{{ t('blocks.page.contents') }}">
     <ul class="bs-showcase__toc" role="list">
       <li rx-for="anchor, name in toc"><a class="rx-button rx-button--secondary rx-button--small" href="#{{ anchor }}">{{ name }}</a></li>
@@ -120,6 +120,60 @@ kanban_card(card)</app-about-signature>
   </rx-card>
   </div>
 
+  <div id="sign">
+  <rx-card :title="t('blocks.page.sign_title')" :subtitle="t('blocks.page.sign_lead')">
+    <form class="rx-stack" method="post" action="{{ route('about.blocks.sign') }}" enctype="multipart/form-data" id="sign-form" novalidate>
+      {{ csrf_field() }}
+      <div class="bs-showcase__demo">
+        <rx-signature-pad name="signature" :label="t('blocks.page.sign_label')" required/>
+        <p class="rx-hint">{{ t('blocks.page.signature') }}</p>
+        <app-about-signature>signature_pad(name, label=none, name_label=none, required=false, width=400,
+              height=160, hint=none, id=none, bag=none)
+  posts: name (a PNG file) or name_name (the typed name)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-camera-capture name="photos" :label="t('blocks.page.photos_label')" :max="3" facing="environment"/>
+        <p class="rx-hint">{{ t('blocks.page.camera') }}</p>
+        <app-about-signature>camera_capture(name, label=none, facing="environment", max=1, max_width=2048,
+               quality=0.85, accept="image/*", required=false, hint=none, id=none, bag=none)
+  posts: name (one JPEG per photo, up to max)</app-about-signature>
+      </div>
+      <div><rx-button :label="t('blocks.page.send')"/></div>
+    </form>
+  </rx-card>
+  </div>
+
+  <div id="field">
+  <rx-card :title="t('blocks.page.field_title')" :subtitle="t('blocks.page.field_lead')">
+    <form class="rx-stack" method="post" action="{{ route('about.blocks.field') }}" id="field-form" novalidate>
+      {{ csrf_field() }}
+      <rx-form-errors/>
+      <div class="bs-showcase__demo">
+        <rx-rating name="score" :label="t('blocks.page.rating_label')"/>
+        <p class="rx-hint">{{ t('blocks.page.rating') }}</p>
+        <app-about-signature>rating(name, max=5, value=none, label=none, required=false, readonly=false,
+       hint=none, id=none, bag=none)
+  posts: name (the chosen number, nothing when unset)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-geolocate name="location" :accuracy="50" :label="t('blocks.page.location_label')"/>
+        <p class="rx-hint">{{ t('blocks.page.location') }}</p>
+        <app-about-signature>geolocate(name, accuracy=none, label=none, button_label=none, required=false,
+          hint=none, id=none, bag=none)
+  posts: name[lat], name[lng], name[accuracy] (metres), name[at] (RFC 3339)</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-barcode-scan name="code" :label="t('blocks.page.code_label')" formats="ean_13,qr_code"/>
+        <p class="rx-hint">{{ t('blocks.page.code') }}</p>
+        <app-about-signature>barcode_scan(name, value=none, label=none, formats="ean_13,qr_code", required=false,
+             hint=none, id=none, bag=none, submit=false)
+  posts: name (the code, as text)</app-about-signature>
+      </div>
+      <div><rx-button :label="t('blocks.page.send')"/></div>
+    </form>
+  </rx-card>
+  </div>
+
   <div id="history">
   <rx-card title="history" :subtitle="t('blocks.page.history')">
     <rx-history :items="timeline" label="Service history of City 3" date-format="%H:%M"/>
@@ -167,6 +221,31 @@ kanban_card(card)</app-about-signature>
               label=none, table=true, id="rx-plans")
   plans: [{key, name, price, interval?, description?, perks?, url?, cta?, price_label?}]
   features: [{label, values: {plan key: true | false | text}}]</app-about-signature>
+  </rx-card>
+  </div>
+
+  <div id="maps">
+  <rx-card title="map_picker · map" :subtitle="t('blocks.page.maps')">
+    <div class="bs-showcase__pair">
+      <div class="bs-showcase__demo">
+        <rx-map-picker name="pickup" :label="t('blocks.page.maps_pickup')" :value="{'lat': 40.4168, 'lng': -3.7038}" id="demo-pickup"/>
+        <app-about-signature>map_picker(name, mode="point", value=none, label=none, height=320,
+           hint=none, id=none, bag=none)
+  mode: "point" (name[lat], name[lng]) | "circle" | "polygon" (GeoJSON, [lng, lat])</app-about-signature>
+      </div>
+      <div class="bs-showcase__demo">
+        <rx-map-picker name="zone" mode="polygon" :label="t('blocks.page.maps_zone')" id="demo-zone"/>
+        <app-about-signature>map_picker("zone", mode="polygon")
+  posts the GeoJSON Polygon as text; renox::geo::Polygon reads it</app-about-signature>
+      </div>
+    </div>
+    <div class="bs-showcase__demo">
+      <rx-map id="demo-map" :label="t('blocks.page.maps_stores')"
+        :markers="[{'lat': 40.4168, 'lng': -3.7038, 'label': 'Harbour store'}, {'lat': 40.4530, 'lng': -3.6883, 'label': 'Hill store'}]"
+        :shapes="[{'center': {'lat': 40.4168, 'lng': -3.7038}, 'radius': 1500}]"/>
+      <app-about-signature>map(markers=[], shapes=[], label=none, height=320, id="rx-map")
+  markers: [{lat, lng, label?}]   shapes: GeoJSON Polygon | {center: {lat, lng}, radius}</app-about-signature>
+    </div>
   </rx-card>
   </div>
 </div>

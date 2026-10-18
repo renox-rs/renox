@@ -43,6 +43,7 @@ Prefer them over writing boilerplate by hand:
 rnx doctor   # what's missing on this machine or in this app, with the fix
 rnx make:module products                               # src/app/products + view + registration
 rnx make:module products --resource --fields "name:string price:money"  # a whole CRUD, with tests; runs migrate (asks outside APP_ENV=local; --no-migrate), prints the URL; --open opens it
+rnx make:package invoicing                             # a reusable crate in crates/invoicing (Module, migrations, views, texts, tests); --resource, --with assets,commands
 rnx make:model Product --module products --migration   # model + migrations/*.sql
 rnx make:model Invoice --module billing --key ulid -m  # id: Ulid (also uuid, string)
 rnx make:policy Product --module products
@@ -56,6 +57,8 @@ rnx make:notification OrderShipped --module orders     # also make:event, make:r
 rnx make:middleware StampRequests                      # also make:component (an <app-…> tag)
 rnx make:component --ui                                # copy the UI kit in to change it (same as rnx ui:publish)
 rnx make:deploy                                        # Dockerfile, systemd unit + socket, Litestream
+rnx make:pwa                                           # installable on phones: offline page, placeholder icons, .pwa(..)
+rnx make:pdf invoice                                   # PDF template (Typst + kit) in resources/views/pdf, renox-pdf, Pdf module
 rnx build                                              # release binary in dist/ (Tailwind CSS minified first)
 rnx tailwind --watch                                   # rebuild public/css/app.css (rnx serve does it for you)
 ```
@@ -96,7 +99,7 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   adding margins (docs/ui.md "Spacing").
   Form tags: `<rx-repeater>` gives its content `row` and `prefix` (`name="{{ prefix }}[qty]"`);
   `<rx-wizard id=…>` takes its steps from `<rx-wizard-step key=… title=…>` children.
-  Navigation: `<rx-navbar>`, `<rx-sidebar>`, `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
+  Navigation: `<rx-navbar>`, `<rx-sidebar>` (`<rx-sidebar menu="app"/>` draws the links modules add with `app.nav("app", NavLink::route("users.index", "nav.users").permission("users.manage"))`, filtered per user; `<rx-nav-links menu=…>` and `nav("app")` likewise), `<rx-menu>` (with `rx-menu-link`/`-action`), `<rx-sheet id=…>` opened by `<rx-open-button id=…>`;
   `<rx-tabs id=…>` takes its tabs from `<rx-tab key=… label=…>` children; `<rx-shell>` is a `div.rx-shell`
   (`<rx-shell fill>` adds `rx-shell--fill`: the dashboard standard, below).
   `<rx-chart kind=…>` calls the `chart(...)` function; `<rx-grid :page=…>` has `row` and `column` in its content.
@@ -104,6 +107,12 @@ rnx tailwind --watch                                   # rebuild public/css/app.
 - Live components (`#[renox::live_component]`, `rx-click`/`rx-model`, docs/live.md): action names
   starting with `_` are reserved (`_refresh` is built in), and the state is signed, not
   encrypted, so keep secrets out of the component's fields. Check the policy in each action.
+- A model whose status moves along a fixed path is a state machine (`impl StateMachine`,
+  `#[model(state_machine)]`, docs/state-machines.md): change the status only with
+  `record.transition("name").by(&user).run(&state)`, never by assigning the field and saving
+  (`save` refuses a changed status; bulk `update` queries bypass the guard, so don't use them for
+  it). `run_in(&mut tx)` does not commit: emit the outcome after the commit. Guards run for
+  `available` too, so they must not write. `rnx state:diagram Model` draws the machine.
 - Route parameters are `{id}` (axum 0.8), not `:id`: `.get("/products/{id}", show)`.
 - `.require_auth()` guards only the routes added before it in that `Routes`; so do
   `.require_gate`, `.require_role`, `.require_permission`, `.require_ability` and
@@ -135,7 +144,10 @@ rnx tailwind --watch                                   # rebuild public/css/app.
 - A handler that won't compile as a route ("the trait `Handler` is not implemented", or
   "`Send` is not general enough"): don't keep a closure or iterator that borrows a local across
   an `.await`; collect into a `Vec` first.
-- Money is `i64` in the smallest unit (cents for USD, the default `APP_CURRENCY`), never `f64`.
+- Money is `i64` in the smallest unit (cents for USD, the default `APP_CURRENCY`), never `f64`. A record with its own
+  currency is a `renox::money::Money` (`#[model(money)]`: `<field>` + `<field>_currency` columns); rounding is always
+  explicit (`Rounding`). A weight, length or volume with decimals is a `renox::quantity::Quantity<SCALE>` (an exact
+  `i64` of 10^-SCALE units, one `BIGINT`; the unit is a `String` column beside it), never `f64`.
 - Read forms with `Valid<T>`, even a form with no rules (`#[derive(Deserialize, Validate)]`,
   no `#[validate]` attributes): it turns a ticked checkbox's `on` into `true`, an unticked one
   into `false`, and empty inputs into `None`. The prelude's `Form<T>` is axum's and doesn't: a
@@ -278,6 +290,27 @@ rnx tailwind --watch                                   # rebuild public/css/app.
   in the app's own CSS takes the kit's type scale (`font: var(--rx-type-heading)`, `-body`,
   `-label`, `-caption`…), not sizes of its own. `data-rx-theme="classic"` on `<html>` is the
   kit's older look.
+- Installable on phones: `rnx make:pwa` (then replace the icons in `public/icons/`), or
+  `App::pwa(Pwa::new("Name").icons("public/icons").offline_page("offline.html"))`; `<rx-pwa/>`
+  goes in the layout head after `<rx-theme/>`. Renox serves the manifest, `/sw.js` and the offline
+  page; navigations are never cached, so don't expect signed-in pages offline. Per host:
+  `App::pwa_for(|req: PwaRequest| ..)` returns a `PwaBrand`.
+- Offline forms: mark a POST route `.offline()` (it then needs an `Idempotency-Key`; the `Offline`
+  extractor gives `recorded_at`, `client_id` and `skew_exceeded`) and the form `<rx-form offline="name">`.
+  A post that fails for network reasons waits in an unencrypted IndexedDB outbox, replays in order and
+  is cleared on logout; no Background Sync. `idempotency:prune` deletes old keys (`IDEMPOTENCY_RETENTION_DAYS`).
+- PDFs: `rnx make:pdf invoice`, then `Pdf::document(&state, "invoice")?.locale(&lang).data(&order).render(&state).await?`
+  returns the bytes (`renox-pdf`; answer with them and `Content-Type: application/pdf`). The template is Typst in
+  `resources/views/pdf/invoice.typ`: `#import "@renox/kit:0.1.0": *` gives `money()`, `date()`,
+  `data-table`, `page-header` and the brand tokens; the data is the dictionary `data`. Lay out with
+  `start`/`end`, not left/right, so Arabic works (`.locale("ar")` sets language and direction). A
+  character no font has fails the render (`PdfError::MissingGlyphs`); `.font(bytes)` on `Pdf` adds
+  one. Renders are capped by `PDF_MAX_CONCURRENT` and `PDF_TIMEOUT`. Test with
+  `renox_pdf::testing::PdfAssertions` (`assert_pdf`, `assert_pdf_contains`).
+- Right-to-left: every layout writes `<html lang="{{ app.locale }}" dir="{{ app.dir }}">`, and
+  `app.dir` is `rtl` for Arabic, Hebrew, Persian and the like. Keep `dir` on a layout you add,
+  and in the app's own CSS use logical properties (`margin-inline-start`, `padding-inline`,
+  `inset-inline-end`, `text-align: start`), never `left`/`right`.
 - Lists of records with filters, sorting, search or exports: build a `renox::grid::Grid`
   (docs/grid.md) and render it with `renox/grid.html` rather than a hand-made table. Excel
   exports need the `xlsx` feature (`renox = { …, features = ["xlsx"] }`); CSV and the print

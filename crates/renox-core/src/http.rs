@@ -113,6 +113,7 @@ impl Http {
             timeout: DEFAULT_TIMEOUT,
             retries: 0,
             retry_delay: Duration::from_millis(100),
+            follow_redirects: true,
             error: None,
         }
     }
@@ -142,6 +143,7 @@ pub struct Request {
     timeout: Duration,
     retries: u32,
     retry_delay: Duration,
+    follow_redirects: bool,
     error: Option<Error>,
 }
 
@@ -204,6 +206,31 @@ impl Request {
         self
     }
 
+    /// Signs the request for a receiver that knows `key_id`
+    /// (`App::signing_key`): adds `webhook-id`, `webhook-timestamp`,
+    /// `webhook-signature` (the Standard Webhooks format, see
+    /// [`crate::webhook::signing`]) and `webhook-key-id`. `secret` is
+    /// `whsec_<base64>`. Call it after the body is set: the signature covers
+    /// the body as it is now. A bad secret makes `send` fail.
+    pub fn sign(mut self, key_id: &str, secret: &str) -> Self {
+        let id = format!("msg_{}", crate::db::Ulid::new().as_str());
+        let timestamp = crate::clock::unix_secs();
+        let body = self.body.as_ref().map_or(&[][..], |(_, body)| &body[..]);
+        match crate::webhook::signing::sign(secret, &id, timestamp, body) {
+            Ok(signature) => {
+                self.headers
+                    .retain(|(name, _)| !name.to_ascii_lowercase().starts_with("webhook-"));
+                self = self
+                    .header("webhook-id", id)
+                    .header("webhook-timestamp", timestamp.to_string())
+                    .header("webhook-signature", signature)
+                    .header("webhook-key-id", key_id);
+            }
+            Err(err) => self.error = Some(err),
+        }
+        self
+    }
+
     /// How long one attempt may take (30 s by default).
     pub fn timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
@@ -215,6 +242,13 @@ impl Request {
     pub fn retry(mut self, times: u32, delay: Duration) -> Self {
         self.retries = times;
         self.retry_delay = delay;
+        self
+    }
+
+    /// Answers to a redirect are returned as they are, not followed (a
+    /// receiver must not send a delivery on to another address).
+    pub(crate) fn no_redirects(mut self) -> Self {
+        self.follow_redirects = false;
         self
     }
 
@@ -259,7 +293,12 @@ impl Request {
 
     #[cfg(feature = "http")]
     async fn send_once(&self, url: &str) -> Result<Response> {
-        let mut request = client()
+        let client = if self.follow_redirects {
+            client()
+        } else {
+            client_without_redirects()
+        };
+        let mut request = client
             .request(self.method.clone(), url)
             .timeout(self.timeout);
         for (name, value) in &self.headers {
@@ -328,6 +367,20 @@ pub(crate) fn client() -> &'static reqwest::Client {
         let _ = rustls::crypto::ring::default_provider().install_default();
         reqwest::Client::builder()
             .user_agent(concat!("renox/", env!("CARGO_PKG_VERSION")))
+            .build()
+            .unwrap_or_default()
+    });
+    &CLIENT
+}
+
+/// Like [`client`], but a redirect is an answer, not followed.
+#[cfg(feature = "http")]
+fn client_without_redirects() -> &'static reqwest::Client {
+    static CLIENT: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+        reqwest::Client::builder()
+            .user_agent(concat!("renox/", env!("CARGO_PKG_VERSION")))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default()
     });
@@ -660,6 +713,40 @@ mod tests {
         assert!(
             http.get("https://a.test/none").send().await.is_err(),
             "no fake"
+        );
+    }
+
+    #[tokio::test]
+    async fn sign_adds_verifiable_standard_webhooks_headers() {
+        let secret = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw";
+        let http = Http::default();
+        let fake = http.fake();
+        fake.on("POST https://a.test/hook", FakeResponse::status(200));
+        http.post("https://a.test/hook")
+            .json(&serde_json::json!({"a": 1}))
+            .sign("billing", secret)
+            .send()
+            .await
+            .unwrap();
+        let sent = &fake.sent()[0];
+        assert_eq!(sent.header("webhook-key-id"), Some("billing"));
+        assert!(sent.header("webhook-id").unwrap().starts_with("msg_"));
+        assert!(crate::webhook::signing::verify(
+            secret,
+            sent.header("webhook-id").unwrap(),
+            sent.header("webhook-timestamp").unwrap(),
+            sent.header("webhook-signature").unwrap(),
+            sent.body.as_bytes(),
+            Duration::from_secs(300),
+        ));
+
+        // A bad secret fails the send.
+        assert!(
+            http.post("https://a.test/hook")
+                .sign("billing", "whsec_***")
+                .send()
+                .await
+                .is_err()
         );
     }
 

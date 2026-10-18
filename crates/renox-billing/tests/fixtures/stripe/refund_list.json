@@ -1,0 +1,14 @@
+{
+  "object": "list",
+  "data": [
+    {
+      "id": "re_3Abc",
+      "object": "refund",
+      "amount": 1000,
+      "currency": "usd",
+      "payment_intent": "pi_3Abc",
+      "status": "succeeded"
+    }
+  ],
+  "has_more": false
+}

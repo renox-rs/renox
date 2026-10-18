@@ -1,0 +1,23 @@
+{
+  "_id": "urn:order:6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "action": "SALE",
+  "amount": { "currencyCode": "USD", "value": 4500 },
+  "reference": "6b1a8c3e-4f0d-4c2a-9a55-1d2e3f4a5b6c",
+  "_embedded": {
+    "payment": [
+      {
+        "_id": "urn:payment:fake-payment-1",
+        "state": "PURCHASED",
+        "_embedded": {
+          "cnp:refund": [
+            {
+              "_id": "urn:payment:fake-payment-1:refund:fake-refund-1",
+              "state": "SUCCESS",
+              "amount": { "currencyCode": "USD", "value": 1000 }
+            }
+          ]
+        }
+      }
+    ]
+  }
+}

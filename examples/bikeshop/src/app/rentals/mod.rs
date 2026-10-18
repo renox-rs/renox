@@ -28,9 +28,11 @@ pub mod explain;
 pub mod factories;
 pub mod fleet;
 pub mod identity;
+pub mod machine;
 pub mod model;
 pub mod notify;
 pub mod pricing;
+pub mod receipt_pdf;
 pub mod reserve;
 pub mod tasks;
 
@@ -103,6 +105,8 @@ impl Module for Rentals {
             .name("rentals.desk")
             .get("/staff/rentals/{rental}/receipt", counter::receipt)
             .name("rentals.receipt")
+            .get("/staff/rentals/{rental}/receipt.pdf", receipt_pdf::download)
+            .name("rentals.receipt.pdf")
             .get("/staff/rentals/{rental}/photos/{photo}", counter::photo)
             .name("rentals.photo")
             .post("/staff/rentals/{rental}/pickup", counter::pickup)
@@ -142,7 +146,6 @@ impl Module for Rentals {
         // `rnx db:check` and the schema test compare these models with the tables.
         app.model::<crate::app::rentals::model::RentalBike>()
             .model::<crate::app::rentals::model::BikePlacement>()
-            .model::<crate::app::rentals::model::Rental>()
             .model::<crate::app::rentals::model::IdentityDocument>()
             .model::<crate::app::rentals::model::RentalPhoto>();
         // The deposit paid online (or not): the shared payments contract.
