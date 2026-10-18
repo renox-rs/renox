@@ -80,7 +80,7 @@ const LINE = [[0.1, 0.9], [0.5, 0.85], [0.9, 0.9]];
 /** Submits the demo form and waits for the toast that says what arrived. */
 async function send(page, pattern) {
   await page.click('#sign-form button[type=submit]');
-  await page.waitFor((p) => new RegExp(p).test(document.body.textContent), { message: `a toast like ${pattern}` }, pattern);
+  await page.waitFor((p) => new RegExp(p).test(document.body?.textContent), { message: `a toast like ${pattern}` }, pattern);
   return page.text('body');
 }
 
@@ -180,7 +180,7 @@ describe('the signature pad', () => {
       await page.type('#rx-signature-name', 'Ana R.');
       assert.equal((await posted(page, '[data-rx-signature-file]')).count, 0, 'no file');
       await page.press('Enter');
-      const text = await page.waitFor(() => /typed name \(Ana R\.\)/.test(document.body.textContent) && document.body.textContent, { message: 'the typed name arrived' });
+      const text = await page.waitFor(() => /typed name \(Ana R\.\)/.test(document.body?.textContent) && document.body?.textContent, { message: 'the typed name arrived' });
       assert.match(text, /Received a typed name/);
       page.assertClean();
     }));
