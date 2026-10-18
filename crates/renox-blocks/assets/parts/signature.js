@@ -140,6 +140,9 @@ export function setup(el, kit) {
     if (event.pointerId !== pointer) return;
     pointer = null;
     current = null;
+    // Drawn again in one go: segments stroked as they came overlap and darken at their joints,
+    // so the picture would depend on how fast the pen moved. Undo and a resize redraw the same way.
+    paint();
     sync(texts.drawn);
   }
   canvas.addEventListener("pointerup", finish);
