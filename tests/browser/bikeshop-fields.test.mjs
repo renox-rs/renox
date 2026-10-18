@@ -129,7 +129,7 @@ test('a deposit in yen is saved and shown in yen, and a decimal is refused', () 
     await page.type('#rx-stock', '1', { clear: true });
     await page.type('#rx-weight_kg', '10', { clear: true });
     await page.type('#rx-price', '100', { clear: true });
-    await page.click('label[for="rx-size-1"]');
+    await page.click('label[for="rx-size"]');
     await page.eval(() => {
       const select = document.getElementById('rx-deposit_currency');
       select.value = 'JPY';
