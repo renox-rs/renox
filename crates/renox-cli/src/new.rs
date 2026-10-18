@@ -904,11 +904,14 @@ mod tests {
             )
             .unwrap();
             let app = parent.path().join("acme-web");
-            assert_eq!(fs::read_to_string(app.join("page.txt")).unwrap(), want);
-            assert_eq!(
-                fs::read_to_string(app.join("Cargo.toml")).unwrap(),
-                "name = \"acme_web\"\n"
-            );
+            // git on Windows checks files out with CRLF; the copy keeps them.
+            let read = |name: &str| {
+                fs::read_to_string(app.join(name))
+                    .unwrap()
+                    .replace("\r\n", "\n")
+            };
+            assert_eq!(read("page.txt"), want);
+            assert_eq!(read("Cargo.toml"), "name = \"acme_web\"\n");
             let env = fs::read_to_string(app.join(".env")).unwrap();
             assert!(
                 env.contains("CO=Acme") && !env.contains("APP_KEY=\n"),
