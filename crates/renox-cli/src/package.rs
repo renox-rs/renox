@@ -710,7 +710,12 @@ mod tests {
                 } else {
                     let text = std::fs::read_to_string(&p).unwrap();
                     assert!(placeholder(&text).is_none(), "{}", p.display());
-                    found.push(p.strip_prefix(&pkg).unwrap().to_string_lossy().into_owned());
+                    found.push(
+                        p.strip_prefix(&pkg)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/"),
+                    );
                 }
             }
         }
