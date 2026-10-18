@@ -6,7 +6,7 @@
 //! links the person may open (a permission held in at least one store is
 //! enough; the page then filters by the store being worked in), groups them
 //! by the lowest `order` of their links and marks the current page. A new
-//! area adds its line to [`LINKS`], behind the permission it needs.
+//! area adds its line to `LINKS`, behind the permission it needs.
 
 use renox::nav::NavLink;
 use renox::prelude::*;
