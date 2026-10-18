@@ -1188,7 +1188,8 @@ async fn a_declined_link_stays_unpaid_and_a_new_one_can_be_sent() {
     w.app
         .post(&path, &[("outcome", "decline")])
         .await
-        .assert_status(303);
+        .assert_ok()
+        .assert_see("the shop will see the result");
     w.app.run_jobs().await;
     let sent = http
         .sent()
