@@ -457,7 +457,7 @@ async fn a_blank_sensitive_value_keeps_the_stored_seal_and_a_filled_one_replaces
     )
     .await
     .assert_ok();
-    let row: String = renox::db::sql("SELECT extra FROM cf_form_parties")
+    let row: String = renox::db::sql("SELECT CAST(extra AS TEXT) FROM cf_form_parties")
         .scalar::<String>(db)
         .await
         .unwrap();
