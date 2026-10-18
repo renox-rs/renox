@@ -263,7 +263,8 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            slots, times through the `date` filter), assets.rs (hashed files
                            served with `Registry::asset` under /_renox/blocks/),
                            views/blocks.html (quantity, range_slider, keypad, swatches,
-                           datetime_range, signature_pad, camera_capture, gallery, history,
+                           datetime_range, signature_pad, camera_capture, rating, geolocate,
+                           barcode_scan, gallery, history,
                            compare_plans, status_stepper,
                            month_calendar, availability, week_calendar, kanban + kanban_card,
                            receipt, map_picker, map; `rx-` classes,
@@ -273,11 +274,15 @@ crates/renox-blocks/       the blocks plugin (#347): Blocks module (lib.rs: view
                            Animations, no library); map.rs (BLOCKS_MAP_TILES and
                            BLOCKS_MAP_ATTRIBUTION), assets/vendor/leaflet/ (Leaflet 1.9.4,
                            LICENSE, NOTICE) added by assets/parts/map.js only on a page with
-                           a map block; its own tests/; guide docs/blocks.md
+                           a map block; assets/vendor/zxing/ (@zxing/library 0.23.0, LICENSE) and
+                           assets/vendor/NOTICE (source and sha256), added by assets/parts/barcode.js
+                           only when the camera opens without BarcodeDetector; its own tests/; guide docs/blocks.md
                            (doctested from lib.rs `Guide`); browser tests
                            tests/browser/blocks.test.mjs on examples/bikeshop's /about/blocks
                            (the signature pad and camera capture: blocks-capture.test.mjs,
                            with Chrome's fake camera through `Browser.launch({ args })`),
+                           tests/browser/blocks-field.test.mjs (rating, geolocate and barcode_scan on the
+                           fixture's /field and the bikeshop's /about/blocks),
                            tests/browser/maps.test.mjs on the fixture's /maps (local tile stub)
 crates/renox-oauth/        the social login plugin (#147): OAuth module (lib.rs: providers,
                            `oauth_providers` shared with every view for the buttons, the

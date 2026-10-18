@@ -57,13 +57,40 @@ export class Browser {
       });
       proc.on('exit', (code) => reject(new Error(`Chrome exited (${code}): ${output}`)));
     });
-    return new Browser(proc, profile, new URL(url).port);
+    return new Browser(proc, profile, new URL(url).port, url);
   }
 
-  constructor(proc, profile, port) {
+  constructor(proc, profile, port, url) {
     this.proc = proc;
     this.profile = profile;
     this.port = port;
+    this.url = url;
+  }
+
+  /**
+   * A browser-level command, on a connection of its own (permissions are the
+   * browser's, not a page's): `send('Browser.grantPermissions', { permissions:
+   * ['geolocation'], origin })`. What it sets outlives the connection.
+   */
+  async send(method, params = {}) {
+    const socket = new WebSocket(this.url);
+    await new Promise((resolve, reject) => {
+      socket.addEventListener('open', resolve, { once: true });
+      socket.addEventListener('error', reject, { once: true });
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        socket.addEventListener('message', (event) => {
+          const message = JSON.parse(event.data);
+          if (message.id !== 1) return;
+          if (message.error) reject(new Error(`${message.error.message} (${message.error.data || ''})`));
+          else resolve(message.result);
+        });
+        socket.send(JSON.stringify({ id: 1, method, params }));
+      });
+    } finally {
+      socket.close();
+    }
   }
 
   /**

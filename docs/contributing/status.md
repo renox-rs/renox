@@ -317,6 +317,21 @@
   examples/bikeshop tests `workshop.rs` and `blocks.rs`, and in a browser tests/browser/blocks-capture.test.mjs
   (mouse strokes, keyboard, the fake camera through `Browser.launch({ args })`, a denied and a missing camera, RTL,
   reduced motion, the parts loaded) and bikeshop-workshop.test.mjs (the sign-off). Guide: docs/blocks.md.
+- **#54, rating, geolocation and barcode** (part 2 of #32; parts 1-6): renox-blocks gets `rating` (`<rx-rating>`: a fieldset of
+  visually hidden radios drawn as stars, CSS only, no part; posts the chosen integer; `readonly` is text and sends nothing),
+  `geolocate` (`<rx-geolocate>`: a button, the position asked for only in its click, four hidden inputs `name[lat]`, `name[lng]`,
+  `name[accuracy]`, `name[at]` disabled until a fix; `accuracy` is the wanted metres and a worse fix is kept and flagged; denied,
+  unavailable and timeout states with "Try again"; `assets/parts/geolocate.js`) and `barcode_scan` (`<rx-barcode-scan>`: one text
+  field, a keyboard wedge (keys under 50 ms apart ending in Enter, Enter not submitting unless `submit`), the camera through
+  `BarcodeDetector` or the vendored `@zxing/library` 0.23.0 in `assets/vendor/zxing/` (named as `data-zxing` in the loader tag and
+  added by `assets/parts/barcode.js` only when the camera opens); `blocks.rating.*`, `blocks.geolocate.*` and `blocks.barcode.*`
+  texts. The bike shop's `/about/blocks` shows the three (`POST /about/blocks/field`) and its Permissions-Policy allows
+  `geolocation` and `camera` for self (the framework's defaults, which switch them off, are unchanged). Tests:
+  crates/renox-blocks/tests/blocks.rs (render, `Valid<T>`, a `renox::geo::Point`, translations) and `assets.rs`, examples/bikeshop
+  `blocks.rs`, and in a browser tests/browser/blocks-field.test.mjs (on the fixture's new `/field` page and the bike shop: arrow keys,
+  no script, right-to-left, wedge against typing, a stubbed `BarcodeDetector`, the zxing fallback with a canvas-stream camera,
+  granted/denied/timeout/unavailable positions through `Browser.grantPermissions` and `Emulation.setGeolocationOverride`; the new
+  `Browser#send` in lib/cdp.mjs sends browser-level commands), blocks.test.mjs and a11y.test.mjs for the page. Guide: docs/blocks.md.
 - **Earlier plan for v1.0:** v1.0 (API audit, `cargo-semver-checks`, real
   crates.io releases (Renoxium runs `cargo login`), a docs site with a tutorial and a
   Laravel guide, a starter kit). 

@@ -1795,3 +1795,120 @@ async fn a_scanned_code_arrives_as_a_string() {
         .assert_status(422)
         .assert_invalid("code");
 }
+
+#[derive(Debug, Deserialize)]
+struct Spot {
+    location: renox::geo::Point,
+}
+
+impl Validate for Spot {
+    fn rules(&self, _: &mut Validator) {}
+}
+
+struct Spots;
+
+impl Module for Spots {
+    fn name(&self) -> &'static str {
+        "spots"
+    }
+
+    fn routes(&self) -> Routes {
+        Routes::new().get("/spot", || async { "ok" }).post(
+            "/spot",
+            |Valid(form): Valid<Spot>| async move {
+                Json(json!({ "lat": form.location.lat(), "lng": form.location.lng() }))
+            },
+        )
+    }
+}
+
+/// The posted position is also what `renox::geo::Point` reads (#47): its
+/// latitude and longitude, the accuracy and the time ignored.
+#[renox::test]
+async fn a_position_is_also_a_geo_point() {
+    let app = TestApp::new(App::new().module(Blocks::new()).module(Spots)).await;
+    app.get("/spot").await;
+    app.post(
+        "/spot",
+        &[
+            ("location[lat]", "40.4168"),
+            ("location[lng]", "-3.7038"),
+            ("location[accuracy]", "12.5"),
+            ("location[at]", "2026-10-18T09:30:00.000Z"),
+        ],
+    )
+    .await
+    .assert_ok()
+    .assert_json_path("lat", 40.4168)
+    .assert_json_path("lng", -3.7038);
+}
+
+/// Every text of the rating, the geolocate and the barcode blocks is a
+/// `blocks.*` key an app overrides in its lang files (#54): the placeholders
+/// are filled, the texts the script needs reach it through the block's
+/// `data-rx-blocks-texts`, and a key the app leaves out stays English.
+#[renox::test]
+async fn an_app_translates_the_rating_position_and_barcode_texts() {
+    let dir = std::env::temp_dir().join(format!("renox-blocks-{}", renox::random_token()));
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("es.json"),
+        r#"{"blocks": {
+            "rating": {"option": ":n de :max"},
+            "geolocate": {"button": "Usar mi ubicación", "idle": "Se pide al pulsar.",
+                "denied": "Ubicación denegada.", "timeout": "Tardó demasiado."},
+            "barcode": {"button": "Escanear con la cámara", "help": "Escribe el código.",
+                "denied": "Cámara denegada."}
+        }}"#,
+    )
+    .unwrap();
+    let lang = dir.clone();
+    let app = TestApp::with_config(
+        App::new()
+            .module(Blocks::new())
+            .module(Reviews)
+            .module(Visits)
+            .module(Stocks)
+            .templates(|env| {
+                env.add_template("review.html", RATING_MACRO).unwrap();
+                env.add_template("visit.html", GEO_MACRO).unwrap();
+                env.add_template("stock.html", SCAN_MACRO).unwrap();
+            }),
+        move |c| {
+            c.locale = "es".into();
+            c.lang_path = lang;
+        },
+    )
+    .await;
+    let html = app.get("/review").await.assert_ok().text();
+    for text in [
+        r#"<span class="rx-visually-hidden">3 de 5</span>"#,
+        // Not translated by this app: English.
+        "Stars, one to five.",
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/visit").await.assert_ok().text();
+    for text in [
+        "data-rx-geolocate-button>Usar mi ubicación</button>",
+        "Se pide al pulsar.",
+        // The texts the script needs, as JSON in the block's attribute.
+        r#""denied":"Ubicación denegada.""#,
+        r#""timeout":"Tardó demasiado.""#,
+        // Not translated: English, with the placeholders left for the script.
+        r#""unavailable":"Your position is not available here.""#,
+        r#""done":"Position found: :lat, :lng (about :accuracy m).""#,
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let html = app.get("/stock").await.assert_ok().text();
+    for text in [
+        "data-rx-barcode-button>Escanear con la cámara</button>",
+        "Escribe el código.",
+        r#""denied":"Cámara denegada.""#,
+        r#""read":"Code read: :code.""#,
+    ] {
+        assert!(html.contains(text), "missing {text}\n{html}");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}

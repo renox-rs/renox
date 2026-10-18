@@ -25,7 +25,13 @@ The blocks:
   number pad), `swatches` (variant chips), `datetime_range` (a start and an end, with times),
   `signature_pad` (a drawn or typed signature, sent as a PNG file or a name) and
   `camera_capture` (photos from the camera, sent as JPEG files; a file input when there is
-  no camera);
+  no camera), `rating` (stars, a radio group that works without JavaScript), `geolocate` (the
+  device's position, asked for on a button press; sends `lat`, `lng`, `accuracy` and `at`) and
+  `barcode_scan` (a text field filled by typing, a scanner that types like a keyboard or the
+  camera, read by `BarcodeDetector` or else by the bundled @zxing/library 0.23.0, Apache-2.0,
+  fetched only when the camera opens). The camera and the position need `camera` and
+  `geolocation` in the app's Permissions-Policy, which Renox switches off by default
+  (`App::permissions_policy`);
 - showing data: `gallery` (a carousel), `history` (a timeline), `compare_plans` (pricing cards
   and a comparison table), `status_stepper` (a record's progress through its statuses);
 - scheduling and work: `month_calendar`, `availability` (resources against hours),
@@ -38,7 +44,7 @@ The blocks:
   page with a map block; the tiles are yours to choose (`BLOCKS_MAP_TILES`,
   `BLOCKS_MAP_ATTRIBUTION`), there is no default tile service.
 
-The input blocks send plain form fields (the signature pad and the camera capture send files,
+The input blocks send plain form fields (the rating one integer, `geolocate` four fields under one name, `barcode_scan` a string; the signature pad and the camera capture send files,
 so their form is `multipart/form-data` and `Valid<T>` reads `Upload`s), so `Valid<T>` reads them; every block works with the
 keyboard, says its states in words, follows `prefers-reduced-motion`, works under
 `CSP=strict`, and has English texts an app translates in its lang files

@@ -2,7 +2,7 @@
 
 The UI kit covers forms, tables, sheets and pages. Some screens need more: a stepper for a
 quantity, a price filter with two handles, photos in a carousel, a month of bookings, a board
-of cards to drag. The `renox-blocks` crate adds eighteen such components, as template macros
+of cards to drag. The `renox-blocks` crate adds twenty-one such components, as template macros
 built on the kit:
 
 | Input | Showing data | Scheduling and work | Printing and maps |
@@ -15,6 +15,9 @@ built on the kit:
 | | | | [`map`](#map): markers and areas on a map |
 | [`signature_pad`](#signature_pad): a drawn or typed signature, sent as a PNG | | | |
 | [`camera_capture`](#camera_capture): photos from the camera, sent as JPEG files | | | |
+| [`rating`](#rating): stars, a radio group | | | |
+| [`geolocate`](#geolocate): the device's position, on a button press | | | |
+| [`barcode_scan`](#barcode_scan): a code typed, scanned or read by the camera | | | |
 
 They're a separate crate, not part of the kit, so the kit stays small: a page loads the
 blocks' script only when it has a block, and then only the code of the blocks it has.
@@ -387,6 +390,199 @@ camera is switched off when the block is removed (an htmx swap) or the page is l
 
 The bike shop uses both on a work order's bench page (a customer sign-off, kept as notes with
 private photos) and shows them on `/about/blocks`.
+
+### rating
+
+A score as stars, for how a customer rated a repair or a product. It is a group of radio
+buttons under the stars, so it works without JavaScript (and has no code of its own):
+
+```html
+<rx-rating name="score" label="Your rating" required/>
+```
+
+It sends the chosen number in `name`, and nothing when none was chosen, so the form's struct
+reads an `Option<u8>` (or any integer):
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Review {
+    score: Option<u8>,
+}
+
+impl Validate for Review {
+    fn rules(&self, v: &mut Validator) {
+        v.field("score", &self.score).required().between(1, 5);
+    }
+}
+```
+
+Tab reaches the group once and the arrow keys change the choice, as in any radio group (in a
+right-to-left page the arrows swap direction with the text). Each star is named "3 of 5" for a
+screen reader. The stars up to the chosen one are solid and the others outlines, so the state
+does not rest on colour (under forced colours too), and hovering a star previews it. After a
+failed submit the chosen star is checked again, and the error is said under the group.
+
+`readonly` shows a value as text for a screen reader and stars for the eye, and sends nothing:
+`<rx-rating name="average" :value="3" :max="4" label="Average" readonly/>`.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field's name |
+| `max` | 5 | how many stars, 1 to 10 |
+| `value` | | the number chosen to begin with (old input wins) |
+| `label` | "Rating" | the group's label |
+| `required` | `false` | a star is needed (without it the label says "optional") |
+| `readonly` | `false` | display only: stars and text, no input |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+### geolocate
+
+The device's position, asked for only when the person presses a button:
+
+```html
+<rx-geolocate name="location" :accuracy="50" label="Where is the bike?"/>
+```
+
+It sends four fields, `location[lat]`, `location[lng]`, `location[accuracy]` (metres) and
+`location[at]` (the time of the fix, RFC 3339 in UTC), which `Valid<T>` reads as a nested
+struct. The same shape is what `renox::geo::Point` reads for the latitude and longitude, so a
+handler can also take the position as a `Point` and ignore the rest:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Position {
+    lat: f64,
+    lng: f64,
+    accuracy: f64,
+}
+
+#[derive(serde::Deserialize)]
+struct Visit {
+    location: Option<Position>,
+}
+
+impl Validate for Visit {
+    fn rules(&self, v: &mut Validator) {
+        v.field("location", &self.location.as_ref().map(|p| p.lat))
+            .required()
+            .between(-90, 90);
+        v.field("location", &self.location.as_ref().map(|p| p.lng))
+            .between(-180, 180);
+        v.field("location", &self.location.as_ref().map(|p| p.accuracy))
+            .min(0);
+    }
+}
+```
+
+The four inputs are disabled until there is a position, so nothing is sent before the press, or
+after an error. The permission is asked for in the click and nowhere else, never on load. A
+polite status says what is going on: locating, found (with the numbers), denied, not available
+and timed out (after 15 seconds; a cached position is never used), and the button then reads
+"Try again". `accuracy` is the accuracy you want, in metres: it asks the device for its best
+position, and a worse one is still kept, with the status saying so ("about 120 m, wanted 50
+m"); the server decides from the posted `accuracy`. With `required`, a submit without a
+position is stopped and the status says to press the button, and the server refuses it with
+the field's error. After a failed submit the position comes back, enabled. Without JavaScript
+the block says it needs it; make the field optional or have a typed alternative where that
+matters.
+
+> [!IMPORTANT]
+> **Allow it in the Permissions-Policy.** Renox sends a `Permissions-Policy` header that
+> switches `geolocation` and `camera` off, and a block cannot change that: the browser then
+> refuses the position and the status says it is not available. Allow what your app uses:
+>
+> ```rust
+> use renox::prelude::*;
+>
+> # let _ =
+> App::new().permissions_policy(|p| {
+>     p.allow("geolocation", "self").allow("camera", "self");
+> })
+> # ;
+> ```
+>
+> The browser also offers the position only on a secure page (HTTPS, or `localhost`).
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the prefix of the four fields |
+| `accuracy` | | the accuracy wanted, in metres: turns on high accuracy, and a worse fix is flagged |
+| `label` | "Location" | the group's label |
+| `button_label` | "Use my location" | the button's text |
+| `required` | `false` | a position is needed |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+### barcode_scan
+
+One text field that a code can fill three ways: typing, a barcode scanner that types like a
+keyboard, or the device's camera:
+
+```html
+<rx-barcode-scan name="sku" label="Part number" formats="ean_13,code_128"/>
+```
+
+The form posts the field as a plain string, so the server never knows which way it was filled
+and reads a `String`:
+
+```rust
+use renox::prelude::*;
+
+#[derive(serde::Deserialize)]
+struct Lookup {
+    sku: String,
+}
+
+impl Validate for Lookup {
+    fn rules(&self, v: &mut Validator) {
+        v.field("sku", &self.sku).required().max(64);
+    }
+}
+```
+
+Without JavaScript it is the field alone. With it:
+
+- **A scanner** (a "keyboard wedge") sends its keys fast and ends with Enter. Keys less than 50
+  ms apart ending in Enter count as one scan: the value is set, `input` and `change` fire, and
+  the Enter is not sent as a submit, so a scan never posts a half-filled form. With `submit`
+  the scan submits the form.
+- **Typing** is kept as typed. Enter in the field does not post the form either, unless the
+  block was given `submit` (then it submits like any form).
+- **The camera** opens in the block, with a Close button (Escape closes it too), and fills the
+  field with the first code it reads, closes and puts the focus back on the field. The camera
+  button appears only where the browser can open a camera. The stream is stopped when the
+  camera is closed, the page is hidden or left, or the block is removed. If the camera is
+  denied or missing, the status says so and the field still works.
+
+The camera path uses the browser's `BarcodeDetector` where it exists. Where it does not (Firefox,
+Safari, desktop Chrome on some systems), the block loads a bundled decoder, [@zxing/library]
+0.23.0 (Apache-2.0, about 360 KB, in `assets/vendor/zxing/`), served from your own app like the
+rest, and only when the camera is opened: a page without the block, and a browser with
+`BarcodeDetector`, never download it. `formats` is a comma list of `BarcodeDetector` format
+names (`ean_13`, `ean_8`, `upc_a`, `code_128`, `code_39`, `itf`, `qr_code`, `data_matrix`,
+`pdf417`, `aztec`…), which the decoder maps to its own; a name it does not know is ignored, with
+a warning in the console. The default, `ean_13,qr_code`, reads shop barcodes and QR codes.
+
+[@zxing/library]: https://github.com/zxing-js/library
+
+The camera needs `camera` in the Permissions-Policy (see the note under [geolocate](#geolocate))
+and a secure page.
+
+| Option | Default | What it does |
+|---|---|---|
+| `name` | | the field's name |
+| `value` | | the code to begin with (old input wins) |
+| `label` | "Code" | the field's label |
+| `formats` | `"ean_13,qr_code"` | the code types to read, as `BarcodeDetector` names |
+| `required` | `false` | a code is needed |
+| `submit` | `false` | a scanned code (or typed Enter) submits the form |
+| `hint`, `id`, `bag` | | as for the kit's fields |
+
+The bike shop shows all three on `/about/blocks` (a rating, a position and a code, posted to a
+demo route that says what arrived) and allows `geolocation` and `camera` for its own pages.
 
 ## Showing data
 
@@ -950,7 +1146,7 @@ imports a block's code only when the page has that block: a product page with a 
 stepper loads `gallery.js` and `quantity.js`, nothing else. `swatches`, `compare_plans`,
 `status_stepper`, `month_calendar` and `availability` need no code at all; `week_calendar` loads
 `week.js` for its keyboard, `map_picker` and `map` load `map.js` (and Leaflet, only when they have tiles to show), and `receipt` has a few lines, for its Print button. `signature_pad` loads `signature.js` and
-`camera_capture` loads `camera.js`, so a page with neither downloads neither.
+`camera_capture` loads `camera.js`, so a page with neither downloads neither. `rating` needs no code; `geolocate` loads `geolocate.js` and `barcode_scan` loads `barcode.js`, and `barcode.js` fetches the bundled zxing decoder only when the camera is opened in a browser without `BarcodeDetector`.
 
 The files are compiled into the crate, with no library and no build step. The app serves them
 itself from `/_renox/blocks/`, under names that carry a hash of their content, with a

@@ -590,7 +590,19 @@ and two that post files (the form needs `enctype="multipart/form-data"`):
 <rx-camera-capture name="photos" :max="3" facing="environment" :max-width="2048"/>            {# posts photos: photo-N.jpg, a file input when there is no camera; quality, accept, required #}
 ```
 
-Read them as `signature: Option<Upload>` (`.image().mimes(&["png"])`), `signature_name: Option<String>` (required when there is no
+and three that post plain values (docs/blocks.md "rating", "geolocate", "barcode_scan"):
+
+```html
+<rx-rating name="score" :max="5" label="Your rating" required/>                    {# posts score = the chosen number (nothing if none); radios, works without JS; readonly shows it and sends nothing #}
+<rx-geolocate name="location" :accuracy="50" label="Where is the bike?"/>          {# posts location[lat], location[lng], location[accuracy] (m), location[at] (RFC 3339) once the button got a fix; button-label, required #}
+<rx-barcode-scan name="sku" formats="ean_13,code_128" label="Part number" submit/>  {# one text field: typed, a wedge scanner (keys <50 ms apart + Enter = a scan, no submit unless `submit`) or the camera (BarcodeDetector, else vendored zxing) #}
+```
+
+Read them as `score: Option<u8>` (`.required().between(1, 5)`), `location: Option<Position>` with `lat`, `lng`, `accuracy: f64`
+(or `renox::geo::Point`) and `sku: String`. The camera and the position need
+`.permissions_policy(|p| { p.allow("geolocation", "self").allow("camera", "self"); })` (off by default).
+
+The two with files are read as `signature: Option<Upload>` (`.image().mimes(&["png"])`), `signature_name: Option<String>` (required when there is no
 signature) and `#[serde(default)] photos: Vec<Upload>` (`.max(3)`, then `v.each` with `.image().mimes(&["jpg", "jpeg"])`).
 
 ### Component events (details in docs/ui.md "Components and the page: three directions")

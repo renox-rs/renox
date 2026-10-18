@@ -226,6 +226,8 @@ impl Module for Pages {
                 )
             })
             .get("/widgets", || async { view("widgets.html", context! {}) })
+            // The rating and barcode blocks (blocks-field.test.mjs, #54).
+            .get("/field", || async { view("field.html", context! {}) })
             .post("/order", |Valid(order): Valid<Order>| async move {
                 format!("{} lines", order.lines.len())
             })

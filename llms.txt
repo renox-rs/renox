@@ -372,6 +372,12 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `camera_capture` (`<rx-camera-capture name="photos" :max="3">`: getUserMedia photos downsized to `max_width` as
   `photo-N.jpg`, a visible `<input type=file capture>` when denied or missing; `Vec<Upload>`, `max(3)`; both need
   a `multipart/form-data` form, shown by the bike shop's work order sign-off and `/about/blocks`),
+  `rating` (`<rx-rating name="score">`: radios drawn as stars, posts one number, no JavaScript needed),
+  `geolocate` (`<rx-geolocate name="location" :accuracy="50">`: a button asks for the position, posts
+  `location[lat]`, `location[lng]`, `location[accuracy]`, `location[at]`; read as a struct or `renox::geo::Point`) and
+  `barcode_scan` (`<rx-barcode-scan name="sku" formats="ean_13,qr_code">`: one text field filled by typing, a keyboard-wedge
+  scanner or the camera through `BarcodeDetector` or a vendored @zxing/library; a `String`); the camera and the position need
+  `camera` / `geolocation` allowed in `App::permissions_policy`,
   `map_picker` (a point, circle or polygon: clicks or typed coordinates; `name[lat]`/`name[lng]` or GeoJSON
   `[lng, lat]`) and `map` (markers and shapes; Leaflet 1.9.4 vendored, tiles from
   `BLOCKS_MAP_TILES` / `BLOCKS_MAP_ATTRIBUTION`, never a default); each block's options, keyboard use, translations
@@ -456,12 +462,15 @@ the guides themselves (doctests) and tested in `crates/renox/tests/it`.
   `Blocks` module (`lib.rs`: its views registered unless the app has the file, `renox_blocks()`
   for the tags, `renox_blocks_t()` for texts), `texts.rs` (`TEXTS`, the English), `assets.rs`
   (hashed URLs, `Registry::asset`), `views/blocks.html` (the macros),
-  `map.rs` (the tile settings), `assets/vendor/leaflet/` (Leaflet 1.9.4, licence, NOTICE), `assets/blocks.css`,
+  `map.rs` (the tile settings), `assets/vendor/leaflet/` (Leaflet 1.9.4, licence, NOTICE), `assets/vendor/zxing/` (@zxing/library 0.23.0,
+  licence; `assets/vendor/NOTICE`), `assets/blocks.css`,
   `assets/blocks.js` (the loader) and `assets/parts/*.js` (each block's
   code, imported only when a page has it; Web Animations, no library). Guide:
   [docs/blocks.md](docs/blocks.md); used in examples/bikeshop (every page with a block, and
   `/about/blocks`); browser tests tests/browser/blocks.test.mjs, blocks-capture.test.mjs (the signature pad
-  and camera capture, with Chrome's fake camera: `Browser.launch({ args })`) and tests/browser/maps.test.mjs (a local tile stub).
+  and camera capture, with Chrome's fake camera: `Browser.launch({ args })`), tests/browser/blocks-field.test.mjs (rating, geolocate
+  and barcode_scan: `Browser#send('Browser.grantPermissions', ..)`, `Emulation.setGeolocationOverride`, a stubbed `BarcodeDetector`)
+  and tests/browser/maps.test.mjs (a local tile stub).
 - Passwordless login (#42): `Auth::new().magic_link()` and `.login_codes(LoginCodes::new()..)`
   (renox-core `auth/passwordless.rs`: the routes `login.link.*` / `login.code.*`, the queued
   `SendLoginSecret` job, `LoginCodes`, `LoginCodeDelivery`; views `views/auth/login-link*.html`,

@@ -6,7 +6,8 @@
 // history, compare_plans, month_calendar, availability and kanban; and
 // prefers-reduced-motion. The loader imports only the code a page needs.
 // The signature pad and the camera capture have their own file,
-// tests/browser/blocks-capture.test.mjs.
+// tests/browser/blocks-capture.test.mjs. The rating, geolocate and barcode_scan blocks
+// are set up here too and have theirs: tests/browser/blocks-field.test.mjs.
 // Screenshots go to BLOCKS_SCREENS when it's set.
 
 import { after, before, describe, test } from 'node:test';
@@ -56,6 +57,9 @@ const BLOCKS = {
   kanban: '[data-rx-kanban][data-rx-blocks-ready]',
   signature_pad: '[data-rx-signature][data-rx-blocks-ready]',
   camera_capture: '[data-rx-camera][data-rx-blocks-ready]',
+  rating: '[data-rx-rating]',
+  geolocate: '[data-rx-geolocate][data-rx-blocks-ready]',
+  barcode_scan: '[data-rx-barcode][data-rx-blocks-ready]',
 };
 
 /** Text that must read at WCAG AA (4.5:1) on what is behind it. */
@@ -155,7 +159,7 @@ describe('renox-blocks', () => {
           assert.ok(await fitsWidth(page), 'no sideways scrolling');
           // Each block fits its card (wide ones scroll inside their own frame).
           const overflowing = await page.eval(() =>
-            ['.rx-quantity-field', '.rx-range', '.rx-keypad', '.rx-swatches', '.rx-datetime-range', '.rx-gallery', '.rx-history', '.rx-plans', '.rx-month', '.rx-availability', '.rx-week', '.rx-stepper', '.rx-kanban']
+            ['.rx-quantity-field', '.rx-range', '.rx-keypad', '.rx-swatches', '.rx-datetime-range', '.rx-gallery', '.rx-history', '.rx-plans', '.rx-month', '.rx-availability', '.rx-week', '.rx-stepper', '.rx-kanban', '.rx-rating', '.rx-geolocate', '.rx-barcode']
               .filter((s) => {
                 const el = document.querySelector(s);
                 const card = el.closest('.rx-card') || document.body;

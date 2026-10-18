@@ -2098,6 +2098,24 @@ Notes:
   bikeshop `/about/blocks` (English and Spanish)
 - [ ] Geocoding, routing, spatial indexes (PostGIS) and live tracking are out of scope
 
+### Field blocks: rating, geolocation and barcode (#54, part 2 of #32)
+- [x] `rating` (a radio group in stars, no JavaScript needed, `readonly` display, "N of MAX" names), with `<rx-rating>`
+- [x] `geolocate` (a button that asks for the position, posts `name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`; denied,
+  unavailable and timeout states with a retry), with `<rx-geolocate>`
+- [x] `barcode_scan` (one text field filled by typing, a keyboard-wedge scanner or the camera; `BarcodeDetector`, else a vendored
+  `@zxing/library` 0.23.0 loaded only when the camera opens), with `<rx-barcode-scan>`
+- [x] Contracts, `blocks.rating.*` / `blocks.geolocate.*` / `blocks.barcode.*` texts, the parts `geolocate.js` and `barcode.js`,
+  the `data-zxing` file in the loader tag, `assets/vendor/zxing/` (LICENSE) and `assets/vendor/NOTICE`
+- [x] Bikeshop `/about/blocks` shows all three (`POST /about/blocks/field`), allows `geolocation` and `camera` for self in its
+  Permissions-Policy, English and Spanish texts
+- [x] Tests per acceptance criterion (`renox-blocks/tests/blocks.rs` and `assets.rs`, bikeshop `tests/blocks.rs`) and
+  `tests/browser/blocks-field.test.mjs` (arrow keys, no script, right-to-left, granted and denied permission, timeout, keyboard
+  wedge, `BarcodeDetector` stub, zxing fallback), `blocks.test.mjs` and `a11y.test.mjs` for the page
+- [x] Docs (blocks.md "rating", "geolocate", "barcode_scan"), CHEATSHEET.md, llms.txt, the blocks crate README, layout.md,
+  the bikeshop README
+- [ ] A decoder for the camera other than `BarcodeDetector` and zxing, continuous tracking (`watchPosition`) and reverse
+  geocoding are out of scope
+
 ## Decisions
 
 - **Right-to-left is the locale's property, set once** (#28): `app.dir` comes from the same locale as `app.locale`
@@ -2477,6 +2495,19 @@ Notes:
   so what a phone's camera app or a file picker returns is downsized by the same code. A photo from the stream is
   cut to `max_width` on a canvas in the browser; processing on the server (#43) is not wired into the block.
   The browser tests fake the camera with Chrome's flags and stub `getUserMedia` for the denied and missing cases.
+- **Field blocks send plain values and need nothing from the framework** (#54): `rating` posts one integer, `geolocate` four
+  fields under one name (`name[lat]`, `name[lng]`, `name[accuracy]`, `name[at]`, the shape `renox::geo::Point` reads from #47) and
+  `barcode_scan` one string, so there is no new extractor and `Valid<T>` applies as it is. `rating` is radios and CSS with no
+  part, so it works without JavaScript and a page with only a rating downloads no block code. `geolocate`'s inputs are disabled
+  until there is a fix, so a form never posts a stale or half position; the permission is asked for in the click handler only.
+  A fix worse than the wanted `accuracy` is kept and flagged: the server, which sees the posted `accuracy`, decides. The
+  `Permissions-Policy` switches `camera` and `geolocation` off and the blocks cannot change that, so the guide says what to allow
+  (and the bike shop does) instead of the framework's default changing. The barcode camera uses `BarcodeDetector` where the
+  browser has it and otherwise a vendored `@zxing/library` 0.23.0 (Apache-2.0, 362 KB, added by `barcode.js` as a classic script
+  from the loader tag's `data-zxing`, only when the camera opens, so a page without the block or a browser with
+  `BarcodeDetector` never fetches it). Keys less than 50 ms apart ending in Enter are one scan and do not submit the form unless
+  the block has `submit`. The zxing browser test fakes the camera in the page (a canvas stream of an EAN-13 drawn by the test,
+  decoded by the real part and decoder), not with Chrome's fake device file, so the frame is known and no video fixture is checked in.
 
 ## Not planned
 

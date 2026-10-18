@@ -177,6 +177,22 @@ mod tests {
         assert!(notice.contains("@zxing/library 0.23.0") && notice.contains("sha256"));
     }
 
+    // The rating is CSS and radio inputs only (#54): no part, no selector in
+    // the loader, no file for a page to download. geolocate and barcode_scan
+    // have a part each, found by their own selector.
+    #[test]
+    fn the_rating_has_no_code_and_the_other_two_field_blocks_have_theirs() {
+        assert!(super::PARTS.iter().all(|(name, _)| *name != "rating"));
+        assert!(!super::LOADER.contains("rating"));
+        for name in ["geolocate", "barcode"] {
+            assert!(super::PARTS.iter().any(|(n, _)| *n == name), "{name}");
+            assert!(
+                super::LOADER.contains(&format!("[\"{name}\", \"[data-rx-{name}]\"]")),
+                "{name}"
+            );
+        }
+    }
+
     // map.js reads the paths the tag carries, and the loader starts it for
     // both blocks.
     #[test]
