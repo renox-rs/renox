@@ -912,15 +912,12 @@ mod tests {
             };
             assert_eq!(read("page.txt"), want);
             assert_eq!(read("Cargo.toml"), "name = \"acme_web\"\n");
-            let env = fs::read_to_string(app.join(".env")).unwrap();
+            let env = read(".env");
             assert!(
                 env.contains("CO=Acme") && !env.contains("APP_KEY=\n"),
                 "{env}"
             );
-            assert_eq!(
-                fs::read_to_string(app.join(".env.example")).unwrap(),
-                "APP_KEY=\n"
-            );
+            assert_eq!(read(".env.example"), "APP_KEY=\n");
             assert!(!app.join(".git").exists(), "{git_ref:?}: .git was copied");
             assert!(!app.join("renox-template.toml").exists());
         }
