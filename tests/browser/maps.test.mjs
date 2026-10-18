@@ -58,7 +58,7 @@ after(async () => {
 
 /** Waits until Leaflet has built the map in `#id`. */
 const ready = (page, id) =>
-  page.waitFor((i) => !!document.querySelector(`#${i} .leaflet-container`), { message: `the map in #${i}` }, id);
+  page.waitFor((i) => !!document.querySelector(`#${i} .leaflet-container`), { message: `the map in #${id}` }, id);
 
 /** The value of the field `name` in the page's form. */
 const field = (page, name) =>
