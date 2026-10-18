@@ -145,7 +145,7 @@ test('a replay whose answer is lost does not apply the post twice', () =>
       let lost = true;
       window.fetch = async (...args) => {
         const res = await real(...args);
-        if (lost && String(args[0]).includes('/offline/visits')) {
+        if (lost && args[1]?.method === 'POST' && String(args[0]).includes('/offline/visits')) {
           lost = false;
           throw new TypeError('Failed to fetch');
         }

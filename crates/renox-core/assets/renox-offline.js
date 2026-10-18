@@ -150,8 +150,7 @@
     return clientId().then(function (client) {
       var now = new Date();
       var same = previous && signature(previous.fields) === signature(fields);
-      return {
-        id: previous ? previous.id : undefined,
+      var item = {
         outbox: form.getAttribute("data-rx-offline"),
         action: form.action,
         method: (form.getAttribute("method") || "post").toUpperCase(),
@@ -163,6 +162,10 @@
         summary: summary(fields),
         status: "pending"
       };
+      // Left out for a new post: a key path that finds `id: undefined` is an invalid key, not
+      // a missing one, so the store would not generate it.
+      if (previous) item.id = previous.id;
+      return item;
     });
   }
 
@@ -340,6 +343,11 @@
     if (isLogout(form)) return logout(event, form);
     if (!form.matches("form[data-rx-offline]") || !window.indexedDB || event.defaultPrevented) return;
     event.preventDefault();
+    // renox-ui.js marks a form it saw submit as sending and refuses a second submit. This
+    // script takes the post over (it is kept or sent from here, the page stays), so the form
+    // must be ready for the next note at once.
+    form.removeAttribute("data-rx-sending");
+    Array.prototype.forEach.call(form.querySelectorAll('[aria-busy="true"]'), function (b) { b.removeAttribute("aria-busy"); });
     submit(form, event.submitter);
   });
 
