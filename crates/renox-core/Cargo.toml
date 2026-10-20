@@ -37,7 +37,7 @@ images = ["dep:image"]
 
 [dependencies]
 # AES-256-GCM for per-file encryption (`Storage::put_encrypted`); the version `cookie` already uses.
-aes-gcm = { version = "0.10.3", default-features = false, features = ["aes", "alloc"] }
+aes-gcm = { version = "0.11.1", default-features = false, features = ["aes", "alloc"] }
 anyhow = "1.0.104"
 argon2 = "0.6.0"
 # Reads Excel files for `renox::import` (pure Rust, MIT; zip and quick-xml were already in the tree).
