@@ -42,7 +42,7 @@ anyhow = "1.0.104"
 argon2 = "0.6.0"
 # Reads Excel files for `renox::import` (pure Rust, MIT; zip and quick-xml were already in the tree).
 calamine = { version = "0.36.1", default-features = false, features = ["dates"], optional = true }
-rust_xlsxwriter = { version = "0.99.1", default-features = false, features = ["chrono"], optional = true }
+rust_xlsxwriter = { version = "0.100.0", default-features = false, features = ["chrono"], optional = true }
 # Verifies bcrypt hashes of users imported from Laravel (rehashed to Argon2id at login).
 bcrypt = { version = "0.19.3", default-features = false, features = ["std"] }
 axum = { version = "0.8.9", features = ["multipart"] }

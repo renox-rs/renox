@@ -54,6 +54,6 @@ tower = { version = "0.5.3", features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["fmt", "std"] }
 # Builds workbooks for the import tests (the version renox-core writes exports with).
-rust_xlsxwriter = { version = "0.99.1", default-features = false }
+rust_xlsxwriter = { version = "0.100.0", default-features = false }
 # Reads back Excel exports (the zip rust_xlsxwriter writes with).
 zip = { version = "9.0", default-features = false, features = ["deflate"] }
